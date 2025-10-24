@@ -36,47 +36,89 @@ A real-time event counter for tracking deaths and swears during stream gameplay.
 
 ```markdown
 doc-omni/
-├── index.html          # Main counter interface
-├── styles.css          # Styling and responsive design
-├── script.js           # Counter logic and functionality
-├── LICENSE             # Project license
-└── README.md           # This file
+├── index.html           # Main counter interface
+├── mobile.html          # Remote mobile control page
+├── styles.css           # Main counter styling
+├── mobile-styles.css    # Mobile control styling
+├── script.js            # Counter logic and remote command handling
+├── mobile-script.js     # Mobile control logic
+├── LICENSE              # Project license
+└── README.md            # This file
 ```
 
 ## 🚀 Usage
 
-1. Open `index.html` in your web browser
+### Main Counter Display
+
+1. Open `index.html` in your web browser (on stream computer)
 2. Use as a Browser Source in OBS:
    - Add Browser Source to your OBS scene
    - Set the URL or file path to `index.html`
    - Adjust width/height as needed
 3. Counter automatically saves after each change
 
+### Remote Mobile Control
+
+1. Open `mobile.html` on your phone/tablet (or separate device)
+2. Both pages sync automatically via browser storage
+3. Use mobile buttons to control the main counter remotely
+4. Real-time connection status indicator
+5. Sync log shows all commands sent
+
 ## 🎯 Quick Start
 
-### Manual Counting
+### Main Counter
+
+#### Manual Counting
 
 - Click the **+** button next to Deaths or Swears
 - Click the **−** button to decrement
 
-### Keyboard Shortcuts
+#### Keyboard Shortcuts
 
 - Press **D** to add a death
 - Press **S** to add a swear
 - Great for hands-free updates during streams
 
-### Data Management
+### Mobile Remote Control
 
-- **Export**: Click "Export Data" to download your session history
-- **Reset**: Click "Reset All" to clear counters (confirmation required)
+#### Setup
+
+1. Open `index.html` in browser/OBS on your stream computer
+2. Open `mobile.html` on your phone (same network or even different network)
+3. Watch the status indicator show "Connected"
+
+#### Use Mobile Control
+
+- Tap **+** buttons to increment deaths or swears
+- Tap **−** buttons to decrement
+- Tap **Quick D+** or **Quick S+** for rapid one-touch updates
+- Tap **Reset All** to clear all counters
+
+#### Features
+
+- **Live Counter Display** - See current values on mobile
+- **Connection Status** - Green dot = connected
+- **Sync Log** - View all commands sent to main counter
+- **Audio Feedback** - Beep when button is pressed
 
 ## 💾 Data Persistence
 
 Your counter values are automatically saved to your browser's local storage. This means:
 
 - Counters persist across page refreshes
-- Each browser/device has separate counts
+- Each browser/device has separate counts (use mobile on same browser for sync)
+- Mobile and main counter sync via localStorage
 - Clear browser data to reset (manual override)
+
+## 🔄 How Sync Works
+
+Both pages communicate through browser localStorage:
+
+1. **Command Flow**: Mobile → sends command → Main counter executes
+2. **Update Flow**: Main counter → stores new values → Mobile reads and displays
+3. **Connection**: Both pages must be open on same device/browser for sync
+4. **Fallback**: Polling mechanism checks for updates every 500ms
 
 ## 🎨 Customization
 

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Counter - Remote Control</title>
+    <link rel="stylesheet" href="mobile-styles.css">
+</head>
+<body>
+    <div class="mobile-container">
+        <div class="header">
+            <h1>Remote Control</h1>
+            <div class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="current-values">
+            <div class="value-display deaths">
+                <div class="label">Deaths</div>
+                <div class="value" id="currentDeaths">0</div>
+            </div>
+            <div class="value-display swears">
+                <div class="label">Swears</div>
+                <div class="value" id="currentSwears">0</div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h2>Deaths</h2>
+            <div class="button-group">
+                <button class="btn btn-large btn-increment-death" onclick="sendCommand('incrementDeaths')">
+                    <span class="btn-text">+</span>
+                </button>
+                <button class="btn btn-large btn-decrement-death" onclick="sendCommand('decrementDeaths')">
+                    <span class="btn-text">−</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h2>Swears</h2>
+            <div class="button-group">
+                <button class="btn btn-large btn-increment-swear" onclick="sendCommand('incrementSwears')">
+                    <span class="btn-text">+</span>
+                </button>
+                <button class="btn btn-large btn-decrement-swear" onclick="sendCommand('decrementSwears')">
+                    <span class="btn-text">−</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="management-section">
+            <button class="btn btn-full btn-reset" onclick="sendCommand('resetCounters')">
+                Reset All
+            </button>
+        </div>
+
+        <div class="quick-actions">
+            <button class="btn btn-quick" onclick="sendCommand('incrementDeaths')">Quick D+</button>
+            <button class="btn btn-quick" onclick="sendCommand('incrementSwears')">Quick S+</button>
+        </div>
+
+        <div class="info-section">
+            <p>📱 Open the main counter on your stream computer</p>
+            <p>🔄 This page syncs automatically</p>
+            <p>💾 All data persists across refreshes</p>
+        </div>
+
+        <div class="sync-log">
+            <button class="btn btn-small" onclick="clearLog()">Clear Log</button>
+            <div class="log-content" id="syncLog"></div>
+        </div>
+    </div>
+
+    <script src="mobile-script.js"></script>
+</body>
+</html>

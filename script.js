@@ -1,9 +1,32 @@
+// Configuration
+const COMMAND_STORAGE_KEY = 'streamCounter_command';
+const UPDATE_STORAGE_KEY = 'streamCounter_update';
+let lastProcessedCommand = null;
+
 // Initialize counters from localStorage
 let deathCount = localStorage.getItem('deathCount') ? parseInt(localStorage.getItem('deathCount')) : 0;
 let swearsCount = localStorage.getItem('swearsCount') ? parseInt(localStorage.getItem('swearsCount')) : 0;
 
 // Initialize UI
 updateDisplay();
+
+// Listen for commands from mobile control
+window.addEventListener('storage', (e) => {
+    if (e.key === COMMAND_STORAGE_KEY && e.newValue) {
+        try {
+            const commandData = JSON.parse(e.newValue);
+            if (commandData.id !== lastProcessedCommand) {
+                processRemoteCommand(commandData.command);
+                lastProcessedCommand = commandData.id;
+            }
+        } catch (error) {
+            console.error('Error processing remote command:', error);
+        }
+    }
+});
+
+// Check for commands periodically (fallback for same-window updates)
+setInterval(checkForRemoteCommands, 500);
 
 // Death counter functions
 function incrementDeaths() {
@@ -101,6 +124,58 @@ function playSound(type) {
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
         oscillator.start(audioContext.currentTime);
         oscillator.stop(audioContext.currentTime + 0.1);
+    }
+}
+
+// Process commands from mobile control
+function processRemoteCommand(command) {
+    switch (command) {
+        case 'incrementDeaths':
+            incrementDeaths();
+            break;
+        case 'decrementDeaths':
+            decrementDeaths();
+            break;
+        case 'incrementSwears':
+            incrementSwears();
+            break;
+        case 'decrementSwears':
+            decrementSwears();
+            break;
+        case 'resetCounters':
+            // Reset without confirmation when triggered remotely
+            deathCount = 0;
+            swearsCount = 0;
+            saveAndUpdate();
+            break;
+    }
+    
+    // Notify mobile control of update
+    notifyMobileControl();
+}
+
+// Check for pending commands (fallback mechanism)
+function checkForRemoteCommands() {
+    try {
+        const commandStr = localStorage.getItem(COMMAND_STORAGE_KEY);
+        if (commandStr) {
+            const commandData = JSON.parse(commandStr);
+            if (commandData.id !== lastProcessedCommand) {
+                processRemoteCommand(commandData.command);
+                lastProcessedCommand = commandData.id;
+            }
+        }
+    } catch (error) {
+        console.error('Error checking remote commands:', error);
+    }
+}
+
+// Notify mobile control of updates
+function notifyMobileControl() {
+    try {
+        localStorage.setItem(UPDATE_STORAGE_KEY, Date.now().toString());
+    } catch (error) {
+        console.error('Error notifying mobile control:', error);
     }
 }
 
