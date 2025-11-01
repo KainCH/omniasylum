@@ -34,6 +34,7 @@ desktop.ini
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/MCP-SETUP.md
+!.vscode/mcp.json
 *.swp
 *.swo
 *~
