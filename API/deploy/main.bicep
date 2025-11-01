@@ -169,14 +169,22 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         }
       ]
       scale: {
-        minReplicas: 0 // Scale to zero when idle
-        maxReplicas: 3
+        minReplicas: 0 // Scale to zero when idle for cost savings
+        maxReplicas: 5 // Increase slightly for approved streamer growth
         rules: [
           {
             name: 'http-rule'
             http: {
               metadata: {
-                concurrentRequests: '10'
+                concurrentRequests: '20' // Higher concurrency per instance
+              }
+            }
+          }
+          {
+            name: 'websocket-rule'
+            tcp: {
+              metadata: {
+                concurrentConnections: '50' // Handle WebSocket connections
               }
             }
           }
