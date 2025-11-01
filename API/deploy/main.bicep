@@ -3,7 +3,7 @@
 param location string = resourceGroup().location
 
 @description('Base name for all resources')
-param baseName string = 'omniasylum'
+param baseName string = 'omniforgestream'
 
 @description('Environment name (dev, staging, prod)')
 param environment string = 'prod'
@@ -95,12 +95,21 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   }
 }
 
-// Container App with Managed Identity
+// Reference existing User Assigned Managed Identity
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: 'bears-stream-UAMI'
+  scope: resourceGroup()
+}
+
+// Container App with User Assigned Managed Identity
 resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: containerAppName
   location: location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: containerAppEnv.id
@@ -194,24 +203,24 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
-// Role Assignment: Give Container App access to Key Vault
+// Role Assignment: Give User Assigned Managed Identity access to Key Vault
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, containerApp.id, 'Key Vault Secrets User')
+  name: guid(keyVault.id, userAssignedIdentity.id, 'Key Vault Secrets User')
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
-    principalId: containerApp.identity.principalId
+    principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// Role Assignment: Give Container App access to Storage Account
+// Role Assignment: Give User Assigned Managed Identity access to Storage Account
 resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, containerApp.id, 'Storage Table Data Contributor')
+  name: guid(storageAccount.id, userAssignedIdentity.id, 'Storage Table Data Contributor')
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3') // Storage Table Data Contributor
-    principalId: containerApp.identity.principalId
+    principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }

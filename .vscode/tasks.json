@@ -59,7 +59,7 @@
     {
       "label": "Build Docker Image",
       "type": "shell",
-      "command": "docker build -t omniasylum-api:latest .",
+      "command": "docker build -t omniforgestream-api:latest .",
       "options": {
         "cwd": "${workspaceFolder}/API"
       },
@@ -72,7 +72,7 @@
     {
       "label": "Run Docker Container",
       "type": "shell",
-      "command": "docker run -p 3000:3000 --env-file .env --name omniasylum-api-test omniasylum-api:latest",
+      "command": "docker run -p 3000:3000 --env-file .env --name omniforgestream-api-test omniforgestream-api:latest",
       "options": {
         "cwd": "${workspaceFolder}/API"
       },
@@ -86,7 +86,7 @@
     {
       "label": "Stop Docker Container",
       "type": "shell",
-      "command": "docker stop omniasylum-api-test; docker rm omniasylum-api-test",
+      "command": "docker stop omniforgestream-api-test; docker rm omniforgestream-api-test",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -132,7 +132,9 @@
       "type": "shell",
       "command": "Start-Process 'http://localhost:3000/auth/twitch'",
       "problemMatcher": [],
-      "dependsOn": ["Start API Server"],
+      "dependsOn": [
+        "Start API Server"
+      ],
       "presentation": {
         "reveal": "silent"
       }
@@ -143,19 +145,19 @@
       "id": "resourceGroup",
       "type": "promptString",
       "description": "Azure Resource Group Name",
-      "default": "omniasylum-rg"
+      "default": "Streamer-Tools-RG"
     },
     {
       "id": "baseName",
       "type": "promptString",
       "description": "Base name for Azure resources",
-      "default": "omniasylum"
+      "default": "omniforgestream"
     },
     {
       "id": "containerAppName",
       "type": "promptString",
       "description": "Container App Name",
-      "default": "omniasylum-api"
+      "default": "omniforgestream-api"
     }
   ]
 }

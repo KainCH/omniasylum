@@ -1,4 +1,4 @@
-# Azure Deployment Scripts for OmniAsylum API
+# Azure Deployment Scripts for OmniForgeStream API
 
 ## Prerequisites
 
@@ -19,18 +19,20 @@ az account set --subscription "Your-Subscription-Name"
 ### 2. Set Variables
 
 ```powershell
-$RESOURCE_GROUP = "omniasylum-rg"
-$LOCATION = "eastus"
-$REGISTRY_NAME = "omniasylumregistry"  # Must be globally unique
-$IMAGE_NAME = "omniasylum-api"
-$BASE_NAME = "omniasylum"
+$RESOURCE_GROUP = "Streamer-Tools-RG"
+$LOCATION = "southcentralus"
+$REGISTRY_NAME = "streamertools$(Get-Random -Maximum 9999)"  # Must be globally unique
+$IMAGE_NAME = "omniforgestream-api"
+$BASE_NAME = "omniforgestream"
 $ENVIRONMENT = "prod"
 ```
 
-### 3. Create Resource Group
+### 3. Verify Resource Group (Already exists)
 
 ```powershell
-az group create --name $RESOURCE_GROUP --location $LOCATION
+# Resource group already exists at:
+# /subscriptions/b8a36f4a-bde2-446f-81b5-7a48d5522724/resourceGroups/Streamer-Tools-RG
+az group show --name $RESOURCE_GROUP
 ```
 
 ### 4. Create Container Registry
@@ -166,11 +168,11 @@ Ensure ingress transport is set to `auto` in Container App configuration.
 
 ## Security Best Practices
 
-✅ All secrets in Key Vault (never in code or environment variables)  
-✅ Managed Identity for authentication (no credentials to manage)  
-✅ HTTPS only (enforced by Container Apps)  
-✅ RBAC for Key Vault and Storage access  
-✅ Soft delete enabled on Key Vault  
+✅ All secrets in Key Vault (never in code or environment variables)
+✅ Managed Identity for authentication (no credentials to manage)
+✅ HTTPS only (enforced by Container Apps)
+✅ RBAC for Key Vault and Storage access
+✅ Soft delete enabled on Key Vault
 
 ## Clean Up
 
