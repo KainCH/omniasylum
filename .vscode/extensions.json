@@ -1,0 +1,42 @@
+{
+  "recommendations": [
+    // GitHub Copilot
+    "github.copilot",
+    "github.copilot-chat",
+    
+    // Azure Tools
+    "ms-azuretools.vscode-azure-github-copilot",
+    "ms-azuretools.vscode-azureresourcegroups",
+    "ms-azuretools.vscode-azurefunctions",
+    "ms-azuretools.vscode-bicep",
+    "ms-azuretools.vscode-docker",
+    "ms-azuretools.vscode-azurecontainerapps",
+    
+    // Code Quality
+    "dbaeumer.vscode-eslint",
+    "streetsidesoftware.code-spell-checker",
+    
+    // Git & GitHub
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    
+    // Documentation
+    "yzhang.markdown-all-in-one",
+    "davidanson.vscode-markdownlint",
+    
+    // Development Tools
+    "christian-kohler.npm-intellisense",
+    "christian-kohler.path-intellisense",
+    "visualstudioexptteam.vscodeintellicode",
+    
+    // Node.js
+    "ms-vscode.vscode-node-azure-pack",
+    
+    // REST API Testing
+    "humao.rest-client",
+    
+    // Environment Files
+    "mikestead.dotenv"
+  ],
+  "unwantedRecommendations": []
+}

@@ -1,0 +1,161 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install API Dependencies",
+      "type": "shell",
+      "command": "npm install",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Start API Server",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    },
+    {
+      "label": "Start API Server (Dev)",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
+    },
+    {
+      "label": "Ensure Test Data",
+      "type": "shell",
+      "command": "if (!(Test-Path 'data')) { New-Item -ItemType Directory -Path 'data' }; if (!(Test-Path 'data/users.json')) { '[]' | Out-File -FilePath 'data/users.json' -Encoding utf8 }; if (!(Test-Path 'data/counters.json')) { '[]' | Out-File -FilePath 'data/counters.json' -Encoding utf8 }",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "Build Docker Image",
+      "type": "shell",
+      "command": "docker build -t omniasylum-api:latest .",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Run Docker Container",
+      "type": "shell",
+      "command": "docker run -p 3000:3000 --env-file .env --name omniasylum-api-test omniasylum-api:latest",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Stop Docker Container",
+      "type": "shell",
+      "command": "docker stop omniasylum-api-test; docker rm omniasylum-api-test",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Deploy to Azure",
+      "type": "shell",
+      "command": "az deployment group create --resource-group ${input:resourceGroup} --template-file deploy/main.bicep --parameters baseName=${input:baseName}",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Azure Login",
+      "type": "shell",
+      "command": "az login",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "View Azure Logs",
+      "type": "shell",
+      "command": "az containerapp logs show --name ${input:containerAppName} --resource-group ${input:resourceGroup} --follow",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Test OAuth Flow",
+      "type": "shell",
+      "command": "Start-Process 'http://localhost:3000/auth/twitch'",
+      "problemMatcher": [],
+      "dependsOn": ["Start API Server"],
+      "presentation": {
+        "reveal": "silent"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "resourceGroup",
+      "type": "promptString",
+      "description": "Azure Resource Group Name",
+      "default": "omniasylum-rg"
+    },
+    {
+      "id": "baseName",
+      "type": "promptString",
+      "description": "Base name for Azure resources",
+      "default": "omniasylum"
+    },
+    {
+      "id": "containerAppName",
+      "type": "promptString",
+      "description": "Container App Name",
+      "default": "omniasylum-api"
+    }
+  ]
+}
