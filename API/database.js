@@ -104,6 +104,22 @@ class Database {
    * Create or update user
    */
   async saveUser(userData) {
+    // Determine user role - riress is always admin
+    let role = 'streamer';
+    if (userData.username && userData.username.toLowerCase() === 'riress') {
+      role = 'admin';
+    }
+
+    // Default feature flags for new users
+    const defaultFeatures = {
+      chatCommands: true,
+      channelPoints: false,
+      autoClip: false,
+      customCommands: false,
+      analytics: false,
+      webhooks: false
+    };
+
     const user = {
       partitionKey: 'user',
       rowKey: userData.twitchUserId,
@@ -115,6 +131,9 @@ class Database {
       accessToken: userData.accessToken,
       refreshToken: userData.refreshToken,
       tokenExpiry: userData.tokenExpiry,
+      role: userData.role || role,
+      features: JSON.stringify(userData.features || defaultFeatures),
+      isActive: userData.isActive !== undefined ? userData.isActive : true,
       createdAt: userData.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
@@ -237,6 +256,83 @@ class Database {
    */
   async resetCounters(twitchUserId) {
     return await this.saveCounters(twitchUserId, { deaths: 0, swears: 0 });
+  }
+
+  // ==================== ADMIN OPERATIONS ====================
+
+  /**
+   * Get all users (admin only)
+   */
+  async getAllUsers() {
+    if (this.mode === 'azure') {
+      const users = [];
+      const entities = this.usersClient.listEntities();
+      for await (const entity of entities) {
+        users.push(entity);
+      }
+      return users;
+    } else {
+      const usersData = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      return Object.values(usersData);
+    }
+  }
+
+  /**
+   * Update user features (admin only)
+   */
+  async updateUserFeatures(twitchUserId, features) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.features = JSON.stringify(features);
+    return await this.saveUser(user);
+  }
+
+  /**
+   * Update user status (admin only)
+   */
+  async updateUserStatus(twitchUserId, isActive) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.isActive = isActive;
+    return await this.saveUser(user);
+  }
+
+  /**
+   * Get user features
+   */
+  async getUserFeatures(twitchUserId) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    try {
+      return typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+    } catch (error) {
+      console.error('Error parsing user features:', error);
+      return {
+        chatCommands: true,
+        channelPoints: false,
+        autoClip: false,
+        customCommands: false,
+        analytics: false,
+        webhooks: false
+      };
+    }
+  }
+
+  /**
+   * Check if user has a specific feature enabled
+   */
+  async hasFeature(twitchUserId, featureName) {
+    const features = await this.getUserFeatures(twitchUserId);
+    return features && features[featureName] === true;
   }
 }
 

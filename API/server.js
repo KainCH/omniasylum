@@ -10,6 +10,7 @@ const keyVault = require('./keyVault');
 const twitchService = require('./multiTenantTwitchService');
 const authRoutes = require('./authRoutes');
 const counterRoutes = require('./counterRoutes');
+const adminRoutes = require('./adminRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -52,6 +53,9 @@ app.use('/auth', authRoutes);
 
 // Counter routes (requires authentication)
 app.use('/api/counters', counterRoutes);
+
+// Admin routes (requires admin role)
+app.use('/api/admin', adminRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {

@@ -115,8 +115,34 @@ function verifySocketAuth(socket, next) {
   }
 }
 
+/**
+ * Middleware to verify user is an admin
+ */
+async function requireAdmin(req, res, next) {
+  try {
+    // First check authentication
+    await requireAuth(req, res, async () => {
+      // Check if user is admin
+      const user = await database.getUser(req.user.userId);
+      
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ 
+          error: 'Forbidden',
+          message: 'Admin access required'
+        });
+      }
+
+      next();
+    });
+  } catch (error) {
+    console.error('Admin middleware error:', error);
+    res.status(500).json({ error: 'Authorization failed' });
+  }
+}
+
 module.exports = {
   requireAuth,
   optionalAuth,
-  verifySocketAuth
+  verifySocketAuth,
+  requireAdmin
 };

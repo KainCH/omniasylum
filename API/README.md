@@ -120,6 +120,81 @@ Frontend stores token, uses for all API calls
 | POST | `/api/counters/reset` | Reset all counters |
 | GET | `/api/counters/export` | Export counter data |
 
+### Admin (Requires admin role)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/users` | List all registered users |
+| GET | `/api/admin/users/:userId` | Get user details + counters |
+| PUT | `/api/admin/users/:userId/features` | Update user feature flags |
+| PUT | `/api/admin/users/:userId/status` | Enable/disable user account |
+| GET | `/api/admin/stats` | Get system statistics |
+| DELETE | `/api/admin/users/:userId` | Delete user account |
+| GET | `/api/admin/features` | List available features |
+
+**Admin Access**: Only user with Twitch username `riress` has admin role.
+
+#### Admin Examples
+
+**List all users:**
+```javascript
+fetch('http://localhost:3000/api/admin/users', {
+  headers: { 'Authorization': `Bearer ${jwtToken}` }
+})
+```
+
+**Update user features:**
+```javascript
+fetch('http://localhost:3000/api/admin/users/12345678/features', {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${jwtToken}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    chatCommands: true,
+    channelPoints: false,
+    autoClip: true,
+    customCommands: false,
+    analytics: true,
+    webhooks: false
+  })
+})
+```
+
+**Disable user account:**
+```javascript
+fetch('http://localhost:3000/api/admin/users/12345678/status', {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${jwtToken}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ isActive: false })
+})
+```
+
+**Get system statistics:**
+```javascript
+fetch('http://localhost:3000/api/admin/stats', {
+  headers: { 'Authorization': `Bearer ${jwtToken}` }
+})
+// Response:
+// {
+//   "totalUsers": 15,
+//   "activeUsers": 12,
+//   "adminUsers": 1,
+//   "featureUsage": {
+//     "chatCommands": 10,
+//     "channelPoints": 3,
+//     "autoClip": 5,
+//     "customCommands": 2,
+//     "analytics": 8,
+//     "webhooks": 1
+//   }
+// }
+```
+
 ### System
 
 | Method | Endpoint | Description |
@@ -224,6 +299,7 @@ API/
 ├── authRoutes.js                  # OAuth authentication endpoints
 ├── authMiddleware.js              # JWT verification middleware
 ├── counterRoutes.js               # Counter API endpoints
+├── adminRoutes.js                 # Admin-only user management endpoints
 ├── multiTenantTwitchService.js    # Per-user Twitch bot management
 ├── package.json                   # Dependencies
 ├── Dockerfile                     # Container image definition
@@ -235,6 +311,40 @@ API/
 │   └── README.md                  # Deployment guide
 └── README.md                      # This file
 ```
+
+## 👤 User Roles & Permissions
+
+### Streamer (Default)
+
+All users get the `streamer` role by default. They can:
+- Access their own counter data
+- Control their Twitch bot
+- Modify their own counters
+- Use all assigned features
+
+### Admin
+
+The Twitch user `riress` is automatically assigned the `admin` role. Admins can:
+- View all users in the system
+- Enable/disable user accounts
+- Manage feature flags per user
+- View system statistics
+- Delete user accounts (except admin)
+
+### Feature Flags
+
+Each user can be assigned the following features:
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `chatCommands` | Twitch chat integration | ✅ Enabled |
+| `channelPoints` | Channel points redemptions | ❌ Disabled |
+| `autoClip` | Auto-clip on milestones | ❌ Disabled |
+| `customCommands` | Custom chat commands | ❌ Disabled |
+| `analytics` | Analytics dashboard | ❌ Disabled |
+| `webhooks` | External webhook integration | ❌ Disabled |
+
+Admins can toggle these features for any user via the admin API.
 
 ## 🗄️ Database Modes
 
