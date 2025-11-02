@@ -1,7 +1,17 @@
 const jwt = require('jsonwebtoken');
 const database = require('./database');
+const keyVault = require('./keyVault');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// JWT secret from Key Vault
+let JWT_SECRET = null;
+
+// Initialize JWT secret from Key Vault
+async function getJwtSecret() {
+  if (!JWT_SECRET) {
+    JWT_SECRET = await keyVault.getSecret('JWT-SECRET');
+  }
+  return JWT_SECRET;
+}
 
 /**
  * Middleware to verify JWT token and attach user to request
@@ -9,19 +19,20 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const token = authHeader.substring(7);
-    
+
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      
+      const jwtSecret = await getJwtSecret();
+      const decoded = jwt.verify(token, jwtSecret);
+
       // Get user from database to ensure they still exist and get latest data
       const user = await database.getUser(decoded.userId);
-      
+
       if (!user) {
         return res.status(401).json({ error: 'User not found' });
       }
@@ -57,14 +68,15 @@ async function requireAuth(req, res, next) {
 async function optionalAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
-      
+
       try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const jwtSecret = await getJwtSecret();
+        const decoded = jwt.verify(token, jwtSecret);
         const user = await database.getUser(decoded.userId);
-        
+
         if (user) {
           req.user = {
             userId: user.twitchUserId,
@@ -79,7 +91,7 @@ async function optionalAuth(req, res, next) {
         console.log('Optional auth failed:', error.message);
       }
     }
-    
+
     next();
   } catch (error) {
     console.error('Optional auth middleware error:', error);
@@ -90,22 +102,23 @@ async function optionalAuth(req, res, next) {
 /**
  * Middleware to verify WebSocket authentication
  */
-function verifySocketAuth(socket, next) {
+async function verifySocketAuth(socket, next) {
   try {
     const token = socket.handshake.auth.token;
-    
+
     if (!token) {
       return next(new Error('Authentication required'));
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      
+      const jwtSecret = await getJwtSecret();
+      const decoded = jwt.verify(token, jwtSecret);
+
       // Attach user info to socket
       socket.userId = decoded.userId;
       socket.username = decoded.username;
       socket.displayName = decoded.displayName;
-      
+
       next();
     } catch (error) {
       return next(new Error('Invalid token'));
@@ -124,9 +137,9 @@ async function requireAdmin(req, res, next) {
     await requireAuth(req, res, async () => {
       // Check if user is admin
       const user = await database.getUser(req.user.userId);
-      
+
       if (!user || user.role !== 'admin') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Forbidden',
           message: 'Admin access required'
         });

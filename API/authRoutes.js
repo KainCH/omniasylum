@@ -7,8 +7,16 @@ const keyVault = require('./keyVault');
 
 const router = express.Router();
 
-// JWT secret (should be in Key Vault for production)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// JWT secret from Key Vault
+let JWT_SECRET = null;
+
+// Initialize JWT secret from Key Vault
+async function getJwtSecret() {
+  if (!JWT_SECRET) {
+    JWT_SECRET = await keyVault.getSecret('JWT-SECRET');
+  }
+  return JWT_SECRET;
+}
 
 /**
  * Step 1: Redirect user to Twitch OAuth authorization page
@@ -18,7 +26,7 @@ router.get('/twitch', async (req, res) => {
   try {
     const clientId = await keyVault.getSecret('TWITCH-CLIENT-ID');
     const redirectUri = process.env.TWITCH_REDIRECT_URI || 'http://localhost:3000/auth/twitch/callback';
-    
+
     // Scopes needed for the app
     const scopes = [
       'user:read:email',        // Read user email
@@ -106,19 +114,21 @@ router.get('/twitch/callback', async (req, res) => {
     });
 
     // Create JWT for our application
+    const jwtSecret = await getJwtSecret();
     const jwtToken = jwt.sign(
       {
         userId: user.twitchUserId,
         username: user.username,
-        displayName: user.displayName
+        displayName: user.displayName,
+        role: user.role
       },
-      JWT_SECRET,
+      jwtSecret,
       { expiresIn: '30d' }
     );
 
-    // Redirect to frontend with token
+    // Redirect to frontend with token and role information
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5500';
-    res.redirect(`${frontendUrl}?token=${jwtToken}`);
+    res.redirect(`${frontendUrl}?token=${jwtToken}&role=${user.role}`);
 
   } catch (error) {
     console.error('Error in OAuth callback:', error);
@@ -138,7 +148,8 @@ router.post('/refresh', async (req, res) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const jwtSecret = await getJwtSecret();
+    const decoded = jwt.verify(token, jwtSecret);
 
     // Get user from database
     const user = await database.getUser(decoded.userId);
@@ -187,7 +198,7 @@ router.post('/refresh', async (req, res) => {
       tokenExpiry: newTokenExpiry
     });
 
-    res.json({ 
+    res.json({
       message: 'Token refreshed successfully',
       expiresAt: newTokenExpiry
     });
@@ -210,7 +221,8 @@ router.get('/me', async (req, res) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const jwtSecret = await getJwtSecret();
+    const decoded = jwt.verify(token, jwtSecret);
 
     const user = await database.getUser(decoded.userId);
     if (!user) {

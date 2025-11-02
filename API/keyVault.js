@@ -17,14 +17,19 @@ class KeyVault {
    */
   async initialize() {
     const keyVaultName = process.env.AZURE_KEYVAULT_NAME;
-    
+
     if (keyVaultName) {
       try {
         const vaultUrl = `https://${keyVaultName}.vault.azure.net`;
-        const credential = new DefaultAzureCredential();
+
+        // Use User Assigned Managed Identity with specific client ID
+        const credential = new DefaultAzureCredential({
+          managedIdentityClientId: 'b72c3d28-61d4-4c35-bac8-5e4928de2c7e'
+        });
+
         this.client = new SecretClient(vaultUrl, credential);
         this.useKeyVault = true;
-        console.log('✅ Connected to Azure Key Vault');
+        console.log('✅ Connected to Azure Key Vault with User Assigned Managed Identity');
       } catch (error) {
         console.warn('⚠️  Failed to connect to Key Vault, using environment variables:', error.message);
         this.useKeyVault = false;
