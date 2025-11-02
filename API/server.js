@@ -39,7 +39,7 @@ app.use(cookieParser());
 
 // Serve static frontend files
 const path = require('path');
-const frontendPath = process.env.NODE_ENV === 'production' 
+const frontendPath = process.env.NODE_ENV === 'production'
   ? path.join(__dirname, 'frontend')
   : path.join(__dirname, '..', 'modern-frontend', 'dist');
 app.use(express.static(frontendPath));
