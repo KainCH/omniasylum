@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/users', requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
-    
+
     // Don't send sensitive data
     const sanitizedUsers = users.map(user => ({
       userId: user.twitchUserId,
@@ -43,13 +43,13 @@ router.get('/users', requireAdmin, async (req, res) => {
 router.get('/users/:userId', requireAdmin, async (req, res) => {
   try {
     const user = await database.getUser(req.params.userId);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     const counters = await database.getCounters(req.params.userId);
-    
+
     res.json({
       user: {
         userId: user.twitchUserId,
@@ -78,13 +78,13 @@ router.get('/users/:userId', requireAdmin, async (req, res) => {
 router.put('/users/:userId/features', requireAdmin, async (req, res) => {
   try {
     const { features } = req.body;
-    
+
     if (!features || typeof features !== 'object') {
       return res.status(400).json({ error: 'Invalid features object' });
     }
 
     const updatedUser = await database.updateUserFeatures(req.params.userId, features);
-    
+
     res.json({
       message: 'Features updated successfully',
       user: {
@@ -106,13 +106,13 @@ router.put('/users/:userId/features', requireAdmin, async (req, res) => {
 router.put('/users/:userId/status', requireAdmin, async (req, res) => {
   try {
     const { isActive } = req.body;
-    
+
     if (typeof isActive !== 'boolean') {
       return res.status(400).json({ error: 'isActive must be a boolean' });
     }
 
     const updatedUser = await database.updateUserStatus(req.params.userId, isActive);
-    
+
     res.json({
       message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
       user: {
@@ -134,7 +134,7 @@ router.put('/users/:userId/status', requireAdmin, async (req, res) => {
 router.get('/stats', requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
-    
+
     const stats = {
       totalUsers: users.length,
       activeUsers: users.filter(u => u.isActive !== false).length,
@@ -178,7 +178,7 @@ router.delete('/users/:userId', requireAdmin, async (req, res) => {
   try {
     // Prevent deleting admin accounts
     const user = await database.getUser(req.params.userId);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -188,7 +188,7 @@ router.delete('/users/:userId', requireAdmin, async (req, res) => {
     }
 
     await database.deleteUser(req.params.userId);
-    
+
     res.json({
       message: 'User deleted successfully',
       userId: req.params.userId
@@ -196,6 +196,59 @@ router.delete('/users/:userId', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+/**
+ * Manually add a new user (admin only)
+ * POST /api/admin/users
+ */
+router.post('/users', requireAdmin, async (req, res) => {
+  try {
+    const { username, displayName, email, twitchUserId } = req.body;
+
+    if (!username || !twitchUserId) {
+      return res.status(400).json({ error: 'Username and Twitch User ID are required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await database.getUser(twitchUserId);
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    // Create user with default values
+    const userData = {
+      twitchUserId,
+      username: username.toLowerCase(),
+      displayName: displayName || username,
+      email: email || '',
+      profileImageUrl: '',
+      accessToken: '', // Will need to be set via OAuth
+      refreshToken: '', // Will need to be set via OAuth
+      tokenExpiry: new Date().toISOString(),
+      role: username.toLowerCase() === 'riress' ? 'admin' : 'streamer',
+      isActive: true
+    };
+
+    const newUser = await database.saveUser(userData);
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        userId: newUser.twitchUserId,
+        username: newUser.username,
+        displayName: newUser.displayName,
+        email: newUser.email,
+        role: newUser.role,
+        features: typeof newUser.features === 'string' ? JSON.parse(newUser.features) : newUser.features,
+        isActive: newUser.isActive,
+        createdAt: newUser.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 
