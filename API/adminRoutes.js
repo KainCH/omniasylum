@@ -1,6 +1,6 @@
 const express = require('express');
 const database = require('./database');
-const { requireAdmin } = require('./authMiddleware');
+const { requireAuth, requireAdmin } = require('./authMiddleware');
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ const router = express.Router();
  * Get all users
  * GET /api/admin/users
  */
-router.get('/users', requireAdmin, async (req, res) => {
+router.get('/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
@@ -40,7 +40,7 @@ router.get('/users', requireAdmin, async (req, res) => {
  * Get specific user details
  * GET /api/admin/users/:userId
  */
-router.get('/users/:userId', requireAdmin, async (req, res) => {
+router.get('/users/:userId', requireAuth, requireAdmin, async (req, res) => {
   try {
     const user = await database.getUser(req.params.userId);
 
@@ -75,7 +75,7 @@ router.get('/users/:userId', requireAdmin, async (req, res) => {
  * Update user features
  * PUT /api/admin/users/:userId/features
  */
-router.put('/users/:userId/features', requireAdmin, async (req, res) => {
+router.put('/users/:userId/features', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { features } = req.body;
 
@@ -103,7 +103,7 @@ router.put('/users/:userId/features', requireAdmin, async (req, res) => {
  * Enable/disable user account
  * PUT /api/admin/users/:userId/status
  */
-router.put('/users/:userId/status', requireAdmin, async (req, res) => {
+router.put('/users/:userId/status', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { isActive } = req.body;
 
@@ -131,7 +131,7 @@ router.put('/users/:userId/status', requireAdmin, async (req, res) => {
  * Get system statistics
  * GET /api/admin/stats
  */
-router.get('/stats', requireAdmin, async (req, res) => {
+router.get('/stats', requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
@@ -174,7 +174,7 @@ router.get('/stats', requireAdmin, async (req, res) => {
  * Delete user account (use with caution)
  * DELETE /api/admin/users/:userId
  */
-router.delete('/users/:userId', requireAdmin, async (req, res) => {
+router.delete('/users/:userId', requireAuth, requireAdmin, async (req, res) => {
   try {
     // Prevent deleting admin accounts
     const user = await database.getUser(req.params.userId);
@@ -203,7 +203,7 @@ router.delete('/users/:userId', requireAdmin, async (req, res) => {
  * Manually add a new user (admin only)
  * POST /api/admin/users
  */
-router.post('/users', requireAdmin, async (req, res) => {
+router.post('/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, displayName, email, twitchUserId } = req.body;
 
@@ -253,10 +253,51 @@ router.post('/users', requireAdmin, async (req, res) => {
 });
 
 /**
+ * Get stream sessions for all users
+ * GET /api/admin/streams
+ */
+router.get('/streams', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await database.getAllUsers();
+    const streamSessions = [];
+
+    for (const user of users) {
+      try {
+        const counters = await database.getCounters(user.twitchUserId);
+        const currentSession = await database.getCurrentStreamSession(user.twitchUserId);
+
+        streamSessions.push({
+          userId: user.twitchUserId,
+          username: user.username,
+          displayName: user.displayName,
+          isStreaming: !!currentSession,
+          streamStartTime: currentSession?.startTime || null,
+          sessionBits: counters.bits || 0,
+          sessionDeaths: counters.deaths || 0,
+          sessionSwears: counters.swears || 0,
+          streamSettings: await database.getStreamSettings(user.twitchUserId)
+        });
+      } catch (error) {
+        console.error(`Error getting stream data for ${user.username}:`, error);
+        // Continue with other users
+      }
+    }
+
+    res.json({
+      sessions: streamSessions,
+      totalActive: streamSessions.filter(s => s.isStreaming).length
+    });
+  } catch (error) {
+    console.error('Error fetching stream sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch stream sessions' });
+  }
+});
+
+/**
  * Available features configuration
  * GET /api/admin/features
  */
-router.get('/features', requireAdmin, async (req, res) => {
+router.get('/features', requireAuth, requireAdmin, async (req, res) => {
   res.json({
     features: [
       {

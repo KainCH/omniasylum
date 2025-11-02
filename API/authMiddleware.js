@@ -130,23 +130,26 @@ async function verifySocketAuth(socket, next) {
 
 /**
  * Middleware to verify user is an admin
+ * Note: This middleware expects that requireAuth has already been applied
  */
 async function requireAdmin(req, res, next) {
   try {
-    // First check authentication
-    await requireAuth(req, res, async () => {
-      // Check if user is admin
-      const user = await database.getUser(req.user.userId);
+    // Check if user is already authenticated (should be set by requireAuth middleware)
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
-      if (!user || user.role !== 'admin') {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Admin access required'
-        });
-      }
+    // Check if user is admin
+    const user = await database.getUser(req.user.userId);
 
-      next();
-    });
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Admin access required'
+      });
+    }
+
+    next();
   } catch (error) {
     console.error('Admin middleware error:', error);
     res.status(500).json({ error: 'Authorization failed' });
