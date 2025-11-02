@@ -96,6 +96,26 @@ class MultiTenantTwitchService extends EventEmitter {
         this.handleChatMessage(userId, channel, username, message, msg);
       });
 
+      // Handle bits (cheers) - requires channel:read:subscriptions scope
+      chatClient.onCheer((channel, username, message, msg) => {
+        this.handleBitsEvent(userId, channel, username, message, msg);
+      });
+
+      // Handle subscriber events
+      chatClient.onSub((channel, username, subInfo, msg) => {
+        this.handleSubscriberEvent(userId, channel, username, subInfo, msg);
+      });
+
+      // Handle resub events
+      chatClient.onResub((channel, username, months, message, subInfo, msg) => {
+        this.handleResubEvent(userId, channel, username, months, message, subInfo, msg);
+      });
+
+      // Handle gifted subs
+      chatClient.onSubGift((channel, username, recipient, subInfo, msg) => {
+        this.handleGiftSubEvent(userId, channel, username, recipient, subInfo, msg);
+      });
+
       // Connect to chat
       await chatClient.connect();
 
@@ -163,10 +183,170 @@ class MultiTenantTwitchService extends EventEmitter {
       this.emit('decrementSwears', { userId, username });
     } else if (text === '!resetcounters') {
       this.emit('resetCounters', { userId, username });
+    } else if (text === '!startstream') {
+      this.emit('startStream', { userId, username });
+    } else if (text === '!endstream') {
+      this.emit('endStream', { userId, username });
+    } else if (text === '!resetbits') {
+      this.emit('resetBits', { userId, username });
     }
   }
 
   /**
+   * Handle bits (cheers) events
+   */
+  async handleBitsEvent(userId, channel, username, message, msg) {
+    try {
+      // Check if user has bits integration enabled
+      const hasBitsFeature = await database.hasFeature(userId, 'bitsIntegration');
+      if (!hasBitsFeature) {
+        return;
+      }
+
+      const bitsAmount = msg.bits;
+      if (!bitsAmount || bitsAmount <= 0) {
+        return;
+      }
+
+      console.log(`💎 ${username} cheered ${bitsAmount} bits in ${channel}`);
+
+      // Get stream settings for thresholds
+      const streamSettings = await database.getStreamSettings(userId);
+      const thresholds = streamSettings.bitThresholds;
+
+      // Add to bits counter
+      await database.addBits(userId, bitsAmount);
+
+      // Emit bits event for overlay and tracking
+      this.emit('bitsReceived', {
+        userId,
+        username,
+        channel,
+        amount: bitsAmount,
+        message: message,
+        timestamp: new Date(),
+        thresholds: thresholds
+      });
+
+      // Check if bits meet counter thresholds (optional feature)
+      const hasAutoIncrement = streamSettings.autoIncrementCounters || false;
+      if (hasAutoIncrement) {
+        if (bitsAmount >= thresholds.death) {
+          this.emit('incrementDeaths', {
+            userId,
+            username: `${username} (${bitsAmount} bits)`,
+            source: 'bits'
+          });
+        } else if (bitsAmount >= thresholds.swear) {
+          this.emit('incrementSwears', {
+            userId,
+            username: `${username} (${bitsAmount} bits)`,
+            source: 'bits'
+          });
+        }
+      }
+
+      // Send thank you message in chat (if enabled)
+      const shouldRespond = bitsAmount >= thresholds.celebration;
+      if (shouldRespond) {
+        const responses = [
+          `Thanks for the ${bitsAmount} bits, ${username}! 💎`,
+          `${username} just dropped ${bitsAmount} bits! Much appreciated! ✨`,
+          `Woah! ${bitsAmount} bits from ${username}! You're awesome! 🎉`
+        ];
+
+        const response = responses[Math.floor(Math.random() * responses.length)];
+        await this.sendMessage(userId, response);
+      }
+
+    } catch (error) {
+      console.error(`❌ Error handling bits event for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Handle new subscriber events
+   */
+  async handleSubscriberEvent(userId, channel, username, subInfo, msg) {
+    try {
+      console.log(`🎉 New subscriber: ${username} in ${channel}`);
+
+      // Emit subscriber event for celebration effects
+      this.emit('newSubscriber', {
+        userId,
+        username,
+        channel,
+        tier: subInfo.plan,
+        timestamp: new Date()
+      });
+
+      // Send congratulations message
+      const responses = [
+        `Welcome to the squad, ${username}! Thanks for subscribing! 🎉`,
+        `${username} just joined the family! Welcome aboard! 🚀`,
+        `New subscriber ${username}! You're awesome! 💜`
+      ];
+
+      const response = responses[Math.floor(Math.random() * responses.length)];
+      await this.sendMessage(userId, response);
+
+    } catch (error) {
+      console.error(`❌ Error handling subscriber event for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Handle resub events
+   */
+  async handleResubEvent(userId, channel, username, months, message, subInfo, msg) {
+    try {
+      console.log(`🎉 Resub: ${username} (${months} months) in ${channel}`);
+
+      // Emit resub event
+      this.emit('resub', {
+        userId,
+        username,
+        channel,
+        months: months,
+        message: message,
+        tier: subInfo.plan,
+        timestamp: new Date()
+      });
+
+      // Send congratulations message
+      const response = `${username} has been subscribed for ${months} months! Thanks for the continued support! 💜`;
+      await this.sendMessage(userId, response);
+
+    } catch (error) {
+      console.error(`❌ Error handling resub event for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Handle gifted sub events
+   */
+  async handleGiftSubEvent(userId, channel, username, recipient, subInfo, msg) {
+    try {
+      console.log(`🎁 Gift sub: ${username} gifted to ${recipient} in ${channel}`);
+
+      // Emit gift sub event
+      this.emit('giftSub', {
+        userId,
+        gifter: username,
+        recipient: recipient,
+        channel,
+        tier: subInfo.plan,
+        timestamp: new Date()
+      });
+
+      // Send thank you message
+      const response = `${username} just gifted a sub to ${recipient}! What a legend! 🎁💜`;
+      await this.sendMessage(userId, response);
+
+    } catch (error) {
+      console.error(`❌ Error handling gift sub event for user ${userId}:`, error);
+    }
+  }  /**
    * Send a message to a user's chat
    */
   async sendMessage(userId, message) {
@@ -195,7 +375,7 @@ class MultiTenantTwitchService extends EventEmitter {
       if (!user) return null;
 
       const stream = await client.apiClient.streams.getStreamByUserId(user.id);
-      
+
       return stream ? {
         isLive: true,
         title: stream.title,

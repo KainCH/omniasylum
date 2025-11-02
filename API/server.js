@@ -11,6 +11,8 @@ const twitchService = require('./multiTenantTwitchService');
 const authRoutes = require('./authRoutes');
 const counterRoutes = require('./counterRoutes');
 const adminRoutes = require('./adminRoutes');
+const overlayRoutes = require('./overlayRoutes');
+const streamRoutes = require('./streamRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -72,6 +74,12 @@ app.use('/api/counters', counterRoutes);
 
 // Admin routes (requires admin role)
 app.use('/api/admin', adminRoutes);
+
+// Overlay routes (public for OBS browser sources)
+app.use('/overlay', overlayRoutes);
+
+// Stream management routes (requires authentication)
+app.use('/api/stream', streamRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
@@ -211,6 +219,139 @@ twitchService.on('resetCounters', async ({ userId, username }) => {
   }
 });
 
+// Handle stream management commands
+twitchService.on('startStream', async ({ userId, username }) => {
+  try {
+    const data = await database.startStream(userId);
+    io.to(`user:${userId}`).emit('streamStarted', data);
+    console.log(`🎬 Stream started by ${username}`);
+  } catch (error) {
+    console.error('Error handling stream start:', error);
+  }
+});
+
+twitchService.on('endStream', async ({ userId, username }) => {
+  try {
+    const data = await database.endStream(userId);
+    io.to(`user:${userId}`).emit('streamEnded', data);
+    console.log(`🎬 Stream ended by ${username}`);
+  } catch (error) {
+    console.error('Error handling stream end:', error);
+  }
+});
+
+twitchService.on('resetBits', async ({ userId, username }) => {
+  try {
+    const counters = await database.getCounters(userId);
+    const updated = await database.saveCounters(userId, {
+      ...counters,
+      bits: 0
+    });
+
+    io.to(`user:${userId}`).emit('counterUpdate', {
+      ...updated,
+      change: { deaths: 0, swears: 0, bits: -counters.bits }
+    });
+    console.log(`💎 Bits counter reset by ${username}`);
+  } catch (error) {
+    console.error('Error handling bits reset:', error);
+  }
+});
+
+// Handle bits events
+twitchService.on('bitsReceived', async ({ userId, username, channel, amount, message, timestamp, thresholds }) => {
+  try {
+    console.log(`💎 Bits received: ${amount} from ${username} in ${channel}`);
+
+    // Get updated counters including new bits
+    const counters = await database.getCounters(userId);
+
+    // Broadcast to overlay and connected clients
+    io.to(`user:${userId}`).emit('bitsReceived', {
+      userId,
+      username,
+      amount,
+      message,
+      timestamp,
+      thresholds,
+      totalBits: counters.bits
+    });
+
+    // Broadcast counter update with new bits total
+    io.to(`user:${userId}`).emit('counterUpdate', {
+      userId,
+      counters: counters,
+      change: { deaths: 0, swears: 0, bits: amount }
+    });
+
+    // Log to database if analytics feature is enabled
+    const hasAnalytics = await database.hasFeature(userId, 'analytics');
+    if (hasAnalytics) {
+      console.log(`📊 Analytics: ${username} donated ${amount} bits (total: ${counters.bits})`);
+    }
+
+  } catch (error) {
+    console.error('Error handling bits event:', error);
+  }
+});
+
+// Handle subscriber events
+twitchService.on('newSubscriber', async ({ userId, username, channel, tier, timestamp }) => {
+  try {
+    console.log(`🎉 New subscriber: ${username} (tier ${tier}) in ${channel}`);
+
+    // Broadcast to overlay and connected clients
+    io.to(`user:${userId}`).emit('newSubscriber', {
+      userId,
+      username,
+      tier,
+      timestamp
+    });
+
+  } catch (error) {
+    console.error('Error handling subscriber event:', error);
+  }
+});
+
+// Handle resub events
+twitchService.on('resub', async ({ userId, username, channel, months, message, tier, timestamp }) => {
+  try {
+    console.log(`🎉 Resub: ${username} (${months} months, tier ${tier}) in ${channel}`);
+
+    // Broadcast to overlay and connected clients
+    io.to(`user:${userId}`).emit('resub', {
+      userId,
+      username,
+      months,
+      message,
+      tier,
+      timestamp
+    });
+
+  } catch (error) {
+    console.error('Error handling resub event:', error);
+  }
+});
+
+// Handle gift sub events
+twitchService.on('giftSub', async ({ userId, gifter, recipient, channel, tier, timestamp }) => {
+  try {
+    console.log(`🎁 Gift sub: ${gifter} -> ${recipient} (tier ${tier}) in ${channel}`);
+
+    // Broadcast to overlay and connected clients
+    io.to(`user:${userId}`).emit('giftSub', {
+      userId,
+      gifter,
+      recipient,
+      tier,
+      timestamp
+    });
+
+  } catch (error) {
+    console.error('Error handling gift sub event:', error);
+  }
+});
+
 // Handle public commands (anyone can use)
 twitchService.on('publicCommand', async ({ userId, channel, username, command }) => {
   try {
@@ -261,6 +402,7 @@ async function startServer() {
       console.log('╠════════════════════════════════════════════════════════╣');
       console.log(`║  API:           http://localhost:${PORT}/api/health`.padEnd(56) + '║');
       console.log(`║  Auth:          http://localhost:${PORT}/auth/twitch`.padEnd(56) + '║');
+      console.log(`║  Overlay:       http://localhost:${PORT}/overlay/{userId}`.padEnd(56) + '║');
       console.log(`║  WebSocket:     ws://localhost:${PORT}`.padEnd(56) + '║');
       console.log('╚════════════════════════════════════════════════════════╝');
       console.log('');

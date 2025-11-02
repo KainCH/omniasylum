@@ -14,7 +14,7 @@ data/
 *.json
 
 # IDE
-.vscode/
+!.vscode/
 .idea/
 *.swp
 *.swo

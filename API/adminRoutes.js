@@ -294,6 +294,24 @@ router.get('/features', requireAdmin, async (req, res) => {
         name: 'Webhook Integration',
         description: 'Send counter updates to external services via webhooks',
         defaultEnabled: false
+      },
+      {
+        id: 'bitsIntegration',
+        name: 'Bits Celebrations',
+        description: 'Show celebration effects and thank you messages for bit donations (does not auto-increment counters)',
+        defaultEnabled: false
+      },
+      {
+        id: 'streamOverlay',
+        name: 'Stream Overlay',
+        description: 'Display counters as browser source overlay in OBS/streaming software',
+        defaultEnabled: false
+      },
+      {
+        id: 'alertAnimations',
+        name: 'Alert Animations',
+        description: 'Show animated pop-ups when counters change during stream',
+        defaultEnabled: false
       }
     ]
   });

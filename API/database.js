@@ -15,7 +15,7 @@ class Database {
     this.localDataDir = path.join(__dirname, 'data');
     this.localUsersFile = path.join(this.localDataDir, 'users.json');
     this.localCountersFile = path.join(this.localDataDir, 'counters.json');
-    
+
     this.initialize();
   }
 
@@ -37,7 +37,7 @@ class Database {
     try {
       const accountName = process.env.AZURE_STORAGE_ACCOUNT;
       const accountKey = process.env.AZURE_STORAGE_KEY;
-      
+
       if (!accountName || !accountKey) {
         console.log('⚠️  Azure Storage credentials not configured, falling back to local storage');
         this.mode = 'local';
@@ -117,7 +117,10 @@ class Database {
       autoClip: false,
       customCommands: false,
       analytics: false,
-      webhooks: false
+      webhooks: false,
+      bitsIntegration: false,
+      streamOverlay: false,
+      alertAnimations: false
     };
 
     const user = {
@@ -174,17 +177,31 @@ class Database {
         return {
           deaths: entity.deaths || 0,
           swears: entity.swears || 0,
-          lastUpdated: entity.lastUpdated
+          bits: entity.bits || 0,
+          lastUpdated: entity.lastUpdated,
+          streamStarted: entity.streamStarted || null
         };
       } catch (error) {
         if (error.statusCode === 404) {
-          return { deaths: 0, swears: 0, lastUpdated: new Date().toISOString() };
+          return {
+            deaths: 0,
+            swears: 0,
+            bits: 0,
+            lastUpdated: new Date().toISOString(),
+            streamStarted: null
+          };
         }
         throw error;
       }
     } else {
       const counters = JSON.parse(fs.readFileSync(this.localCountersFile, 'utf8'));
-      return counters[twitchUserId] || { deaths: 0, swears: 0, lastUpdated: new Date().toISOString() };
+      return counters[twitchUserId] || {
+        deaths: 0,
+        swears: 0,
+        bits: 0,
+        lastUpdated: new Date().toISOString(),
+        streamStarted: null
+      };
     }
   }
 
@@ -197,6 +214,8 @@ class Database {
       rowKey: 'counters',
       deaths: counterData.deaths || 0,
       swears: counterData.swears || 0,
+      bits: counterData.bits || 0,
+      streamStarted: counterData.streamStarted || null,
       lastUpdated: new Date().toISOString()
     };
 
@@ -215,47 +234,157 @@ class Database {
    * Increment death counter
    */
   async incrementDeaths(twitchUserId) {
-    const counters = await this.getCounters(twitchUserId);
-    counters.deaths += 1;
-    return await this.saveCounters(twitchUserId, counters);
+    const oldCounters = await this.getCounters(twitchUserId);
+    const newCounters = { ...oldCounters, deaths: oldCounters.deaths + 1 };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 1, swears: 0 }
+    };
   }
 
   /**
    * Decrement death counter
    */
   async decrementDeaths(twitchUserId) {
-    const counters = await this.getCounters(twitchUserId);
-    if (counters.deaths > 0) {
-      counters.deaths -= 1;
-    }
-    return await this.saveCounters(twitchUserId, counters);
+    const oldCounters = await this.getCounters(twitchUserId);
+    const change = oldCounters.deaths > 0 ? -1 : 0;
+    const newCounters = { ...oldCounters, deaths: Math.max(0, oldCounters.deaths - 1) };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: change, swears: 0 }
+    };
   }
 
   /**
    * Increment swear counter
    */
   async incrementSwears(twitchUserId) {
-    const counters = await this.getCounters(twitchUserId);
-    counters.swears += 1;
-    return await this.saveCounters(twitchUserId, counters);
+    const oldCounters = await this.getCounters(twitchUserId);
+    const newCounters = { ...oldCounters, swears: oldCounters.swears + 1 };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 1 }
+    };
   }
 
   /**
    * Decrement swear counter
    */
   async decrementSwears(twitchUserId) {
-    const counters = await this.getCounters(twitchUserId);
-    if (counters.swears > 0) {
-      counters.swears -= 1;
-    }
-    return await this.saveCounters(twitchUserId, counters);
+    const oldCounters = await this.getCounters(twitchUserId);
+    const change = oldCounters.swears > 0 ? -1 : 0;
+    const newCounters = { ...oldCounters, swears: Math.max(0, oldCounters.swears - 1) };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: change }
+    };
   }
 
   /**
    * Reset all counters
    */
   async resetCounters(twitchUserId) {
-    return await this.saveCounters(twitchUserId, { deaths: 0, swears: 0 });
+    const oldCounters = await this.getCounters(twitchUserId);
+    const saved = await this.saveCounters(twitchUserId, {
+      deaths: 0,
+      swears: 0,
+      bits: oldCounters.bits, // Keep bits counter
+      streamStarted: oldCounters.streamStarted
+    });
+
+    return {
+      ...saved,
+      change: { deaths: -oldCounters.deaths, swears: -oldCounters.swears, bits: 0 }
+    };
+  }
+
+  /**
+   * Add bits to counter
+   */
+  async addBits(twitchUserId, amount) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const newCounters = {
+      ...oldCounters,
+      bits: oldCounters.bits + amount
+    };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, bits: amount }
+    };
+  }
+
+  /**
+   * Start a new stream session (resets bits counter)
+   */
+  async startStream(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const saved = await this.saveCounters(twitchUserId, {
+      ...oldCounters,
+      bits: 0,
+      streamStarted: new Date().toISOString()
+    });
+
+    console.log(`🎬 Stream started for user ${twitchUserId} - bits counter reset`);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, bits: -oldCounters.bits }
+    };
+  }
+
+  /**
+   * End stream session
+   */
+  async endStream(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const saved = await this.saveCounters(twitchUserId, {
+      ...oldCounters,
+      streamStarted: null
+    });
+
+    console.log(`🎬 Stream ended for user ${twitchUserId}`);
+    return saved;
+  }
+
+  /**
+   * Get/Set stream settings for bits thresholds
+   */
+  async getStreamSettings(twitchUserId) {
+    // For now, store in user features, but could be separate table
+    const user = await this.getUser(twitchUserId);
+    if (!user) return null;
+
+    const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+    return features.streamSettings || {
+      bitThresholds: {
+        death: 100,    // bits needed to increment death counter
+        swear: 50,     // bits needed to increment swear counter
+        celebration: 10 // minimum bits for celebration effect
+      },
+      autoStartStream: false, // automatically detect stream start
+      resetOnStreamStart: true // reset bits when stream starts
+    };
+  }
+
+  async updateStreamSettings(twitchUserId, settings) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) throw new Error('User not found');
+
+    const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+    features.streamSettings = settings;
+
+    user.features = JSON.stringify(features);
+    return await this.saveUser(user);
   }
 
   // ==================== ADMIN OPERATIONS ====================

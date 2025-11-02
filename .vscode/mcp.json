@@ -8,15 +8,16 @@
         "c:\\Game Data\\Coding Projects\\doc-omni"
       ]
     },
-    "github": {
+    "sequential-thinking": {
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-github"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}"
-      }
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
     }
   }
 }
