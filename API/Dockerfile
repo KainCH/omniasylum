@@ -13,8 +13,11 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy application files
 COPY *.js ./
 
-# Create data directory
-RUN mkdir -p /app/data
+# Copy built frontend
+COPY frontend/ ./frontend/
+
+# Create data directory and set ownership
+RUN mkdir -p /app/data && chown -R node:node /app/data
 
 # Set environment to production
 ENV NODE_ENV=production

@@ -1,67 +1,149 @@
 // Configuration
-const COMMAND_STORAGE_KEY = 'streamCounter_command';
-const UPDATE_STORAGE_KEY = 'streamCounter_update';
-let lastProcessedCommand = null;
+let socket = null;
+let isAuthenticated = false;
+let connectionStatus = 'disconnected';
 
-// Initialize counters from localStorage
-let deathCount = localStorage.getItem('deathCount') ? parseInt(localStorage.getItem('deathCount')) : 0;
-let swearsCount = localStorage.getItem('swearsCount') ? parseInt(localStorage.getItem('swearsCount')) : 0;
+// Counter state
+let deathCount = 0;
+let swearsCount = 0;
 
-// Initialize UI
-updateDisplay();
+// Initialize the application
+init();
 
-// Listen for commands from mobile control
-window.addEventListener('storage', (e) => {
-    if (e.key === COMMAND_STORAGE_KEY && e.newValue) {
-        try {
-            const commandData = JSON.parse(e.newValue);
-            if (commandData.id !== lastProcessedCommand) {
-                processRemoteCommand(commandData.command);
-                lastProcessedCommand = commandData.id;
-            }
-        } catch (error) {
-            console.error('Error processing remote command:', error);
+async function init() {
+    // Check if user is authenticated
+    try {
+        const response = await fetch('/api/health');
+        if (response.ok) {
+            console.log('✅ Server connection established');
+            checkAuth();
         }
+    } catch (error) {
+        console.error('❌ Failed to connect to server:', error);
+        showAuthPrompt();
     }
-});
+}
 
-// Check for commands periodically (fallback for same-window updates)
-setInterval(checkForRemoteCommands, 500);
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/counters', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ User authenticated');
+            isAuthenticated = true;
+            initializeSocket();
+            updateCountersFromData(data);
+        } else if (response.status === 401) {
+            console.log('🔐 User not authenticated');
+            showAuthPrompt();
+        }
+    } catch (error) {
+        console.error('❌ Auth check failed:', error);
+        showAuthPrompt();
+    }
+}
+
+function showAuthPrompt() {
+    document.body.innerHTML = `
+        <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+            <h1>🎮 OmniForgeStream Counter</h1>
+            <p>Please log in with your Twitch account to use the stream counter.</p>
+            <button onclick="window.location.href='/auth/twitch'"
+                    style="padding: 15px 30px; font-size: 18px; background: #9146ff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Login with Twitch
+            </button>
+        </div>
+    `;
+}
+
+function initializeSocket() {
+    // Connect to WebSocket
+    socket = io('/', {
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+        console.log('✅ WebSocket connected');
+        connectionStatus = 'connected';
+        updateConnectionStatus();
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ WebSocket disconnected');
+        connectionStatus = 'disconnected';
+        updateConnectionStatus();
+    });
+
+    socket.on('counterUpdate', (data) => {
+        console.log('📊 Counter update received:', data);
+        updateCountersFromData(data);
+    });
+
+    socket.on('error', (error) => {
+        console.error('❌ Socket error:', error);
+    });
+}
+
+function updateConnectionStatus() {
+    // This could update a status indicator if we add one to the UI
+    console.log(`Connection status: ${connectionStatus}`);
+}
+
+function updateCountersFromData(data) {
+    if (data) {
+        deathCount = data.deaths || 0;
+        swearsCount = data.swears || 0;
+        updateDisplay();
+    }
+}
 
 // Death counter functions
 function incrementDeaths() {
-    deathCount++;
-    saveAndUpdate();
-    playSound('death');
+    if (socket && socket.connected) {
+        socket.emit('incrementDeaths');
+        playSound('death');
+    } else {
+        console.error('❌ Not connected to server');
+    }
 }
 
 function decrementDeaths() {
-    if (deathCount > 0) {
-        deathCount--;
-        saveAndUpdate();
+    if (socket && socket.connected) {
+        socket.emit('decrementDeaths');
+    } else {
+        console.error('❌ Not connected to server');
     }
 }
 
 // Swears counter functions
 function incrementSwears() {
-    swearsCount++;
-    saveAndUpdate();
-    playSound('swear');
+    if (socket && socket.connected) {
+        socket.emit('incrementSwears');
+        playSound('swear');
+    } else {
+        console.error('❌ Not connected to server');
+    }
 }
 
 function decrementSwears() {
-    if (swearsCount > 0) {
-        swearsCount--;
-        saveAndUpdate();
+    if (socket && socket.connected) {
+        socket.emit('decrementSwears');
+    } else {
+        console.error('❌ Not connected to server');
     }
 }
 
 // Reset all counters
 function resetCounters() {
     if (confirm('Are you sure you want to reset all counters?')) {
-        deathCount = 0;
-        swearsCount = 0;
-        saveAndUpdate();
+        if (socket && socket.connected) {
+            socket.emit('resetCounters');
+        } else {
+            console.error('❌ Not connected to server');
+        }
     }
 }
 
@@ -73,7 +155,7 @@ function exportData() {
         total: deathCount + swearsCount,
         timestamp: new Date().toLocaleString()
     };
-    
+
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -84,22 +166,17 @@ function exportData() {
     URL.revokeObjectURL(url);
 }
 
-// Save to localStorage and update display
-function saveAndUpdate() {
-    localStorage.setItem('deathCount', deathCount);
-    localStorage.setItem('swearsCount', swearsCount);
-    localStorage.setItem('lastUpdated', new Date().toLocaleTimeString());
-    updateDisplay();
-}
-
 // Update all display elements
 function updateDisplay() {
-    document.getElementById('deathCount').textContent = deathCount;
-    document.getElementById('swearsCount').textContent = swearsCount;
-    document.getElementById('totalEvents').textContent = deathCount + swearsCount;
-    
-    const lastUpdated = localStorage.getItem('lastUpdated');
-    document.getElementById('lastUpdated').textContent = lastUpdated || 'Never';
+    const deathElement = document.getElementById('deathCount');
+    const swearsElement = document.getElementById('swearsCount');
+    const totalElement = document.getElementById('totalEvents');
+    const updatedElement = document.getElementById('lastUpdated');
+
+    if (deathElement) deathElement.textContent = deathCount;
+    if (swearsElement) swearsElement.textContent = swearsCount;
+    if (totalElement) totalElement.textContent = deathCount + swearsCount;
+    if (updatedElement) updatedElement.textContent = new Date().toLocaleTimeString();
 }
 
 // Play sound on increment (optional)
@@ -108,10 +185,10 @@ function playSound(type) {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
-    
+
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
-    
+
     if (type === 'death') {
         oscillator.frequency.value = 200;
         gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
@@ -127,63 +204,13 @@ function playSound(type) {
     }
 }
 
-// Process commands from mobile control
-function processRemoteCommand(command) {
-    switch (command) {
-        case 'incrementDeaths':
-            incrementDeaths();
-            break;
-        case 'decrementDeaths':
-            decrementDeaths();
-            break;
-        case 'incrementSwears':
-            incrementSwears();
-            break;
-        case 'decrementSwears':
-            decrementSwears();
-            break;
-        case 'resetCounters':
-            // Reset without confirmation when triggered remotely
-            deathCount = 0;
-            swearsCount = 0;
-            saveAndUpdate();
-            break;
-    }
-    
-    // Notify mobile control of update
-    notifyMobileControl();
-}
-
-// Check for pending commands (fallback mechanism)
-function checkForRemoteCommands() {
-    try {
-        const commandStr = localStorage.getItem(COMMAND_STORAGE_KEY);
-        if (commandStr) {
-            const commandData = JSON.parse(commandStr);
-            if (commandData.id !== lastProcessedCommand) {
-                processRemoteCommand(commandData.command);
-                lastProcessedCommand = commandData.id;
-            }
-        }
-    } catch (error) {
-        console.error('Error checking remote commands:', error);
-    }
-}
-
-// Notify mobile control of updates
-function notifyMobileControl() {
-    try {
-        localStorage.setItem(UPDATE_STORAGE_KEY, Date.now().toString());
-    } catch (error) {
-        console.error('Error notifying mobile control:', error);
-    }
-}
-
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
     if (e.key === 'd' || e.key === 'D') {
         incrementDeaths();
     } else if (e.key === 's' || e.key === 'S') {
         incrementSwears();
+    } else if (e.key === 'r' || e.key === 'R') {
+        resetCounters();
     }
 });

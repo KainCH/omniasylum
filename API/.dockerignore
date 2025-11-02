@@ -6,7 +6,8 @@ yarn-error.log*
 
 # Data files (should be in Azure Storage or mounted volume)
 data/
-*.json
+data/*.json
+!package*.json
 
 # Environment variables (use Azure Configuration or Key Vault)
 .env

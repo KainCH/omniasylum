@@ -21,10 +21,16 @@ param frontendUrl string
 var uniqueSuffix = uniqueString(resourceGroup().id)
 var containerAppName = '${baseName}-api-${environment}'
 var containerEnvName = '${baseName}-env-${environment}'
-var keyVaultName = '${baseName}-kv-${uniqueSuffix}'
-var storageAccountName = '${baseName}${uniqueSuffix}'
+var keyVaultName = 'forge-steel-vault'
+var storageAccountName = 'omni${uniqueSuffix}'
 var logAnalyticsName = '${baseName}-logs-${environment}'
 var appInsightsName = '${baseName}-insights-${environment}'
+var acrName = 'omniforgeacr'
+
+// Reference existing Azure Container Registry
+resource acrRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: acrName
+}
 
 // Log Analytics Workspace
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
@@ -65,19 +71,9 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
 }
 
 // Key Vault
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+// Reference existing Key Vault
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
-  location: location
-  properties: {
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    tenantId: subscription().tenantId
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 7
-  }
 }
 
 // Container Apps Environment
@@ -126,6 +122,12 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         ]
         transport: 'auto' // Supports both HTTP and WebSocket
       }
+      registries: [
+        {
+          server: acrRegistry.properties.loginServer
+          identity: userAssignedIdentity.id
+        }
+      ]
       secrets: []
     }
     template: {
@@ -220,6 +222,17 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3') // Storage Table Data Contributor
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role Assignment: Give User Assigned Managed Identity access to Container Registry
+resource acrRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acrRegistry.id, userAssignedIdentity.id, 'AcrPull')
+  scope: acrRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
     principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }

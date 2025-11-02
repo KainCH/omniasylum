@@ -37,15 +37,31 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+// Serve static frontend files
+const path = require('path');
+const frontendPath = process.env.NODE_ENV === 'production' 
+  ? path.join(__dirname, 'frontend')
+  : path.join(__dirname, '..', 'modern-frontend', 'dist');
+app.use(express.static(frontendPath));
+
 // Health check endpoint (unauthenticated)
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     keyVault: keyVault.isUsingKeyVault(),
     dbMode: process.env.DB_MODE || 'local'
   });
+});
+
+// Frontend routes
+app.get('/', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
+
+app.get('/mobile', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'mobile.html'));
 });
 
 // Authentication routes
@@ -59,7 +75,7 @@ app.use('/api/admin', adminRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
-  res.json({ 
+  res.json({
     initialized: true,
     connectedUsers: twitchService.getConnectedUsers().length
   });
@@ -200,7 +216,7 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
   try {
     const counters = await database.getCounters(userId);
     let message = '';
-    
+
     if (command === '!deaths') {
       message = `💀 Current deaths: ${counters.deaths}`;
     } else if (command === '!swears') {
@@ -209,7 +225,7 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       const total = counters.deaths + counters.swears;
       message = `📊 Stats - Deaths: ${counters.deaths} | Swears: ${counters.swears} | Total: ${total}`;
     }
-    
+
     if (message) {
       await twitchService.sendMessage(userId, message);
     }
@@ -225,13 +241,13 @@ async function startServer() {
   try {
     // Initialize Key Vault
     await keyVault.initialize();
-    
+
     // Initialize database
     await database.initialize();
-    
+
     // Initialize Twitch service
     await twitchService.initialize();
-    
+
     // Start HTTP server
     server.listen(PORT, () => {
       console.log('');
