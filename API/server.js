@@ -362,9 +362,20 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       message = `💀 Current deaths: ${counters.deaths}`;
     } else if (command === '!swears') {
       message = `🤬 Current swears: ${counters.swears}`;
+    } else if (command === '!bits') {
+      message = `💎 Current stream bits: ${counters.bits || 0}`;
     } else if (command === '!stats') {
       const total = counters.deaths + counters.swears;
       message = `📊 Stats - Deaths: ${counters.deaths} | Swears: ${counters.swears} | Total: ${total}`;
+    } else if (command === '!streamstats') {
+      // Get stream session info
+      const streamSession = await database.getCurrentStreamSession(userId);
+      if (streamSession) {
+        const duration = Math.floor((Date.now() - new Date(streamSession.startTime)) / 1000 / 60); // minutes
+        message = `🎮 Stream Stats - Duration: ${duration}min | Bits: ${counters.bits || 0} | Deaths: ${counters.deaths} | Swears: ${counters.swears}`;
+      } else {
+        message = `🎮 No active stream session. Use !startstream to begin!`;
+      }
     }
 
     if (message) {

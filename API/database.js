@@ -357,6 +357,23 @@ class Database {
   }
 
   /**
+   * Get current stream session if active
+   */
+  async getCurrentStreamSession(twitchUserId) {
+    const counters = await this.getCounters(twitchUserId);
+    if (counters.streamStarted) {
+      return {
+        startTime: counters.streamStarted,
+        isActive: true,
+        bits: counters.bits || 0,
+        deaths: counters.deaths,
+        swears: counters.swears
+      };
+    }
+    return null;
+  }
+
+  /**
    * Get/Set stream settings for bits thresholds
    */
   async getStreamSettings(twitchUserId) {

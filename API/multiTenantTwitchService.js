@@ -162,7 +162,7 @@ class MultiTenantTwitchService extends EventEmitter {
     const text = message.toLowerCase().trim();
 
     // Public commands (anyone can use)
-    if (text === '!deaths' || text === '!swears' || text === '!stats') {
+    if (text === '!deaths' || text === '!swears' || text === '!stats' || text === '!bits' || text === '!streamstats') {
       this.emit('publicCommand', { userId, channel, username, command: text });
       return;
     }

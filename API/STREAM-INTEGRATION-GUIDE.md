@@ -105,12 +105,22 @@ When a viewer donates bits in your chat:
 - `!swear+` or `!s+` - Increment swears
 - `!swear-` or `!s-` - Decrement swears
 - `!resetcounters` - Reset death/swear counters to zero
+
+### Stream Management Commands (Mods/Broadcaster Only)
+
 - `!startstream` - Start new stream session (resets bits counter)
 - `!endstream` - End current stream session
-- `!resetbits` - Reset bits counter to zero### Public Commands (Anyone)
+- `!resetbits` - Reset bits counter to zero
+
+**Note**: Both channel **moderators** and the **broadcaster** can use these management commands.
+
+### Public Commands (Anyone Can Use)
+
 - `!deaths` - Show current death count
 - `!swears` - Show current swear count
-- `!stats` - Show all stats
+- `!bits` - Show current stream bits count
+- `!stats` - Show death/swear stats summary
+- `!streamstats` - Show stream session info (duration, bits, counters)
 
 ### Overlay Features
 - **Real-time Updates**: Changes instantly when counters update
