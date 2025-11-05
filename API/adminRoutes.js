@@ -202,6 +202,36 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
       console.log(`✅ Overlay settings auto-enabled for ${updatedUser.username}`);
     }
 
+    // Handle chatCommands feature changes - start/stop Twitch bot
+    const wasChatEnabled = currentFeatures.chatCommands;
+    const isChatBeingEnabled = features.chatCommands && !wasChatEnabled;
+    const isChatBeingDisabled = !features.chatCommands && wasChatEnabled;
+
+    if (isChatBeingEnabled) {
+      console.log(`🤖 ChatCommands feature enabled for ${updatedUser.username}, starting Twitch bot...`);
+
+      // Import the Twitch service (need to require it here to avoid circular dependency)
+      const twitchService = require('./multiTenantTwitchService');
+
+      // Start the Twitch bot for this user
+      const success = await twitchService.connectUser(req.params.userId);
+
+      if (success) {
+        console.log(`✅ Twitch bot started for ${updatedUser.username}`);
+      } else {
+        console.log(`❌ Failed to start Twitch bot for ${updatedUser.username} - check auth tokens`);
+      }
+    } else if (isChatBeingDisabled) {
+      console.log(`🤖 ChatCommands feature disabled for ${updatedUser.username}, stopping Twitch bot...`);
+
+      // Import the Twitch service
+      const twitchService = require('./multiTenantTwitchService');
+
+      // Stop the Twitch bot for this user
+      await twitchService.disconnectUser(req.params.userId);
+      console.log(`✅ Twitch bot stopped for ${updatedUser.username}`);
+    }
+
     res.json({
       message: 'Features updated successfully',
       user: {
@@ -341,15 +371,55 @@ router.put('/users/:userId/role', requireAuth, requireAdmin, async (req, res) =>
  * Enable/disable user account
  * PUT /api/admin/users/:userId/status
  */
-router.put('/users/:userId/status', requireAuth, requireAdmin, async (req, res) => {
+router.put('/users/:userId/status', requireAuth, async (req, res) => {
   try {
     const { isActive } = req.body;
+    const targetUserId = req.params.userId;
+    const currentUser = req.user;
 
     if (typeof isActive !== 'boolean') {
       return res.status(400).json({ error: 'isActive must be a boolean' });
     }
 
-    const updatedUser = await database.updateUserStatus(req.params.userId, isActive);
+    // Check permissions: Admin can modify any user, users can only activate themselves
+    const isAdmin = currentUser.role === 'admin';
+    const isSelfActivation = currentUser.userId === targetUserId && isActive === true;
+
+    if (!isAdmin && !isSelfActivation) {
+      return res.status(403).json({
+        error: 'Insufficient permissions. You can only activate your own account.'
+      });
+    }
+
+    // If not admin, prevent deactivation (only activation allowed for self)
+    if (!isAdmin && !isActive) {
+      return res.status(403).json({
+        error: 'You cannot deactivate your own account. Contact an admin if needed.'
+      });
+    }
+
+    const updatedUser = await database.updateUserStatus(targetUserId, isActive);
+
+    // If enabling chat commands and user becomes active, start Twitch bot
+    if (isActive) {
+      const user = await database.getUser(targetUserId);
+      if (user) {
+        const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+        if (features.chatCommands) {
+          const twitchService = req.app.get('twitchService');
+          if (twitchService) {
+            try {
+              await twitchService.connectUser(targetUserId);
+              console.log(`✅ Started Twitch bot for ${user.username} after activation`);
+            } catch (error) {
+              console.error(`❌ Failed to start Twitch bot for ${user.username}:`, error);
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`✅ User status updated: ${updatedUser.username} is now ${isActive ? 'active' : 'inactive'} ${isSelfActivation ? '(self-activation)' : '(admin action)'}`);
 
     res.json({
       message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,

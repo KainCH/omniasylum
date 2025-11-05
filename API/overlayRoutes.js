@@ -22,21 +22,26 @@ router.get('/:userId', async (req, res) => {
       return res.status(403).send('Stream overlay not enabled for this user');
     }
 
-    // Get user's overlay settings
-    const overlaySettings = await database.getUserOverlaySettings(req.params.userId);
+    // Check if user is active (stream is live)
+    const isActive = user.isActive !== false; // Default to true if not set
 
-    // If overlay is disabled in settings, show disabled message
-    if (!overlaySettings.enabled) {
+    // If user is not active, show inactive message
+    if (!isActive) {
       return res.status(200).send(`
         <!DOCTYPE html>
-        <html><head><title>Overlay Disabled</title></head>
+        <html><head><title>Stream Offline</title></head>
         <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
-          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #d4af37;">
-            Overlay is currently disabled. Enable it in your settings.
+          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #d4af37; text-align: center;">
+            <h3 style="color: #d4af37; margin-top: 0;">Stream Offline</h3>
+            <p>Overlay will activate when stream goes live.</p>
+            <p><small>Activate your stream in the admin dashboard</small></p>
           </div>
         </body></html>
       `);
     }
+
+    // Get user's overlay settings (for customization, not enabling/disabling)
+    const overlaySettings = await database.getUserOverlaySettings(req.params.userId);
 
     const counters = await database.getCounters(req.params.userId);
 

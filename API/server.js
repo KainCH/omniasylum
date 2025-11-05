@@ -459,6 +459,57 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
   }
 });
 
+// Auto-start Twitch bots for users with chatCommands feature
+async function autoStartTwitchBots() {
+  try {
+    console.log('🤖 Starting Twitch bots for users with chatCommands feature...');
+
+    // Get all users from database
+    const users = await database.getAllUsers();
+    let botsStarted = 0;
+    let botsSkipped = 0;
+
+    for (const user of users) {
+      try {
+        // Parse features (could be string or object)
+        const features = typeof user.features === 'string'
+          ? JSON.parse(user.features)
+          : user.features || {};
+
+        // Check if user has chatCommands feature enabled
+        if (features.chatCommands) {
+          // Check if user has required auth tokens
+          if (user.accessToken && user.refreshToken) {
+            console.log(`🤖 Starting Twitch bot for ${user.username}...`);
+            const success = await twitchService.connectUser(user.twitchUserId);
+
+            if (success) {
+              botsStarted++;
+              console.log(`✅ Twitch bot started for ${user.username}`);
+            } else {
+              console.log(`❌ Failed to start Twitch bot for ${user.username}`);
+            }
+          } else {
+            console.log(`⚠️  Skipping ${user.username} - missing auth tokens`);
+            botsSkipped++;
+          }
+        } else {
+          // Skip users without chatCommands feature
+          botsSkipped++;
+        }
+      } catch (userError) {
+        console.error(`❌ Error processing user ${user.username}:`, userError);
+        botsSkipped++;
+      }
+    }
+
+    console.log(`🤖 Twitch bots startup complete: ${botsStarted} started, ${botsSkipped} skipped`);
+
+  } catch (error) {
+    console.error('❌ Error auto-starting Twitch bots:', error);
+  }
+}
+
 // Start server
 const PORT = process.env.PORT || 3000;
 
@@ -472,6 +523,9 @@ async function startServer() {
 
     // Initialize Twitch service
     await twitchService.initialize();
+
+    // Auto-connect Twitch bots for users with chatCommands feature enabled
+    await autoStartTwitchBots();
 
     // Initialize Stream Monitor
     const streamMonitorInitialized = await streamMonitor.initialize();

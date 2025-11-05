@@ -71,6 +71,9 @@ class MultiTenantTwitchService extends EventEmitter {
         }
       );
 
+      // Add chat intent to the auth provider for this user
+      authProvider.addIntentToUser(userId, ['chat']);
+
       // Handle token refresh
       authProvider.onRefresh(async (userId, newTokenData) => {
         await database.saveUser({
@@ -96,25 +99,9 @@ class MultiTenantTwitchService extends EventEmitter {
         this.handleChatMessage(userId, channel, username, message, msg);
       });
 
-      // Handle bits (cheers) - requires channel:read:subscriptions scope
-      chatClient.onCheer((channel, username, message, msg) => {
-        this.handleBitsEvent(userId, channel, username, message, msg);
-      });
-
-      // Handle subscriber events
-      chatClient.onSub((channel, username, subInfo, msg) => {
-        this.handleSubscriberEvent(userId, channel, username, subInfo, msg);
-      });
-
-      // Handle resub events
-      chatClient.onResub((channel, username, months, message, subInfo, msg) => {
-        this.handleResubEvent(userId, channel, username, months, message, subInfo, msg);
-      });
-
-      // Handle gifted subs
-      chatClient.onSubGift((channel, username, recipient, subInfo, msg) => {
-        this.handleGiftSubEvent(userId, channel, username, recipient, subInfo, msg);
-      });
+      // Handle bits (cheers) - Note: These events are handled via EventSub, not chat
+      // The chat client doesn't have onCheer, onSub, etc. methods
+      // These events are handled through the EventSub system in streamMonitor.js
 
       // Connect to chat
       await chatClient.connect();
