@@ -276,23 +276,69 @@ function AdminDashboard() {
 
   const updateUserOverlaySettings = async (userId, settings) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}/overlay-settings`, {
+      // Ensure we have a valid token before making the request
+      const hasValidToken = await ensureValidToken()
+      if (!hasValidToken) {
+        console.log('❌ Cannot update overlay settings: invalid token')
+        return
+      }
+
+      const authHeaders = getAuthHeaders()
+      const token = localStorage.getItem('authToken')
+
+      console.log('📤 Sending overlay settings update:', {
+        userId,
+        settings,
+        hasToken: !!token,
+        tokenPreview: token ? token.substring(0, 20) + '...' : 'no token',
+        headers: Object.keys(authHeaders)
+      })
+
+      const url = `/api/admin/users/${userId}/overlay-settings`
+      console.log('🌐 Request URL:', url)
+      console.log('🔑 Request headers:', authHeaders)
+
+      const response = await fetch(url, {
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: authHeaders,
         body: JSON.stringify(settings)
       })
 
+      console.log('📊 Response status:', response.status, response.statusText)
+      console.log('📊 Response headers:', Object.fromEntries(response.headers.entries()))
+
       if (response.ok) {
-        fetchAdminData() // Refresh data
+        const result = await response.json()
+        console.log('📥 Overlay settings update response:', result)
+
+        // Check token status
+        const tokenStatus = checkTokenExpiry()
+        console.log('🕒 Token status during update:', tokenStatus)
+
+        console.log('⏳ Waiting 1 second before refreshing data to ensure backend persistence...')
+        // Wait longer before refreshing to ensure backend has fully processed
+        setTimeout(async () => {
+          console.log('🔄 Refreshing admin data after overlay update...')
+          await fetchAdminData()
+          console.log('🔄 Data refresh complete')
+        }, 1000)
         console.log('✅ Overlay settings updated successfully')
       } else {
-        const errorData = await response.json()
-        console.error('❌ Failed to update overlay settings:', errorData.error)
-        alert(errorData.error)
+        let errorMessage = 'Unknown error'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+          console.error('❌ Failed to update overlay settings:', errorData)
+        } catch (parseError) {
+          console.error('❌ Failed to parse error response:', parseError)
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        }
+        console.error('❌ Request failed with status:', response.status)
+        alert(errorMessage)
       }
     } catch (error) {
-      console.error('❌ Failed to update overlay settings:', error)
-      alert('Failed to update overlay settings')
+      console.error('❌ Failed to update overlay settings (network error):', error)
+      alert('Network error: Failed to update overlay settings')
     }
   }
 
@@ -308,6 +354,85 @@ function AdminDashboard() {
       }
     }
     return 'streamer'
+  }
+
+  // Check if token is expired or needs refresh
+  const checkTokenExpiry = () => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        const now = Date.now() / 1000
+        const exp = payload.exp || 0
+        const timeUntilExpiry = exp - now
+
+        console.log('🕒 Token info:', {
+          userId: payload.userId,
+          username: payload.username,
+          role: payload.role,
+          issuedAt: new Date(payload.iat * 1000).toISOString(),
+          expiresAt: new Date(exp * 1000).toISOString(),
+          timeUntilExpiry: Math.round(timeUntilExpiry),
+          isExpired: timeUntilExpiry <= 0,
+          needsRefresh: timeUntilExpiry <= 3600 // Less than 1 hour
+        })
+
+        return {
+          isExpired: timeUntilExpiry <= 0,
+          needsRefresh: timeUntilExpiry <= 3600,
+          timeUntilExpiry
+        }
+      } catch (e) {
+        console.error('❌ Failed to parse token:', e)
+        return { isExpired: true, needsRefresh: true, timeUntilExpiry: 0 }
+      }
+    }
+    return { isExpired: true, needsRefresh: true, timeUntilExpiry: 0 }
+  }
+
+  // Refresh JWT token using Twitch refresh token
+  const refreshToken = async () => {
+    try {
+      console.log('🔄 Attempting to refresh token...')
+      const response = await fetch('/auth/refresh', {
+        method: 'POST',
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        localStorage.setItem('authToken', data.token)
+        console.log('✅ Token refreshed successfully')
+        return true
+      } else {
+        console.error('❌ Token refresh failed:', response.status)
+        return false
+      }
+    } catch (error) {
+      console.error('❌ Token refresh error:', error)
+      return false
+    }
+  }
+
+  // Automatically refresh token if needed before making requests
+  const ensureValidToken = async () => {
+    const tokenStatus = checkTokenExpiry()
+
+    if (tokenStatus.isExpired) {
+      console.log('🔄 Token expired, attempting refresh...')
+      const refreshed = await refreshToken()
+      if (!refreshed) {
+        console.log('❌ Token refresh failed, redirecting to login...')
+        localStorage.removeItem('authToken')
+        window.location.href = '/auth/twitch'
+        return false
+      }
+    } else if (tokenStatus.needsRefresh) {
+      console.log('⚠️ Token expires soon, refreshing proactively...')
+      await refreshToken() // Don't fail if this doesn't work
+    }
+
+    return true
   }
 
   // Get current user info from JWT token
@@ -882,65 +1007,53 @@ function AdminDashboard() {
                     const isAdmin = currentRole === 'admin';
                     const hasOverlayFeature = user.features?.streamOverlay;
 
-                    // Unified overlay control - shows both permission and active status
+                    // Overlay status display - automatic based on feature permission and stream activity
                     if (isAdmin || hasOverlayFeature) {
-                      // Check if overlay is both permitted AND enabled in settings
-                      const isOverlayFullyActive = hasOverlayFeature && overlaySettings.enabled;
-
-                      // Debug logging
-                      console.log(`🎮 Overlay status for ${user.username}:`, {
-                        hasFeature: hasOverlayFeature,
-                        settingsEnabled: overlaySettings.enabled,
-                        fullyActive: isOverlayFullyActive,
-                        overlaySettings
-                      });
+                      // Overlay is automatically active when user has permission and stream is active
+                      const isStreamActive = user.isActive;
+                      const isOverlayAvailable = hasOverlayFeature;
+                      const isOverlayActive = isOverlayAvailable && isStreamActive;
 
                       return (
                         <div className="overlay-feature-control">
                           <div className="feature-section">
                             <h5>🎮 Overlay Status</h5>
-                            <label className="feature-toggle">
-                              <input
-                                type="checkbox"
-                                checked={isOverlayFullyActive}
-                                onChange={async (e) => {
-                                  console.log(`🎮 Overlay toggle clicked for ${user.username}:`, {
-                                    hasFeature: hasOverlayFeature,
-                                    currentEnabled: overlaySettings.enabled,
-                                    newValue: e.target.checked,
-                                    isAdmin
-                                  });
-
-                                  if (!hasOverlayFeature && isAdmin) {
-                                    // Admin enabling overlay: first grant permission, then activate
-                                    console.log('🔐 Granting overlay permission and activating...');
-                                    await toggleFeature(user.twitchUserId, 'streamOverlay', false);
-                                    // Enable overlay settings after permission is granted
-                                    setTimeout(() => {
-                                      updateUserOverlaySettings(user.twitchUserId, {
-                                        ...overlaySettings,
-                                        enabled: true
-                                      });
-                                    }, 500); // Increased timeout for better reliability
-                                  } else if (hasOverlayFeature) {
-                                    // Toggle overlay active state (user has permission)
-                                    console.log('🎯 Toggling overlay enabled state to:', e.target.checked);
-                                    updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      enabled: e.target.checked
-                                    });
+                            <div className="overlay-status-display">
+                              <div className={`status-indicator ${isOverlayActive ? 'active' : 'inactive'}`}>
+                                <span className="status-icon">
+                                  {isOverlayActive ? '🟢' :
+                                   isOverlayAvailable ? (isStreamActive ? '🟡' : '⚪') : '🔴'}
+                                </span>
+                                <span className="status-text">
+                                  {!isOverlayAvailable ? (
+                                    <>❌ No Overlay Permission
+                                      {isAdmin && (
+                                        <button
+                                          className="grant-permission-btn"
+                                          onClick={() => toggleFeature(user.twitchUserId, 'streamOverlay', false)}
+                                        >
+                                          Grant Permission
+                                        </button>
+                                      )}
+                                    </>
+                                  ) : isOverlayActive ? (
+                                    '✅ Overlay Active (Stream Live)'
+                                  ) : isStreamActive ? (
+                                    '� Stream Active, Overlay Ready'
+                                  ) : (
+                                    '⚪ Overlay Available (Stream Offline)'
+                                  )}
+                                </span>
+                              </div>
+                              <div className="overlay-explanation">
+                                <small>
+                                  {isOverlayAvailable ?
+                                    'Overlay automatically activates when stream goes live' :
+                                    'Contact admin to enable overlay feature'
                                   }
-                                }}
-                                disabled={!isAdmin && !hasOverlayFeature}
-                              />
-                              <span className="feature-slider"></span>
-                              <span className="feature-label">
-                                {isOverlayFullyActive ? '✅ Overlay Active' :
-                                 hasOverlayFeature ? '⚠️ Overlay Available (Click to Activate)' :
-                                 '❌ No Overlay Permission'}
-                                {!isAdmin && !hasOverlayFeature && <small> (Contact admin to enable)</small>}
-                              </span>
-                            </label>
+                                </small>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );

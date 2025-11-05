@@ -249,6 +249,103 @@ router.get('/me', async (req, res) => {
 });
 
 /**
+ * Refresh JWT token using Twitch refresh token
+ * POST /auth/refresh
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const jwtSecret = await getJwtSecret();
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, jwtSecret);
+    } catch (jwtError) {
+      // Token might be expired, try to decode without verification to get user ID
+      try {
+        decoded = jwt.decode(token);
+        if (!decoded || !decoded.userId) {
+          return res.status(401).json({ error: 'Invalid token format' });
+        }
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+    }
+
+    const user = await database.getUser(decoded.userId);
+    if (!user || !user.refreshToken) {
+      return res.status(401).json({ error: 'User not found or no refresh token' });
+    }
+
+    try {
+      const clientId = await keyVault.getSecret('TWITCH-CLIENT-ID');
+      const clientSecret = await keyVault.getSecret('TWITCH-CLIENT-SECRET');
+
+      // Use Twitch refresh token to get new access token
+      const refreshResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: user.refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret
+        })
+      });
+
+      if (!refreshResponse.ok) {
+        console.error('❌ Twitch refresh failed:', refreshResponse.status);
+        return res.status(401).json({ error: 'Failed to refresh Twitch token' });
+      }
+
+      const refreshData = await refreshResponse.json();
+
+      // Update user with new tokens
+      await database.updateUser(user.twitchUserId, {
+        accessToken: refreshData.access_token,
+        refreshToken: refreshData.refresh_token,
+        tokenExpiry: new Date(Date.now() + refreshData.expires_in * 1000)
+      });
+
+      // Generate new JWT with fresh expiration
+      const newJwtPayload = {
+        userId: user.twitchUserId,
+        username: user.username,
+        role: user.role
+      };
+
+      const newJwtToken = jwt.sign(newJwtPayload, jwtSecret, { expiresIn: '30d' });
+
+      console.log(`✅ Token refreshed for user: ${user.username}`);
+      res.json({
+        token: newJwtToken,
+        user: {
+          twitchUserId: user.twitchUserId,
+          username: user.username,
+          displayName: user.displayName,
+          role: user.role
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error refreshing token:', error);
+      res.status(401).json({ error: 'Failed to refresh token' });
+    }
+
+  } catch (error) {
+    console.error('❌ Error in refresh endpoint:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * Logout (invalidate session)
  * POST /auth/logout
  */

@@ -142,7 +142,65 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
       return res.status(400).json({ error: 'Invalid features object' });
     }
 
+    // Check if streamOverlay feature is being enabled
+    const user = await database.getUser(req.params.userId);
+    const currentFeatures = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+    const wasOverlayEnabled = currentFeatures.streamOverlay;
+    const isOverlayBeingEnabled = features.streamOverlay && !wasOverlayEnabled;
+
     const updatedUser = await database.updateUserFeatures(req.params.userId, features);
+
+    // If streamOverlay feature was just enabled, automatically enable overlay settings
+    if (isOverlayBeingEnabled) {
+      console.log(`✅ StreamOverlay feature enabled for ${updatedUser.username}, auto-enabling overlay settings`);
+
+      // Get current overlay settings or create default ones
+      let overlaySettings;
+      try {
+        const currentSettings = await database.getUserOverlaySettings(req.params.userId);
+        overlaySettings = currentSettings ?
+          (typeof currentSettings.overlaySettings === 'string' ?
+            JSON.parse(currentSettings.overlaySettings) :
+            currentSettings.overlaySettings) : null;
+      } catch (e) {
+        overlaySettings = null;
+      }
+
+      // Create default overlay settings if none exist
+      if (!overlaySettings) {
+        overlaySettings = {
+          enabled: true,
+          position: 'top-right',
+          counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+          theme: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderColor: '#9146ff',
+            textColor: '#ffffff',
+            accentColor: '#f0f0f0'
+          },
+          animations: {
+            enabled: true,
+            showAlerts: true,
+            celebrationEffects: true,
+            bounceOnUpdate: true,
+            fadeTransitions: true
+          },
+          display: {
+            showLabels: true,
+            showIcons: true,
+            compactMode: false,
+            hideWhenZero: false
+          }
+        };
+      } else {
+        // Just enable the existing settings
+        overlaySettings.enabled = true;
+      }
+
+      // Update the overlay settings
+      await database.updateUserOverlaySettings(req.params.userId, overlaySettings);
+      console.log(`✅ Overlay settings auto-enabled for ${updatedUser.username}`);
+    }
 
     res.json({
       message: 'Features updated successfully',
