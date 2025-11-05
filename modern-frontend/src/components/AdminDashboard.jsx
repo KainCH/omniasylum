@@ -4,49 +4,117 @@ function AdminDashboard() {
   const [users, setUsers] = useState([])
   const [stats, setStats] = useState({})
   const [features, setFeatures] = useState([])
+  const [roles, setRoles] = useState([])
+  const [permissions, setPermissions] = useState([])
+  const [streams, setStreams] = useState([])
   const [loading, setLoading] = useState(true)
+  const [addingUser, setAddingUser] = useState(false)
   const [showAddUser, setShowAddUser] = useState(false)
+  const [showRoleManager, setShowRoleManager] = useState(false)
   const [newUser, setNewUser] = useState({
     username: '',
     displayName: '',
     email: '',
     twitchUserId: ''
   })
+  const [currentUserRole, setCurrentUserRole] = useState('streamer')
 
   useEffect(() => {
     fetchAdminData()
   }, [])
 
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken')
+
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    return headers
+  }
+
+  // Logout function
+  const handleLogout = () => {
+    localStorage.removeItem('authToken')
+    window.location.href = '/auth/twitch'
+  }
+
   const fetchAdminData = async () => {
     try {
+      const headers = getAuthHeaders()
+
       // Fetch users
       const usersResponse = await fetch('/api/admin/users', {
-        credentials: 'include'
+        headers
       })
       if (usersResponse.ok) {
         const usersData = await usersResponse.json()
         setUsers(usersData.users || usersData) // Handle both response formats
+      } else {
+        console.error('Failed to fetch users:', usersResponse.status, usersResponse.statusText)
       }
 
       // Fetch system stats
       const statsResponse = await fetch('/api/admin/stats', {
-        credentials: 'include'
+        headers
       })
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
         setStats(statsData)
+      } else {
+        console.error('Failed to fetch stats:', statsResponse.status)
       }
 
       // Fetch available features
       const featuresResponse = await fetch('/api/admin/features', {
-        credentials: 'include'
+        headers
       })
       if (featuresResponse.ok) {
         const featuresData = await featuresResponse.json()
         setFeatures(featuresData.features)
+      } else {
+        console.error('Failed to fetch features:', featuresResponse.status)
+      }
+
+      // Fetch available roles
+      const rolesResponse = await fetch('/api/admin/roles', {
+        headers
+      })
+      if (rolesResponse.ok) {
+        const rolesData = await rolesResponse.json()
+        setRoles(rolesData.roles)
+      } else {
+        console.error('Failed to fetch roles:', rolesResponse.status)
+      }
+
+      // Fetch available permissions
+      const permissionsResponse = await fetch('/api/admin/permissions', {
+        headers
+      })
+      if (permissionsResponse.ok) {
+        const permissionsData = await permissionsResponse.json()
+        setPermissions(permissionsData.permissions)
+      } else {
+        console.error('Failed to fetch permissions:', permissionsResponse.status)
+      }
+
+      // Fetch stream sessions
+      const streamsResponse = await fetch('/api/admin/streams', {
+        headers
+      })
+      if (streamsResponse.ok) {
+        const streamsData = await streamsResponse.json()
+        setStreams(streamsData.sessions || [])
+      } else {
+        console.error('Failed to fetch streams:', streamsResponse.status)
       }
     } catch (error) {
-      console.error('❌ Failed to fetch admin data:', error)
+      console.error('Failed to fetch admin data:', error)
     } finally {
       setLoading(false)
     }
@@ -56,10 +124,7 @@ function AdminDashboard() {
     try {
       const response = await fetch(`/api/admin/users/${userId}/status`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify({ isActive: !isActive })
       })
 
@@ -87,10 +152,7 @@ function AdminDashboard() {
 
       const response = await fetch(`/api/admin/users/${userId}/features`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify({ features: updatedFeatures })
       })
 
@@ -102,18 +164,63 @@ function AdminDashboard() {
     }
   }
 
+  const updateUserRole = async (userId, newRole) => {
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/role`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role: newRole })
+      })
+
+      if (response.ok) {
+        // Refresh users data
+        fetchAdminData()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to update role:', errorData.error)
+        alert(errorData.error)
+      }
+    } catch (error) {
+      console.error('❌ Failed to update role:', error)
+      alert('Failed to update user role')
+    }
+  }
+
+  // Get current user's role from token
+  const getCurrentUserRole = () => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        return payload.role || 'streamer'
+      } catch (e) {
+        return 'streamer'
+      }
+    }
+    return 'streamer'
+  }
+
+  // Check if current user can perform action based on role hierarchy
+  const canManageRole = (targetRole) => {
+    const currentRole = getCurrentUserRole()
+    const roleHierarchy = { 'streamer': 0, 'moderator': 1, 'manager': 2, 'admin': 3 }
+    const currentLevel = roleHierarchy[currentRole] || 0
+    const targetLevel = roleHierarchy[targetRole] || 0
+    return currentLevel >= 3 || currentLevel > targetLevel // Only admin can assign same/higher roles
+  }
+
   const addUser = async () => {
     try {
+      setAddingUser(true)
       const response = await fetch('/api/admin/users', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify(newUser)
       })
 
       if (response.ok) {
+        const result = await response.json()
+        alert(`✅ ${result.message}`) // Show success message with avatar status
         setShowAddUser(false)
         setNewUser({ username: '', displayName: '', email: '', twitchUserId: '' })
         fetchAdminData() // Refresh data
@@ -124,6 +231,8 @@ function AdminDashboard() {
     } catch (error) {
       console.error('❌ Failed to add user:', error)
       alert('Failed to add user')
+    } finally {
+      setAddingUser(false)
     }
   }
 
@@ -135,7 +244,7 @@ function AdminDashboard() {
     try {
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: getAuthHeaders()
       })
 
       if (response.ok) {
@@ -163,8 +272,21 @@ function AdminDashboard() {
     <div className="admin-dashboard">
       <div className="container">
         <header className="admin-header">
-          <h1>🔧 Admin Dashboard - OmniForgeStream</h1>
-          <p>Welcome, Administrator! Manage users and system settings.</p>
+          <div className="admin-header-content">
+            <div>
+              <h1>🔧 Admin Dashboard - OmniForgeStream</h1>
+              <p>Welcome, Administrator! Manage users and system settings.</p>
+            </div>
+            <div className="admin-header-actions">
+              <button
+                onClick={handleLogout}
+                className="btn btn-secondary logout-btn"
+                title="Clear auth token and force re-login"
+              >
+                🚪 Logout & Re-authenticate
+              </button>
+            </div>
+          </div>
         </header>
 
         <div className="admin-stats">
@@ -186,7 +308,72 @@ function AdminDashboard() {
               <h3>Total Swears</h3>
               <p className="stat-number">{stats.totalSwears || 0}</p>
             </div>
+            <div className="stat-card">
+              <h3>Active Streams</h3>
+              <p className="stat-number">{streams.filter(s => s.isStreaming).length}</p>
+            </div>
+            <div className="stat-card">
+              <h3>Total Bits</h3>
+              <p className="stat-number">{streams.reduce((sum, s) => sum + (s.sessionBits || 0), 0)}</p>
+            </div>
           </div>
+        </div>
+
+        <div className="admin-roles">
+          <h2>🛡️ Role Distribution</h2>
+          <div className="stats-grid">
+            {roles.map(role => {
+              const roleCount = users.filter(u => u.role === role.id).length
+              return (
+                <div key={role.id} className="stat-card">
+                  <h3>{role.icon} {role.name}</h3>
+                  <p className="stat-number">{roleCount}</p>
+                  <small className="role-description">{role.description}</small>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="admin-streams">
+          <h2>🎮 Active Stream Sessions</h2>
+          <div className="streams-grid">
+            {streams.filter(s => s.isStreaming).map(stream => (
+              <div key={stream.userId} className="stream-card active">
+                <h3>🔴 {stream.displayName} (@{stream.username})</h3>
+                <p><strong>Started:</strong> {new Date(stream.streamStartTime).toLocaleString()}</p>
+                <div className="stream-stats">
+                  <span className="stat">💎 {stream.sessionBits} bits</span>
+                  <span className="stat">💀 {stream.sessionDeaths} deaths</span>
+                  <span className="stat">🤬 {stream.sessionSwears} swears</span>
+                </div>
+                <div className="stream-settings">
+                  <small>
+                    <strong>Bit Thresholds:</strong>
+                    Death: {stream.streamSettings?.bitThresholds?.death || 100} |
+                    Swear: {stream.streamSettings?.bitThresholds?.swear || 50} |
+                    Celebration: {stream.streamSettings?.bitThresholds?.celebration || 10}
+                  </small>
+                </div>
+              </div>
+            ))}
+            {streams.filter(s => !s.isStreaming).slice(0, 3).map(stream => (
+              <div key={stream.userId} className="stream-card offline">
+                <h3>⚫ {stream.displayName} (@{stream.username})</h3>
+                <p><strong>Status:</strong> Offline</p>
+                <div className="stream-stats">
+                  <span className="stat">💎 {stream.sessionBits} bits</span>
+                  <span className="stat">💀 {stream.sessionDeaths} deaths</span>
+                  <span className="stat">🤬 {stream.sessionSwears} swears</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {streams.filter(s => s.isStreaming).length === 0 && (
+            <div className="no-streams">
+              <p>📴 No active stream sessions</p>
+            </div>
+          )}
         </div>
 
         <div className="admin-users">
@@ -209,53 +396,110 @@ function AdminDashboard() {
                   placeholder="Username (e.g., riress)"
                   value={newUser.username}
                   onChange={(e) => setNewUser({...newUser, username: e.target.value})}
+                  style={{
+                    color: 'white !important',
+                    WebkitTextFillColor: 'white !important',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                  }}
+                  className="force-white-text"
                 />
                 <input
                   type="text"
                   placeholder="Display Name (e.g., Riress)"
                   value={newUser.displayName}
                   onChange={(e) => setNewUser({...newUser, displayName: e.target.value})}
+                  style={{
+                    color: 'white !important',
+                    WebkitTextFillColor: 'white !important',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                  }}
+                  className="force-white-text"
                 />
                 <input
                   type="email"
                   placeholder="Email (optional)"
                   value={newUser.email}
                   onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                  style={{
+                    color: 'white !important',
+                    WebkitTextFillColor: 'white !important',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                  }}
+                  className="force-white-text"
                 />
                 <input
                   type="text"
                   placeholder="Twitch User ID"
                   value={newUser.twitchUserId}
                   onChange={(e) => setNewUser({...newUser, twitchUserId: e.target.value})}
+                  style={{
+                    color: 'white !important',
+                    WebkitTextFillColor: 'white !important',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                  }}
+                  className="force-white-text"
                 />
               </div>
               <div className="form-actions">
-                <button onClick={addUser} className="btn btn-success">Create User</button>
-                <button onClick={() => setShowAddUser(false)} className="btn btn-secondary">Cancel</button>
+                <button
+                  onClick={addUser}
+                  className="btn btn-success"
+                  disabled={addingUser}
+                >
+                  {addingUser ? '🔄 Creating & Fetching Avatar...' : 'Create User'}
+                </button>
+                <button
+                  onClick={() => setShowAddUser(false)}
+                  className="btn btn-secondary"
+                  disabled={addingUser}
+                >
+                  Cancel
+                </button>
               </div>
               <p className="form-note">
-                ⚠️ Note: User will need to authenticate via OAuth to get Twitch tokens for bot functionality.
+                💡 System will automatically fetch Twitch avatar and profile data if the username exists on Twitch.
               </p>
             </div>
           )}
 
           <div className="users-table">
-            {users.map(user => {
-              const features = typeof user.features === 'string'
-                ? JSON.parse(user.features)
-                : user.features || {}
+            {users.length === 0 ? (
+              <div className="no-users" style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                <p>👤 No users found</p>
+                <p>This could mean:</p>
+                <ul style={{ textAlign: 'left', display: 'inline-block' }}>
+                  <li>You're not authenticated as an admin</li>
+                  <li>The admin API is not responding</li>
+                  <li>No users have registered yet</li>
+                </ul>
+                <button onClick={fetchAdminData} className="btn btn-primary" style={{ marginTop: '10px' }}>
+                  🔄 Retry
+                </button>
+              </div>
+            ) : (
+              users.map(user => {
+                const userFeatures = typeof user.features === 'string'
+                  ? JSON.parse(user.features)
+                  : user.features || {}
 
-              return (
-                <div key={user.twitchUserId} className="user-card">
+                return (
+                <div key={user.twitchUserId || user.userId || Math.random()} className="user-card">
                   <div className="user-info">
                     <img
-                      src={user.profileImageUrl || '/default-avatar.png'}
+                      src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.username || 'User')}&background=random`}
                       alt={user.displayName}
                       className="user-avatar"
+                      onError={(e) => {
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.username || 'User')}&background=random`;
+                      }}
                     />
                     <div>
-                      <h3>{user.displayName}</h3>
-                      <p>@{user.username}</p>
+                      <h3>{user.displayName || 'Unknown User'}</h3>
+                      <p>@{user.username || 'unknown'}</p>
                       <p className={`status ${user.isActive ? 'active' : 'inactive'}`}>
                         {user.isActive ? '✅ Active' : '❌ Inactive'}
                       </p>
@@ -282,7 +526,7 @@ function AdminDashboard() {
                   <div className="user-features">
                     <h4>Features</h4>
                     <div className="features-grid">
-                      {Object.entries(features).map(([featureKey, enabled]) => {
+                      {Object.entries(userFeatures).map(([featureKey, enabled]) => {
                         const featureInfo = features.find(f => f.id === featureKey)
                         return (
                           <label key={featureKey} className="feature-toggle" title={featureInfo?.description}>
@@ -303,16 +547,47 @@ function AdminDashboard() {
                     </div>
                   </div>
 
+                  <div className="user-role-management">
+                    <h4>Role & Permissions</h4>
+                    <div className="role-selector">
+                      <label>
+                        <strong>Role:</strong>
+                        <select
+                          value={user.role || 'streamer'}
+                          onChange={(e) => updateUserRole(user.twitchUserId || user.userId, e.target.value)}
+                          disabled={!canManageRole(user.role) || !user.twitchUserId && !user.userId}
+                          className="role-select"
+                        >
+                          {roles.map(role => (
+                            <option key={role.id} value={role.id}>
+                              {role.icon} {role.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="role-info">
+                        {roles.find(r => r.id === user.role) && (
+                          <div className="role-badge" style={{ backgroundColor: roles.find(r => r.id === user.role).color }}>
+                            {roles.find(r => r.id === user.role).icon} {roles.find(r => r.id === user.role).name}
+                          </div>
+                        )}
+                        <p className="role-description">
+                          {roles.find(r => r.id === user.role)?.description || 'No description available'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="user-metadata">
                     <small>
-                      <strong>Role:</strong> {user.role} |
                       <strong>Created:</strong> {new Date(user.createdAt).toLocaleDateString()} |
                       <strong>Last Login:</strong> {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                     </small>
                   </div>
                 </div>
               )
-            })}
+            })
+          )}
           </div>
         </div>
       </div>

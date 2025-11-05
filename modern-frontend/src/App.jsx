@@ -214,9 +214,7 @@ function App() {
         case 's':
           incrementSwears()
           break
-        case 'r':
-          resetCounters()
-          break
+        // Removed 'r' shortcut to prevent accidental counter resets
         default:
           break
       }
@@ -263,7 +261,7 @@ function App() {
         />
 
         <div className="keyboard-hints">
-          <p>💡 <strong>Keyboard shortcuts:</strong> D = Deaths, S = Swears, R = Reset</p>
+          <p>💡 <strong>Keyboard shortcuts:</strong> D = Deaths, S = Swears</p>
         </div>
       </div>
     </div>

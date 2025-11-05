@@ -18,24 +18,33 @@ async function getJwtSecret() {
  */
 async function requireAuth(req, res, next) {
   try {
+    console.log('🔐 requireAuth - Headers received:', Object.keys(req.headers));
+    console.log('🔐 requireAuth - Authorization header:', req.headers.authorization ? 'EXISTS' : 'MISSING');
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('🔐 requireAuth - FAILED: No Bearer token found');
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const token = authHeader.substring(7);
+    console.log('🔐 requireAuth - Token extracted:', token ? 'EXISTS' : 'MISSING');
 
     try {
       const jwtSecret = await getJwtSecret();
       const decoded = jwt.verify(token, jwtSecret);
+      console.log('🔐 requireAuth - Token decoded successfully:', decoded.username);
 
       // Get user from database to ensure they still exist and get latest data
       const user = await database.getUser(decoded.userId);
 
       if (!user) {
+        console.log('🔐 requireAuth - FAILED: User not found in database:', decoded.userId);
         return res.status(401).json({ error: 'User not found' });
       }
+
+      console.log('🔐 requireAuth - SUCCESS: User authenticated:', user.username);
 
       // Attach user to request
       req.user = {
@@ -43,11 +52,13 @@ async function requireAuth(req, res, next) {
         username: user.username,
         displayName: user.displayName,
         accessToken: user.accessToken,
-        refreshToken: user.refreshToken
+        refreshToken: user.refreshToken,
+        role: user.role
       };
 
       next();
     } catch (error) {
+      console.log('🔐 requireAuth - JWT Error:', error.name, error.message);
       if (error.name === 'JsonWebTokenError') {
         return res.status(401).json({ error: 'Invalid token' });
       }
@@ -134,21 +145,28 @@ async function verifySocketAuth(socket, next) {
  */
 async function requireAdmin(req, res, next) {
   try {
+    console.log('🔐 requireAdmin - User object:', req.user ? 'EXISTS' : 'MISSING');
+
     // Check if user is already authenticated (should be set by requireAuth middleware)
     if (!req.user || !req.user.userId) {
+      console.log('🔐 requireAdmin - FAILED: No user object from requireAuth');
       return res.status(401).json({ error: 'Authentication required' });
     }
+
+    console.log('🔐 requireAdmin - Checking admin role for user:', req.user.username);
 
     // Check if user is admin
     const user = await database.getUser(req.user.userId);
 
     if (!user || user.role !== 'admin') {
+      console.log('🔐 requireAdmin - FAILED: User role is', user?.role, 'not admin');
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Admin access required'
       });
     }
 
+    console.log('🔐 requireAdmin - SUCCESS: Admin access granted');
     next();
   } catch (error) {
     console.error('Admin middleware error:', error);

@@ -1,4 +1,5 @@
 const { TableClient, AzureNamedKeyCredential } = require('@azure/data-tables');
+const { DefaultAzureCredential, ManagedIdentityCredential } = require('@azure/identity');
 const fs = require('fs');
 const path = require('path');
 
@@ -36,16 +37,17 @@ class Database {
   async initializeAzureTables() {
     try {
       const accountName = process.env.AZURE_STORAGE_ACCOUNT;
-      const accountKey = process.env.AZURE_STORAGE_KEY;
 
-      if (!accountName || !accountKey) {
-        console.log('⚠️  Azure Storage credentials not configured, falling back to local storage');
+      if (!accountName) {
+        console.log('⚠️  Azure Storage account not configured, falling back to local storage');
         this.mode = 'local';
         this.initializeLocalStorage();
         return;
       }
 
-      const credential = new AzureNamedKeyCredential(accountName, accountKey);
+      // Use managed identity for authentication
+      // First try the specific user-assigned managed identity, then fallback to DefaultAzureCredential
+      const credential = new ManagedIdentityCredential('b72c3d28-61d4-4c35-bac8-5e4928de2c7e');
       const serviceUrl = `https://${accountName}.table.core.windows.net`;
 
       this.usersClient = new TableClient(serviceUrl, 'users', credential);
@@ -446,6 +448,19 @@ class Database {
     }
 
     user.isActive = isActive;
+    return await this.saveUser(user);
+  }
+
+  /**
+   * Update user role (admin only)
+   */
+  async updateUserRole(twitchUserId, role) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.role = role;
     return await this.saveUser(user);
   }
 
