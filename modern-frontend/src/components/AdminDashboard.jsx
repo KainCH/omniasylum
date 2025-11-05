@@ -1047,6 +1047,8 @@ function AdminDashboard() {
                     if (isAdmin || hasOverlayFeature || isOwnCard) {
                       const streamStatus = user.streamStatus || 'offline';
                       const isOverlayAvailable = hasOverlayFeature;
+                      const isStreamActive = streamStatus === 'live' || streamStatus === 'prepping';
+                      const isOverlayActive = isOverlayAvailable && streamStatus === 'live';
 
                       return (
                         <div className="overlay-feature-control">

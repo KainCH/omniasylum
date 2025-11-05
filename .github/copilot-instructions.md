@@ -160,6 +160,24 @@ This application is deployed using Azure Container Apps with a complete infrastr
 
 ### Deployment Process
 
+#### 0. **CRITICAL: Build Frontend First**
+
+**⚠️ ALWAYS build the modern-frontend before deploying to Azure:**
+
+```powershell
+# Navigate to modern-frontend and build React app
+cd "c:\Game Data\Coding Projects\doc-omni\modern-frontend"
+npm run build
+
+# Copy built files to API frontend folder
+Copy-Item -Path "dist\*" -Destination "..\API\frontend" -Recurse -Force
+```
+
+**This step is REQUIRED** because:
+- The API serves the frontend from the `API/frontend` folder
+- Docker builds include whatever is in `API/frontend` at build time
+- Skipping this step deploys an outdated frontend version
+
 #### 1. Build and Push Container Image
 
 ```powershell
@@ -176,14 +194,21 @@ docker push omniforgeacr.azurecr.io/omniforgestream-api:latest
 az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
 ```
 
-#### 2. One-Command Deployment
+#### 2. Complete Deployment (Frontend + Backend)
 
 ```powershell
-# Complete build, push, and deploy in one command
+# Build frontend, copy to API, build Docker, push, and deploy in one command
+cd "c:\Game Data\Coding Projects\doc-omni\modern-frontend" && npm run build && Copy-Item -Path "dist\*" -Destination "..\API\frontend" -Recurse -Force && cd "..\API" && docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest && az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
+```
+
+#### 3. Backend-Only Deployment (if frontend unchanged)
+
+```powershell
+# Backend-only build, push, and deploy (skip frontend build)
 cd "c:\Game Data\Coding Projects\doc-omni\API" && docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest && az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
 ```
 
-#### 3. Monitor Deployment
+#### 4. Monitor Deployment
 
 ```powershell
 # Check deployment status

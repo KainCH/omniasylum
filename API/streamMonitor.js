@@ -23,6 +23,7 @@ class StreamMonitor extends EventEmitter {
 
   /**
    * Initialize the stream monitor with app credentials
+   * Note: EventSub WebSocket uses user tokens, we'll create user-specific listeners
    */
   async initialize() {
     try {
@@ -36,30 +37,9 @@ class StreamMonitor extends EventEmitter {
         return false;
       }
 
-      // Create app auth provider for EventSub
-      this.appAuthProvider = new RefreshingAuthProvider(
-        {
-          clientId: this.clientId,
-          clientSecret: this.clientSecret
-        }
-      );
-
-      // Get app access token
-      await this.appAuthProvider.getAppAccessToken();
-      this.appApiClient = new ApiClient({ authProvider: this.appAuthProvider });
-
-      // Create EventSub WebSocket listener
-      this.listener = new EventSubWsListener({
-        apiClient: this.appApiClient
-      });
-
-      // Set up event handlers
-      this.setupEventHandlers();
-
-      // Start listening
-      await this.listener.start();
-
-      console.log('✅ Stream Monitor initialized with EventSub WebSocket');
+      // For multi-tenant EventSub WebSocket, we create user-specific listeners
+      // when users subscribe (in subscribeToUser method)
+      console.log('✅ Stream Monitor initialized (multi-tenant mode)');
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize Stream Monitor:', error);
@@ -102,14 +82,10 @@ class StreamMonitor extends EventEmitter {
 
   /**
    * Subscribe to stream events for a user
+   * Creates a user-specific EventSub WebSocket listener (required for user auth)
    */
   async subscribeToUser(userId) {
     try {
-      if (!this.listener) {
-        console.error('Stream monitor not initialized');
-        return false;
-      }
-
       // Get user data
       const user = await database.getUser(userId);
       if (!user) {
@@ -123,52 +99,87 @@ class StreamMonitor extends EventEmitter {
         return true;
       }
 
-      // Get Twitch user info to get their ID
-      const twitchUser = await this.appApiClient.users.getUserByName(user.username);
-      if (!twitchUser) {
-        console.error(`Twitch user ${user.username} not found`);
-        return false;
-      }
+      // Create user-specific auth provider
+      // EventSub WebSocket REQUIRES user access tokens
+      const userAuthProvider = new RefreshingAuthProvider(
+        {
+          clientId: this.clientId,
+          clientSecret: this.clientSecret
+        }
+      );
 
-      // Subscribe to stream online/offline events
-      const onlineSubscription = this.listener.onStreamOnline(twitchUser.id, (event) => {
+      // Add user with token and intents for EventSub
+      const { userId: twitchUserId } = await userAuthProvider.addUserForToken({
+        accessToken: user.accessToken,
+        refreshToken: user.refreshToken,
+        expiresIn: 0,
+        obtainmentTimestamp: 0
+      }, []);  // No specific intents needed for EventSub subscriptions
+
+      // Handle token refresh
+      userAuthProvider.onRefresh(async (userId, newTokenData) => {
+        await database.saveUser({
+          ...user,
+          accessToken: newTokenData.accessToken,
+          refreshToken: newTokenData.refreshToken,
+          tokenExpiry: new Date(newTokenData.expiresIn * 1000 + Date.now()).toISOString()
+        });
+        console.log(`🔄 Token refreshed for user ${userId} (stream monitor)`);
+      });
+
+      // Create user-specific API client
+      const userApiClient = new ApiClient({ authProvider: userAuthProvider });
+
+      // Create user-specific EventSub WebSocket listener
+      const userListener = new EventSubWsListener({
+        apiClient: userApiClient
+      });
+
+      // Subscribe to stream online events (use twitchUserId from addUserForToken)
+      const onlineSubscription = userListener.onStreamOnline(twitchUserId, (event) => {
         this.handleStreamOnline(event, userId);
       });
 
-      const offlineSubscription = this.listener.onStreamOffline(twitchUser.id, (event) => {
+      // Subscribe to stream offline events
+      const offlineSubscription = userListener.onStreamOffline(twitchUserId, (event) => {
         this.handleStreamOffline(event, userId);
       });
 
-      // Subscribe to channel point redemptions (if user has feature enabled)
+      // Subscribe to channel point redemptions (if enabled)
       let redemptionSubscription = null;
       const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
-        redemptionSubscription = this.listener.onChannelRedemptionAdd(twitchUser.id, (event) => {
+        redemptionSubscription = userListener.onChannelRedemptionAdd(twitchUserId, (event) => {
           this.handleRewardRedemption(event, userId);
         });
       }
 
-      // Subscribe to follow events (if user has alerts enabled)
+      // Subscribe to follow events (if alerts enabled)
       let followSubscription = null;
       const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
       if (hasAlerts) {
-        followSubscription = this.listener.onChannelFollow(twitchUser.id, (event) => {
+        followSubscription = userListener.onChannelFollow(twitchUserId, twitchUserId, (event) => {
           this.handleFollowEvent(event, userId);
         });
       }
 
-      // Subscribe to raid events (if user has alerts enabled)
+      // Subscribe to raid events (if alerts enabled)
       let raidSubscription = null;
       if (hasAlerts) {
-        raidSubscription = this.listener.onChannelRaidTo(twitchUser.id, (event) => {
+        raidSubscription = userListener.onChannelRaidTo(twitchUserId, (event) => {
           this.handleRaidEvent(event, userId);
         });
       }
 
-      // Store subscriptions
+      // Start the user's listener
+      userListener.start();
+
+      // Store user data and subscriptions
       this.connectedUsers.set(userId, {
-        twitchUserId: twitchUser.id,
+        twitchUserId,
         username: user.username,
+        userApiClient,
+        userListener,
         onlineSubscription,
         offlineSubscription,
         redemptionSubscription,
@@ -179,7 +190,7 @@ class StreamMonitor extends EventEmitter {
       console.log(`🎬 Now monitoring streams for ${user.username} (${userId})`);
 
       // Check current stream status
-      await this.checkCurrentStreamStatus(userId, twitchUser.id);
+      await this.checkCurrentStreamStatus(userId, twitchUserId, userApiClient);
 
       return true;
     } catch (error) {
@@ -193,24 +204,29 @@ class StreamMonitor extends EventEmitter {
    */
   async unsubscribeFromUser(userId) {
     try {
-      const subscription = this.connectedUsers.get(userId);
-      if (!subscription) return;
+      const userData = this.connectedUsers.get(userId);
+      if (!userData) return;
 
-      // Remove EventSub subscriptions
-      if (subscription.onlineSubscription) {
-        subscription.onlineSubscription.stop();
+      // Stop all subscriptions
+      if (userData.onlineSubscription) {
+        userData.onlineSubscription.stop();
       }
-      if (subscription.offlineSubscription) {
-        subscription.offlineSubscription.stop();
+      if (userData.offlineSubscription) {
+        userData.offlineSubscription.stop();
       }
-      if (subscription.redemptionSubscription) {
-        subscription.redemptionSubscription.stop();
+      if (userData.redemptionSubscription) {
+        userData.redemptionSubscription.stop();
       }
-      if (subscription.followSubscription) {
-        subscription.followSubscription.stop();
+      if (userData.followSubscription) {
+        userData.followSubscription.stop();
       }
-      if (subscription.raidSubscription) {
-        subscription.raidSubscription.stop();
+      if (userData.raidSubscription) {
+        userData.raidSubscription.stop();
+      }
+
+      // Stop the user's EventSub listener
+      if (userData.userListener) {
+        userData.userListener.stop();
       }
 
       this.connectedUsers.delete(userId);
@@ -398,9 +414,12 @@ class StreamMonitor extends EventEmitter {
   /**
    * Check current stream status for a user
    */
-  async checkCurrentStreamStatus(userId, twitchUserId) {
+  /**
+   * Check current stream status for a user
+   */
+  async checkCurrentStreamStatus(userId, twitchUserId, userApiClient) {
     try {
-      const stream = await this.appApiClient.streams.getStreamByUserId(twitchUserId);
+      const stream = await userApiClient.streams.getStreamByUserId(twitchUserId);
 
       if (stream) {
         // User is currently live

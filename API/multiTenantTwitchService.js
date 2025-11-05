@@ -62,17 +62,16 @@ class MultiTenantTwitchService extends EventEmitter {
         {
           clientId: this.clientId,
           clientSecret: this.clientSecret
-        },
-        {
-          accessToken: user.accessToken,
-          refreshToken: user.refreshToken,
-          expiresIn: 0,
-          obtainmentTimestamp: 0
         }
       );
 
-      // Add chat intent to the auth provider for this user
-      authProvider.addIntentToUser(userId, ['chat']);
+      // Add user with token and intents (required for chat)
+      await authProvider.addUserForToken({
+        accessToken: user.accessToken,
+        refreshToken: user.refreshToken,
+        expiresIn: 0,
+        obtainmentTimestamp: 0
+      }, ['chat']);
 
       // Handle token refresh
       authProvider.onRefresh(async (userId, newTokenData) => {

@@ -14,6 +14,7 @@ const counterRoutes = require('./counterRoutes');
 const adminRoutes = require('./adminRoutes');
 const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
+const userRoutes = require('./userRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -26,7 +27,16 @@ const io = socketIo(server, {
     origin: process.env.CORS_ORIGIN || '*',
     methods: ['GET', 'POST'],
     credentials: true
-  }
+  },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  path: '/socket.io/'
+});
+
+// Add connection debugging
+io.engine.on('connection_error', (err) => {
+  console.log('❌ Socket.io connection error:', err.req);
+  console.log('❌ Socket.io error details:', err.code, err.message, err.context);
 });
 
 // Make io available to routes
@@ -73,6 +83,10 @@ app.use('/auth', authRoutes);
 // Counter routes (requires authentication)
 app.use('/api/counters', counterRoutes);
 
+// User routes (requires authentication)
+app.use('/api/user', userRoutes);
+app.use('/api', userRoutes); // For /api/overlay-settings
+
 // Admin routes (requires admin role)
 app.use('/api/admin', adminRoutes);
 
@@ -99,18 +113,32 @@ app.get('/api/twitch/status', (req, res) => {
 });
 
 // WebSocket connection handling with authentication
+console.log('🔌 Setting up Socket.io authentication middleware');
 io.use(verifySocketAuth);
 
 io.on('connection', (socket) => {
   const userId = socket.userId;
-  console.log(`Client connected: ${socket.displayName} (${userId})`);
+  console.log(`✅ Client connected: ${socket.displayName} (${userId})`);
+  console.log(`🔌 Socket ID: ${socket.id}, Transport: ${socket.conn.transport.name}`);
 
   // Join user-specific room for targeted broadcasts
   socket.join(`user:${userId}`);
 
+  // Log transport upgrade
+  socket.conn.on('upgrade', (transport) => {
+    console.log(`🚀 Transport upgraded to: ${transport.name}`);
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', (reason) => {
+    console.log(`❌ Client disconnected: ${socket.displayName} (${userId}), Reason: ${reason}`);
+  });
+
   // Send current state to newly connected client
   database.getCounters(userId).then(data => {
     socket.emit('counterUpdate', data);
+  }).catch(error => {
+    console.error('❌ Error fetching counters for new connection:', error);
   });
 
   // Handle client commands

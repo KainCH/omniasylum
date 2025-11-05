@@ -115,26 +115,36 @@ async function optionalAuth(req, res, next) {
  */
 async function verifySocketAuth(socket, next) {
   try {
+    console.log('🔌 Socket Auth - Connection attempt from:', socket.request.connection.remoteAddress);
+    console.log('🔌 Socket Auth - Handshake auth:', socket.handshake.auth ? 'EXISTS' : 'MISSING');
+
     const token = socket.handshake.auth.token;
 
     if (!token) {
+      console.log('❌ Socket Auth - No token provided');
       return next(new Error('Authentication required'));
     }
+
+    console.log('🔌 Socket Auth - Token received:', token ? 'EXISTS' : 'MISSING');
 
     try {
       const jwtSecret = await getJwtSecret();
       const decoded = jwt.verify(token, jwtSecret);
+      console.log('✅ Socket Auth - Token decoded successfully:', decoded.username);
 
       // Attach user info to socket
       socket.userId = decoded.userId;
       socket.username = decoded.username;
       socket.displayName = decoded.displayName;
 
+      console.log('✅ Socket Auth - User authenticated:', decoded.username);
       next();
     } catch (error) {
+      console.log('❌ Socket Auth - Token verification failed:', error.message);
       return next(new Error('Invalid token'));
     }
   } catch (error) {
+    console.log('❌ Socket Auth - Authentication failed:', error.message);
     return next(new Error('Authentication failed'));
   }
 }

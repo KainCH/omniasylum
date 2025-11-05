@@ -5,6 +5,80 @@ const { requireAuth } = require('./authMiddleware');
 const router = express.Router();
 
 /**
+ * Update stream status (Phase 1)
+ * POST /api/stream/status
+ * Actions: prep, go-live, end-stream, cancel-prep
+ */
+router.post('/status', requireAuth, async (req, res) => {
+  try {
+    const { action } = req.body;
+    const userId = req.user.userId; // Changed from twitchUserId to userId
+
+    console.log(`🎬 Stream status update request: ${action} for user ${req.user.username}`);
+
+    // Get current user data
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const currentStatus = user.streamStatus || 'offline';
+    let newStatus = currentStatus;
+
+    // State machine for stream status transitions
+    switch (action) {
+      case 'prep':
+        if (currentStatus === 'offline') {
+          newStatus = 'prepping';
+        }
+        break;
+      case 'go-live':
+        if (currentStatus === 'prepping') {
+          newStatus = 'live';
+          // Start stream tracking
+          await database.startStream(userId);
+        }
+        break;
+      case 'end-stream':
+        if (currentStatus === 'live' || currentStatus === 'ending') {
+          newStatus = 'offline';
+          // End stream tracking
+          await database.endStream(userId);
+        }
+        break;
+      case 'cancel-prep':
+        if (currentStatus === 'prepping') {
+          newStatus = 'offline';
+        }
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+
+    // Update user's stream status
+    await database.updateStreamStatus(userId, newStatus);
+
+    console.log(`✅ Stream status updated: ${currentStatus} → ${newStatus}`);
+
+    // Broadcast to connected clients
+    const io = req.app.get('io');
+    io.to(`user:${userId}`).emit('streamStatusUpdate', {
+      userId,
+      streamStatus: newStatus
+    });
+
+    res.json({
+      message: `Stream status updated to ${newStatus}`,
+      streamStatus: newStatus,
+      previousStatus: currentStatus
+    });
+  } catch (error) {
+    console.error('❌ Error updating stream status:', error);
+    res.status(500).json({ error: 'Failed to update stream status' });
+  }
+});
+
+/**
  * Get current stream session info
  * GET /api/stream/session
  */
