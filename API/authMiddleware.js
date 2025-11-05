@@ -121,8 +121,13 @@ async function verifySocketAuth(socket, next) {
     const token = socket.handshake.auth.token;
 
     if (!token) {
-      console.log('❌ Socket Auth - No token provided');
-      return next(new Error('Authentication required'));
+      console.log('⚠️  Socket Auth - No token provided (allowing for overlay)');
+      // Allow unauthenticated connections (for overlay pages)
+      // They will need to call joinRoom with a userId
+      socket.userId = null;
+      socket.username = 'unauthenticated';
+      socket.displayName = 'Overlay';
+      return next();
     }
 
     console.log('🔌 Socket Auth - Token received:', token ? 'EXISTS' : 'MISSING');

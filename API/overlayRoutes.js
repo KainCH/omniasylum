@@ -321,6 +321,59 @@ router.get('/:userId', async (req, res) => {
         const overlaySettings = ${JSON.stringify(overlaySettings)};
         const socket = io();
 
+        // Helper function to get size-based styles
+        function getSizeStyles(size) {
+            const sizes = {
+                small: {
+                    fontSize: '14px',
+                    counterFontSize: '1.5rem',
+                    iconFontSize: '1.5rem',
+                    padding: '10px 20px',
+                    minWidth: '180px',
+                    iconWidth: '30px'
+                },
+                medium: {
+                    fontSize: '16px',
+                    counterFontSize: '2rem',
+                    iconFontSize: '2rem',
+                    padding: '15px 25px',
+                    minWidth: '200px',
+                    iconWidth: '40px'
+                },
+                large: {
+                    fontSize: '20px',
+                    counterFontSize: '2.5rem',
+                    iconFontSize: '2.5rem',
+                    padding: '20px 30px',
+                    minWidth: '250px',
+                    iconWidth: '50px'
+                }
+            };
+            return sizes[size] || sizes.medium;
+        }
+
+        // Apply size-based styles on load
+        const sizeStyles = getSizeStyles(overlaySettings.size || 'medium');
+        const style = document.createElement('style');
+        style.setAttribute('data-size-styles', 'true');
+        style.textContent = \`
+            .counter-item {
+                padding: \${sizeStyles.padding} !important;
+                min-width: \${sizeStyles.minWidth} !important;
+            }
+            .counter-icon {
+                font-size: \${sizeStyles.iconFontSize} !important;
+                width: \${sizeStyles.iconWidth} !important;
+            }
+            .counter-label {
+                font-size: \${sizeStyles.fontSize} !important;
+            }
+            .counter-value {
+                font-size: \${sizeStyles.counterFontSize} !important;
+            }
+        \`;
+        document.head.appendChild(style);
+
         // Join user's room for real-time updates
         socket.emit('joinRoom', userId);
 
@@ -588,16 +641,17 @@ router.get('/:userId', async (req, res) => {
 
         // Listen for counter updates
         socket.on('counterUpdate', (data) => {
-            if (data.userId === userId) {
-                if (overlaySettings.counters.deaths) {
-                    updateCounter('deaths', data.counters.deaths, data.change?.deaths);
-                }
-                if (overlaySettings.counters.swears) {
-                    updateCounter('swears', data.counters.swears, data.change?.swears);
-                }
-                if (overlaySettings.counters.bits) {
-                    updateCounter('bits', data.counters.bits, data.change?.bits);
-                }
+            console.log('📊 Overlay received counterUpdate:', data);
+
+            // Backend sends counters directly as {deaths: X, swears: Y, bits: Z}
+            if (overlaySettings.counters.deaths) {
+                updateCounter('deaths', data.deaths || 0);
+            }
+            if (overlaySettings.counters.swears) {
+                updateCounter('swears', data.swears || 0);
+            }
+            if (overlaySettings.counters.bits) {
+                updateCounter('bits', data.bits || 0);
             }
         });
 
@@ -679,6 +733,65 @@ router.get('/:userId', async (req, res) => {
                 updateCounter('deaths', data.counters.deaths, 0);
                 updateCounter('swears', data.counters.swears, 0);
                 updateCounter('bits', data.counters.bits, data.change?.bits);
+            }
+        });
+
+        // Listen for overlay settings updates (size, position, theme, etc.)
+        socket.on('overlaySettingsUpdate', (newSettings) => {
+            console.log('🎨 Overlay settings updated:', newSettings);
+
+            // Update size if changed
+            if (newSettings.size && newSettings.size !== overlaySettings.size) {
+                overlaySettings.size = newSettings.size;
+                const newSizeStyles = getSizeStyles(newSettings.size);
+
+                // Update dynamic styles
+                const existingStyle = document.querySelector('style[data-size-styles]');
+                if (existingStyle) {
+                    existingStyle.remove();
+                }
+
+                const style = document.createElement('style');
+                style.setAttribute('data-size-styles', 'true');
+                style.textContent = \`
+                    .counter-item {
+                        padding: \${newSizeStyles.padding} !important;
+                        min-width: \${newSizeStyles.minWidth} !important;
+                    }
+                    .counter-icon {
+                        font-size: \${newSizeStyles.iconFontSize} !important;
+                        width: \${newSizeStyles.iconWidth} !important;
+                    }
+                    .counter-label {
+                        font-size: \${newSizeStyles.fontSize} !important;
+                    }
+                    .counter-value {
+                        font-size: \${newSizeStyles.counterFontSize} !important;
+                    }
+                \`;
+                document.head.appendChild(style);
+            }
+
+            // Update position if changed
+            if (newSettings.position && newSettings.position !== overlaySettings.position) {
+                overlaySettings.position = newSettings.position;
+                const overlay = document.querySelector('.counter-overlay');
+                if (overlay) {
+                    overlay.style.top = newSettings.position.includes('top') ? '20px' : 'auto';
+                    overlay.style.bottom = newSettings.position.includes('bottom') ? '20px' : 'auto';
+                    overlay.style.left = newSettings.position.includes('left') ? '20px' : 'auto';
+                    overlay.style.right = newSettings.position.includes('right') ? '20px' : 'auto';
+                }
+            }
+
+            // Update theme colors if changed
+            if (newSettings.theme) {
+                Object.assign(overlaySettings.theme, newSettings.theme);
+                document.querySelectorAll('.counter-item').forEach(item => {
+                    item.style.backgroundColor = overlaySettings.theme.backgroundColor;
+                    item.style.borderColor = overlaySettings.theme.borderColor;
+                    item.style.color = overlaySettings.theme.textColor;
+                });
             }
         });
 

@@ -7,6 +7,37 @@ import AdminDashboard from './components/AdminDashboard'
 import './App.css'
 
 function App() {
+  // Helper function to get size-based styles
+  const getSizeStyles = (size) => {
+    const sizes = {
+      small: {
+        fontSize: '14px',
+        counterFontSize: '20px',
+        padding: '15px',
+        minWidth: '250px',
+        headingSize: '16px',
+        itemPadding: '10px'
+      },
+      medium: {
+        fontSize: '16px',
+        counterFontSize: '24px',
+        padding: '20px',
+        minWidth: '300px',
+        headingSize: '18px',
+        itemPadding: '12px'
+      },
+      large: {
+        fontSize: '20px',
+        counterFontSize: '32px',
+        padding: '25px',
+        minWidth: '400px',
+        headingSize: '24px',
+        itemPadding: '15px'
+      }
+    }
+    return sizes[size] || sizes.medium
+  }
+
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [socket, setSocket] = useState(null)
@@ -22,6 +53,7 @@ function App() {
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
     position: 'top-right',
+    size: 'medium',
     counters: {
       deaths: true,
       swears: true,
@@ -302,6 +334,8 @@ function App() {
       return
     }
 
+    console.log('🔄 Updating stream status with action:', action)
+
     try {
       const response = await fetch('/api/stream/status', {
         method: 'POST',
@@ -317,8 +351,9 @@ function App() {
       }
 
       const result = await response.json()
+      console.log('✅ Stream status API response:', result)
       setStreamStatus(result.streamStatus)
-      console.log('✅ Stream status updated:', result.streamStatus)
+      console.log('✅ Stream status state updated to:', result.streamStatus)
     } catch (error) {
       console.error('❌ Failed to update stream status:', error)
       alert('Failed to update stream status')
@@ -798,6 +833,26 @@ function App() {
             }} onClick={(e) => e.stopPropagation()}>
               <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>⚙️ Overlay Settings</h2>
 
+              {/* Enable/Disable Overlay */}
+              <div style={{ marginBottom: '25px', padding: '15px', background: '#2a2a2a', borderRadius: '8px', border: '2px solid #9146ff' }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                  <div>
+                    <h4 style={{ color: '#fff', margin: 0 }}>🎬 Enable Overlay</h4>
+                    <p style={{ color: '#aaa', fontSize: '12px', margin: '5px 0 0 0' }}>Show overlay when stream is live</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={overlaySettings.enabled}
+                    onChange={(e) => {
+                      const newSettings = { ...overlaySettings, enabled: e.target.checked }
+                      setOverlaySettings(newSettings)
+                      updateOverlaySettings(newSettings)
+                    }}
+                    style={{ width: '24px', height: '24px', cursor: 'pointer' }}
+                  />
+                </label>
+              </div>
+
               {/* Position Selector */}
               <div style={{ marginBottom: '25px' }}>
                 <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎯 Overlay Position</h4>
@@ -822,6 +877,32 @@ function App() {
                   <option value="top-right">↗️ Top Right</option>
                   <option value="bottom-left">↙️ Bottom Left</option>
                   <option value="bottom-right">↘️ Bottom Right</option>
+                </select>
+              </div>
+
+              {/* Size Selector */}
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
+                <select
+                  value={overlaySettings.size || 'medium'}
+                  onChange={(e) => {
+                    const newSettings = { ...overlaySettings, size: e.target.value }
+                    setOverlaySettings(newSettings)
+                    updateOverlaySettings(newSettings)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    background: '#2a2a2a',
+                    color: '#fff',
+                    border: '1px solid #444',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="small">🔹 Small (Compact)</option>
+                  <option value="medium">🔸 Medium (Default)</option>
+                  <option value="large">🔶 Large (Bold)</option>
                 </select>
               </div>
 
@@ -945,7 +1026,14 @@ function App() {
         )}
 
         {/* Stream Overlay - Rendered when stream is live */}
-        {(streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (
+        {console.log('🎨 Overlay render check:', {
+          streamStatus,
+          overlayEnabled: overlaySettings.enabled,
+          shouldShow: (streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled,
+          overlayPosition: overlaySettings.position
+        }) || ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (() => {
+          const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
+          return (
           <div style={{
             position: 'fixed',
             [overlaySettings.position.includes('top') ? 'top' : 'bottom']: '20px',
@@ -954,8 +1042,8 @@ function App() {
             background: overlaySettings.theme.backgroundColor,
             border: `3px solid ${overlaySettings.theme.borderColor}`,
             borderRadius: '12px',
-            padding: '20px',
-            minWidth: '300px',
+            padding: sizeStyles.padding,
+            minWidth: sizeStyles.minWidth,
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
             transition: overlaySettings.animations.fadeTransitions ? 'all 0.3s ease' : 'none',
             animation: overlaySettings.animations.bounceOnUpdate ? 'fadeIn 0.5s ease-in-out' : 'none'
@@ -963,7 +1051,7 @@ function App() {
             <h3 style={{
               color: overlaySettings.theme.textColor,
               marginBottom: '15px',
-              fontSize: '18px',
+              fontSize: sizeStyles.headingSize,
               fontWeight: 'bold',
               textAlign: 'center',
               textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
@@ -975,7 +1063,7 @@ function App() {
               {overlaySettings.counters.deaths && (
                 <div style={{
                   background: 'rgba(220, 53, 69, 0.2)',
-                  padding: '12px',
+                  padding: sizeStyles.itemPadding,
                   borderRadius: '8px',
                   border: '2px solid #dc3545',
                   display: 'flex',
@@ -984,12 +1072,12 @@ function App() {
                 }}>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '16px',
+                    fontSize: sizeStyles.fontSize,
                     fontWeight: 'bold'
                   }}>💀 Deaths</span>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '24px',
+                    fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
                   }}>{counters.deaths}</span>
                 </div>
@@ -998,7 +1086,7 @@ function App() {
               {overlaySettings.counters.swears && (
                 <div style={{
                   background: 'rgba(255, 193, 7, 0.2)',
-                  padding: '12px',
+                  padding: sizeStyles.itemPadding,
                   borderRadius: '8px',
                   border: '2px solid #ffc107',
                   display: 'flex',
@@ -1007,12 +1095,12 @@ function App() {
                 }}>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '16px',
+                    fontSize: sizeStyles.fontSize,
                     fontWeight: 'bold'
                   }}>🤬 Swears</span>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '24px',
+                    fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
                   }}>{counters.swears}</span>
                 </div>
@@ -1021,7 +1109,7 @@ function App() {
               {overlaySettings.counters.bits && counters.bits > 0 && (
                 <div style={{
                   background: 'rgba(145, 70, 255, 0.2)',
-                  padding: '12px',
+                  padding: sizeStyles.itemPadding,
                   borderRadius: '8px',
                   border: '2px solid #9146ff',
                   display: 'flex',
@@ -1030,18 +1118,20 @@ function App() {
                 }}>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '16px',
+                    fontSize: sizeStyles.fontSize,
                     fontWeight: 'bold'
                   }}>💎 Bits</span>
                   <span style={{
                     color: overlaySettings.theme.textColor,
-                    fontSize: '24px',
+                    fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
                   }}>{counters.bits || 0}</span>
                 </div>
               )}
             </div>
           </div>
+          )
+        })()
         )}
       </div>
     </div>

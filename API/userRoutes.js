@@ -35,6 +35,7 @@ router.get('/settings', requireAuth, async (req, res) => {
       overlaySettings = {
         enabled: true,
         position: 'top-right',
+        size: 'medium',
         counters: {
           deaths: true,
           swears: true,

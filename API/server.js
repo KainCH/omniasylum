@@ -118,11 +118,13 @@ io.use(verifySocketAuth);
 
 io.on('connection', (socket) => {
   const userId = socket.userId;
-  console.log(`✅ Client connected: ${socket.displayName} (${userId})`);
+  console.log(`✅ Client connected: ${socket.displayName} (${userId || 'unauthenticated'})`);
   console.log(`🔌 Socket ID: ${socket.id}, Transport: ${socket.conn.transport.name}`);
 
-  // Join user-specific room for targeted broadcasts
-  socket.join(`user:${userId}`);
+  // Join user-specific room for authenticated users
+  if (userId) {
+    socket.join(`user:${userId}`);
+  }
 
   // Log transport upgrade
   socket.conn.on('upgrade', (transport) => {
@@ -131,18 +133,21 @@ io.on('connection', (socket) => {
 
   // Handle disconnect
   socket.on('disconnect', (reason) => {
-    console.log(`❌ Client disconnected: ${socket.displayName} (${userId}), Reason: ${reason}`);
+    console.log(`❌ Client disconnected: ${socket.displayName} (${userId || 'unauthenticated'}), Reason: ${reason}`);
   });
 
-  // Send current state to newly connected client
-  database.getCounters(userId).then(data => {
-    socket.emit('counterUpdate', data);
-  }).catch(error => {
-    console.error('❌ Error fetching counters for new connection:', error);
-  });
+  // Send current state to newly connected authenticated client
+  if (userId) {
+    database.getCounters(userId).then(data => {
+      socket.emit('counterUpdate', data);
+    }).catch(error => {
+      console.error('❌ Error fetching counters for new connection:', error);
+    });
+  }
 
-  // Handle client commands
+  // Handle client commands (only for authenticated users)
   socket.on('incrementDeaths', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const data = await database.incrementDeaths(userId);
       io.to(`user:${userId}`).emit('counterUpdate', data);
@@ -153,6 +158,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('decrementDeaths', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const data = await database.decrementDeaths(userId);
       io.to(`user:${userId}`).emit('counterUpdate', data);
@@ -162,6 +168,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('incrementSwears', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const data = await database.incrementSwears(userId);
       io.to(`user:${userId}`).emit('counterUpdate', data);
@@ -171,6 +178,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('decrementSwears', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const data = await database.decrementSwears(userId);
       io.to(`user:${userId}`).emit('counterUpdate', data);
@@ -180,6 +188,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('resetCounters', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const data = await database.resetCounters(userId);
       io.to(`user:${userId}`).emit('counterUpdate', data);
@@ -190,6 +199,7 @@ io.on('connection', (socket) => {
 
   // Connect user's Twitch bot when they connect
   socket.on('connectTwitch', async () => {
+    if (!userId) return socket.emit('error', { message: 'Authentication required' });
     try {
       const success = await twitchService.connectUser(userId);
       socket.emit('twitchConnected', { success });
@@ -197,6 +207,20 @@ io.on('connection', (socket) => {
       console.error('Error connecting Twitch:', error);
       socket.emit('twitchConnected', { success: false, error: error.message });
     }
+  });
+
+  // Allow overlay pages to join user room without authentication
+  socket.on('joinRoom', (targetUserId) => {
+    console.log(`🎨 Overlay joining room for user: ${targetUserId}`);
+    socket.join(`user:${targetUserId}`);
+
+    // Send current counter state to overlay
+    database.getCounters(targetUserId).then(data => {
+      socket.emit('counterUpdate', data);
+      console.log(`📊 Sent initial counters to overlay for user ${targetUserId}:`, data);
+    }).catch(error => {
+      console.error('❌ Error fetching counters for overlay:', error);
+    });
   });
 
   socket.on('disconnect', () => {
