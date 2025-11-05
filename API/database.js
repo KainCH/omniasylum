@@ -13,6 +13,7 @@ class Database {
     this.mode = process.env.DB_MODE || 'local'; // 'local' or 'azure'
     this.usersClient = null;
     this.countersClient = null;
+    this.alertsClient = null;
     this.localDataDir = path.join(__dirname, 'data');
     this.localUsersFile = path.join(this.localDataDir, 'users.json');
     this.localCountersFile = path.join(this.localDataDir, 'counters.json');
@@ -52,10 +53,12 @@ class Database {
 
       this.usersClient = new TableClient(serviceUrl, 'users', credential);
       this.countersClient = new TableClient(serviceUrl, 'counters', credential);
+      this.alertsClient = new TableClient(serviceUrl, 'alerts', credential);
 
       // Create tables if they don't exist
       await this.usersClient.createTable();
       await this.countersClient.createTable();
+      await this.alertsClient.createTable();
 
       console.log('✅ Connected to Azure Table Storage');
     } catch (error) {
@@ -78,6 +81,11 @@ class Database {
     }
     if (!fs.existsSync(this.localCountersFile)) {
       fs.writeFileSync(this.localCountersFile, JSON.stringify({}), 'utf8');
+    }
+    // Initialize rewards file for channel point rewards
+    const localRewardsFile = path.join(this.localDataDir, 'rewards.json');
+    if (!fs.existsSync(localRewardsFile)) {
+      fs.writeFileSync(localRewardsFile, JSON.stringify({}), 'utf8');
     }
     console.log('✅ Using local JSON storage');
   }
@@ -429,6 +437,134 @@ class Database {
     return await this.saveUser(user);
   }
 
+  // ==================== CHANNEL POINT REWARDS ====================
+
+  /**
+   * Get channel point reward configuration
+   */
+  async getChannelPointReward(userId, rewardId) {
+    if (this.mode === 'azure') {
+      try {
+        const entity = await this.countersClient.getEntity(userId, `reward-${rewardId}`);
+        return {
+          userId: entity.partitionKey,
+          rewardId: entity.rewardId,
+          rewardTitle: entity.rewardTitle,
+          cost: entity.cost,
+          action: entity.action,
+          isEnabled: entity.isEnabled,
+          createdAt: entity.createdAt
+        };
+      } catch (error) {
+        if (error.statusCode === 404) {
+          return null;
+        }
+        throw error;
+      }
+    } else {
+      const rewardsFile = path.join(this.localDataDir, 'rewards.json');
+      if (!fs.existsSync(rewardsFile)) {
+        return null;
+      }
+      const rewards = JSON.parse(fs.readFileSync(rewardsFile, 'utf8'));
+      const key = `${userId}-${rewardId}`;
+      return rewards[key] || null;
+    }
+  }
+
+  /**
+   * Save channel point reward configuration
+   */
+  async saveChannelPointReward(rewardConfig) {
+    if (this.mode === 'azure') {
+      const entity = {
+        partitionKey: rewardConfig.userId,
+        rowKey: `reward-${rewardConfig.rewardId}`,
+        rewardId: rewardConfig.rewardId,
+        rewardTitle: rewardConfig.rewardTitle,
+        cost: rewardConfig.cost,
+        action: rewardConfig.action,
+        isEnabled: rewardConfig.isEnabled,
+        createdAt: rewardConfig.createdAt
+      };
+      await this.countersClient.upsertEntity(entity);
+      return entity;
+    } else {
+      const rewardsFile = path.join(this.localDataDir, 'rewards.json');
+      let rewards = {};
+      if (fs.existsSync(rewardsFile)) {
+        rewards = JSON.parse(fs.readFileSync(rewardsFile, 'utf8'));
+      }
+      const key = `${rewardConfig.userId}-${rewardConfig.rewardId}`;
+      rewards[key] = rewardConfig;
+      fs.writeFileSync(rewardsFile, JSON.stringify(rewards, null, 2), 'utf8');
+      return rewardConfig;
+    }
+  }
+
+  /**
+   * Delete channel point reward configuration
+   */
+  async deleteChannelPointReward(userId, rewardId) {
+    if (this.mode === 'azure') {
+      try {
+        await this.countersClient.deleteEntity(userId, `reward-${rewardId}`);
+        return true;
+      } catch (error) {
+        if (error.statusCode === 404) {
+          return false;
+        }
+        throw error;
+      }
+    } else {
+      const rewardsFile = path.join(this.localDataDir, 'rewards.json');
+      if (!fs.existsSync(rewardsFile)) {
+        return false;
+      }
+      const rewards = JSON.parse(fs.readFileSync(rewardsFile, 'utf8'));
+      const key = `${userId}-${rewardId}`;
+      if (rewards[key]) {
+        delete rewards[key];
+        fs.writeFileSync(rewardsFile, JSON.stringify(rewards, null, 2), 'utf8');
+        return true;
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Get all channel point rewards for a user
+   */
+  async getUserChannelPointRewards(userId) {
+    if (this.mode === 'azure') {
+      const rewards = [];
+      const entities = this.countersClient.listEntities({
+        queryOptions: {
+          filter: `PartitionKey eq '${userId}' and RowKey ge 'reward-' and RowKey lt 'reward.'`
+        }
+      });
+      for await (const entity of entities) {
+        rewards.push({
+          userId: entity.partitionKey,
+          rewardId: entity.rewardId,
+          rewardTitle: entity.rewardTitle,
+          cost: entity.cost,
+          action: entity.action,
+          isEnabled: entity.isEnabled,
+          createdAt: entity.createdAt
+        });
+      }
+      return rewards;
+    } else {
+      const rewardsFile = path.join(this.localDataDir, 'rewards.json');
+      if (!fs.existsSync(rewardsFile)) {
+        return [];
+      }
+      const rewards = JSON.parse(fs.readFileSync(rewardsFile, 'utf8'));
+      return Object.values(rewards).filter(reward => reward.userId === userId);
+    }
+  }
+
   // ==================== ADMIN OPERATIONS ====================
 
   /**
@@ -457,8 +593,24 @@ class Database {
       throw new Error('User not found');
     }
 
+    // Update only the features field
     user.features = JSON.stringify(features);
-    return await this.saveUser(user);
+
+    if (this.mode === 'azure') {
+      // Use upsertEntity to update just this user
+      await this.usersClient.upsertEntity(user, 'Merge');
+    } else {
+      // Update in local JSON file
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].features = JSON.stringify(features);
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+    }
+
+    return user;
   }
 
   /**
@@ -470,8 +622,22 @@ class Database {
       throw new Error('User not found');
     }
 
+    // Update only the isActive field
     user.isActive = isActive;
-    return await this.saveUser(user);
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].isActive = isActive;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+    }
+
+    return user;
   }
 
   /**
@@ -484,7 +650,20 @@ class Database {
     }
 
     user.role = role;
-    return await this.saveUser(user);
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].role = role;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+    }
+
+    return user;
   }
 
   /**
@@ -590,7 +769,309 @@ class Database {
     }
 
     user.overlaySettings = JSON.stringify(overlaySettings);
-    return await this.saveUser(user);
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].overlaySettings = JSON.stringify(overlaySettings);
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+    }
+
+    return user;
+  }
+
+  // ==================== ALERT MANAGEMENT ====================
+
+  /**
+   * Get default alert templates for Omni's asylum theme
+   */
+  getDefaultAlertTemplates() {
+    return [
+      {
+        id: 'follow',
+        type: 'follow',
+        name: 'New Follower',
+        visualCue: 'A door creaks open slowly',
+        sound: 'distant-footsteps',
+        soundDescription: 'Distant footsteps or whisper',
+        textPrompt: 'A new patient has arrived…',
+        duration: 4000,
+        backgroundColor: '#1a0d0d',
+        textColor: '#ff6b6b',
+        borderColor: '#8b1538',
+        isDefault: true
+      },
+      {
+        id: 'subscription',
+        type: 'subscription',
+        name: 'New Subscriber',
+        visualCue: 'Restraints snap shut',
+        sound: 'electroshock-buzz',
+        soundDescription: 'Electroshock buzz or echoing scream',
+        textPrompt: 'They\'ve committed for the long stay.',
+        duration: 5000,
+        backgroundColor: '#1a0d1a',
+        textColor: '#9147ff',
+        borderColor: '#6441a5',
+        isDefault: true
+      },
+      {
+        id: 'resub',
+        type: 'resub',
+        name: 'Resubscription',
+        visualCue: 'A file slams shut on a desk',
+        sound: 'typewriter-ding',
+        soundDescription: 'Pen scribble + typewriter ding',
+        textPrompt: 'Case file reopened: [User] returns.',
+        duration: 5000,
+        backgroundColor: '#0d1a0d',
+        textColor: '#00ff88',
+        borderColor: '#1db954',
+        isDefault: true
+      },
+      {
+        id: 'bits',
+        type: 'bits',
+        name: 'Bits Donation',
+        visualCue: 'Pills scatter across the floor',
+        sound: 'pill-rattle',
+        soundDescription: 'Pill bottle rattle + distorted laugh',
+        textPrompt: '[User] offers their dosage.',
+        duration: 4000,
+        backgroundColor: '#1a1a0d',
+        textColor: '#ffd700',
+        borderColor: '#ffcc00',
+        isDefault: true
+      },
+      {
+        id: 'raid',
+        type: 'raid',
+        name: 'Raid Alert',
+        visualCue: 'Sirens blare, lights flicker red',
+        sound: 'asylum-alarm',
+        soundDescription: 'Alarm + overlapping voices',
+        textPrompt: 'The ward is breached—[X] intruders!',
+        duration: 6000,
+        backgroundColor: '#1a0000',
+        textColor: '#ff0000',
+        borderColor: '#cc0000',
+        isDefault: true
+      },
+      {
+        id: 'giftsub',
+        type: 'giftsub',
+        name: 'Gifted Subscription',
+        visualCue: 'A nurse silhouette appears behind glass',
+        sound: 'heart-monitor-flatline',
+        soundDescription: 'Heart monitor flatline',
+        textPrompt: '[User] sedates another soul.',
+        duration: 5000,
+        backgroundColor: '#0d0d1a',
+        textColor: '#88ddff',
+        borderColor: '#0099cc',
+        isDefault: true
+      },
+      {
+        id: 'hypetrain',
+        type: 'hypetrain',
+        name: 'Hype Train',
+        visualCue: 'Wheelchair rolls down a hallway',
+        sound: 'train-screech-heartbeat',
+        soundDescription: 'Rising heartbeat + train screech',
+        textPrompt: 'The asylum stirs… the frenzy begins.',
+        duration: 8000,
+        backgroundColor: '#1a1a1a',
+        textColor: '#ffffff',
+        borderColor: '#ff6600',
+        isDefault: true
+      }
+    ];
+  }
+
+  /**
+   * Get user's custom alerts
+   */
+  async getUserAlerts(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const alerts = [];
+        const entities = this.alertsClient.listEntities({
+          queryOptions: { filter: `PartitionKey eq '${twitchUserId}'` }
+        });
+
+        for await (const entity of entities) {
+          alerts.push({
+            id: entity.rowKey,
+            userId: entity.PartitionKey,
+            type: entity.type,
+            name: entity.name,
+            visualCue: entity.visualCue,
+            sound: entity.sound,
+            soundDescription: entity.soundDescription || '',
+            textPrompt: entity.textPrompt,
+            duration: entity.duration || 4000,
+            backgroundColor: entity.backgroundColor || '#1a0d0d',
+            textColor: entity.textColor || '#ffffff',
+            borderColor: entity.borderColor || '#666666',
+            isEnabled: entity.isEnabled !== false,
+            isDefault: entity.isDefault === true,
+            createdAt: entity.createdAt,
+            updatedAt: entity.updatedAt
+          });
+        }
+
+        return alerts;
+      } catch (error) {
+        console.error('Error getting user alerts from Azure:', error);
+        return [];
+      }
+    } else {
+      // Local storage implementation
+      const alertsFile = path.join(this.localDataDir, 'alerts.json');
+
+      if (!fs.existsSync(alertsFile)) {
+        fs.writeFileSync(alertsFile, '{}', 'utf8');
+        return [];
+      }
+
+      try {
+        const allAlerts = JSON.parse(fs.readFileSync(alertsFile, 'utf8'));
+        return Object.values(allAlerts[twitchUserId] || {});
+      } catch (error) {
+        console.error('Error reading local alerts:', error);
+        return [];
+      }
+    }
+  }
+
+  /**
+   * Save/update a custom alert
+   */
+  async saveAlert(alertConfig) {
+    const alertId = alertConfig.id || `alert_${Date.now()}`;
+
+    if (this.mode === 'azure') {
+      const entity = {
+        partitionKey: alertConfig.userId,
+        rowKey: alertId,
+        type: alertConfig.type,
+        name: alertConfig.name,
+        visualCue: alertConfig.visualCue || '',
+        sound: alertConfig.sound || '',
+        soundDescription: alertConfig.soundDescription || '',
+        textPrompt: alertConfig.textPrompt,
+        duration: alertConfig.duration || 4000,
+        backgroundColor: alertConfig.backgroundColor || '#1a0d0d',
+        textColor: alertConfig.textColor || '#ffffff',
+        borderColor: alertConfig.borderColor || '#666666',
+        isEnabled: alertConfig.isEnabled !== false,
+        isDefault: alertConfig.isDefault === true,
+        createdAt: alertConfig.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.alertsClient.upsertEntity(entity, 'Merge');
+    } else {
+      // Local storage implementation
+      const alertsFile = path.join(this.localDataDir, 'alerts.json');
+
+      let allAlerts = {};
+      if (fs.existsSync(alertsFile)) {
+        try {
+          allAlerts = JSON.parse(fs.readFileSync(alertsFile, 'utf8'));
+        } catch (error) {
+          console.error('Error reading alerts file:', error);
+          allAlerts = {};
+        }
+      }
+
+      if (!allAlerts[alertConfig.userId]) {
+        allAlerts[alertConfig.userId] = {};
+      }
+
+      allAlerts[alertConfig.userId][alertId] = {
+        id: alertId,
+        userId: alertConfig.userId,
+        type: alertConfig.type,
+        name: alertConfig.name,
+        visualCue: alertConfig.visualCue || '',
+        sound: alertConfig.sound || '',
+        soundDescription: alertConfig.soundDescription || '',
+        textPrompt: alertConfig.textPrompt,
+        duration: alertConfig.duration || 4000,
+        backgroundColor: alertConfig.backgroundColor || '#1a0d0d',
+        textColor: alertConfig.textColor || '#ffffff',
+        borderColor: alertConfig.borderColor || '#666666',
+        isEnabled: alertConfig.isEnabled !== false,
+        isDefault: alertConfig.isDefault === true,
+        createdAt: alertConfig.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      fs.writeFileSync(alertsFile, JSON.stringify(allAlerts, null, 2), 'utf8');
+    }
+
+    return alertId;
+  }
+
+  /**
+   * Delete a custom alert
+   */
+  async deleteAlert(userId, alertId) {
+    if (this.mode === 'azure') {
+      await this.alertsClient.deleteEntity(userId, alertId);
+    } else {
+      const alertsFile = path.join(this.localDataDir, 'alerts.json');
+
+      if (!fs.existsSync(alertsFile)) {
+        return;
+      }
+
+      try {
+        const allAlerts = JSON.parse(fs.readFileSync(alertsFile, 'utf8'));
+        if (allAlerts[userId] && allAlerts[userId][alertId]) {
+          delete allAlerts[userId][alertId];
+          fs.writeFileSync(alertsFile, JSON.stringify(allAlerts, null, 2), 'utf8');
+        }
+      } catch (error) {
+        console.error('Error deleting alert:', error);
+      }
+    }
+  }
+
+  /**
+   * Initialize default alerts for a user
+   */
+  async initializeUserAlerts(twitchUserId) {
+    const existingAlerts = await this.getUserAlerts(twitchUserId);
+
+    // Only add default alerts if user has none
+    if (existingAlerts.length === 0) {
+      const defaultTemplates = this.getDefaultAlertTemplates();
+
+      for (const template of defaultTemplates) {
+        await this.saveAlert({
+          ...template,
+          userId: twitchUserId,
+          id: `${twitchUserId}_${template.id}`
+        });
+      }
+
+      console.log(`✅ Initialized ${defaultTemplates.length} default alerts for user ${twitchUserId}`);
+    }
+  }
+
+  /**
+   * Get alert configuration for a specific event type
+   */
+  async getAlertForEventType(userId, eventType) {
+    const alerts = await this.getUserAlerts(userId);
+    return alerts.find(alert => alert.type === eventType && alert.isEnabled) || null;
   }
 }
 

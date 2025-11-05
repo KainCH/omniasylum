@@ -164,4 +164,68 @@ router.post('/reset-bits', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Get stream monitoring status
+ * GET /api/stream/monitor/status
+ */
+router.get('/monitor/status', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const status = streamMonitor.getStatus();
+
+    // Check if current user is being monitored
+    const userMonitored = status.monitoredUsers.some(u => u.userId === req.user.twitchUserId);
+
+    res.json({
+      ...status,
+      currentUserMonitored: userMonitored
+    });
+  } catch (error) {
+    console.error('Error getting stream monitor status:', error);
+    res.status(500).json({ error: 'Failed to get stream monitor status' });
+  }
+});
+
+/**
+ * Subscribe to stream monitoring for current user
+ * POST /api/stream/monitor/subscribe
+ */
+router.post('/monitor/subscribe', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const success = await streamMonitor.subscribeToUser(req.user.twitchUserId);
+
+    if (success) {
+      res.json({
+        message: 'Successfully subscribed to stream monitoring',
+        userId: req.user.twitchUserId
+      });
+    } else {
+      res.status(400).json({ error: 'Failed to subscribe to stream monitoring' });
+    }
+  } catch (error) {
+    console.error('Error subscribing to stream monitoring:', error);
+    res.status(500).json({ error: 'Failed to subscribe to stream monitoring' });
+  }
+});
+
+/**
+ * Unsubscribe from stream monitoring for current user
+ * POST /api/stream/monitor/unsubscribe
+ */
+router.post('/monitor/unsubscribe', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    await streamMonitor.unsubscribeFromUser(req.user.twitchUserId);
+
+    res.json({
+      message: 'Successfully unsubscribed from stream monitoring',
+      userId: req.user.twitchUserId
+    });
+  } catch (error) {
+    console.error('Error unsubscribing from stream monitoring:', error);
+    res.status(500).json({ error: 'Failed to unsubscribe from stream monitoring' });
+  }
+});
+
 module.exports = router;

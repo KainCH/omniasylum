@@ -331,7 +331,7 @@ router.get('/stats', requireAuth, requireRole('manager'), async (req, res) => {
     };
 
     // Calculate feature usage
-    const featureNames = ['chatCommands', 'channelPoints', 'autoClip', 'customCommands', 'analytics', 'webhooks', 'bitsIntegration', 'streamOverlay', 'alertAnimations'];
+    const featureNames = ['chatCommands', 'channelPoints', 'autoClip', 'customCommands', 'analytics', 'webhooks', 'bitsIntegration', 'streamOverlay', 'alertAnimations', 'streamAlerts'];
     featureNames.forEach(feature => {
       stats.featureUsage[feature] = users.filter(u => {
         try {

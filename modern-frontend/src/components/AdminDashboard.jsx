@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { io } from 'socket.io-client'
 
 function AdminDashboard() {
   const [users, setUsers] = useState([])
@@ -11,6 +12,30 @@ function AdminDashboard() {
   const [addingUser, setAddingUser] = useState(false)
   const [showAddUser, setShowAddUser] = useState(false)
   const [showRoleManager, setShowRoleManager] = useState(false)
+  const [showRewardsManager, setShowRewardsManager] = useState(false)
+  const [showAlertsManager, setShowAlertsManager] = useState(false)
+  const [rewards, setRewards] = useState([])
+  const [alerts, setAlerts] = useState([])
+  const [alertTemplates, setAlertTemplates] = useState([])
+  const [newReward, setNewReward] = useState({
+    title: '',
+    cost: 100,
+    action: 'increment_deaths',
+    prompt: '',
+    backgroundColor: '#9147FF'
+  })
+  const [newAlert, setNewAlert] = useState({
+    type: 'custom',
+    name: '',
+    textPrompt: '',
+    visualCue: '',
+    sound: '',
+    soundDescription: '',
+    duration: 4000,
+    backgroundColor: '#1a0d0d',
+    textColor: '#ffffff',
+    borderColor: '#666666'
+  })
   const [newUser, setNewUser] = useState({
     username: '',
     displayName: '',
@@ -18,9 +43,39 @@ function AdminDashboard() {
     twitchUserId: ''
   })
   const [currentUserRole, setCurrentUserRole] = useState('streamer')
+  const [socket, setSocket] = useState(null)
 
   useEffect(() => {
     fetchAdminData()
+  }, [])
+
+  // Socket.io connection for real-time updates
+  useEffect(() => {
+    const socketConnection = io()
+    setSocket(socketConnection)
+
+    // Listen for user status changes (auto-deactivation when stream ends)
+    socketConnection.on('userStatusChanged', (data) => {
+      console.log(`🔄 User status changed: ${data.username} is now ${data.isActive ? 'active' : 'inactive'} (${data.reason})`)
+
+      // Update user in the list
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.twitchUserId === data.userId
+            ? { ...user, isActive: data.isActive }
+            : user
+        )
+      )
+
+      // Show notification to admin
+      if (!data.isActive && data.reason === 'Stream ended') {
+        alert(`📴 ${data.username} was automatically deactivated because their stream ended`)
+      }
+    })
+
+    return () => {
+      socketConnection.disconnect()
+    }
   }, [])
 
   // Helper function to get auth headers
@@ -112,6 +167,39 @@ function AdminDashboard() {
         setStreams(streamsData.sessions || [])
       } else {
         console.error('Failed to fetch streams:', streamsResponse.status)
+      }
+
+      // Fetch channel point rewards (admin view)
+      const rewardsResponse = await fetch('/api/rewards/admin/all', {
+        headers
+      })
+      if (rewardsResponse.ok) {
+        const rewardsData = await rewardsResponse.json()
+        setRewards(rewardsData.users || [])
+      } else {
+        console.error('Failed to fetch rewards:', rewardsResponse.status)
+      }
+
+      // Fetch alert configurations (admin view)
+      const alertsResponse = await fetch('/api/alerts/admin/all', {
+        headers
+      })
+      if (alertsResponse.ok) {
+        const alertsData = await alertsResponse.json()
+        setAlerts(alertsData.users || [])
+      } else {
+        console.error('Failed to fetch alerts:', alertsResponse.status)
+      }
+
+      // Fetch alert templates
+      const templatesResponse = await fetch('/api/alerts/templates', {
+        headers
+      })
+      if (templatesResponse.ok) {
+        const templatesData = await templatesResponse.json()
+        setAlertTemplates(templatesData.templates || [])
+      } else {
+        console.error('Failed to fetch alert templates:', templatesResponse.status)
       }
     } catch (error) {
       console.error('Failed to fetch admin data:', error)
@@ -296,6 +384,145 @@ function AdminDashboard() {
     }
   }
 
+  // Channel Point Reward Management Functions
+  const createReward = async (userId) => {
+    try {
+      const response = await fetch('/api/rewards', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          ...newReward,
+          userId: userId
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Reward "${newReward.title}" created successfully!`)
+        setNewReward({
+          title: '',
+          cost: 100,
+          action: 'increment_deaths',
+          prompt: '',
+          backgroundColor: '#9147FF'
+        })
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to create reward: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to create reward:', error)
+      alert('Failed to create reward')
+    }
+  }
+
+  const deleteReward = async (userId, rewardId, rewardTitle) => {
+    if (!confirm(`Are you sure you want to delete the reward "${rewardTitle}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/rewards/${rewardId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        alert(`Reward "${rewardTitle}" deleted successfully!`)
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to delete reward: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete reward:', error)
+      alert('Failed to delete reward')
+    }
+  }
+
+  // Alert Management Functions
+  const createAlert = async (userId) => {
+    try {
+      const response = await fetch('/api/alerts', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          ...newAlert,
+          userId: userId
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Alert "${newAlert.name}" created successfully!`)
+        setNewAlert({
+          type: 'custom',
+          name: '',
+          textPrompt: '',
+          visualCue: '',
+          sound: '',
+          soundDescription: '',
+          duration: 4000,
+          backgroundColor: '#1a0d0d',
+          textColor: '#ffffff',
+          borderColor: '#666666'
+        })
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to create alert: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to create alert:', error)
+      alert('Failed to create alert')
+    }
+  }
+
+  const deleteAlert = async (userId, alertId, alertName) => {
+    if (!confirm(`Are you sure you want to delete the alert "${alertName}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/alerts/${alertId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        alert(`Alert "${alertName}" deleted successfully!`)
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to delete alert: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete alert:', error)
+      alert('Failed to delete alert')
+    }
+  }
+
+  const updateAlertStatus = async (userId, alertId, isEnabled) => {
+    try {
+      const response = await fetch(`/api/alerts/${alertId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ isEnabled: !isEnabled })
+      })
+
+      if (response.ok) {
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to update alert: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to update alert:', error)
+      alert('Failed to update alert')
+    }
+  }
+
   if (loading) {
     return (
       <div className="loading">
@@ -409,6 +636,339 @@ function AdminDashboard() {
           {streams.filter(s => s.isStreaming).length === 0 && (
             <div className="no-streams">
               <p>📴 No active stream sessions</p>
+            </div>
+          )}
+        </div>
+
+        <div className="admin-overlay-management">
+          <h2>🎨 Overlay Management</h2>
+          <div className="overlay-stats">
+            <div className="overlay-stat-card">
+              <h3>Users with Overlay</h3>
+              <p className="stat-number">{users.filter(u => u.features?.streamOverlay).length}</p>
+            </div>
+            <div className="overlay-stat-card">
+              <h3>Active Overlays</h3>
+              <p className="stat-number">
+                {users.filter(u => {
+                  try {
+                    const settings = typeof u.overlaySettings === 'string' ? JSON.parse(u.overlaySettings) : u.overlaySettings;
+                    return u.features?.streamOverlay && settings?.enabled;
+                  } catch {
+                    return false;
+                  }
+                }).length}
+              </p>
+            </div>
+            <div className="overlay-stat-card">
+              <h3>Setup Instructions</h3>
+              <select
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const baseUrl = window.location.origin;
+                    window.open(`${baseUrl}/overlay/setup/${e.target.value}`, '_blank');
+                  }
+                }}
+                className="user-select"
+                defaultValue=""
+              >
+                <option value="">Select user for setup guide...</option>
+                {(() => {
+                  const currentRole = getCurrentUserRole();
+                  const isAdmin = currentRole === 'admin';
+                  const eligibleUsers = isAdmin ? users : users.filter(u => u.features?.streamOverlay);
+                  return eligibleUsers.map(user => (
+                    <option key={user.twitchUserId} value={user.twitchUserId}>
+                      {user.displayName} (@{user.username})
+                      {isAdmin && !user.features?.streamOverlay ? ' - No Overlay Permission' : ''}
+                    </option>
+                  ));
+                })()}
+              </select>
+            </div>
+          </div>
+
+          <div className="overlay-users-grid">
+            {users.map(user => {
+              let overlaySettings;
+              try {
+                overlaySettings = typeof user.overlaySettings === 'string'
+                  ? JSON.parse(user.overlaySettings)
+                  : user.overlaySettings || {
+                    enabled: false,
+                    position: 'top-right',
+                    counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+                    theme: {
+                      backgroundColor: 'rgba(0,0,0,0.8)',
+                      borderColor: '#9146ff',
+                      textColor: 'white',
+                      accentColor: '#f0f0f0'
+                    },
+                    animations: {
+                      enabled: true,
+                      showAlerts: true,
+                      celebrationEffects: true,
+                      bounceOnUpdate: true,
+                      fadeTransitions: true
+                    },
+                    display: {
+                      showLabels: true,
+                      showIcons: true,
+                      compactMode: false,
+                      hideWhenZero: false
+                    }
+                  };
+              } catch {
+                overlaySettings = {
+                  enabled: false,
+                  position: 'top-right',
+                  counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+                  theme: {
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    borderColor: '#9146ff',
+                    textColor: 'white',
+                    accentColor: '#f0f0f0'
+                  },
+                  animations: {
+                    enabled: true,
+                    showAlerts: true,
+                    celebrationEffects: true,
+                    bounceOnUpdate: true,
+                    fadeTransitions: true
+                  },
+                  display: {
+                    showLabels: true,
+                    showIcons: true,
+                    compactMode: false,
+                    hideWhenZero: false
+                  }
+                };
+              }
+
+              return (
+                <div key={user.twitchUserId} className="overlay-user-card">
+                  <div className="overlay-user-header">
+                    <img src={user.profileImageUrl} alt="" className="user-avatar" />
+                    <div className="user-info">
+                      <h4>{user.displayName}</h4>
+                      <p>@{user.username}</p>
+                      <span className={`overlay-status-badge ${overlaySettings.enabled ? 'enabled' : 'disabled'}`}>
+                        {overlaySettings.enabled ? '🟢 Active' : '🔴 Inactive'}
+                      </span>
+                    </div>
+                    <div className="overlay-actions">
+                      <button
+                        onClick={() => {
+                          const baseUrl = window.location.origin;
+                          window.open(`${baseUrl}/overlay/setup/${user.twitchUserId}`, '_blank');
+                        }}
+                        className="btn btn-sm btn-secondary"
+                        title="OBS Setup Instructions"
+                      >
+                        📺 Setup
+                      </button>
+                      <button
+                        onClick={() => {
+                          const baseUrl = window.location.origin;
+                          window.open(`${baseUrl}/overlay/${user.twitchUserId}`, '_blank');
+                        }}
+                        className="btn btn-sm btn-primary"
+                        title="Preview Overlay"
+                      >
+                        👁️ Preview
+                      </button>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const currentRole = getCurrentUserRole();
+                    const isAdmin = currentRole === 'admin';
+                    const hasOverlayFeature = user.features?.streamOverlay;
+
+                    // Show feature toggle for admins or if user doesn't have the feature
+                    if (isAdmin || !hasOverlayFeature) {
+                      return (
+                        <div className="overlay-feature-control">
+                          <div className="feature-section">
+                            <h5>🔐 Overlay Permission</h5>
+                            <label className="feature-toggle">
+                              <input
+                                type="checkbox"
+                                checked={hasOverlayFeature}
+                                onChange={(e) => {
+                                  toggleFeature(user.twitchUserId, 'streamOverlay', hasOverlayFeature);
+                                }}
+                                disabled={!isAdmin}
+                              />
+                              <span className="feature-slider"></span>
+                              <span className="feature-label">
+                                {hasOverlayFeature ? '✅ Overlay Enabled' : '❌ Overlay Disabled'}
+                                {!isAdmin && <small> (Contact admin to enable)</small>}
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {user.features?.streamOverlay && (
+                    <div className="overlay-settings-panel">
+                      <div className="settings-section">
+                        <h5>🎯 Basic Settings</h5>
+                      <div className="settings-row">
+                        <label className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={overlaySettings.enabled}
+                            onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                              ...overlaySettings,
+                              enabled: e.target.checked
+                            })}
+                          />
+                          <span className="toggle-slider"></span>
+                          <span className="toggle-label">Overlay Enabled</span>
+                        </label>
+                        <select
+                          value={overlaySettings.position}
+                          onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                            ...overlaySettings,
+                            position: e.target.value
+                          })}
+                          className="position-select"
+                        >
+                          <option value="top-left">↖️ Top Left</option>
+                          <option value="top-right">↗️ Top Right</option>
+                          <option value="bottom-left">↙️ Bottom Left</option>
+                          <option value="bottom-right">↘️ Bottom Right</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="settings-section">
+                      <h5>📊 Counters</h5>
+                      <div className="counter-grid">
+                        {[
+                          { key: 'deaths', label: '💀 Deaths', description: 'Track player deaths' },
+                          { key: 'swears', label: '🤬 Swears', description: 'Count profanity' },
+                          { key: 'bits', label: '💎 Bits', description: 'Show bit donations' },
+                          { key: 'channelPoints', label: '⭐ Channel Points', description: 'Channel point redemptions' }
+                        ].map(counter => (
+                          <label key={counter.key} className="counter-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={overlaySettings.counters[counter.key] || false}
+                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                ...overlaySettings,
+                                counters: { ...overlaySettings.counters, [counter.key]: e.target.checked }
+                              })}
+                            />
+                            <span className="counter-label">
+                              <strong>{counter.label}</strong>
+                              <small>{counter.description}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="settings-section">
+                      <h5>✨ Animations & Effects</h5>
+                      <div className="animation-grid">
+                        {[
+                          { key: 'enabled', label: 'Basic Animations', description: 'Smooth transitions' },
+                          { key: 'showAlerts', label: 'Counter Alerts', description: 'Flash on updates' },
+                          { key: 'celebrationEffects', label: 'Celebrations', description: 'Milestone effects' },
+                          { key: 'bounceOnUpdate', label: 'Bounce Effect', description: 'Bounce when updated' },
+                          { key: 'fadeTransitions', label: 'Fade Transitions', description: 'Smooth fade effects' }
+                        ].map(animation => (
+                          <label key={animation.key} className="animation-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={overlaySettings.animations[animation.key] || false}
+                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                ...overlaySettings,
+                                animations: { ...overlaySettings.animations, [animation.key]: e.target.checked }
+                              })}
+                            />
+                            <span className="animation-label">
+                              <strong>{animation.label}</strong>
+                              <small>{animation.description}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="settings-section">
+                      <h5>🎨 Theme & Display</h5>
+                      <div className="theme-controls">
+                        <div className="color-row">
+                          <label>
+                            <span>Background:</span>
+                            <input
+                              type="color"
+                              value={overlaySettings.theme.borderColor || '#9146ff'}
+                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                ...overlaySettings,
+                                theme: { ...overlaySettings.theme, borderColor: e.target.value }
+                              })}
+                              className="color-input"
+                            />
+                          </label>
+                          <label>
+                            <span>Text Color:</span>
+                            <input
+                              type="color"
+                              value={overlaySettings.theme.textColor || '#ffffff'}
+                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                ...overlaySettings,
+                                theme: { ...overlaySettings.theme, textColor: e.target.value }
+                              })}
+                              className="color-input"
+                            />
+                          </label>
+                        </div>
+                        <div className="display-options">
+                          {[
+                            { key: 'showLabels', label: 'Show Labels', description: 'Display counter names' },
+                            { key: 'showIcons', label: 'Show Icons', description: 'Display emoji icons' },
+                            { key: 'compactMode', label: 'Compact Mode', description: 'Smaller overlay size' },
+                            { key: 'hideWhenZero', label: 'Hide Zero Values', description: 'Hide counters at 0' }
+                          ].map(option => (
+                            <label key={option.key} className="display-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={overlaySettings.display?.[option.key] || false}
+                                onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                  ...overlaySettings,
+                                  display: {
+                                    ...overlaySettings.display,
+                                    [option.key]: e.target.checked
+                                  }
+                                })}
+                              />
+                              <span className="display-label">
+                                <strong>{option.label}</strong>
+                                <small>{option.description}</small>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {users.length === 0 && (
+            <div className="no-overlay-users">
+              <p>📺 No users found.</p>
+              <p>Add users in the User Management section above.</p>
             </div>
           )}
         </div>
@@ -617,162 +1177,10 @@ function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Overlay Settings Management */}
+                  {/* Overlay settings moved to dedicated Overlay Management section */}
                   {userFeatures.streamOverlay && (
-                    <div className="user-overlay-settings">
-                      <h4>Stream Overlay Settings</h4>
-                      {(() => {
-                        let overlaySettings;
-                        try {
-                          overlaySettings = typeof user.overlaySettings === 'string'
-                            ? JSON.parse(user.overlaySettings)
-                            : user.overlaySettings || {
-                              enabled: false,
-                              position: 'top-right',
-                              counters: { deaths: true, swears: true, bits: false },
-                              theme: { backgroundColor: 'rgba(0,0,0,0.7)', borderColor: '#d4af37', textColor: 'white' },
-                              animations: { enabled: true, showAlerts: true, celebrationEffects: true }
-                            };
-                        } catch {
-                          overlaySettings = {
-                            enabled: false,
-                            position: 'top-right',
-                            counters: { deaths: true, swears: true, bits: false },
-                            theme: { backgroundColor: 'rgba(0,0,0,0.7)', borderColor: '#d4af37', textColor: 'white' },
-                            animations: { enabled: true, showAlerts: true, celebrationEffects: true }
-                          };
-                        }
-                        return (
-                          <div className="overlay-settings-grid">
-                            <div className="overlay-setting-group">
-                              <label className="overlay-toggle">
-                                <input
-                                  type="checkbox"
-                                  checked={overlaySettings.enabled}
-                                  onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                    ...overlaySettings,
-                                    enabled: e.target.checked
-                                  })}
-                                />
-                                <span className="overlay-setting-name">Overlay Enabled</span>
-                                <span className={`overlay-status ${overlaySettings.enabled ? 'enabled' : 'disabled'}`}>
-                                  {overlaySettings.enabled ? '✅' : '❌'}
-                                </span>
-                              </label>
-                            </div>
-
-                            <div className="overlay-setting-group">
-                              <label>
-                                <strong>Position:</strong>
-                                <select
-                                  value={overlaySettings.position}
-                                  onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                    ...overlaySettings,
-                                    position: e.target.value
-                                  })}
-                                  className="overlay-position-select"
-                                >
-                                  <option value="top-left">Top Left</option>
-                                  <option value="top-right">Top Right</option>
-                                  <option value="bottom-left">Bottom Left</option>
-                                  <option value="bottom-right">Bottom Right</option>
-                                </select>
-                              </label>
-                            </div>
-
-                            <div className="overlay-setting-group">
-                              <strong>Visible Counters:</strong>
-                              <div className="counter-toggles">
-                                <label className="counter-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.counters.deaths}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      counters: { ...overlaySettings.counters, deaths: e.target.checked }
-                                    })}
-                                  />
-                                  <span>💀 Deaths</span>
-                                </label>
-                                <label className="counter-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.counters.swears}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      counters: { ...overlaySettings.counters, swears: e.target.checked }
-                                    })}
-                                  />
-                                  <span>🤬 Swears</span>
-                                </label>
-                                <label className="counter-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.counters.bits}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      counters: { ...overlaySettings.counters, bits: e.target.checked }
-                                    })}
-                                  />
-                                  <span>💎 Bits</span>
-                                </label>
-                              </div>
-                            </div>
-
-                            <div className="overlay-setting-group">
-                              <strong>Animation Settings:</strong>
-                              <div className="animation-toggles">
-                                <label className="animation-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.animations.enabled}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      animations: { ...overlaySettings.animations, enabled: e.target.checked }
-                                    })}
-                                  />
-                                  <span>Animations</span>
-                                </label>
-                                <label className="animation-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.animations.showAlerts}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      animations: { ...overlaySettings.animations, showAlerts: e.target.checked }
-                                    })}
-                                  />
-                                  <span>Counter Alerts</span>
-                                </label>
-                                <label className="animation-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={overlaySettings.animations.celebrationEffects}
-                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                      ...overlaySettings,
-                                      animations: { ...overlaySettings.animations, celebrationEffects: e.target.checked }
-                                    })}
-                                  />
-                                  <span>Celebration Effects</span>
-                                </label>
-                              </div>
-                            </div>
-
-                            {overlaySettings.enabled && (
-                              <div className="overlay-preview-link">
-                                <a
-                                  href={`/overlay/${user.twitchUserId}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="preview-button"
-                                >
-                                  🔗 Open Overlay Preview
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
+                    <div className="overlay-feature-notice">
+                      <p>🎨 <strong>Overlay settings</strong> are managed in the Overlay Management section above.</p>
                     </div>
                   )}
 
@@ -787,6 +1195,465 @@ function AdminDashboard() {
             })
           )}
           </div>
+        </div>
+
+        <div className="admin-rewards">
+          <div className="rewards-header">
+            <h2>🎯 Channel Points Rewards Management</h2>
+            <button
+              onClick={() => setShowRewardsManager(!showRewardsManager)}
+              className="btn btn-primary"
+            >
+              {showRewardsManager ? '❌ Close Manager' : '⚙️ Manage Rewards'}
+            </button>
+          </div>
+
+          {showRewardsManager && (
+            <div className="rewards-manager">
+              <div className="rewards-summary">
+                <div className="stats-grid">
+                  <div className="stat-card">
+                    <h3>Total Users with Channel Points</h3>
+                    <p className="stat-number">{rewards.filter(r => r.rewards.length > 0).length}</p>
+                  </div>
+                  <div className="stat-card">
+                    <h3>Total Rewards</h3>
+                    <p className="stat-number">{rewards.reduce((sum, r) => sum + r.rewards.length, 0)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="create-reward-form">
+                <h3>Create New Reward</h3>
+                <div className="form-grid">
+                  <input
+                    type="text"
+                    placeholder="Reward Title *"
+                    value={newReward.title}
+                    onChange={(e) => setNewReward({...newReward, title: e.target.value})}
+                    style={{
+                      color: 'white !important',
+                      WebkitTextFillColor: 'white !important',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                    }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Cost (Channel Points)"
+                    value={newReward.cost}
+                    min="1"
+                    max="1000000"
+                    onChange={(e) => setNewReward({...newReward, cost: parseInt(e.target.value)})}
+                    style={{
+                      color: 'white !important',
+                      WebkitTextFillColor: 'white !important',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                    }}
+                  />
+                  <select
+                    value={newReward.action}
+                    onChange={(e) => setNewReward({...newReward, action: e.target.value})}
+                    style={{
+                      color: 'white !important',
+                      WebkitTextFillColor: 'white !important',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                    }}
+                  >
+                    <option value="increment_deaths">💀 Add Death</option>
+                    <option value="increment_swears">🤬 Add Swear</option>
+                    <option value="decrement_deaths">💀 Remove Death</option>
+                    <option value="decrement_swears">🤬 Remove Swear</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Custom Prompt (optional)"
+                    value={newReward.prompt}
+                    onChange={(e) => setNewReward({...newReward, prompt: e.target.value})}
+                    style={{
+                      color: 'white !important',
+                      WebkitTextFillColor: 'white !important',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
+                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
+                    }}
+                  />
+                  <input
+                    type="color"
+                    value={newReward.backgroundColor}
+                    onChange={(e) => setNewReward({...newReward, backgroundColor: e.target.value})}
+                    title="Background Color"
+                  />
+                </div>
+              </div>
+
+              <div className="users-rewards">
+                <h3>Rewards by User</h3>
+                {rewards.map(userRewards => (
+                  <div key={userRewards.userId} className="user-rewards-section">
+                    <div className="user-rewards-header">
+                      <h4>
+                        {userRewards.displayName} (@{userRewards.username})
+                        <span className="rewards-count">
+                          {userRewards.rewards.length} rewards
+                        </span>
+                      </h4>
+                      <button
+                        onClick={() => createReward(userRewards.userId)}
+                        className="btn btn-primary btn-small"
+                        disabled={!newReward.title || !newReward.cost}
+                      >
+                        ➕ Add Reward
+                      </button>
+                    </div>
+
+                    {userRewards.rewards.length === 0 ? (
+                      <p className="no-rewards">No channel point rewards configured</p>
+                    ) : (
+                      <div className="rewards-grid">
+                        {userRewards.rewards.map(reward => (
+                          <div key={reward.rewardId} className="reward-card">
+                            <div className="reward-header">
+                              <h5 style={{color: reward.backgroundColor || '#9147FF'}}>
+                                {reward.rewardTitle}
+                              </h5>
+                              <span className="reward-cost">{reward.cost} points</span>
+                            </div>
+                            <div className="reward-details">
+                              <p><strong>Action:</strong> {reward.action.replace('_', ' ')}</p>
+                              <p><strong>Created:</strong> {new Date(reward.createdAt).toLocaleDateString()}</p>
+                              <p><strong>Status:</strong>
+                                <span className={`status ${reward.isEnabled ? 'enabled' : 'disabled'}`}>
+                                  {reward.isEnabled ? '✅ Active' : '❌ Disabled'}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="reward-actions">
+                              <button
+                                onClick={() => deleteReward(userRewards.userId, reward.rewardId, reward.rewardTitle)}
+                                className="btn btn-danger btn-small"
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="admin-alerts">
+          <div className="section-header">
+            <h2>🚨 Alert Management</h2>
+            <div className="section-actions">
+              <button
+                onClick={() => setShowAlertsManager(!showAlertsManager)}
+                className="btn btn-secondary"
+              >
+                {showAlertsManager ? '🔼 Hide Alerts' : '🔽 Show Alerts'} ({alerts.reduce((sum, user) => sum + user.alerts.length, 0)} total)
+              </button>
+            </div>
+          </div>
+
+          <div className="alerts-stats">
+            <div className="stat-card">
+              <h3>Users with Alerts</h3>
+              <p className="stat-number">{alerts.length}</p>
+            </div>
+            <div className="stat-card">
+              <h3>Total Alerts</h3>
+              <p className="stat-number">{alerts.reduce((sum, user) => sum + user.alerts.length, 0)}</p>
+            </div>
+            <div className="stat-card">
+              <h3>Active Alerts</h3>
+              <p className="stat-number">{alerts.reduce((sum, user) => sum + user.alerts.filter(a => a.isEnabled).length, 0)}</p>
+            </div>
+            <div className="stat-card">
+              <h3>Default Templates</h3>
+              <p className="stat-number">{alertTemplates.length}</p>
+            </div>
+          </div>
+
+          {showAlertsManager && (
+            <div className="alerts-manager">
+              <div className="create-alert-form">
+                <h3>Create Custom Alert</h3>
+                <div className="alert-form-grid">
+                  <div className="form-group">
+                    <label>Alert Type</label>
+                    <select
+                      value={newAlert.type}
+                      onChange={(e) => setNewAlert({...newAlert, type: e.target.value})}
+                    >
+                      <option value="custom">Custom Event</option>
+                      <option value="follow">Follow Override</option>
+                      <option value="subscription">Subscription Override</option>
+                      <option value="resub">Resub Override</option>
+                      <option value="bits">Bits Override</option>
+                      <option value="raid">Raid Override</option>
+                      <option value="giftsub">Gift Sub Override</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Alert Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Custom Follow Alert"
+                      value={newAlert.name}
+                      onChange={(e) => setNewAlert({...newAlert, name: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Text Prompt</label>
+                    <input
+                      type="text"
+                      placeholder="Use [User] for username, [X] for values"
+                      value={newAlert.textPrompt}
+                      onChange={(e) => setNewAlert({...newAlert, textPrompt: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Visual Cue (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="Describe the visual effect"
+                      value={newAlert.visualCue}
+                      onChange={(e) => setNewAlert({...newAlert, visualCue: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Sound Effect</label>
+                    <input
+                      type="text"
+                      placeholder="Sound file name or ID"
+                      value={newAlert.sound}
+                      onChange={(e) => setNewAlert({...newAlert, sound: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Sound Description</label>
+                    <input
+                      type="text"
+                      placeholder="Describe the sound"
+                      value={newAlert.soundDescription}
+                      onChange={(e) => setNewAlert({...newAlert, soundDescription: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Duration (ms)</label>
+                    <input
+                      type="number"
+                      min="1000"
+                      max="30000"
+                      value={newAlert.duration}
+                      onChange={(e) => setNewAlert({...newAlert, duration: parseInt(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Background Color</label>
+                    <input
+                      type="color"
+                      value={newAlert.backgroundColor}
+                      onChange={(e) => setNewAlert({...newAlert, backgroundColor: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Text Color</label>
+                    <input
+                      type="color"
+                      value={newAlert.textColor}
+                      onChange={(e) => setNewAlert({...newAlert, textColor: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Border Color</label>
+                    <input
+                      type="color"
+                      value={newAlert.borderColor}
+                      onChange={(e) => setNewAlert({...newAlert, borderColor: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="alert-preview">
+                  <h4>Preview</h4>
+                  <div
+                    className="alert-preview-box"
+                    style={{
+                      backgroundColor: newAlert.backgroundColor,
+                      color: newAlert.textColor,
+                      border: `3px solid ${newAlert.borderColor}`,
+                      padding: '15px',
+                      borderRadius: '8px',
+                      textAlign: 'center',
+                      fontFamily: 'monospace'
+                    }}
+                  >
+                    {newAlert.visualCue && (
+                      <div style={{ fontSize: '12px', opacity: 0.8, fontStyle: 'italic', marginBottom: '8px' }}>
+                        {newAlert.visualCue}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                      {newAlert.textPrompt || 'Enter text prompt...'}
+                    </div>
+                    {newAlert.soundDescription && (
+                      <div style={{ fontSize: '10px', opacity: 0.6, fontStyle: 'italic', marginTop: '8px' }}>
+                        ♪ {newAlert.soundDescription}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="users-alerts">
+                <h3>Alerts by User</h3>
+                {alerts.map(userAlerts => (
+                  <div key={userAlerts.userId} className="user-alerts-section">
+                    <div className="user-alerts-header">
+                      <h4>
+                        {userAlerts.displayName} (@{userAlerts.username})
+                        <span className="alerts-count">
+                          {userAlerts.alerts.length} alerts ({userAlerts.alerts.filter(a => a.isEnabled).length} active)
+                        </span>
+                      </h4>
+                      <button
+                        onClick={() => createAlert(userAlerts.userId)}
+                        className="btn btn-primary btn-small"
+                        disabled={!newAlert.name || !newAlert.textPrompt}
+                      >
+                        ➕ Add Alert
+                      </button>
+                    </div>
+
+                    {userAlerts.alerts.length === 0 ? (
+                      <p className="no-alerts">No custom alerts configured</p>
+                    ) : (
+                      <div className="alerts-grid">
+                        {userAlerts.alerts.map(alert => (
+                          <div key={alert.id} className={`alert-card ${alert.isDefault ? 'default-alert' : 'custom-alert'} ${alert.isEnabled ? 'enabled' : 'disabled'}`}>
+                            <div className="alert-header">
+                              <div className="alert-info">
+                                <h5>
+                                  {alert.isDefault ? '🔒' : '⚙️'} {alert.name}
+                                  <span className="alert-type-badge">{alert.type}</span>
+                                </h5>
+                                <p className="alert-prompt">"{alert.textPrompt}"</p>
+                              </div>
+                              <div className="alert-status">
+                                <label className="toggle-switch">
+                                  <input
+                                    type="checkbox"
+                                    checked={alert.isEnabled}
+                                    onChange={() => updateAlertStatus(userAlerts.userId, alert.id, alert.isEnabled)}
+                                  />
+                                  <span className="toggle-slider"></span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div className="alert-details">
+                              {alert.visualCue && (
+                                <div className="alert-detail">
+                                  <strong>Visual:</strong> {alert.visualCue}
+                                </div>
+                              )}
+                              {alert.soundDescription && (
+                                <div className="alert-detail">
+                                  <strong>Sound:</strong> {alert.soundDescription}
+                                </div>
+                              )}
+                              <div className="alert-detail">
+                                <strong>Duration:</strong> {alert.duration}ms
+                              </div>
+                              <div className="alert-colors">
+                                <span
+                                  className="color-preview"
+                                  style={{ backgroundColor: alert.backgroundColor }}
+                                  title="Background"
+                                ></span>
+                                <span
+                                  className="color-preview"
+                                  style={{ backgroundColor: alert.textColor }}
+                                  title="Text"
+                                ></span>
+                                <span
+                                  className="color-preview"
+                                  style={{ backgroundColor: alert.borderColor }}
+                                  title="Border"
+                                ></span>
+                              </div>
+                            </div>
+
+                            {!alert.isDefault && (
+                              <div className="alert-actions">
+                                <button
+                                  onClick={() => deleteAlert(userAlerts.userId, alert.id, alert.name)}
+                                  className="btn btn-danger btn-small"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="alert-templates">
+                <h3>Default Alert Templates</h3>
+                <div className="templates-grid">
+                  {alertTemplates.map(template => (
+                    <div key={template.id} className="template-card">
+                      <div className="template-header">
+                        <h5>{template.name}</h5>
+                        <span className="template-type">{template.type}</span>
+                      </div>
+                      <div className="template-content">
+                        <p className="template-prompt">"{template.textPrompt}"</p>
+                        <div className="template-details">
+                          <div><strong>Visual:</strong> {template.visualCue}</div>
+                          <div><strong>Sound:</strong> {template.soundDescription}</div>
+                        </div>
+                      </div>
+                      <div
+                        className="template-preview"
+                        style={{
+                          backgroundColor: template.backgroundColor,
+                          color: template.textColor,
+                          border: `2px solid ${template.borderColor}`,
+                          padding: '10px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          textAlign: 'center'
+                        }}
+                      >
+                        Preview Style
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ require('dotenv').config();
 const database = require('./database');
 const keyVault = require('./keyVault');
 const twitchService = require('./multiTenantTwitchService');
+const streamMonitor = require('./streamMonitor');
 const authRoutes = require('./authRoutes');
 const counterRoutes = require('./counterRoutes');
 const adminRoutes = require('./adminRoutes');
@@ -80,6 +81,14 @@ app.use('/overlay', overlayRoutes);
 
 // Stream management routes (requires authentication)
 app.use('/api/stream', streamRoutes);
+
+// Channel point reward routes (requires authentication)
+const channelPointRoutes = require('./channelPointRoutes');
+app.use('/api/rewards', channelPointRoutes);
+
+// Alert management routes (requires authentication)
+const alertRoutes = require('./alertRoutes');
+app.use('/api/alerts', alertRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
@@ -266,6 +275,9 @@ twitchService.on('bitsReceived', async ({ userId, username, channel, amount, mes
     // Get updated counters including new bits
     const counters = await database.getCounters(userId);
 
+    // Get custom alert configuration
+    const alertConfig = await database.getAlertForEventType(userId, 'bits');
+
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('bitsReceived', {
       userId,
@@ -274,8 +286,21 @@ twitchService.on('bitsReceived', async ({ userId, username, channel, amount, mes
       message,
       timestamp,
       thresholds,
-      totalBits: counters.bits
+      totalBits: counters.bits,
+      alertConfig
     });
+
+    // Trigger custom alert if enabled
+    if (alertConfig) {
+      io.to(`user:${userId}`).emit('customAlert', {
+        type: 'bits',
+        userId,
+        username,
+        data: { amount, message, totalBits: counters.bits },
+        alertConfig,
+        timestamp
+      });
+    }
 
     // Broadcast counter update with new bits total
     io.to(`user:${userId}`).emit('counterUpdate', {
@@ -300,13 +325,29 @@ twitchService.on('newSubscriber', async ({ userId, username, channel, tier, time
   try {
     console.log(`🎉 New subscriber: ${username} (tier ${tier}) in ${channel}`);
 
+    // Get custom alert configuration
+    const alertConfig = await database.getAlertForEventType(userId, 'subscription');
+
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('newSubscriber', {
       userId,
       username,
       tier,
-      timestamp
+      timestamp,
+      alertConfig
     });
+
+    // Trigger custom alert if enabled
+    if (alertConfig) {
+      io.to(`user:${userId}`).emit('customAlert', {
+        type: 'subscription',
+        userId,
+        username,
+        data: { tier },
+        alertConfig,
+        timestamp
+      });
+    }
 
   } catch (error) {
     console.error('Error handling subscriber event:', error);
@@ -318,6 +359,9 @@ twitchService.on('resub', async ({ userId, username, channel, months, message, t
   try {
     console.log(`🎉 Resub: ${username} (${months} months, tier ${tier}) in ${channel}`);
 
+    // Get custom alert configuration
+    const alertConfig = await database.getAlertForEventType(userId, 'resub');
+
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('resub', {
       userId,
@@ -325,8 +369,21 @@ twitchService.on('resub', async ({ userId, username, channel, months, message, t
       months,
       message,
       tier,
-      timestamp
+      timestamp,
+      alertConfig
     });
+
+    // Trigger custom alert if enabled
+    if (alertConfig) {
+      io.to(`user:${userId}`).emit('customAlert', {
+        type: 'resub',
+        userId,
+        username,
+        data: { months, message, tier },
+        alertConfig,
+        timestamp
+      });
+    }
 
   } catch (error) {
     console.error('Error handling resub event:', error);
@@ -338,14 +395,30 @@ twitchService.on('giftSub', async ({ userId, gifter, recipient, channel, tier, t
   try {
     console.log(`🎁 Gift sub: ${gifter} -> ${recipient} (tier ${tier}) in ${channel}`);
 
+    // Get custom alert configuration
+    const alertConfig = await database.getAlertForEventType(userId, 'giftsub');
+
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('giftSub', {
       userId,
       gifter,
       recipient,
       tier,
-      timestamp
+      timestamp,
+      alertConfig
     });
+
+    // Trigger custom alert if enabled
+    if (alertConfig) {
+      io.to(`user:${userId}`).emit('customAlert', {
+        type: 'giftsub',
+        userId,
+        username: gifter,
+        data: { recipient, tier },
+        alertConfig,
+        timestamp
+      });
+    }
 
   } catch (error) {
     console.error('Error handling gift sub event:', error);
@@ -399,6 +472,129 @@ async function startServer() {
 
     // Initialize Twitch service
     await twitchService.initialize();
+
+    // Initialize Stream Monitor
+    const streamMonitorInitialized = await streamMonitor.initialize();
+    if (streamMonitorInitialized) {
+      // Subscribe to all active users for stream monitoring
+      await streamMonitor.subscribeToAllUsers();
+
+      // Handle stream events
+      streamMonitor.on('streamOnline', async (data) => {
+        console.log(`🔴 ${data.username} went LIVE! "${data.streamTitle}"`);
+        io.to(`user:${data.userId}`).emit('streamOnline', data);
+      });
+
+      streamMonitor.on('streamOffline', async (data) => {
+        console.log(`⚫ ${data.username} went OFFLINE`);
+
+        try {
+          // Automatically deactivate user when stream goes offline
+          await database.updateUserStatus(data.userId, false);
+          console.log(`🔄 Auto-deactivated ${data.username} after stream ended`);
+
+          // Notify admin dashboard of user status change
+          io.emit('userStatusChanged', {
+            userId: data.userId,
+            username: data.username,
+            isActive: false,
+            reason: 'Stream ended'
+          });
+        } catch (error) {
+          console.error(`❌ Failed to auto-deactivate ${data.username}:`, error);
+        }
+
+        io.to(`user:${data.userId}`).emit('streamOffline', data);
+      });
+
+      // Handle channel point reward redemptions
+      streamMonitor.on('rewardRedeemed', async (data) => {
+        console.log(`🎯 ${data.rewardTitle} redeemed by ${data.redeemedBy} for ${data.username}`);
+        io.to(`user:${data.userId}`).emit('rewardRedeemed', data);
+      });
+
+      // Handle counter updates from channel points
+      streamMonitor.on('counterUpdate', async (data) => {
+        if (data.source === 'channel_points') {
+          console.log(`📊 Counter updated via channel points for user ${data.userId}`);
+          io.to(`user:${data.userId}`).emit('counterUpdate', {
+            counters: data.counters,
+            change: data.counters.change || { deaths: 0, swears: 0, bits: 0 },
+            source: 'channel_points',
+            redeemedBy: data.redeemedBy
+          });
+        }
+      });
+
+      // Handle follow events
+      streamMonitor.on('newFollower', async ({ userId, username, follower, timestamp }) => {
+        try {
+          console.log(`👥 New follower: ${follower} followed ${username}`);
+
+          // Get custom alert configuration
+          const alertConfig = await database.getAlertForEventType(userId, 'follow');
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newFollower', {
+            userId,
+            username,
+            follower,
+            timestamp,
+            alertConfig
+          });
+
+          // Trigger custom alert if enabled
+          if (alertConfig) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'follow',
+              userId,
+              username: follower,
+              data: { follower },
+              alertConfig,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling follow event:', error);
+        }
+      });
+
+      // Handle raid events
+      streamMonitor.on('raidReceived', async ({ userId, username, raider, viewers, timestamp }) => {
+        try {
+          console.log(`🚨 Raid: ${raider} raided ${username} with ${viewers} viewers`);
+
+          // Get custom alert configuration
+          const alertConfig = await database.getAlertForEventType(userId, 'raid');
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('raidReceived', {
+            userId,
+            username,
+            raider,
+            viewers,
+            timestamp,
+            alertConfig
+          });
+
+          // Trigger custom alert if enabled
+          if (alertConfig) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'raid',
+              userId,
+              username: raider,
+              data: { raider, viewers },
+              alertConfig,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling raid event:', error);
+        }
+      });
+    }
 
     // Start HTTP server
     server.listen(PORT, () => {
