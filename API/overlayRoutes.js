@@ -22,23 +22,49 @@ router.get('/:userId', async (req, res) => {
       return res.status(403).send('Stream overlay not enabled for this user');
     }
 
-    // Check if user is active (stream is live)
-    const isActive = user.isActive !== false; // Default to true if not set
+    // Check stream status
+    const streamStatus = user.streamStatus || 'offline';
 
-    // If user is not active, show inactive message
-    if (!isActive) {
+    // Show different messages based on stream status
+    if (streamStatus === 'offline') {
       return res.status(200).send(`
         <!DOCTYPE html>
         <html><head><title>Stream Offline</title></head>
         <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
           <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #d4af37; text-align: center;">
-            <h3 style="color: #d4af37; margin-top: 0;">Stream Offline</h3>
-            <p>Overlay will activate when stream goes live.</p>
-            <p><small>Activate your stream in the admin dashboard</small></p>
+            <h3 style="color: #d4af37; margin-top: 0;">🎬 Stream Offline</h3>
+            <p>Overlay will activate when you start prepping.</p>
+            <p><small>Use "Start Prepping" button in admin dashboard</small></p>
+          </div>
+        </body></html>
+      `);
+    } else if (streamStatus === 'prepping') {
+      return res.status(200).send(`
+        <!DOCTYPE html>
+        <html><head><title>Getting Ready</title></head>
+        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
+          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #ffa500; text-align: center;">
+            <h3 style="color: #ffa500; margin-top: 0;">🎭 Getting Ready</h3>
+            <p>Stream prep in progress...</p>
+            <p><small>Overlay will show counters when you go live</small></p>
+          </div>
+        </body></html>
+      `);
+    } else if (streamStatus === 'ending') {
+      return res.status(200).send(`
+        <!DOCTYPE html>
+        <html><head><title>Stream Ending</title></head>
+        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
+          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #ff6b6b; text-align: center;">
+            <h3 style="color: #ff6b6b; margin-top: 0;">🏁 Stream Ending</h3>
+            <p>Thanks for watching!</p>
+            <p><small>Stream concluded</small></p>
           </div>
         </body></html>
       `);
     }
+
+    // If status is 'live', show the full overlay with counters
 
     // Get user's overlay settings (for customization, not enabling/disabling)
     const overlaySettings = await database.getUserOverlaySettings(req.params.userId);

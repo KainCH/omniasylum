@@ -48,6 +48,44 @@
   margin-bottom: 20px;
 }
 
+/* Stream status styles */
+.status.stream-status-offline {
+  color: #6c757d;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+}
+
+.status.stream-status-prepping {
+  color: #fd7e14;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+}
+
+.status.stream-status-live {
+  color: #28a745;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+.status.stream-status-ending {
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.stream-status-control {
+  margin: 15px 0;
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #fafafa;
+}
+
+.stream-controls button {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
 @keyframes spin {
   0% {
     transform: rotate(0deg);

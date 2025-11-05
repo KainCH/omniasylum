@@ -492,6 +492,39 @@ function AdminDashboard() {
     }
   }
 
+  // Update stream status function
+  const updateStreamStatus = async (userId, action) => {
+    try {
+      const response = await fetch(`/api/stream/${action}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ userId })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log(`✅ Stream status updated: ${action}`, result)
+        fetchAdminData() // Refresh data
+
+        // Show user feedback
+        const actionMessages = {
+          'prep': '🎭 Stream prep started! Bots are warming up...',
+          'go-live': '🚀 You are now LIVE! Overlay and bots active.',
+          'end-stream': '🏁 Stream ended. Thanks for streaming!',
+          'cancel-prep': '❌ Prep cancelled. Ready to start again.'
+        }
+        alert(actionMessages[action] || `Status updated: ${action}`)
+      } else {
+        const errorData = await response.json()
+        console.error(`❌ Failed to update stream status (${action}):`, errorData.error)
+        alert(`❌ Failed to ${action}: ${errorData.error}`)
+      }
+    } catch (error) {
+      console.error(`❌ Failed to update stream status (${action}):`, error)
+      alert(`❌ Failed to ${action}. Please try again.`)
+    }
+  }
+
   const addUser = async () => {
     try {
       // Validate required fields
@@ -1008,16 +1041,17 @@ function AdminDashboard() {
                     const hasOverlayFeature = user.features?.streamOverlay;
 
                     // Overlay status display - automatic based on feature permission and stream activity
-                    if (isAdmin || hasOverlayFeature) {
-                      // Overlay is automatically active when user has permission and stream is active
-                      const isStreamActive = user.isActive;
+                    const currentUser = getCurrentUser();
+                    const isOwnCard = currentUser?.twitchUserId === user.twitchUserId;
+
+                    if (isAdmin || hasOverlayFeature || isOwnCard) {
+                      const streamStatus = user.streamStatus || 'offline';
                       const isOverlayAvailable = hasOverlayFeature;
-                      const isOverlayActive = isOverlayAvailable && isStreamActive;
 
                       return (
                         <div className="overlay-feature-control">
                           <div className="feature-section">
-                            <h5>🎮 Overlay Status</h5>
+                            <h5>� Stream Status</h5>
                             <div className="overlay-status-display">
                               <div className={`status-indicator ${isOverlayActive ? 'active' : 'inactive'}`}>
                                 <span className="status-icon">
@@ -1053,6 +1087,61 @@ function AdminDashboard() {
                                   }
                                 </small>
                               </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {/* Phase 1: Stream Status Controls */}
+                  {(() => {
+                    const currentUser = getCurrentUser();
+                    const isAdmin = getCurrentUserRole() === 'admin';
+                    const isOwnCard = currentUser?.twitchUserId === user.twitchUserId;
+
+                    if (isAdmin || isOwnCard) {
+                      const streamStatus = user.streamStatus || 'offline';
+
+                      return (
+                        <div className="stream-status-control">
+                          <div className="feature-section">
+                            <h5>🎬 Stream Management</h5>
+                            <p>Status: <strong>{streamStatus}</strong></p>
+                            <div className="stream-controls">
+                              {streamStatus === 'offline' && (
+                                <button
+                                  onClick={() => updateStreamStatus(user.twitchUserId, 'prep')}
+                                  className="btn btn-warning btn-sm"
+                                >
+                                  🎭 Start Prepping
+                                </button>
+                              )}
+                              {streamStatus === 'prepping' && (
+                                <>
+                                  <button
+                                    onClick={() => updateStreamStatus(user.twitchUserId, 'go-live')}
+                                    className="btn btn-success btn-sm"
+                                  >
+                                    🚀 Go Live
+                                  </button>
+                                  <button
+                                    onClick={() => updateStreamStatus(user.twitchUserId, 'cancel-prep')}
+                                    className="btn btn-secondary btn-sm"
+                                  >
+                                    ❌ Cancel
+                                  </button>
+                                </>
+                              )}
+                              {(streamStatus === 'live' || streamStatus === 'ending') && (
+                                <button
+                                  onClick={() => updateStreamStatus(user.twitchUserId, 'end-stream')}
+                                  className="btn btn-danger btn-sm"
+                                >
+                                  🏁 End Stream
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1335,8 +1424,17 @@ function AdminDashboard() {
                     <div>
                       <h3>{user.displayName || 'Unknown User'}</h3>
                       <p>@{user.username || 'unknown'}</p>
-                      <p className={`status ${user.isActive ? 'active' : 'inactive'}`}>
-                        {user.isActive ? '✅ Active' : '❌ Inactive'}
+                      <p className={`status stream-status-${user.streamStatus || 'offline'}`}>
+                        {(() => {
+                          const status = user.streamStatus || 'offline';
+                          switch(status) {
+                            case 'offline': return '⚪ Offline';
+                            case 'prepping': return '🟡 Prepping';
+                            case 'live': return '🟢 Live';
+                            case 'ending': return '🔴 Ending';
+                            default: return '❓ Unknown';
+                          }
+                        })()}
                       </p>
                     </div>
                   </div>

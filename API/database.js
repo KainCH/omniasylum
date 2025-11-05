@@ -170,6 +170,7 @@ class Database {
       features: JSON.stringify(userData.features || defaultFeatures),
       overlaySettings: JSON.stringify(userData.overlaySettings || defaultOverlaySettings),
       isActive: userData.isActive !== undefined ? userData.isActive : true,
+      streamStatus: userData.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
       createdAt: userData.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
@@ -631,6 +632,41 @@ class Database {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
       if (users[twitchUserId]) {
         users[twitchUserId].isActive = isActive;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user stream status
+   */
+  async updateStreamStatus(twitchUserId, streamStatus) {
+    const validStatuses = ['offline', 'prepping', 'live', 'ending'];
+    if (!validStatuses.includes(streamStatus)) {
+      throw new Error(`Invalid stream status. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Update streamStatus and maintain isActive for backward compatibility
+    user.streamStatus = streamStatus;
+    // isActive is true when streaming (prepping, live) or false when offline/ending
+    user.isActive = ['prepping', 'live'].includes(streamStatus);
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].streamStatus = streamStatus;
+        users[twitchUserId].isActive = user.isActive;
         fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
       } else {
         throw new Error('User not found in local storage');
