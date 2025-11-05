@@ -310,6 +310,24 @@ function AdminDashboard() {
     return 'streamer'
   }
 
+  // Get current user info from JWT token
+  const getCurrentUser = () => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        return {
+          twitchUserId: payload.sub,
+          username: payload.username,
+          role: payload.role || 'streamer'
+        }
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  }
+
   // Check if current user can perform action based on role hierarchy
   const canManageRole = (targetRole) => {
     const currentRole = getCurrentUserRole()
@@ -317,6 +335,36 @@ function AdminDashboard() {
     const currentLevel = roleHierarchy[currentRole] || 0
     const targetLevel = roleHierarchy[targetRole] || 0
     return currentLevel >= 3 || currentLevel > targetLevel // Only admin can assign same/higher roles
+  }
+
+  // Self-activate function for streamers
+  const selfActivate = async () => {
+    const currentUser = getCurrentUser()
+    if (!currentUser) {
+      alert('❌ Unable to get user information. Please log in again.')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/admin/users/${currentUser.twitchUserId}/status`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ isActive: true })
+      })
+
+      if (response.ok) {
+        fetchAdminData() // Refresh data
+        console.log('✅ Self-activated successfully')
+        alert('✅ You are now ACTIVE and ready to stream!')
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to self-activate:', errorData.error)
+        alert(`❌ Failed to activate: ${errorData.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to self-activate:', error)
+      alert('❌ Failed to activate. Please try again.')
+    }
   }
 
   const addUser = async () => {
@@ -553,6 +601,55 @@ function AdminDashboard() {
           </div>
         </header>
 
+        {(() => {
+          const currentUser = getCurrentUser()
+          const currentUserData = users.find(u => u.twitchUserId === currentUser?.twitchUserId)
+          const isAdmin = getCurrentUserRole() === 'admin'
+
+          // Show self-activation panel for non-admin users who are inactive
+          if (!isAdmin && currentUser && currentUserData && !currentUserData.isActive) {
+            return (
+              <div className="self-activation-panel">
+                <div className="activation-card">
+                  <div className="activation-header">
+                    <h2>🎮 Ready to Stream?</h2>
+                    <p>Activate your account to enable all streaming features before going live!</p>
+                  </div>
+                  <div className="activation-status">
+                    <span className="status-indicator inactive">❌ Currently Inactive</span>
+                    <span className="activation-note">• Stream overlay disabled</span>
+                    <span className="activation-note">• Chat commands disabled</span>
+                    <span className="activation-note">• Event tracking disabled</span>
+                  </div>
+                  <button
+                    onClick={selfActivate}
+                    className="btn btn-primary activation-btn"
+                  >
+                    🚀 Activate Now - Ready to Stream!
+                  </button>
+                  <small className="activation-info">
+                    💡 Your account will automatically deactivate when you stop streaming
+                  </small>
+                </div>
+              </div>
+            )
+          }
+
+          // Show status for active non-admin users
+          if (!isAdmin && currentUser && currentUserData && currentUserData.isActive) {
+            return (
+              <div className="self-status-panel">
+                <div className="status-card active">
+                  <h3>✅ You're Active and Ready to Stream!</h3>
+                  <p>All features are enabled. Your account will auto-deactivate when you go offline.</p>
+                </div>
+              </div>
+            )
+          }
+
+          return null
+        })()}
+
         <div className="admin-stats">
           <h2>📊 System Statistics</h2>
           <div className="stats-grid">
@@ -701,7 +798,7 @@ function AdminDashboard() {
                     theme: {
                       backgroundColor: 'rgba(0,0,0,0.8)',
                       borderColor: '#9146ff',
-                      textColor: 'white',
+                      textColor: '#ffffff',
                       accentColor: '#f0f0f0'
                     },
                     animations: {
@@ -726,7 +823,7 @@ function AdminDashboard() {
                   theme: {
                     backgroundColor: 'rgba(0,0,0,0.8)',
                     borderColor: '#9146ff',
-                    textColor: 'white',
+                    textColor: '#ffffff',
                     accentColor: '#f0f0f0'
                   },
                   animations: {
@@ -785,25 +882,63 @@ function AdminDashboard() {
                     const isAdmin = currentRole === 'admin';
                     const hasOverlayFeature = user.features?.streamOverlay;
 
-                    // Show feature toggle for admins or if user doesn't have the feature
-                    if (isAdmin || !hasOverlayFeature) {
+                    // Unified overlay control - shows both permission and active status
+                    if (isAdmin || hasOverlayFeature) {
+                      // Check if overlay is both permitted AND enabled in settings
+                      const isOverlayFullyActive = hasOverlayFeature && overlaySettings.enabled;
+
+                      // Debug logging
+                      console.log(`🎮 Overlay status for ${user.username}:`, {
+                        hasFeature: hasOverlayFeature,
+                        settingsEnabled: overlaySettings.enabled,
+                        fullyActive: isOverlayFullyActive,
+                        overlaySettings
+                      });
+
                       return (
                         <div className="overlay-feature-control">
                           <div className="feature-section">
-                            <h5>🔐 Overlay Permission</h5>
+                            <h5>🎮 Overlay Status</h5>
                             <label className="feature-toggle">
                               <input
                                 type="checkbox"
-                                checked={hasOverlayFeature}
-                                onChange={(e) => {
-                                  toggleFeature(user.twitchUserId, 'streamOverlay', hasOverlayFeature);
+                                checked={isOverlayFullyActive}
+                                onChange={async (e) => {
+                                  console.log(`🎮 Overlay toggle clicked for ${user.username}:`, {
+                                    hasFeature: hasOverlayFeature,
+                                    currentEnabled: overlaySettings.enabled,
+                                    newValue: e.target.checked,
+                                    isAdmin
+                                  });
+
+                                  if (!hasOverlayFeature && isAdmin) {
+                                    // Admin enabling overlay: first grant permission, then activate
+                                    console.log('🔐 Granting overlay permission and activating...');
+                                    await toggleFeature(user.twitchUserId, 'streamOverlay', false);
+                                    // Enable overlay settings after permission is granted
+                                    setTimeout(() => {
+                                      updateUserOverlaySettings(user.twitchUserId, {
+                                        ...overlaySettings,
+                                        enabled: true
+                                      });
+                                    }, 500); // Increased timeout for better reliability
+                                  } else if (hasOverlayFeature) {
+                                    // Toggle overlay active state (user has permission)
+                                    console.log('🎯 Toggling overlay enabled state to:', e.target.checked);
+                                    updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      enabled: e.target.checked
+                                    });
+                                  }
                                 }}
-                                disabled={!isAdmin}
+                                disabled={!isAdmin && !hasOverlayFeature}
                               />
                               <span className="feature-slider"></span>
                               <span className="feature-label">
-                                {hasOverlayFeature ? '✅ Overlay Enabled' : '❌ Overlay Disabled'}
-                                {!isAdmin && <small> (Contact admin to enable)</small>}
+                                {isOverlayFullyActive ? '✅ Overlay Active' :
+                                 hasOverlayFeature ? '⚠️ Overlay Available (Click to Activate)' :
+                                 '❌ No Overlay Permission'}
+                                {!isAdmin && !hasOverlayFeature && <small> (Contact admin to enable)</small>}
                               </span>
                             </label>
                           </div>
@@ -816,20 +951,8 @@ function AdminDashboard() {
                   {user.features?.streamOverlay && (
                     <div className="overlay-settings-panel">
                       <div className="settings-section">
-                        <h5>🎯 Basic Settings</h5>
+                        <h5>🎯 Overlay Position</h5>
                       <div className="settings-row">
-                        <label className="toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={overlaySettings.enabled}
-                            onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                              ...overlaySettings,
-                              enabled: e.target.checked
-                            })}
-                          />
-                          <span className="toggle-slider"></span>
-                          <span className="toggle-label">Overlay Enabled</span>
-                        </label>
                         <select
                           value={overlaySettings.position}
                           onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
@@ -1106,20 +1229,55 @@ function AdminDashboard() {
                   </div>
 
                   <div className="user-actions">
-                    <button
-                      onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
-                      className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
-                    >
-                      {user.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                    {user.role !== 'admin' && (
-                      <button
-                        onClick={() => deleteUser(user.twitchUserId, user.username)}
-                        className="btn btn-danger-outline"
-                      >
-                        🗑️ Delete
-                      </button>
-                    )}
+                    {(() => {
+                      const currentUser = getCurrentUser()
+                      const isAdmin = getCurrentUserRole() === 'admin'
+                      const isOwnCard = currentUser?.twitchUserId === user.twitchUserId
+
+                      if (isAdmin) {
+                        // Admin sees admin controls
+                        return (
+                          <>
+                            <button
+                              onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
+                              className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
+                            >
+                              {user.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                            {user.role !== 'admin' && (
+                              <button
+                                onClick={() => deleteUser(user.twitchUserId, user.username)}
+                                className="btn btn-danger-outline"
+                              >
+                                🗑️ Delete
+                              </button>
+                            )}
+                          </>
+                        )
+                      } else if (isOwnCard && !user.isActive) {
+                        // Non-admin user sees self-activation button on their own inactive card
+                        return (
+                          <button
+                            onClick={selfActivate}
+                            className="btn btn-success self-activate-btn"
+                            title="Activate your account before streaming"
+                          >
+                            🚀 Activate Myself
+                          </button>
+                        )
+                      } else if (isOwnCard && user.isActive) {
+                        // Non-admin user sees their active status
+                        return (
+                          <div className="self-status active-status">
+                            <span className="status-badge active">✅ Active</span>
+                            <small>Ready to stream!</small>
+                          </div>
+                        )
+                      }
+
+                      // Default: no actions for other users
+                      return null
+                    })()}
                   </div>
 
                   <div className="user-features">

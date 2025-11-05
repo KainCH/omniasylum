@@ -1943,3 +1943,189 @@ input[type="email"]:focus {
   font-family: 'Creepster', cursive;
   font-weight: bold;
 }
+
+/* Self-Activation Panel Styles */
+.self-activation-panel {
+  margin: 20px 0;
+  padding: 0;
+}
+
+.activation-card {
+  background: linear-gradient(135deg, #1a0d0d 0%, #2d1414 100%);
+  border: 2px solid #d4af37;
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(212, 175, 55, 0.2);
+  animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+
+  0%,
+  100% {
+    border-color: #d4af37;
+  }
+
+  50% {
+    border-color: #ffd700;
+  }
+}
+
+.activation-header h2 {
+  margin: 0 0 10px 0;
+  color: #d4af37;
+  font-size: 1.8rem;
+}
+
+.activation-header p {
+  margin: 0 0 20px 0;
+  color: #f0f0f0;
+  font-size: 1.1rem;
+}
+
+.activation-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  border-left: 4px solid #ff4444;
+}
+
+.status-indicator {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.status-indicator.inactive {
+  color: #ff4444;
+}
+
+.activation-note {
+  color: #cccccc;
+  font-size: 0.9rem;
+  margin-left: 10px;
+}
+
+.activation-btn {
+  font-size: 1.2rem !important;
+  padding: 15px 30px !important;
+  background: linear-gradient(135deg, #4CAF50, #45a049) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: white !important;
+  font-weight: bold !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  margin: 15px 0 !important;
+  animation: glow-green 1.5s infinite !important;
+}
+
+.activation-btn:hover {
+  background: linear-gradient(135deg, #45a049, #3d8b40) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4) !important;
+}
+
+@keyframes glow-green {
+
+  0%,
+  100% {
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 4px 25px rgba(76, 175, 80, 0.6);
+  }
+}
+
+.activation-info {
+  display: block;
+  color: #aaaaaa;
+  font-size: 0.85rem;
+  margin-top: 15px;
+  font-style: italic;
+}
+
+/* Self-Status Panel for Active Users */
+.self-status-panel {
+  margin: 20px 0;
+}
+
+.status-card {
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.status-card.active {
+  background: linear-gradient(135deg, #1b5e20, #2e7d32);
+  border: 2px solid #4CAF50;
+  color: white;
+}
+
+.status-card h3 {
+  margin: 0 0 10px 0;
+  color: #81C784;
+}
+
+.status-card p {
+  margin: 0;
+  opacity: 0.9;
+}
+
+/* Self-Activation Button in User Cards */
+.self-activate-btn {
+  background: linear-gradient(135deg, #4CAF50, #45a049) !important;
+  border: none !important;
+  color: white !important;
+  font-weight: bold !important;
+  padding: 10px 20px !important;
+  border-radius: 6px !important;
+  font-size: 0.9rem !important;
+  animation: pulse-glow 2s infinite !important;
+}
+
+.self-activate-btn:hover {
+  background: linear-gradient(135deg, #45a049, #3d8b40) !important;
+  transform: translateY(-1px) !important;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 2px 15px rgba(76, 175, 80, 0.6);
+  }
+}
+
+.self-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.status-badge.active {
+  background: linear-gradient(135deg, #4CAF50, #45a049);
+  color: white;
+}
+
+.self-status small {
+  color: #888;
+  font-size: 0.75rem;
+}
