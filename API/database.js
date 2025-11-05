@@ -108,7 +108,8 @@ class Database {
   async saveUser(userData) {
     // Determine user role - riress is always admin
     let role = 'streamer';
-    if (userData.username && userData.username.toLowerCase() === 'riress') {
+    const safeUsername = userData.username ? userData.username.toString().toLowerCase() : '';
+    if (safeUsername === 'riress') {
       role = 'admin';
     }
 
@@ -125,6 +126,27 @@ class Database {
       alertAnimations: false
     };
 
+    // Default overlay settings for new users
+    const defaultOverlaySettings = {
+      enabled: false,
+      position: 'top-right',
+      counters: {
+        deaths: true,
+        swears: true,
+        bits: false
+      },
+      theme: {
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderColor: '#d4af37',
+        textColor: 'white'
+      },
+      animations: {
+        enabled: true,
+        showAlerts: true,
+        celebrationEffects: true
+      }
+    };
+
     const user = {
       partitionKey: 'user',
       rowKey: userData.twitchUserId,
@@ -138,6 +160,7 @@ class Database {
       tokenExpiry: userData.tokenExpiry,
       role: userData.role || role,
       features: JSON.stringify(userData.features || defaultFeatures),
+      overlaySettings: JSON.stringify(userData.overlaySettings || defaultOverlaySettings),
       isActive: userData.isActive !== undefined ? userData.isActive : true,
       createdAt: userData.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
@@ -494,6 +517,80 @@ class Database {
   async hasFeature(twitchUserId, featureName) {
     const features = await this.getUserFeatures(twitchUserId);
     return features && features[featureName] === true;
+  }
+
+  /**
+   * Get user overlay settings
+   */
+  async getUserOverlaySettings(twitchUserId) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    try {
+      const settings = typeof user.overlaySettings === 'string' ? JSON.parse(user.overlaySettings) : user.overlaySettings;
+
+      // Return default settings if not set or malformed
+      if (!settings) {
+        return {
+          enabled: false,
+          position: 'top-right',
+          counters: {
+            deaths: true,
+            swears: true,
+            bits: false
+          },
+          theme: {
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderColor: '#d4af37',
+            textColor: 'white'
+          },
+          animations: {
+            enabled: true,
+            showAlerts: true,
+            celebrationEffects: true
+          }
+        };
+      }
+
+      return settings;
+    } catch (error) {
+      console.error('❌ Error parsing overlay settings:', error);
+      // Return default settings on parse error
+      return {
+        enabled: false,
+        position: 'top-right',
+        counters: {
+          deaths: true,
+          swears: true,
+          bits: false
+        },
+        theme: {
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          borderColor: '#d4af37',
+          textColor: 'white'
+        },
+        animations: {
+          enabled: true,
+          showAlerts: true,
+          celebrationEffects: true
+        }
+      };
+    }
+  }
+
+  /**
+   * Update user overlay settings
+   */
+  async updateUserOverlaySettings(twitchUserId, overlaySettings) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.overlaySettings = JSON.stringify(overlaySettings);
+    return await this.saveUser(user);
   }
 }
 

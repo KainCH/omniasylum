@@ -17,7 +17,7 @@ const roleHierarchy = {
 const rolePermissions = {
   'streamer': ['view_own_counters', 'modify_own_counters', 'export_own_data'],
   'moderator': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings'],
-  'manager': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings', 'manage_user_features', 'view_analytics'],
+  'manager': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings', 'manage_user_features', 'manage_overlay_settings', 'view_analytics'],
   'admin': ['*'] // All permissions
 };
 
@@ -155,6 +155,79 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
   } catch (error) {
     console.error('Error updating features:', error);
     res.status(500).json({ error: error.message || 'Failed to update features' });
+  }
+});
+
+/**
+ * Get user overlay settings
+ * GET /api/admin/users/:userId/overlay-settings
+ */
+router.get('/users/:userId/overlay-settings', requireAuth, requirePermission('view_overlay_settings'), async (req, res) => {
+  try {
+    const settings = await database.getUserOverlaySettings(req.params.userId);
+
+    if (!settings) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      userId: req.params.userId,
+      overlaySettings: settings
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user overlay settings:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch overlay settings' });
+  }
+});
+
+/**
+ * Update user overlay settings
+ * PUT /api/admin/users/:userId/overlay-settings
+ */
+router.put('/users/:userId/overlay-settings', requireAuth, requirePermission('manage_user_features'), async (req, res) => {
+  try {
+    const { enabled, position, counters, theme, animations } = req.body;
+
+    // Validate the settings structure
+    const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    if (position && !validPositions.includes(position)) {
+      return res.status(400).json({
+        error: 'Invalid position. Must be one of: ' + validPositions.join(', ')
+      });
+    }
+
+    // Build the settings object with validation
+    const overlaySettings = {
+      enabled: enabled === true,
+      position: position || 'top-right',
+      counters: {
+        deaths: counters?.deaths === true,
+        swears: counters?.swears === true,
+        bits: counters?.bits === true
+      },
+      theme: {
+        backgroundColor: theme?.backgroundColor || 'rgba(0, 0, 0, 0.7)',
+        borderColor: theme?.borderColor || '#d4af37',
+        textColor: theme?.textColor || 'white'
+      },
+      animations: {
+        enabled: animations?.enabled !== false, // Default true
+        showAlerts: animations?.showAlerts !== false, // Default true
+        celebrationEffects: animations?.celebrationEffects !== false // Default true
+      }
+    };
+
+    const updatedUser = await database.updateUserOverlaySettings(req.params.userId, overlaySettings);
+
+    console.log(`✅ Admin ${req.user.username} updated overlay settings for user ${req.params.userId}`);
+    res.json({
+      message: 'Overlay settings updated successfully',
+      userId: req.params.userId,
+      settings: overlaySettings
+    });
+  } catch (error) {
+    console.error('❌ Error updating overlay settings:', error);
+    res.status(500).json({ error: error.message || 'Failed to update overlay settings' });
   }
 });
 
@@ -374,17 +447,23 @@ router.post('/users', requireAuth, requireAdmin, async (req, res) => {
     // Try to fetch real Twitch data for avatar and other info
     const twitchUserData = await fetchTwitchUserData(username);
 
+    // Safely handle username
+    const safeUsername = (username || '').toString().trim();
+    if (!safeUsername) {
+      return res.status(400).json({ error: 'Username cannot be empty' });
+    }
+
     // Create user with fetched Twitch data or fallback to provided values
     const userData = {
       twitchUserId: twitchUserData?.id || twitchUserId,
-      username: username.toLowerCase(),
+      username: safeUsername.toLowerCase(),
       displayName: twitchUserData?.display_name || displayName || username,
       email: twitchUserData?.email || email || '',
       profileImageUrl: twitchUserData?.profile_image_url || '',
       accessToken: '', // Will need to be set via OAuth
       refreshToken: '', // Will need to be set via OAuth
       tokenExpiry: new Date().toISOString(),
-      role: username.toLowerCase() === 'riress' ? 'admin' : 'streamer',
+      role: safeUsername.toLowerCase() === 'riress' ? 'admin' : 'streamer',
       isActive: true
     };
 

@@ -22,9 +22,25 @@ router.get('/:userId', async (req, res) => {
       return res.status(403).send('Stream overlay not enabled for this user');
     }
 
+    // Get user's overlay settings
+    const overlaySettings = await database.getUserOverlaySettings(req.params.userId);
+
+    // If overlay is disabled in settings, show disabled message
+    if (!overlaySettings.enabled) {
+      return res.status(200).send(`
+        <!DOCTYPE html>
+        <html><head><title>Overlay Disabled</title></head>
+        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
+          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #d4af37;">
+            Overlay is currently disabled. Enable it in your settings.
+          </div>
+        </body></html>
+      `);
+    }
+
     const counters = await database.getCounters(req.params.userId);
 
-    // Serve overlay HTML
+    // Generate dynamic overlay HTML with user settings
     const overlayHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -38,7 +54,7 @@ router.get('/:userId', async (req, res) => {
             padding: 20px;
             font-family: 'Arial', sans-serif;
             background: transparent;
-            color: white;
+            color: ${overlaySettings.theme.textColor};
             overflow: hidden;
         }
 
@@ -46,24 +62,27 @@ router.get('/:userId', async (req, res) => {
             display: flex;
             flex-direction: column;
             gap: 15px;
+            position: fixed;
+            ${overlaySettings.position.includes('top') ? 'top: 20px;' : 'bottom: 20px;'}
+            ${overlaySettings.position.includes('right') ? 'right: 20px;' : 'left: 20px;'}
         }
 
         .counter-item {
-            background: rgba(0, 0, 0, 0.7);
+            background: ${overlaySettings.theme.backgroundColor};
             padding: 15px 25px;
             border-radius: 10px;
-            border: 2px solid #d4af37;
+            border: 2px solid ${overlaySettings.theme.borderColor};
             backdrop-filter: blur(5px);
             display: flex;
             align-items: center;
             gap: 15px;
             min-width: 200px;
-            transition: all 0.3s ease;
+            transition: ${overlaySettings.animations.enabled ? 'all 0.3s ease' : 'none'};
         }
 
         .counter-item:hover {
-            transform: scale(1.05);
-            box-shadow: 0 5px 20px rgba(212, 175, 55, 0.3);
+            ${overlaySettings.animations.enabled ? 'transform: scale(1.05);' : ''}
+            ${overlaySettings.animations.enabled ? `box-shadow: 0 5px 20px ${overlaySettings.theme.borderColor}30;` : ''}
         }
 
         .counter-icon {
@@ -78,7 +97,7 @@ router.get('/:userId', async (req, res) => {
 
         .counter-label {
             font-size: 1rem;
-            color: #d4af37;
+            color: ${overlaySettings.theme.borderColor};
             margin-bottom: 5px;
             font-weight: bold;
         }
@@ -86,7 +105,7 @@ router.get('/:userId', async (req, res) => {
         .counter-value {
             font-size: 2rem;
             font-weight: bold;
-            color: white;
+            color: ${overlaySettings.theme.textColor};
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
@@ -225,29 +244,32 @@ router.get('/:userId', async (req, res) => {
 </head>
 <body>
     <div class="counter-overlay">
+        ${overlaySettings.counters.deaths ? `
         <div class="counter-item" id="deaths-counter">
             <div class="counter-icon">💀</div>
             <div class="counter-info">
                 <div class="counter-label">Deaths</div>
                 <div class="counter-value" id="deaths-value">${counters.deaths || 0}</div>
             </div>
-        </div>
+        </div>` : ''}
 
+        ${overlaySettings.counters.swears ? `
         <div class="counter-item" id="swears-counter">
             <div class="counter-icon">🤬</div>
             <div class="counter-info">
                 <div class="counter-label">Swears</div>
                 <div class="counter-value" id="swears-value">${counters.swears || 0}</div>
             </div>
-        </div>
+        </div>` : ''}
 
+        ${overlaySettings.counters.bits ? `
         <div class="counter-item" id="bits-counter">
             <div class="counter-icon">💎</div>
             <div class="counter-info">
                 <div class="counter-label">Stream Bits</div>
                 <div class="counter-value" id="bits-value">${counters.bits || 0}</div>
             </div>
-        </div>
+        </div>` : ''}
     </div>
 
     <!-- Alert popup -->
@@ -265,6 +287,7 @@ router.get('/:userId', async (req, res) => {
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const userId = '${req.params.userId}';
+        const overlaySettings = ${JSON.stringify(overlaySettings)};
         const socket = io();
 
         // Join user's room for real-time updates
@@ -278,13 +301,15 @@ router.get('/:userId', async (req, res) => {
             if (element) {
                 element.textContent = value;
 
-                // Add pulse effect
-                counterItem.classList.remove('counter-pulse');
-                setTimeout(() => counterItem.classList.add('counter-pulse'), 10);
-                setTimeout(() => counterItem.classList.remove('counter-pulse'), 600);
+                // Add pulse effect if animations are enabled
+                if (overlaySettings.animations.enabled) {
+                    counterItem.classList.remove('counter-pulse');
+                    setTimeout(() => counterItem.classList.add('counter-pulse'), 10);
+                    setTimeout(() => counterItem.classList.remove('counter-pulse'), 600);
+                }
 
-                // Show alert if there was a change
-                if (change !== null && change !== 0) {
+                // Show alert if there was a change and alerts are enabled
+                if (change !== null && change !== 0 && overlaySettings.animations.showAlerts) {
                     showAlert(type, change, value);
                 }
             }
@@ -309,6 +334,8 @@ router.get('/:userId', async (req, res) => {
 
         // Bits celebration effect
         function celebrateBits(amount) {
+            if (!overlaySettings.animations.celebrationEffects) return;
+
             const container = document.getElementById('bits-celebration');
             const particleCount = Math.min(amount, 50); // Limit particles for performance
 
@@ -331,6 +358,8 @@ router.get('/:userId', async (req, res) => {
 
         // Subscriber celebration effects
         function celebrateSubscriber(username, type = 'sub', months = null) {
+            if (!overlaySettings.animations.celebrationEffects) return;
+
             const container = document.getElementById('sub-celebration');
             const banner = document.getElementById('sub-banner');
 
@@ -377,9 +406,15 @@ router.get('/:userId', async (req, res) => {
         // Listen for counter updates
         socket.on('counterUpdate', (data) => {
             if (data.userId === userId) {
-                updateCounter('deaths', data.counters.deaths, data.change?.deaths);
-                updateCounter('swears', data.counters.swears, data.change?.swears);
-                updateCounter('bits', data.counters.bits, data.change?.bits);
+                if (overlaySettings.counters.deaths) {
+                    updateCounter('deaths', data.counters.deaths, data.change?.deaths);
+                }
+                if (overlaySettings.counters.swears) {
+                    updateCounter('swears', data.counters.swears, data.change?.swears);
+                }
+                if (overlaySettings.counters.bits) {
+                    updateCounter('bits', data.counters.bits, data.change?.bits);
+                }
             }
         });
 

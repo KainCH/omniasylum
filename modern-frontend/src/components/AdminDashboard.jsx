@@ -186,6 +186,28 @@ function AdminDashboard() {
     }
   }
 
+  const updateUserOverlaySettings = async (userId, settings) => {
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/overlay-settings`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(settings)
+      })
+
+      if (response.ok) {
+        fetchAdminData() // Refresh data
+        console.log('✅ Overlay settings updated successfully')
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to update overlay settings:', errorData.error)
+        alert(errorData.error)
+      }
+    } catch (error) {
+      console.error('❌ Failed to update overlay settings:', error)
+      alert('Failed to update overlay settings')
+    }
+  }
+
   // Get current user's role from token
   const getCurrentUserRole = () => {
     const token = localStorage.getItem('authToken')
@@ -211,11 +233,26 @@ function AdminDashboard() {
 
   const addUser = async () => {
     try {
+      // Validate required fields
+      if (!newUser.username?.trim() || !newUser.twitchUserId?.trim()) {
+        alert('Username and Twitch User ID are required')
+        return
+      }
+
       setAddingUser(true)
+
+      // Clean the data before sending
+      const cleanUserData = {
+        username: newUser.username.trim(),
+        displayName: newUser.displayName?.trim() || '',
+        email: newUser.email?.trim() || '',
+        twitchUserId: newUser.twitchUserId.trim()
+      }
+
       const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify(newUser)
+        body: JSON.stringify(cleanUserData)
       })
 
       if (response.ok) {
@@ -393,9 +430,10 @@ function AdminDashboard() {
               <div className="form-grid">
                 <input
                   type="text"
-                  placeholder="Username (e.g., riress)"
-                  value={newUser.username}
+                  placeholder="Username (e.g., riress) *Required"
+                  value={newUser.username || ''}
                   onChange={(e) => setNewUser({...newUser, username: e.target.value})}
+                  required
                   style={{
                     color: 'white !important',
                     WebkitTextFillColor: 'white !important',
@@ -407,7 +445,7 @@ function AdminDashboard() {
                 <input
                   type="text"
                   placeholder="Display Name (e.g., Riress)"
-                  value={newUser.displayName}
+                  value={newUser.displayName || ''}
                   onChange={(e) => setNewUser({...newUser, displayName: e.target.value})}
                   style={{
                     color: 'white !important',
@@ -420,7 +458,7 @@ function AdminDashboard() {
                 <input
                   type="email"
                   placeholder="Email (optional)"
-                  value={newUser.email}
+                  value={newUser.email || ''}
                   onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                   style={{
                     color: 'white !important',
@@ -432,9 +470,10 @@ function AdminDashboard() {
                 />
                 <input
                   type="text"
-                  placeholder="Twitch User ID"
-                  value={newUser.twitchUserId}
+                  placeholder="Twitch User ID *Required"
+                  value={newUser.twitchUserId || ''}
                   onChange={(e) => setNewUser({...newUser, twitchUserId: e.target.value})}
+                  required
                   style={{
                     color: 'white !important',
                     WebkitTextFillColor: 'white !important',
@@ -577,6 +616,165 @@ function AdminDashboard() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Overlay Settings Management */}
+                  {userFeatures.streamOverlay && (
+                    <div className="user-overlay-settings">
+                      <h4>Stream Overlay Settings</h4>
+                      {(() => {
+                        let overlaySettings;
+                        try {
+                          overlaySettings = typeof user.overlaySettings === 'string'
+                            ? JSON.parse(user.overlaySettings)
+                            : user.overlaySettings || {
+                              enabled: false,
+                              position: 'top-right',
+                              counters: { deaths: true, swears: true, bits: false },
+                              theme: { backgroundColor: 'rgba(0,0,0,0.7)', borderColor: '#d4af37', textColor: 'white' },
+                              animations: { enabled: true, showAlerts: true, celebrationEffects: true }
+                            };
+                        } catch {
+                          overlaySettings = {
+                            enabled: false,
+                            position: 'top-right',
+                            counters: { deaths: true, swears: true, bits: false },
+                            theme: { backgroundColor: 'rgba(0,0,0,0.7)', borderColor: '#d4af37', textColor: 'white' },
+                            animations: { enabled: true, showAlerts: true, celebrationEffects: true }
+                          };
+                        }
+                        return (
+                          <div className="overlay-settings-grid">
+                            <div className="overlay-setting-group">
+                              <label className="overlay-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={overlaySettings.enabled}
+                                  onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                    ...overlaySettings,
+                                    enabled: e.target.checked
+                                  })}
+                                />
+                                <span className="overlay-setting-name">Overlay Enabled</span>
+                                <span className={`overlay-status ${overlaySettings.enabled ? 'enabled' : 'disabled'}`}>
+                                  {overlaySettings.enabled ? '✅' : '❌'}
+                                </span>
+                              </label>
+                            </div>
+
+                            <div className="overlay-setting-group">
+                              <label>
+                                <strong>Position:</strong>
+                                <select
+                                  value={overlaySettings.position}
+                                  onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                    ...overlaySettings,
+                                    position: e.target.value
+                                  })}
+                                  className="overlay-position-select"
+                                >
+                                  <option value="top-left">Top Left</option>
+                                  <option value="top-right">Top Right</option>
+                                  <option value="bottom-left">Bottom Left</option>
+                                  <option value="bottom-right">Bottom Right</option>
+                                </select>
+                              </label>
+                            </div>
+
+                            <div className="overlay-setting-group">
+                              <strong>Visible Counters:</strong>
+                              <div className="counter-toggles">
+                                <label className="counter-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.counters.deaths}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      counters: { ...overlaySettings.counters, deaths: e.target.checked }
+                                    })}
+                                  />
+                                  <span>💀 Deaths</span>
+                                </label>
+                                <label className="counter-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.counters.swears}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      counters: { ...overlaySettings.counters, swears: e.target.checked }
+                                    })}
+                                  />
+                                  <span>🤬 Swears</span>
+                                </label>
+                                <label className="counter-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.counters.bits}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      counters: { ...overlaySettings.counters, bits: e.target.checked }
+                                    })}
+                                  />
+                                  <span>💎 Bits</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div className="overlay-setting-group">
+                              <strong>Animation Settings:</strong>
+                              <div className="animation-toggles">
+                                <label className="animation-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.animations.enabled}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      animations: { ...overlaySettings.animations, enabled: e.target.checked }
+                                    })}
+                                  />
+                                  <span>Animations</span>
+                                </label>
+                                <label className="animation-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.animations.showAlerts}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      animations: { ...overlaySettings.animations, showAlerts: e.target.checked }
+                                    })}
+                                  />
+                                  <span>Counter Alerts</span>
+                                </label>
+                                <label className="animation-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={overlaySettings.animations.celebrationEffects}
+                                    onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
+                                      ...overlaySettings,
+                                      animations: { ...overlaySettings.animations, celebrationEffects: e.target.checked }
+                                    })}
+                                  />
+                                  <span>Celebration Effects</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            {overlaySettings.enabled && (
+                              <div className="overlay-preview-link">
+                                <a
+                                  href={`/overlay/${user.twitchUserId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="preview-button"
+                                >
+                                  🔗 Open Overlay Preview
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   <div className="user-metadata">
                     <small>

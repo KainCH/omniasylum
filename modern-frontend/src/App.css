@@ -646,6 +646,154 @@
   background: #dc2626;
 }
 
+/* Overlay Settings Styles */
+.user-overlay-settings {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(139, 69, 19, 0.3);
+  border-radius: 8px;
+  padding: 15px;
+  margin-top: 15px;
+  backdrop-filter: blur(5px);
+}
+
+.user-overlay-settings h4 {
+  color: #d4af37;
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.overlay-settings-grid {
+  display: grid;
+  gap: 15px;
+}
+
+.overlay-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 2px solid rgba(139, 69, 19, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.overlay-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(139, 69, 19, 0.4);
+}
+
+.overlay-setting-name {
+  flex: 1;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.overlay-status {
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.overlay-status.enabled {
+  color: #22c55e;
+}
+
+.overlay-status.disabled {
+  color: #ef4444;
+}
+
+.overlay-position-select {
+  padding: 6px 12px;
+  border: 2px solid rgba(139, 69, 19, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1a1a1a;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 10px;
+}
+
+.overlay-position-select:hover {
+  border-color: #8b4513;
+}
+
+.overlay-position-select:focus {
+  outline: none;
+  border-color: #d4af37;
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2);
+}
+
+.counter-toggles,
+.animation-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.counter-toggle,
+.animation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border: 1px solid rgba(139, 69, 19, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+}
+
+.counter-toggle:hover,
+.animation-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(139, 69, 19, 0.5);
+}
+
+.counter-toggle input[type="checkbox"],
+.animation-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+.overlay-preview-link {
+  text-align: center;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(139, 69, 19, 0.3);
+}
+
+.preview-button {
+  display: inline-block;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #d4af37, #b8941f);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.preview-button:hover {
+  background: linear-gradient(135deg, #b8941f, #d4af37);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  text-decoration: none;
+  color: white;
+}
+
 /* Admin Dashboard Styles */
 .admin-dashboard {
   padding: 20px 0;
