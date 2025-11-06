@@ -700,6 +700,141 @@ async function startServer() {
           console.error('Error handling raid event:', error);
         }
       });
+
+      // Handle new subscription events
+      streamMonitor.on('newSubscription', async ({ userId, username, subscriber, tier, isGift, timestamp, alert }) => {
+        try {
+          console.log(`⭐ New subscription: ${subscriber} subscribed to ${username} (Tier ${tier})`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newSubscription', {
+            userId,
+            username,
+            subscriber,
+            tier,
+            isGift,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'subscription',
+              userId,
+              username: subscriber,
+              data: { subscriber, tier, isGift },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling subscription event:', error);
+        }
+      });
+
+      // Handle gift sub events
+      streamMonitor.on('newGiftSub', async ({ userId, username, gifter, amount, tier, timestamp, alert }) => {
+        try {
+          console.log(`🎁 Gift subs: ${gifter} gifted ${amount} subs to ${username} (Tier ${tier})`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newGiftSub', {
+            userId,
+            username,
+            gifter,
+            amount,
+            tier,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'giftsub',
+              userId,
+              username: gifter,
+              data: { gifter, amount, tier },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling gift sub event:', error);
+        }
+      });
+
+      // Handle resub events
+      streamMonitor.on('newResub', async ({ userId, username, subscriber, tier, months, streakMonths, message, timestamp, alert }) => {
+        try {
+          console.log(`🔄 Resub: ${subscriber} resubscribed to ${username} (${months} months)`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newResub', {
+            userId,
+            username,
+            subscriber,
+            tier,
+            months,
+            streakMonths,
+            message,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'resub',
+              userId,
+              username: subscriber,
+              data: { subscriber, tier, months, streakMonths, message },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling resub event:', error);
+        }
+      });
+
+      // Handle cheer/bits events
+      streamMonitor.on('newCheer', async ({ userId, username, cheerer, bits, message, isAnonymous, timestamp, alert }) => {
+        try {
+          console.log(`💎 Cheer: ${cheerer} cheered ${bits} bits to ${username}`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newCheer', {
+            userId,
+            username,
+            cheerer,
+            bits,
+            message,
+            isAnonymous,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'bits',
+              userId,
+              username: cheerer,
+              data: { cheerer, bits, message, isAnonymous },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling cheer event:', error);
+        }
+      });
     }
 
     // Start HTTP server

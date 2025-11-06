@@ -171,6 +171,38 @@ class StreamMonitor extends EventEmitter {
         });
       }
 
+      // Subscribe to subscription events (if alerts enabled)
+      let subscribeSubscription = null;
+      if (hasAlerts) {
+        subscribeSubscription = userListener.onChannelSubscription(twitchUserId, (event) => {
+          this.handleSubscribeEvent(event, userId);
+        });
+      }
+
+      // Subscribe to subscription gift events (if alerts enabled)
+      let subGiftSubscription = null;
+      if (hasAlerts) {
+        subGiftSubscription = userListener.onChannelSubscriptionGift(twitchUserId, (event) => {
+          this.handleSubGiftEvent(event, userId);
+        });
+      }
+
+      // Subscribe to subscription message events (resubscriptions with messages)
+      let subMessageSubscription = null;
+      if (hasAlerts) {
+        subMessageSubscription = userListener.onChannelSubscriptionMessage(twitchUserId, (event) => {
+          this.handleSubMessageEvent(event, userId);
+        });
+      }
+
+      // Subscribe to cheer/bits events (if alerts enabled)
+      let cheerSubscription = null;
+      if (hasAlerts) {
+        cheerSubscription = userListener.onChannelCheer(twitchUserId, (event) => {
+          this.handleCheerEvent(event, userId);
+        });
+      }
+
       // Start the user's listener
       userListener.start();
 
@@ -184,7 +216,11 @@ class StreamMonitor extends EventEmitter {
         offlineSubscription,
         redemptionSubscription,
         followSubscription,
-        raidSubscription
+        raidSubscription,
+        subscribeSubscription,
+        subGiftSubscription,
+        subMessageSubscription,
+        cheerSubscription
       });
 
       console.log(`🎬 Now monitoring streams for ${user.username} (${userId})`);
@@ -222,6 +258,18 @@ class StreamMonitor extends EventEmitter {
       }
       if (userData.raidSubscription) {
         userData.raidSubscription.stop();
+      }
+      if (userData.subscribeSubscription) {
+        userData.subscribeSubscription.stop();
+      }
+      if (userData.subGiftSubscription) {
+        userData.subGiftSubscription.stop();
+      }
+      if (userData.subMessageSubscription) {
+        userData.subMessageSubscription.stop();
+      }
+      if (userData.cheerSubscription) {
+        userData.cheerSubscription.stop();
       }
 
       // Stop the user's EventSub listener
@@ -674,6 +722,205 @@ class StreamMonitor extends EventEmitter {
 
     } catch (error) {
       console.error('Error handling raid event:', error);
+    }
+  }
+
+  /**
+   * Handle subscription events
+   */
+  async handleSubscribeEvent(event, userId) {
+    try {
+      if (!userId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === event.broadcasterId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Subscribe event for unknown user: ${event.broadcasterName}`);
+        return;
+      }
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
+      if (!hasAlerts) {
+        console.log(`Alerts disabled for ${user.username}`);
+        return;
+      }
+
+      console.log(`⭐ New subscriber: ${event.userName} subscribed to ${user.username} at tier ${event.tier}`);
+
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.subscribe');
+
+      // Emit subscription event with alert data
+      this.emit('newSubscription', {
+        userId,
+        username: user.username,
+        subscriber: event.userName,
+        tier: event.tier,
+        isGift: event.isGift,
+        timestamp: new Date().toISOString(),
+        alert: alert
+      });
+
+    } catch (error) {
+      console.error('Error handling subscribe event:', error);
+    }
+  }
+
+  /**
+   * Handle subscription gift events
+   */
+  async handleSubGiftEvent(event, userId) {
+    try {
+      if (!userId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === event.broadcasterId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Sub gift event for unknown user: ${event.broadcasterName}`);
+        return;
+      }
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
+      if (!hasAlerts) {
+        console.log(`Alerts disabled for ${user.username}`);
+        return;
+      }
+
+      console.log(`🎁 Gift subs: ${event.userName} gifted ${event.amount || 1} tier ${event.tier} sub(s) to ${user.username}`);
+
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.subscription.gift');
+
+      // Emit gift sub event with alert data
+      this.emit('newGiftSub', {
+        userId,
+        username: user.username,
+        gifter: event.userName,
+        amount: event.amount || event.total || 1,
+        tier: event.tier,
+        timestamp: new Date().toISOString(),
+        alert: alert
+      });
+
+    } catch (error) {
+      console.error('Error handling gift sub event:', error);
+    }
+  }
+
+  /**
+   * Handle subscription message events (resubscriptions)
+   */
+  async handleSubMessageEvent(event, userId) {
+    try {
+      if (!userId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === event.broadcasterId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Resub event for unknown user: ${event.broadcasterName}`);
+        return;
+      }
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
+      if (!hasAlerts) {
+        console.log(`Alerts disabled for ${user.username}`);
+        return;
+      }
+
+      console.log(`🔄 Resub: ${event.userName} resubscribed to ${user.username} (${event.cumulativeMonths} months)`);
+
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.subscription.message');
+
+      // Emit resub event with alert data
+      this.emit('newResub', {
+        userId,
+        username: user.username,
+        subscriber: event.userName,
+        tier: event.tier,
+        months: event.cumulativeMonths,
+        streakMonths: event.streakMonths,
+        message: event.messageText,
+        timestamp: new Date().toISOString(),
+        alert: alert
+      });
+
+    } catch (error) {
+      console.error('Error handling resub event:', error);
+    }
+  }
+
+  /**
+   * Handle cheer/bits events
+   */
+  async handleCheerEvent(event, userId) {
+    try {
+      if (!userId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === event.broadcasterId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Cheer event for unknown user: ${event.broadcasterName}`);
+        return;
+      }
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
+      if (!hasAlerts) {
+        console.log(`Alerts disabled for ${user.username}`);
+        return;
+      }
+
+      console.log(`💎 Bits: ${event.userName || 'Anonymous'} cheered ${event.bits} bits to ${user.username}`);
+
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.cheer');
+
+      // Emit cheer event with alert data
+      this.emit('newCheer', {
+        userId,
+        username: user.username,
+        cheerer: event.userName || 'Anonymous',
+        bits: event.bits,
+        message: event.message,
+        isAnonymous: event.isAnonymous,
+        timestamp: new Date().toISOString(),
+        alert: alert
+      });
+
+    } catch (error) {
+      console.error('Error handling cheer event:', error);
     }
   }
 

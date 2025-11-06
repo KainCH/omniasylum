@@ -79,6 +79,7 @@ router.get('/:userId', async (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${user.displayName} - Stream Counter Overlay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
@@ -316,6 +317,7 @@ router.get('/:userId', async (req, res) => {
     <div class="sub-banner" id="sub-banner"></div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/asylum-effects.js"></script>
     <script>
         const userId = '${req.params.userId}';
         const overlaySettings = ${JSON.stringify(overlaySettings)};
@@ -514,10 +516,35 @@ router.get('/:userId', async (req, res) => {
             // Process text prompt with variables
             let processedText = alertConfig.textPrompt;
             processedText = processedText.replace(/\\[User\\]/g, username);
-            processedText = processedText.replace(/\\[X\\]/g, data.viewers || data.amount || '');
+            processedText = processedText.replace(/\\[X\\]/g, data.viewers || data.amount || data.bits || data.months || '');
+
+            // Additional variable replacements for different event types
+            if (data.tier) {
+                const tierNames = { '1000': 'Tier 1', '2000': 'Tier 2', '3000': 'Tier 3', 'Prime': 'Prime' };
+                processedText = processedText.replace(/\\[Tier\\]/g, tierNames[data.tier] || 'Prime');
+            }
+            if (data.months) {
+                processedText = processedText.replace(/\\[Months\\]/g, data.months);
+            }
+            if (data.streakMonths) {
+                processedText = processedText.replace(/\\[Streak\\]/g, data.streakMonths);
+            }
+            if (data.message) {
+                processedText = processedText.replace(/\\[Message\\]/g, data.message);
+            }
+            if (data.bits) {
+                processedText = processedText.replace(/\\[Bits\\]/g, data.bits);
+            }
+            if (data.amount) {
+                processedText = processedText.replace(/\\[Amount\\]/g, data.amount);
+            }
+            if (data.viewers) {
+                processedText = processedText.replace(/\\[Viewers\\]/g, data.viewers);
+            }
 
             // Create alert element
             const alertElement = document.createElement('div');
+            alertElement.className = 'alert-container';
             alertElement.style.cssText = \`
                 background: \${alertConfig.backgroundColor || '#1a0d0d'};
                 color: \${alertConfig.textColor || '#ffffff'};
@@ -528,7 +555,6 @@ router.get('/:userId', async (req, res) => {
                 font-size: 24px;
                 text-align: center;
                 box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(255, 255, 255, 0.1);
-                animation: asylumPulse \${alertConfig.duration || 4000}ms ease-in-out;
                 min-width: 400px;
                 max-width: 600px;
             \`;
@@ -549,6 +575,7 @@ router.get('/:userId', async (req, res) => {
 
             // Add main text
             const textElement = document.createElement('div');
+            textElement.className = 'alert-text';
             textElement.textContent = processedText;
             alertElement.appendChild(textElement);
 
@@ -597,11 +624,19 @@ router.get('/:userId', async (req, res) => {
                 document.head.appendChild(styles);
             }
 
-            // Show alert
+            // Clear previous alert
+            alertContainer.innerHTML = '';
             alertContainer.appendChild(alertElement);
+
+            // Trigger advanced visual effects if effects are defined
+            if (alertConfig.effects && window.asylumEffects) {
+                window.asylumEffects.triggerEffect(alertConfig);
+            }
+
+            // Show alert with fade in
             alertContainer.style.opacity = '1';
 
-            // Remove alert after duration
+            // Auto-hide after duration
             setTimeout(() => {
                 alertContainer.style.opacity = '0';
                 setTimeout(() => {
@@ -711,6 +746,78 @@ router.get('/:userId', async (req, res) => {
         socket.on('customAlert', (data) => {
             if (data.userId === userId) {
                 displayCustomAlert(data);
+            }
+        });
+
+        // Listen for new subscription events
+        socket.on('newSubscription', (data) => {
+            if (data.userId === userId) {
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'subscription',
+                        username: data.subscriber,
+                        data: { tier: data.tier, isGift: data.isGift },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple celebration
+                    celebrateSubscriber(data.subscriber, 'sub');
+                }
+            }
+        });
+
+        // Listen for gift sub events
+        socket.on('newGiftSub', (data) => {
+            if (data.userId === userId) {
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'giftsub',
+                        username: data.gifter,
+                        data: { amount: data.amount, tier: data.tier },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple celebration
+                    celebrateSubscriber(data.gifter, 'gift');
+                }
+            }
+        });
+
+        // Listen for resub events
+        socket.on('newResub', (data) => {
+            if (data.userId === userId) {
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'resub',
+                        username: data.subscriber,
+                        data: { months: data.months, streakMonths: data.streakMonths, message: data.message, tier: data.tier },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple celebration
+                    celebrateSubscriber(data.subscriber, 'resub', data.months);
+                }
+            }
+        });
+
+        // Listen for cheer/bits events
+        socket.on('newCheer', (data) => {
+            if (data.userId === userId) {
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'bits',
+                        username: data.cheerer,
+                        data: { bits: data.bits, message: data.message, isAnonymous: data.isAnonymous },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple bits animation
+                    triggerBitsAnimation(data.bits);
+                }
             }
         });
 

@@ -825,6 +825,7 @@ class Database {
 
   /**
    * Get default alert templates for Omni's asylum theme
+   * Enhanced with advanced visual effects: CSS keyframes, SVG masks, canvas filters
    */
   getDefaultAlertTemplates() {
     return [
@@ -835,12 +836,19 @@ class Database {
         visualCue: 'A door creaks open slowly',
         sound: 'distant-footsteps',
         soundDescription: 'Distant footsteps or whisper',
-        textPrompt: 'A new patient has arrived…',
-        duration: 4000,
+        textPrompt: '🚪 A new patient has arrived… [User]',
+        duration: 5000,
         backgroundColor: '#1a0d0d',
         textColor: '#ff6b6b',
         borderColor: '#8b1538',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'doorCreak',
+          svgMask: 'fog',
+          particle: 'dust',
+          screenShake: true,
+          soundTrigger: 'doorCreak.mp3'
+        }
       },
       {
         id: 'subscription',
@@ -849,12 +857,20 @@ class Database {
         visualCue: 'Restraints snap shut',
         sound: 'electroshock-buzz',
         soundDescription: 'Electroshock buzz or echoing scream',
-        textPrompt: 'They\'ve committed for the long stay.',
-        duration: 5000,
+        textPrompt: '⚡ They\'ve committed for the long stay. [User] - Tier [Tier]',
+        duration: 6000,
         backgroundColor: '#1a0d1a',
         textColor: '#9147ff',
         borderColor: '#6441a5',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'electricPulse',
+          svgMask: 'glassDistortion',
+          particle: 'sparks',
+          screenFlicker: true,
+          glowIntensity: 'high',
+          soundTrigger: 'electroshock.mp3'
+        }
       },
       {
         id: 'resub',
@@ -863,12 +879,19 @@ class Database {
         visualCue: 'A file slams shut on a desk',
         sound: 'typewriter-ding',
         soundDescription: 'Pen scribble + typewriter ding',
-        textPrompt: 'Case file reopened: [User] returns.',
-        duration: 5000,
+        textPrompt: '📋 Case file reopened: [User] returns. [Months] months confined.',
+        duration: 5500,
         backgroundColor: '#0d1a0d',
         textColor: '#00ff88',
         borderColor: '#1db954',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'typewriter',
+          svgMask: 'paperTexture',
+          particle: 'ink',
+          textScramble: true,
+          soundTrigger: 'typewriter.mp3'
+        }
       },
       {
         id: 'bits',
@@ -877,12 +900,20 @@ class Database {
         visualCue: 'Pills scatter across the floor',
         sound: 'pill-rattle',
         soundDescription: 'Pill bottle rattle + distorted laugh',
-        textPrompt: '[User] offers their dosage.',
-        duration: 4000,
+        textPrompt: '💊 [User] offers their dosage: [Bits] bits',
+        duration: 4500,
         backgroundColor: '#1a1a0d',
         textColor: '#ffd700',
         borderColor: '#ffcc00',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'pillScatter',
+          svgMask: 'none',
+          particle: 'pills',
+          bounce: true,
+          colorShift: true,
+          soundTrigger: 'pillRattle.mp3'
+        }
       },
       {
         id: 'raid',
@@ -891,12 +922,21 @@ class Database {
         visualCue: 'Sirens blare, lights flicker red',
         sound: 'asylum-alarm',
         soundDescription: 'Alarm + overlapping voices',
-        textPrompt: 'The ward is breached—[X] intruders!',
-        duration: 6000,
+        textPrompt: '🚨 THE WARD IS BREACHED — [X] INTRUDERS!',
+        duration: 7000,
         backgroundColor: '#1a0000',
         textColor: '#ff0000',
         borderColor: '#cc0000',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'sirenFlash',
+          svgMask: 'none',
+          particle: 'chaos',
+          screenShake: true,
+          screenFlicker: true,
+          redAlert: true,
+          soundTrigger: 'alarm.mp3'
+        }
       },
       {
         id: 'giftsub',
@@ -905,12 +945,20 @@ class Database {
         visualCue: 'A nurse silhouette appears behind glass',
         sound: 'heart-monitor-flatline',
         soundDescription: 'Heart monitor flatline',
-        textPrompt: '[User] sedates another soul.',
-        duration: 5000,
+        textPrompt: '💉 [User] sedates another soul.',
+        duration: 5500,
         backgroundColor: '#0d0d1a',
         textColor: '#88ddff',
         borderColor: '#0099cc',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'heartbeatPulse',
+          svgMask: 'glassDistortion',
+          particle: 'heartbeats',
+          silhouette: true,
+          heartbeatLine: true,
+          soundTrigger: 'heartMonitor.mp3'
+        }
       },
       {
         id: 'hypetrain',
@@ -919,12 +967,20 @@ class Database {
         visualCue: 'Wheelchair rolls down a hallway',
         sound: 'train-screech-heartbeat',
         soundDescription: 'Rising heartbeat + train screech',
-        textPrompt: 'The asylum stirs… the frenzy begins.',
+        textPrompt: '🎢 THE ASYLUM STIRS… THE FRENZY BEGINS!',
         duration: 8000,
         backgroundColor: '#1a1a1a',
         textColor: '#ffffff',
         borderColor: '#ff6600',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'wheelchairRoll',
+          svgMask: 'hallwayPerspective',
+          particle: 'smoke',
+          screenShake: true,
+          crescendo: true,
+          soundTrigger: 'hypeTrain.mp3'
+        }
       }
     ];
   }
@@ -1100,6 +1156,9 @@ class Database {
 
       console.log(`✅ Initialized ${defaultTemplates.length} default alerts for user ${twitchUserId}`);
     }
+
+    // Initialize default event mappings
+    await this.initializeEventMappings(twitchUserId);
   }
 
   /**
@@ -1108,6 +1167,119 @@ class Database {
   async getAlertForEventType(userId, eventType) {
     const alerts = await this.getUserAlerts(userId);
     return alerts.find(alert => alert.type === eventType && alert.isEnabled) || null;
+  }
+
+  // ==================== EVENT-TO-ALERT MAPPING ====================
+
+  /**
+   * Get default event-to-alert mappings for EventSub events
+   */
+  getDefaultEventMappings() {
+    return {
+      'channel.follow': 'follow',
+      'channel.subscribe': 'subscription',
+      'channel.subscription.gift': 'giftsub',
+      'channel.subscription.message': 'resub',
+      'channel.cheer': 'bits',
+      'channel.bits.use': 'bits'  // NEW bits event type
+    };
+  }
+
+  /**
+   * Initialize default event mappings for a user
+   */
+  async initializeEventMappings(twitchUserId) {
+    const existingMappings = await this.getEventMappings(twitchUserId);
+
+    // Only initialize if no mappings exist
+    if (!existingMappings || Object.keys(existingMappings).length === 0) {
+      const defaultMappings = this.getDefaultEventMappings();
+      await this.saveEventMappings(twitchUserId, defaultMappings);
+    }
+  }
+
+  /**
+   * Get event-to-alert mappings for a user
+   */
+  async getEventMappings(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const entity = await this.usersClient.getEntity(twitchUserId, 'event-mappings');
+        return JSON.parse(entity.mappings || '{}');
+      } catch (error) {
+        if (error.statusCode === 404) {
+          return {};
+        }
+        throw error;
+      }
+    } else {
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+
+      if (!fs.existsSync(mappingsFile)) {
+        return {};
+      }
+
+      try {
+        const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+        return allMappings[twitchUserId] || {};
+      } catch (error) {
+        console.error('Error reading event mappings:', error);
+        return {};
+      }
+    }
+  }
+
+  /**
+   * Save event-to-alert mappings for a user
+   */
+  async saveEventMappings(twitchUserId, mappings) {
+    if (this.mode === 'azure') {
+      const entity = {
+        partitionKey: twitchUserId,
+        rowKey: 'event-mappings',
+        mappings: JSON.stringify(mappings),
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.usersClient.upsertEntity(entity, 'Merge');
+    } else {
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+
+      let allMappings = {};
+      if (fs.existsSync(mappingsFile)) {
+        try {
+          allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+        } catch (error) {
+          console.error('Error reading event mappings file:', error);
+          allMappings = {};
+        }
+      }
+
+      allMappings[twitchUserId] = mappings;
+      fs.writeFileSync(mappingsFile, JSON.stringify(allMappings, null, 2), 'utf8');
+    }
+  }
+
+  /**
+   * Get alert configuration for a specific EventSub event
+   */
+  async getAlertForEvent(twitchUserId, eventType) {
+    const mappings = await this.getEventMappings(twitchUserId);
+    const alertType = mappings[eventType];
+
+    if (!alertType) {
+      console.log(`No alert mapping for event type: ${eventType}`);
+      return null;
+    }
+
+    const alerts = await this.getUserAlerts(twitchUserId);
+    const alert = alerts.find(alert => alert.type === alertType && alert.isEnabled);
+
+    if (!alert) {
+      console.log(`No enabled alert found for type: ${alertType}`);
+    }
+
+    return alert || null;
   }
 }
 

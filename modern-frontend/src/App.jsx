@@ -4,6 +4,7 @@ import Counter from './components/Counter'
 import AuthPrompt from './components/AuthPrompt'
 import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
+import UserAlertManager from './components/UserAlertManager'
 import './App.css'
 
 function App() {
@@ -49,6 +50,7 @@ function App() {
   const [viewMode, setViewMode] = useState('user')
   const [showInstructionsModal, setShowInstructionsModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showAlertManager, setShowAlertManager] = useState(false)
   const [streamStatus, setStreamStatus] = useState('offline')
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
@@ -716,6 +718,22 @@ function App() {
           >
             ⚙️ Overlay Settings
           </button>
+          <button
+            onClick={() => setShowAlertManager(true)}
+            style={{
+              background: '#fd7e14',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            🎯 Manage Alerts
+          </button>
         </div>
 
         {/* Instructions Modal */}
@@ -804,6 +822,61 @@ function App() {
               >
                 ✅ Got it!
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Alert Manager Modal */}
+        {showAlertManager && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAlertManager(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '1200px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <button
+                onClick={() => setShowAlertManager(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: '#dc3545',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  zIndex: 10
+                }}
+              >
+                ✖ Close
+              </button>
+              <UserAlertManager userId={userId} />
             </div>
           </div>
         )}

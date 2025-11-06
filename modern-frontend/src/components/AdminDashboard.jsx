@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
+import AlertEventManager from './AlertEventManager'
 
 function AdminDashboard() {
   const [users, setUsers] = useState([])
@@ -14,6 +15,8 @@ function AdminDashboard() {
   const [showRoleManager, setShowRoleManager] = useState(false)
   const [showRewardsManager, setShowRewardsManager] = useState(false)
   const [showAlertsManager, setShowAlertsManager] = useState(false)
+  const [showEventMappingManager, setShowEventMappingManager] = useState(false)
+  const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
   const [alerts, setAlerts] = useState([])
   const [alertTemplates, setAlertTemplates] = useState([])
@@ -1903,13 +1906,28 @@ function AdminDashboard() {
                           {userAlerts.alerts.length} alerts ({userAlerts.alerts.filter(a => a.isEnabled).length} active)
                         </span>
                       </h4>
-                      <button
-                        onClick={() => createAlert(userAlerts.userId)}
-                        className="btn btn-primary btn-small"
-                        disabled={!newAlert.name || !newAlert.textPrompt}
-                      >
-                        ➕ Add Alert
-                      </button>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => createAlert(userAlerts.userId)}
+                          className="btn btn-primary btn-small"
+                          disabled={!newAlert.name || !newAlert.textPrompt}
+                        >
+                          ➕ Add Alert
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEventMappingUser({
+                              userId: userAlerts.userId,
+                              username: userAlerts.username,
+                              displayName: userAlerts.displayName
+                            })
+                            setShowEventMappingManager(true)
+                          }}
+                          className="btn btn-secondary btn-small"
+                        >
+                          🎯 Configure Event Mappings
+                        </button>
+                      </div>
                     </div>
 
                     {userAlerts.alerts.length === 0 ? (
@@ -2026,6 +2044,33 @@ function AdminDashboard() {
             </div>
           )}
         </div>
+
+        {/* Event Mapping Manager Modal */}
+        {showEventMappingManager && eventMappingUser && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 9999,
+            overflow: 'auto',
+            padding: '20px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center'
+          }}>
+            <AlertEventManager
+              userId={eventMappingUser.userId}
+              username={eventMappingUser.displayName || eventMappingUser.username}
+              onClose={() => {
+                setShowEventMappingManager(false)
+                setEventMappingUser(null)
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

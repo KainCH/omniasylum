@@ -301,4 +301,105 @@ router.get('/templates', requireAuth, async (req, res) => {
   }
 });
 
+// ==================== EVENT-TO-ALERT MAPPING ENDPOINTS ====================
+
+/**
+ * Get event-to-alert mappings for current user
+ * GET /api/alerts/event-mappings
+ */
+router.get('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const mappings = await database.getEventMappings(req.user.twitchUserId);
+    const defaultMappings = database.getDefaultEventMappings();
+
+    res.json({
+      mappings: mappings,
+      defaultMappings: defaultMappings,
+      availableEvents: Object.keys(defaultMappings)
+    });
+  } catch (error) {
+    console.error('Error getting event mappings:', error);
+    res.status(500).json({ error: 'Failed to get event mappings' });
+  }
+});
+
+/**
+ * Update event-to-alert mappings for current user
+ * PUT /api/alerts/event-mappings
+ */
+router.put('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const { mappings } = req.body;
+
+    if (!mappings || typeof mappings !== 'object') {
+      return res.status(400).json({ error: 'Invalid mappings format' });
+    }
+
+    // Validate that all event types are valid
+    const validEvents = Object.keys(database.getDefaultEventMappings());
+    for (const eventType of Object.keys(mappings)) {
+      if (!validEvents.includes(eventType)) {
+        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
+      }
+    }
+
+    // Validate that all alert types exist for this user
+    const userAlerts = await database.getUserAlerts(req.user.twitchUserId);
+    const validAlertTypes = userAlerts.map(alert => alert.type);
+
+    for (const alertType of Object.values(mappings)) {
+      if (alertType && !validAlertTypes.includes(alertType)) {
+        return res.status(400).json({ error: `No alert found with type: ${alertType}` });
+      }
+    }
+
+    await database.saveEventMappings(req.user.twitchUserId, mappings);
+
+    res.json({
+      message: 'Event mappings updated successfully',
+      mappings: mappings
+    });
+  } catch (error) {
+    console.error('Error updating event mappings:', error);
+    res.status(500).json({ error: 'Failed to update event mappings' });
+  }
+});
+
+/**
+ * Reset event mappings to defaults
+ * POST /api/alerts/event-mappings/reset
+ */
+router.post('/event-mappings/reset', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const defaultMappings = database.getDefaultEventMappings();
+    await database.saveEventMappings(req.user.twitchUserId, defaultMappings);
+
+    res.json({
+      message: 'Event mappings reset to defaults successfully',
+      mappings: defaultMappings
+    });
+  } catch (error) {
+    console.error('Error resetting event mappings:', error);
+    res.status(500).json({ error: 'Failed to reset event mappings' });
+  }
+});
+
 module.exports = router;
