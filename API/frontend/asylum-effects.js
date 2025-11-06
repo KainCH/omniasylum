@@ -11,6 +11,19 @@ class AsylumEffects {
     this.canvas = null;
     this.ctx = null;
     this.svgDefs = null;
+    this.audioCache = {};
+    this.audioVolume = 0.7; // 70% volume by default
+
+    // Effect toggles - can be enabled/disabled
+    this.settings = {
+      enableSound: true,
+      enableAnimations: true,
+      enableParticles: true,
+      enableScreenEffects: true,
+      enableSVGFilters: true,
+      enableTextEffects: true
+    };
+
     this.init();
   }
 
@@ -21,6 +34,62 @@ class AsylumEffects {
     this.createSVGDefs();
     // Inject CSS keyframes
     this.injectKeyframes();
+    // Preload sound effects
+    this.preloadSounds();
+    // Load settings from localStorage if available
+    this.loadSettings();
+  }
+
+  // ==================== SETTINGS MANAGEMENT ====================
+
+  loadSettings() {
+    try {
+      const saved = localStorage.getItem('asylumEffectsSettings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        this.settings = { ...this.settings, ...parsed };
+        console.log('🎛️ Loaded effect settings:', this.settings);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load settings:', error);
+    }
+  }
+
+  saveSettings() {
+    try {
+      localStorage.setItem('asylumEffectsSettings', JSON.stringify(this.settings));
+      console.log('💾 Saved effect settings:', this.settings);
+    } catch (error) {
+      console.warn('⚠️ Failed to save settings:', error);
+    }
+  }
+
+  toggleSetting(settingName, enabled) {
+    if (this.settings.hasOwnProperty(settingName)) {
+      this.settings[settingName] = enabled;
+      this.saveSettings();
+      console.log(`🎛️ ${settingName}: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+      return true;
+    }
+    console.warn(`⚠️ Unknown setting: ${settingName}`);
+    return false;
+  }
+
+  getSettings() {
+    return { ...this.settings };
+  }
+
+  resetSettings() {
+    this.settings = {
+      enableSound: true,
+      enableAnimations: true,
+      enableParticles: true,
+      enableScreenEffects: true,
+      enableSVGFilters: true,
+      enableTextEffects: true
+    };
+    this.saveSettings();
+    console.log('🔄 Reset all settings to defaults');
   }
 
   createCanvas() {
@@ -216,36 +285,118 @@ class AsylumEffects {
     document.head.appendChild(style);
   }
 
+  // ==================== AUDIO SYSTEM ====================
+
+  preloadSounds() {
+    const soundFiles = [
+      'doorCreak.wav',
+      'electroshock.wav',
+      'typewriter.wav',
+      'pillRattle.wav',
+      'alarm.wav',
+      'heartMonitor.wav',
+      'hypeTrain.wav'
+    ];
+
+    soundFiles.forEach(filename => {
+      const audio = new Audio(`/sounds/${filename}`);
+      audio.volume = this.audioVolume;
+      audio.preload = 'auto';
+
+      // Store in cache
+      const key = filename.replace('.wav', '').replace('.mp3', '');
+      this.audioCache[key] = audio;
+
+      // Log when loaded
+      audio.addEventListener('canplaythrough', () => {
+        console.log(`🔊 Preloaded sound: ${filename}`);
+      }, { once: true });
+
+      // Error handling
+      audio.addEventListener('error', (e) => {
+        console.warn(`⚠️ Failed to load sound: ${filename}`, e);
+      });
+    });
+  }
+
+  playSound(soundTrigger) {
+    if (!soundTrigger) return;
+
+    // Extract sound name without extension
+    const soundName = soundTrigger.replace('.wav', '').replace('.mp3', '');
+    const audio = this.audioCache[soundName];
+
+    if (audio) {
+      // Clone the audio to allow overlapping sounds
+      const soundInstance = audio.cloneNode();
+      soundInstance.volume = this.audioVolume;
+
+      // Play with error handling for browser autoplay policies
+      const playPromise = soundInstance.play();
+
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`🔊 Playing sound: ${soundTrigger}`);
+          })
+          .catch(error => {
+            console.warn(`⚠️ Autoplay prevented for: ${soundTrigger}`, error);
+            // User interaction required - this is expected on first load
+          });
+      }
+    } else {
+      console.warn(`⚠️ Sound not found in cache: ${soundTrigger}`);
+    }
+  }
+
+  setVolume(volume) {
+    this.audioVolume = Math.max(0, Math.min(1, volume)); // Clamp between 0-1
+
+    // Update all cached audio elements
+    Object.values(this.audioCache).forEach(audio => {
+      audio.volume = this.audioVolume;
+    });
+
+    console.log(`🔊 Volume set to: ${Math.round(this.audioVolume * 100)}%`);
+  }
+
   // ==================== EFFECT TRIGGERS ====================
 
   triggerEffect(alertData) {
     const effects = alertData.effects || {};
 
-    // Apply main animation
-    if (effects.animation) {
+    // Play sound effect first (if enabled)
+    if (this.settings.enableSound && effects.soundTrigger) {
+      this.playSound(effects.soundTrigger);
+    }
+
+    // Apply main animation (if enabled)
+    if (this.settings.enableAnimations && effects.animation) {
       this.applyAnimation(effects.animation, alertData);
     }
 
-    // Apply SVG mask/filter
-    if (effects.svgMask && effects.svgMask !== 'none') {
+    // Apply SVG mask/filter (if enabled)
+    if (this.settings.enableSVGFilters && effects.svgMask && effects.svgMask !== 'none') {
       this.applySVGMask(effects.svgMask, alertData);
     }
 
-    // Trigger particle system
-    if (effects.particle) {
+    // Trigger particle system (if enabled)
+    if (this.settings.enableParticles && effects.particle) {
       this.createParticleSystem(effects.particle, alertData);
     }
 
-    // Screen effects
-    if (effects.screenShake) {
-      this.triggerScreenShake();
+    // Screen effects (if enabled)
+    if (this.settings.enableScreenEffects) {
+      if (effects.screenShake) {
+        this.triggerScreenShake();
+      }
+
+      if (effects.screenFlicker) {
+        this.triggerScreenFlicker();
+      }
     }
 
-    if (effects.screenFlicker) {
-      this.triggerScreenFlicker();
-    }
-
-    if (effects.redAlert) {
+    if (this.settings.enableScreenEffects && effects.redAlert) {
       this.triggerRedAlert(alertData.duration);
     }
 
@@ -258,7 +409,7 @@ class AsylumEffects {
       this.showSilhouette(alertData.duration);
     }
 
-    if (effects.textScramble) {
+    if (this.settings.enableTextEffects && effects.textScramble) {
       this.scrambleText(alertData);
     }
   }

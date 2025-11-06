@@ -5,6 +5,7 @@ import AuthPrompt from './components/AuthPrompt'
 import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
 import UserAlertManager from './components/UserAlertManager'
+import AlertEffectsSettings from './components/AlertEffectsSettings'
 import './App.css'
 
 function App() {
@@ -51,6 +52,7 @@ function App() {
   const [showInstructionsModal, setShowInstructionsModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showAlertManager, setShowAlertManager] = useState(false)
+  const [showAlertEffectsSettings, setShowAlertEffectsSettings] = useState(false)
   const [streamStatus, setStreamStatus] = useState('offline')
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
@@ -734,6 +736,22 @@ function App() {
           >
             🎯 Manage Alerts
           </button>
+          <button
+            onClick={() => setShowAlertEffectsSettings(true)}
+            style={{
+              background: '#9146ff',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            🎭 Alert Effects
+          </button>
         </div>
 
         {/* Instructions Modal */}
@@ -877,6 +895,42 @@ function App() {
                 ✖ Close
               </button>
               <UserAlertManager userId={userId} />
+            </div>
+          </div>
+        )}
+
+        {/* Alert Effects Settings Modal */}
+        {showAlertEffectsSettings && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAlertEffectsSettings(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '900px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
             </div>
           </div>
         )}

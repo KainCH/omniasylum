@@ -645,12 +645,6 @@ router.get('/:userId', async (req, res) => {
                     }
                 }, 500);
             }, alertConfig.duration || 4000);
-
-            // Play sound if configured (placeholder for future implementation)
-            if (alertConfig.sound) {
-                console.log(\`🔊 Playing sound: \${alertConfig.sound}\`);
-                // TODO: Implement sound playback
-            }
         }
 
         // Simplified alert for backwards compatibility
