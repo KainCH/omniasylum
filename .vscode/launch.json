@@ -1,0 +1,64 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch API Server",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/API/server.js",
+      "cwd": "${workspaceFolder}/API",
+      "envFile": "${workspaceFolder}/API/.env",
+      "console": "integratedTerminal",
+      "outputCapture": "std"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch API Server (Debug)",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/API/server.js",
+      "cwd": "${workspaceFolder}/API",
+      "envFile": "${workspaceFolder}/API/.env",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "env": {
+        "NODE_ENV": "development",
+        "DEBUG": "*"
+      }
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Attach to API Server",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "localRoot": "${workspaceFolder}/API",
+      "remoteRoot": "/app"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Test Admin Routes",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/API/server.js",
+      "cwd": "${workspaceFolder}/API",
+      "envFile": "${workspaceFolder}/API/.env",
+      "console": "integratedTerminal",
+      "env": {
+        "DB_MODE": "local",
+        "NODE_ENV": "test"
+      },
+      "preLaunchTask": "Ensure Test Data"
+    }
+  ]
+}

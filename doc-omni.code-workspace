@@ -1,0 +1,147 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "OmniAsylum Stream Counter"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.git": true,
+      "**/data": true,
+      "**/*.log": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/data": true
+    },
+    "files.associations": {
+      "*.bicep": "bicep"
+    },
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[markdown]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "javascript.preferences.quoteStyle": "single",
+    "typescript.preferences.quoteStyle": "single"
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode.vscode-node-azure-pack",
+      "ms-azuretools.vscode-azurefunctions",
+      "ms-azuretools.vscode-bicep",
+      "ms-azuretools.vscode-docker",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "github.copilot",
+      "github.copilot-chat",
+      "ms-azuretools.vscode-azure-github-copilot"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "node",
+        "request": "launch",
+        "name": "Launch API Server",
+        "skipFiles": ["<node_internals>/**"],
+        "program": "${workspaceFolder}/API/server.js",
+        "cwd": "${workspaceFolder}/API",
+        "envFile": "${workspaceFolder}/API/.env",
+        "console": "integratedTerminal"
+      },
+      {
+        "type": "node",
+        "request": "attach",
+        "name": "Attach to API Server",
+        "port": 9229,
+        "restart": true,
+        "skipFiles": ["<node_internals>/**"]
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start API Server",
+        "type": "shell",
+        "command": "npm start",
+        "options": {
+          "cwd": "${workspaceFolder}/API"
+        },
+        "problemMatcher": [],
+        "isBackground": true,
+        "presentation": {
+          "reveal": "always",
+          "panel": "new"
+        }
+      },
+      {
+        "label": "Start API Server (Dev)",
+        "type": "shell",
+        "command": "npm run dev",
+        "options": {
+          "cwd": "${workspaceFolder}/API"
+        },
+        "problemMatcher": [],
+        "isBackground": true,
+        "presentation": {
+          "reveal": "always",
+          "panel": "new"
+        }
+      },
+      {
+        "label": "Build Docker Image",
+        "type": "shell",
+        "command": "docker build -t omniasylum-api .",
+        "options": {
+          "cwd": "${workspaceFolder}/API"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Run Docker Container",
+        "type": "shell",
+        "command": "docker run -p 3000:3000 --env-file .env omniasylum-api",
+        "options": {
+          "cwd": "${workspaceFolder}/API"
+        },
+        "problemMatcher": [],
+        "isBackground": true
+      },
+      {
+        "label": "Deploy to Azure",
+        "type": "shell",
+        "command": "az deployment group create --resource-group ${input:resourceGroup} --template-file deploy/main.bicep --parameters baseName=${input:baseName}",
+        "options": {
+          "cwd": "${workspaceFolder}/API"
+        },
+        "problemMatcher": []
+      }
+    ],
+    "inputs": [
+      {
+        "id": "resourceGroup",
+        "type": "promptString",
+        "description": "Azure Resource Group Name",
+        "default": "omniasylum-rg"
+      },
+      {
+        "id": "baseName",
+        "type": "promptString",
+        "description": "Base name for Azure resources",
+        "default": "omniasylum"
+      }
+    ]
+  }
+}
