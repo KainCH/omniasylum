@@ -14,9 +14,11 @@ class Database {
     this.usersClient = null;
     this.countersClient = null;
     this.alertsClient = null;
+    this.seriesSavesClient = null;
     this.localDataDir = path.join(__dirname, 'data');
     this.localUsersFile = path.join(this.localDataDir, 'users.json');
     this.localCountersFile = path.join(this.localDataDir, 'counters.json');
+    this.localSeriesSavesFile = path.join(this.localDataDir, 'series_saves.json');
 
     this.initialize();
   }
@@ -54,11 +56,13 @@ class Database {
       this.usersClient = new TableClient(serviceUrl, 'users', credential);
       this.countersClient = new TableClient(serviceUrl, 'counters', credential);
       this.alertsClient = new TableClient(serviceUrl, 'alerts', credential);
+      this.seriesSavesClient = new TableClient(serviceUrl, 'seriessaves', credential);
 
       // Create tables if they don't exist
       await this.usersClient.createTable();
       await this.countersClient.createTable();
       await this.alertsClient.createTable();
+      await this.seriesSavesClient.createTable();
 
       console.log('✅ Connected to Azure Table Storage');
     } catch (error) {
@@ -86,6 +90,10 @@ class Database {
     const localRewardsFile = path.join(this.localDataDir, 'rewards.json');
     if (!fs.existsSync(localRewardsFile)) {
       fs.writeFileSync(localRewardsFile, JSON.stringify({}), 'utf8');
+    }
+    // Initialize series saves file
+    if (!fs.existsSync(this.localSeriesSavesFile)) {
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify({}), 'utf8');
     }
     console.log('✅ Using local JSON storage');
   }
@@ -388,6 +396,170 @@ class Database {
 
     console.log(`🎬 Stream ended for user ${twitchUserId}`);
     return saved;
+  }
+
+  // ==================== SERIES SAVE STATE OPERATIONS ====================
+
+  /**
+   * Save current counter state as a series save point
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesName - Name of the series (e.g., "Elden Ring Episode 5")
+   * @param {string} description - Optional description
+   * @returns {Object} The saved series data
+   */
+  async saveSeries(twitchUserId, seriesName, description = '') {
+    const currentCounters = await this.getCounters(twitchUserId);
+    const seriesId = `${Date.now()}_${seriesName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    const saveData = {
+      partitionKey: twitchUserId,
+      rowKey: seriesId,
+      seriesName: seriesName,
+      description: description,
+      deaths: currentCounters.deaths,
+      swears: currentCounters.swears,
+      bits: currentCounters.bits,
+      savedAt: new Date().toISOString()
+    };
+
+    if (this.mode === 'azure') {
+      await this.seriesSavesClient.upsertEntity(saveData, 'Replace');
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId]) {
+        saves[twitchUserId] = {};
+      }
+      saves[twitchUserId][seriesId] = saveData;
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify(saves, null, 2), 'utf8');
+    }
+
+    console.log(`💾 Series save created for user ${twitchUserId}: "${seriesName}"`);
+    return saveData;
+  }
+
+  /**
+   * Load a series save state and restore counters
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesId - The ID of the series save to load
+   * @returns {Object} The loaded counter data
+   */
+  async loadSeries(twitchUserId, seriesId) {
+    let saveData = null;
+
+    if (this.mode === 'azure') {
+      try {
+        saveData = await this.seriesSavesClient.getEntity(twitchUserId, seriesId);
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error('Series save not found');
+        }
+        throw error;
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId] || !saves[twitchUserId][seriesId]) {
+        throw new Error('Series save not found');
+      }
+      saveData = saves[twitchUserId][seriesId];
+    }
+
+    // Restore the counters from the save
+    const restoredCounters = {
+      deaths: saveData.deaths || 0,
+      swears: saveData.swears || 0,
+      bits: saveData.bits || 0,
+      streamStarted: null
+    };
+
+    await this.saveCounters(twitchUserId, restoredCounters);
+
+    console.log(`📂 Series save loaded for user ${twitchUserId}: "${saveData.seriesName}"`);
+    return {
+      ...restoredCounters,
+      seriesName: saveData.seriesName,
+      description: saveData.description,
+      savedAt: saveData.savedAt,
+      lastUpdated: new Date().toISOString()
+    };
+  }
+
+  /**
+   * List all series saves for a user
+   * @param {string} twitchUserId - User's Twitch ID
+   * @returns {Array} List of series saves
+   */
+  async listSeriesSaves(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const entities = this.seriesSavesClient.listEntities({
+          queryOptions: { filter: `PartitionKey eq '${twitchUserId}'` }
+        });
+
+        const saves = [];
+        for await (const entity of entities) {
+          saves.push({
+            seriesId: entity.rowKey,
+            seriesName: entity.seriesName,
+            description: entity.description,
+            deaths: entity.deaths,
+            swears: entity.swears,
+            bits: entity.bits,
+            savedAt: entity.savedAt
+          });
+        }
+
+        // Sort by savedAt descending (most recent first)
+        saves.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+        return saves;
+      } catch (error) {
+        console.error('Error listing series saves:', error);
+        return [];
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      const userSaves = saves[twitchUserId] || {};
+
+      const savesList = Object.keys(userSaves).map(seriesId => ({
+        seriesId: seriesId,
+        seriesName: userSaves[seriesId].seriesName,
+        description: userSaves[seriesId].description,
+        deaths: userSaves[seriesId].deaths,
+        swears: userSaves[seriesId].swears,
+        bits: userSaves[seriesId].bits,
+        savedAt: userSaves[seriesId].savedAt
+      }));
+
+      // Sort by savedAt descending (most recent first)
+      savesList.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+      return savesList;
+    }
+  }
+
+  /**
+   * Delete a series save
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesId - The ID of the series save to delete
+   */
+  async deleteSeries(twitchUserId, seriesId) {
+    if (this.mode === 'azure') {
+      try {
+        await this.seriesSavesClient.deleteEntity(twitchUserId, seriesId);
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error('Series save not found');
+        }
+        throw error;
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId] || !saves[twitchUserId][seriesId]) {
+        throw new Error('Series save not found');
+      }
+      delete saves[twitchUserId][seriesId];
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify(saves, null, 2), 'utf8');
+    }
+
+    console.log(`🗑️  Series save deleted for user ${twitchUserId}: ${seriesId}`);
   }
 
   /**

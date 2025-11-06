@@ -115,6 +115,143 @@ router.get('/export', requireAuth, async (req, res) => {
   }
 });
 
+// ==================== SERIES SAVE STATE ROUTES ====================
+
+/**
+ * Save current counter state as a series save point
+ * POST /api/counters/series/save
+ * Body: { seriesName: string, description?: string }
+ */
+router.post('/series/save', requireAuth, async (req, res) => {
+  try {
+    const { seriesName, description } = req.body;
+
+    if (!seriesName || seriesName.trim().length === 0) {
+      return res.status(400).json({ error: 'Series name is required' });
+    }
+
+    if (seriesName.length > 100) {
+      return res.status(400).json({ error: 'Series name must be 100 characters or less' });
+    }
+
+    const saveData = await database.saveSeries(
+      req.user.userId,
+      seriesName.trim(),
+      description?.trim() || ''
+    );
+
+    console.log(`💾 User ${req.user.username} saved series: "${seriesName}"`);
+
+    res.json({
+      message: 'Series saved successfully',
+      save: {
+        seriesId: saveData.rowKey,
+        seriesName: saveData.seriesName,
+        description: saveData.description,
+        deaths: saveData.deaths,
+        swears: saveData.swears,
+        bits: saveData.bits,
+        savedAt: saveData.savedAt
+      }
+    });
+  } catch (error) {
+    console.error('Error saving series:', error);
+    res.status(500).json({ error: 'Failed to save series' });
+  }
+});
+
+/**
+ * Load a series save state
+ * POST /api/counters/series/load
+ * Body: { seriesId: string }
+ */
+router.post('/series/load', requireAuth, async (req, res) => {
+  try {
+    const { seriesId } = req.body;
+
+    if (!seriesId) {
+      return res.status(400).json({ error: 'Series ID is required' });
+    }
+
+    const loadedData = await database.loadSeries(req.user.userId, seriesId);
+
+    // Emit WebSocket event to update all connected devices
+    req.app.get('io').to(`user:${req.user.userId}`).emit('counterUpdate', {
+      deaths: loadedData.deaths,
+      swears: loadedData.swears,
+      bits: loadedData.bits,
+      lastUpdated: loadedData.lastUpdated,
+      streamStarted: loadedData.streamStarted,
+      change: { deaths: 0, swears: 0, bits: 0 }
+    });
+
+    console.log(`📂 User ${req.user.username} loaded series: "${loadedData.seriesName}"`);
+
+    res.json({
+      message: 'Series loaded successfully',
+      counters: {
+        deaths: loadedData.deaths,
+        swears: loadedData.swears,
+        bits: loadedData.bits,
+        lastUpdated: loadedData.lastUpdated
+      },
+      seriesInfo: {
+        seriesName: loadedData.seriesName,
+        description: loadedData.description,
+        savedAt: loadedData.savedAt
+      }
+    });
+  } catch (error) {
+    if (error.message === 'Series save not found') {
+      return res.status(404).json({ error: 'Series save not found' });
+    }
+    console.error('Error loading series:', error);
+    res.status(500).json({ error: 'Failed to load series' });
+  }
+});
+
+/**
+ * List all series saves for the authenticated user
+ * GET /api/counters/series/list
+ */
+router.get('/series/list', requireAuth, async (req, res) => {
+  try {
+    const saves = await database.listSeriesSaves(req.user.userId);
+
+    res.json({
+      count: saves.length,
+      saves: saves
+    });
+  } catch (error) {
+    console.error('Error listing series saves:', error);
+    res.status(500).json({ error: 'Failed to list series saves' });
+  }
+});
+
+/**
+ * Delete a series save
+ * DELETE /api/counters/series/:seriesId
+ */
+router.delete('/series/:seriesId', requireAuth, async (req, res) => {
+  try {
+    const { seriesId } = req.params;
+
+    await database.deleteSeries(req.user.userId, seriesId);
+
+    console.log(`🗑️  User ${req.user.username} deleted series: ${seriesId}`);
+
+    res.json({
+      message: 'Series save deleted successfully'
+    });
+  } catch (error) {
+    if (error.message === 'Series save not found') {
+      return res.status(404).json({ error: 'Series save not found' });
+    }
+    console.error('Error deleting series:', error);
+    res.status(500).json({ error: 'Failed to delete series' });
+  }
+});
+
 /**
  * Get overlay settings for authenticated user
  * GET /api/counters/overlay/settings

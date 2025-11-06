@@ -6,6 +6,7 @@ import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
 import UserAlertManager from './components/UserAlertManager'
 import AlertEffectsSettings from './components/AlertEffectsSettings'
+import SeriesSaveManager from './components/SeriesSaveManager'
 import './App.css'
 
 function App() {
@@ -53,6 +54,7 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showAlertManager, setShowAlertManager] = useState(false)
   const [showAlertEffectsSettings, setShowAlertEffectsSettings] = useState(false)
+  const [showSeriesSaveManager, setShowSeriesSaveManager] = useState(false)
   const [streamStatus, setStreamStatus] = useState('offline')
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
@@ -752,6 +754,22 @@ function App() {
           >
             🎭 Alert Effects
           </button>
+          <button
+            onClick={() => setShowSeriesSaveManager(true)}
+            style={{
+              background: '#4CAF50',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            💾 Series Saves
+          </button>
         </div>
 
         {/* Instructions Modal */}
@@ -933,6 +951,14 @@ function App() {
               <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
             </div>
           </div>
+        )}
+
+        {/* Series Save Manager Modal */}
+        {showSeriesSaveManager && (
+          <SeriesSaveManager
+            isOpen={showSeriesSaveManager}
+            onClose={() => setShowSeriesSaveManager(false)}
+          />
         )}
 
         {/* Settings Modal */}

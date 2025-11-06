@@ -319,6 +319,127 @@ twitchService.on('resetBits', async ({ userId, username }) => {
   }
 });
 
+// ==================== SERIES SAVE STATE EVENTS ====================
+
+twitchService.on('saveSeries', async ({ userId, username, seriesName }) => {
+  try {
+    const saveData = await database.saveSeries(userId, seriesName);
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `💾 Series saved: "${seriesName}" (Deaths: ${saveData.deaths}, Swears: ${saveData.swears})`
+    );
+
+    console.log(`💾 Series saved by ${username}: "${seriesName}"`);
+  } catch (error) {
+    console.error('Error handling series save:', error);
+    await twitchService.sendMessage(
+      userId,
+      '❌ Failed to save series. Please try again.'
+    );
+  }
+});
+
+twitchService.on('loadSeries', async ({ userId, username, seriesId }) => {
+  try {
+    const loadedData = await database.loadSeries(userId, seriesId);
+
+    // Broadcast counter update to all connected devices
+    io.to(`user:${userId}`).emit('counterUpdate', {
+      deaths: loadedData.deaths,
+      swears: loadedData.swears,
+      bits: loadedData.bits,
+      lastUpdated: loadedData.lastUpdated,
+      streamStarted: loadedData.streamStarted,
+      change: { deaths: 0, swears: 0, bits: 0 }
+    });
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `📂 Series loaded: "${loadedData.seriesName}" (Deaths: ${loadedData.deaths}, Swears: ${loadedData.swears})`
+    );
+
+    console.log(`📂 Series loaded by ${username}: "${loadedData.seriesName}"`);
+  } catch (error) {
+    console.error('Error handling series load:', error);
+    if (error.message === 'Series save not found') {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Series save not found. Use !listseries to see available saves.'
+      );
+    } else {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Failed to load series. Please try again.'
+      );
+    }
+  }
+});
+
+twitchService.on('listSeries', async ({ userId, username, channel }) => {
+  try {
+    const saves = await database.listSeriesSaves(userId);
+
+    if (saves.length === 0) {
+      await twitchService.sendMessage(
+        userId,
+        'No series saves found. Use !saveseries [name] to create one.'
+      );
+      return;
+    }
+
+    // Show the 3 most recent saves
+    const recentSaves = saves.slice(0, 3);
+    const savesList = recentSaves.map((save, index) => {
+      const date = new Date(save.savedAt).toLocaleDateString();
+      return `${index + 1}. "${save.seriesName}" (${date}) - ID: ${save.seriesId}`;
+    }).join(' | ');
+
+    await twitchService.sendMessage(
+      userId,
+      `📋 Recent saves: ${savesList} | Total: ${saves.length}`
+    );
+
+    console.log(`📋 Series list requested by ${username}`);
+  } catch (error) {
+    console.error('Error handling series list:', error);
+    await twitchService.sendMessage(
+      userId,
+      '❌ Failed to list series saves.'
+    );
+  }
+});
+
+twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
+  try {
+    await database.deleteSeries(userId, seriesId);
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `🗑️  Series save deleted: ${seriesId}`
+    );
+
+    console.log(`🗑️  Series deleted by ${username}: ${seriesId}`);
+  } catch (error) {
+    console.error('Error handling series delete:', error);
+    if (error.message === 'Series save not found') {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Series save not found.'
+      );
+    } else {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Failed to delete series save.'
+      );
+    }
+  }
+});
+
+
 // Handle bits events
 twitchService.on('bitsReceived', async ({ userId, username, channel, amount, message, timestamp, thresholds }) => {
   try {
