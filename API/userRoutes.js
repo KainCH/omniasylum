@@ -371,7 +371,68 @@ async function sendDiscordNotification(user, eventType, data) {
   } catch (error) {
     console.error(`❌ Discord notification failed: ${eventType} for ${user.username}:`, error);
   }
-}// Export the router as default for compatibility, and additional functions
+}
+
+/**
+ * Get user Discord notification settings
+ * GET /api/user/discord-settings
+ */
+router.get('/discord-settings', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    console.log(`📋 Getting Discord notification settings for user ${req.user.username}`);
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Parse Discord settings from user object, with defaults
+    const discordSettings = user.discordSettings ? JSON.parse(user.discordSettings) : {
+      enableDiscordNotifications: false,
+      enableChannelNotifications: false,
+      deathMilestoneEnabled: false,
+      swearMilestoneEnabled: false,
+      deathThresholds: '10,25,50,100,250,500,1000',
+      swearThresholds: '25,50,100,250,500,1000,2500'
+    };
+
+    console.log(`✅ Discord settings retrieved for ${req.user.username}`);
+    res.json(discordSettings);
+  } catch (error) {
+    console.error('❌ Error getting Discord settings:', error);
+    res.status(500).json({ error: 'Failed to get Discord notification settings' });
+  }
+});
+
+/**
+ * Update user Discord notification settings
+ * PUT /api/user/discord-settings
+ */
+router.put('/discord-settings', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const settings = req.body;
+
+    console.log(`🔔 Updating Discord notification settings for user ${req.user.username}:`, settings);
+
+    // Update user with new Discord settings
+    const updatedUser = await database.updateUser(userId, {
+      discordSettings: JSON.stringify(settings)
+    });
+
+    console.log(`✅ Discord notification settings updated for ${req.user.username}`);
+    res.json({
+      message: 'Discord notification settings updated successfully',
+      settings: settings
+    });
+  } catch (error) {
+    console.error('❌ Error updating Discord notification settings:', error);
+    res.status(500).json({ error: 'Failed to update Discord notification settings' });
+  }
+});
+
+// Export the router as default for compatibility, and additional functions
 module.exports = router;
 module.exports.sendDiscordNotification = sendDiscordNotification;
 module.exports.createDiscordEmbed = createDiscordEmbed;

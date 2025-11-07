@@ -774,24 +774,23 @@ function App() {
           >
             💾 Series Saves
           </button>
-          {userFeatures.discordNotifications && (
-            <button
-              onClick={() => setShowDiscordSettings(true)}
-              style={{
-                background: '#5865F2',
-                color: '#fff',
-                border: 'none',
-                padding: '10px 20px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                flex: 1,
-                fontWeight: 'bold'
-              }}
-            >
-              🔔 Discord Notifications
-            </button>
-          )}
+          <button
+            onClick={() => setShowDiscordSettings(true)}
+            style={{
+              background: userFeatures.discordNotifications ? '#5865F2' : '#6c757d',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+            title={userFeatures.discordNotifications ? 'Configure Discord notifications' : 'Set up Discord notifications'}
+          >
+            🔔 Discord Notifications
+          </button>
         </div>
 
         {/* Instructions Modal */}

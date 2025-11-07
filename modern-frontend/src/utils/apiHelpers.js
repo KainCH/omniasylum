@@ -63,67 +63,100 @@ const apiRequest = async (url, options = {}) => {
 
 // Notification Settings API
 export const notificationAPI = {
-  // Get user's Discord settings
-  getDiscordSettings: async (userId) => {
+  // Admin methods (for managing other users)
+  getSettings: async (userId) => {
     return await apiRequest(`/api/admin/users/${userId}/discord-settings`);
   },
 
-  // Update user's Discord settings
-  updateDiscordSettings: async (userId, settings) => {
+  updateSettings: async (userId, settings) => {
     return await apiRequest(`/api/admin/users/${userId}/discord-settings`, {
       method: 'PUT',
       body: JSON.stringify(settings)
     });
   },
 
-  // Test Discord webhook
-  testDiscordWebhook: async (webhookUrl, testData = {}) => {
-    return await apiRequest('/api/discord/test-webhook', {
-      method: 'POST',
-      body: JSON.stringify({
-        webhookUrl,
-        testData: {
-          type: 'test',
-          message: 'Test notification from OmniAsylum Stream Counter',
-          ...testData
-        }
-      })
+  getWebhook: async (userId) => {
+    return await apiRequest(`/api/admin/users/${userId}/discord-webhook`);
+  },
+
+  updateWebhook: async (userId, webhookData) => {
+    return await apiRequest(`/api/admin/users/${userId}/discord-webhook`, {
+      method: 'PUT',
+      body: JSON.stringify(webhookData)
     });
   },
 
-  // Send custom Discord notification
-  sendNotification: async (userId, eventType, data) => {
-    return await apiRequest('/api/discord/send-notification', {
+  testWebhook: async (userId, webhookData) => {
+    return await apiRequest(`/api/admin/users/${userId}/discord-test`, {
       method: 'POST',
-      body: JSON.stringify({ userId, eventType, data })
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  // User methods (for self-management)
+  getUserSettings: async () => {
+    return await apiRequest('/api/user/discord-settings');
+  },
+
+  updateUserSettings: async (settings) => {
+    return await apiRequest('/api/user/discord-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
     });
   }
 };
 
 // User Management API
 export const userAPI = {
-  // Get user details
+  // Admin methods
   getUser: async (userId) => {
     return await apiRequest(`/api/admin/users/${userId}`);
   },
 
-  // Update user features
-  updateUserFeatures: async (userId, features) => {
+  updateFeatures: async (userId, features) => {
     return await apiRequest(`/api/admin/users/${userId}/features`, {
       method: 'PUT',
-      body: JSON.stringify({ features })
+      body: JSON.stringify(features)
     });
   },
 
-  // Get all users (admin only)
+  updateOverlaySettings: async (userId, settings) => {
+    return await apiRequest(`/api/admin/users/${userId}/overlay`, {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  getOverlaySettings: async (userId) => {
+    return await apiRequest(`/api/admin/users/${userId}/overlay`);
+  },
+
   getAllUsers: async () => {
     return await apiRequest('/api/admin/users');
   },
 
-  // Delete user (admin only)
   deleteUser: async (userId) => {
     return await apiRequest(`/api/admin/users/${userId}`, {
       method: 'DELETE'
+    });
+  },
+
+  // User methods (for self-management)
+  getDiscordWebhook: async () => {
+    return await apiRequest('/api/user/discord-webhook');
+  },
+
+  updateDiscordWebhook: async (webhookData) => {
+    return await apiRequest('/api/user/discord-webhook', {
+      method: 'PUT',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  testDiscordWebhook: async (webhookData) => {
+    return await apiRequest('/api/user/discord-webhook/test', {
+      method: 'POST',
+      body: JSON.stringify(webhookData)
     });
   }
 };
