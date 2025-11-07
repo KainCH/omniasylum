@@ -55,8 +55,9 @@ io.engine.on('connection_error', (err) => {
   console.log('❌ Socket.io error details:', err.code, err.message, err.context);
 });
 
-// Make io available to routes
+// Make io and twitchService available to routes
 app.set('io', io);
+app.set('twitchService', twitchService);
 
 // Security headers middleware
 app.use((req, res, next) => {

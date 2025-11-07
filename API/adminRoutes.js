@@ -1003,26 +1003,138 @@ router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
  * PUT /api/admin/users/:userId/discord-webhook
  */
 router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
+  const startTime = Date.now();
+  let userId = 'unknown';
+
   try {
-    const { userId } = req.params;
+    userId = req.params.userId;
     const { webhookUrl } = req.body;
+
+    console.log(`🔧 [${startTime}] Admin ${req.user?.username || 'unknown'} attempting to update Discord webhook for user ${userId}`);
+    console.log(`📋 Request body size: ${JSON.stringify(req.body).length} bytes`);
 
     // Validate webhook URL if provided
     if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+      console.log(`❌ [${startTime}] Invalid webhook URL format for user ${userId}`);
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
 
+    console.log(`🔍 [${startTime}] Looking up user ${userId}...`);
+
+    // Check if user exists first
+    const user = await database.getUser(userId);
+    if (!user) {
+      console.log(`❌ [${startTime}] User ${userId} not found when updating Discord webhook`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log(`📋 [${startTime}] User ${userId} found: username=${user.username}, displayName=${user.displayName}`);
+    console.log(`� [${startTime}] User keys: partitionKey=${user.partitionKey}, rowKey=${user.rowKey}, twitchUserId=${user.twitchUserId}`);
+    console.log(`�💾 [${startTime}] Updating Discord webhook...`);
+
     await database.updateUserDiscordWebhook(userId, webhookUrl || '');
 
-    console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
+    const duration = Date.now() - startTime;
+    console.log(`✅ [${startTime}] Admin ${req.user.username} updated Discord webhook for user ${userId} (${duration}ms)`);
+
     res.json({
       message: 'Discord webhook updated successfully',
-      webhookUrl
+      webhookUrl,
+      duration: `${duration}ms`
     });
   } catch (error) {
-    console.error('❌ Error updating user Discord webhook:', error);
-    res.status(500).json({ error: 'Failed to update Discord webhook' });
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${startTime}] Error updating Discord webhook for user ${userId} (${duration}ms):`, error.message);
+    console.error(`❌ [${startTime}] Full error:`, error);
+    console.error(`❌ [${startTime}] Stack trace:`, error.stack);
+
+    res.status(500).json({
+      error: 'Failed to update Discord webhook',
+      details: error.message,
+      duration: `${duration}ms`
+    });
   }
+});
+
+/**
+ * Get user's Discord notification settings (admin)
+ * GET /api/admin/users/:userId/discord-settings
+ */
+router.get('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Return Discord settings or defaults
+    const defaultSettings = {
+      templateStyle: 'asylum_themed',
+      enabledNotifications: {
+        death_milestone: true,
+        swear_milestone: true,
+        stream_start: true,
+        stream_end: true,
+        follower_goal: false,
+        subscriber_milestone: false,
+        channel_point_redemption: false
+      },
+      milestoneThresholds: {
+        deaths: [10, 25, 50, 100, 250, 500],
+        swears: [25, 50, 100, 200, 500]
+      }
+    };
+
+    const settings = user.discordSettings ? JSON.parse(user.discordSettings) : defaultSettings;
+
+    res.json({ discordSettings: settings });
+  } catch (error) {
+    console.error('❌ Error getting Discord settings:', error);
+    res.status(500).json({ error: 'Failed to get Discord settings' });
+  }
+});
+
+/**
+ * Update user's Discord notification settings (admin)
+ * PUT /api/admin/users/:userId/discord-settings
+ */
+router.put('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const settings = req.body;
+
+    console.log(`🔔 Admin ${req.user.username} updating Discord settings for user ${userId}`);
+
+    // Validate settings structure
+    if (!settings.templateStyle || !settings.enabledNotifications || !settings.milestoneThresholds) {
+      return res.status(400).json({ error: 'Invalid Discord settings format' });
+    }
+
+    await database.updateUserDiscordSettings(userId, settings);
+
+    console.log(`✅ Discord settings updated for user ${userId}`);
+    res.json({ message: 'Discord settings updated successfully' });
+  } catch (error) {
+    console.error('❌ Error updating Discord settings:', error);
+    res.status(500).json({ error: 'Failed to update Discord settings' });
+  }
+});
+
+/**
+ * Test endpoint for troubleshooting
+ * PUT /api/admin/test-put
+ */
+router.put('/test-put', requireAuth, requireAdmin, async (req, res) => {
+  console.log('🧪 Test PUT endpoint hit by:', req.user?.username);
+  console.log('🧪 Request body:', req.body);
+  res.json({
+    message: 'PUT test successful',
+    user: req.user?.username,
+    timestamp: new Date().toISOString(),
+    body: req.body
+  });
 });
 
 /**

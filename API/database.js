@@ -1028,19 +1028,26 @@ class Database {
       throw new Error('User not found');
     }
 
+    console.log(`🔑 updateUserDiscordWebhook - User keys: partitionKey=${user.partitionKey}, rowKey=${user.rowKey}, twitchUserId=${user.twitchUserId}`);
+
     if (this.mode === 'azure') {
-      // IMPORTANT: Use Merge to update only the discordWebhookUrl field
-      // This prevents overwriting other user data and prevents creating new entities
+      // IMPORTANT: Use the actual partition/row keys from the user record, not the twitchUserId
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
       const updateEntity = {
-        partitionKey: twitchUserId,
-        rowKey: twitchUserId,
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
         discordWebhookUrl: webhookUrl || ''
       };
+
+      console.log(`💾 updateUserDiscordWebhook - Using keys: partitionKey=${actualPartitionKey}, rowKey=${actualRowKey}`);
 
       try {
         // Use Merge mode which will fail if entity doesn't exist
         await this.usersClient.updateEntity(updateEntity, 'Merge');
       } catch (error) {
+        console.error(`❌ updateUserDiscordWebhook - Azure error:`, error);
         if (error.statusCode === 404) {
           throw new Error('User not found in storage');
         }
@@ -1058,6 +1065,53 @@ class Database {
         throw new Error('User not found in local storage');
       }
       user.discordWebhookUrl = webhookUrl || '';
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user's Discord notification settings
+   */
+  async updateUserDiscordSettings(twitchUserId, settings) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    console.log(`🔔 updateUserDiscordSettings - Updating settings for user ${twitchUserId}`);
+
+    if (this.mode === 'azure') {
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
+      const updateEntity = {
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
+        discordSettings: JSON.stringify(settings)
+      };
+
+      try {
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+      } catch (error) {
+        console.error(`❌ updateUserDiscordSettings - Azure error:`, error);
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      user.discordSettings = JSON.stringify(settings);
+    } else {
+      // Local mode implementation
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].discordSettings = JSON.stringify(settings);
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.discordSettings = JSON.stringify(settings);
     }
 
     return user;

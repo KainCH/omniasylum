@@ -3,6 +3,9 @@ import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
 import UserManagementModal from './UserManagementModal'
+import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
+import { useUserData, useLoading, useToast } from '../hooks'
+import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
 import './AdminDashboard.css'
 
 function AdminDashboard() {
@@ -52,6 +55,10 @@ function AdminDashboard() {
   })
   const [currentUserRole, setCurrentUserRole] = useState('streamer')
   const [socket, setSocket] = useState(null)
+
+  // Use our custom hooks for better state management
+  const { showToast } = useToast()
+  const { isLoading, withLoading } = useLoading()
 
   useEffect(() => {
     fetchAdminData()
@@ -873,13 +880,13 @@ function AdminDashboard() {
               <p>Welcome, Administrator! Manage users and system settings.</p>
             </div>
             <div className="admin-header-actions">
-              <button
+              <ActionButton
+                variant="secondary"
                 onClick={handleLogout}
-                className="btn btn-secondary logout-btn"
                 title="Clear auth token and force re-login"
               >
                 🚪 Logout & Re-authenticate
-              </button>
+              </ActionButton>
             </div>
           </div>
         </header>
@@ -904,12 +911,12 @@ function AdminDashboard() {
                     <span className="activation-note">• Chat commands disabled</span>
                     <span className="activation-note">• Event tracking disabled</span>
                   </div>
-                  <button
+                  <ActionButton
+                    variant="primary"
                     onClick={selfActivate}
-                    className="btn btn-primary activation-btn"
                   >
                     🚀 Activate Now - Ready to Stream!
-                  </button>
+                  </ActionButton>
                   <small className="activation-info">
                     💡 Your account will automatically deactivate when you stop streaming
                   </small>
@@ -1125,9 +1132,13 @@ function AdminDashboard() {
                   <li>The admin API is not responding</li>
                   <li>No users have registered yet</li>
                 </ul>
-                <button onClick={fetchAdminData} className="btn btn-primary" style={{ marginTop: '10px' }}>
+                <ActionButton
+                  variant="primary"
+                  onClick={fetchAdminData}
+                  style={{ marginTop: '10px' }}
+                >
                   🔄 Retry
-                </button>
+                </ActionButton>
               </div>
             ) : (
               users.map(user => {

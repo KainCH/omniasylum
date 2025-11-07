@@ -1,8 +1,124 @@
 const express = require('express');
 const database = require('./database');
 const { requireAuth } = require('./authMiddleware');
+const { sendDiscordNotification } = require('./userRoutes');
 
 const router = express.Router();
+
+/**
+ * Check for milestones and send notifications (Discord and/or Channel)
+ */
+async function checkMilestones(userId, counterType, previousValue, newValue, req) {
+  try {
+    // Get user data for notification settings
+    const user = await database.getUser(userId);
+    if (!user) {
+      return; // No user found
+    }
+
+    // Parse notification settings to get milestone thresholds and preferences
+    let notificationSettings = {
+      milestoneThresholds: {
+        deaths: [10, 25, 50, 100, 250, 500, 1000],
+        swears: [25, 50, 100, 200, 500, 1000]
+      },
+      discordNotifications: {
+        death_milestone: true,
+        swear_milestone: true
+      },
+      channelNotifications: {
+        death_milestone: true,
+        swear_milestone: true
+      }
+    };
+
+    if (user.discordSettings) {
+      try {
+        const parsed = JSON.parse(user.discordSettings);
+        notificationSettings = { ...notificationSettings, ...parsed };
+      } catch (error) {
+        console.log('⚠️ Failed to parse notification settings for milestone check');
+      }
+    }
+
+    // Determine event type
+    const eventType = counterType === 'deaths' ? 'death_milestone' : 'swear_milestone';
+
+    // Check if any notification type is enabled
+    const discordEnabled = user.discordWebhookUrl && notificationSettings.discordNotifications && notificationSettings.discordNotifications[eventType];
+    const channelEnabled = notificationSettings.channelNotifications && notificationSettings.channelNotifications[eventType];
+
+    if (!discordEnabled && !channelEnabled) {
+      console.log(`📵 All ${eventType} notifications disabled for user ${user.username}`);
+      return;
+    }
+
+    // Get the relevant thresholds
+    const thresholds = counterType === 'deaths'
+      ? notificationSettings.milestoneThresholds.deaths
+      : notificationSettings.milestoneThresholds.swears;
+
+    if (!thresholds || !Array.isArray(thresholds)) {
+      return;
+    }
+
+    // Check if we crossed any milestone thresholds
+    const crossedMilestones = thresholds.filter(threshold =>
+      previousValue < threshold && newValue >= threshold
+    );
+
+    // Send notifications for each crossed milestone
+    for (const milestone of crossedMilestones) {
+      // Find previous milestone for progress display
+      const previousMilestone = thresholds
+        .filter(t => t < milestone)
+        .sort((a, b) => b - a)[0] || 0;
+
+      console.log(`🎯 Milestone reached: ${counterType} ${milestone} for user ${user.username}`);
+
+      // Send Discord notification if enabled
+      if (discordEnabled) {
+        await sendDiscordNotification(user, eventType, {
+          count: milestone,
+          actualCount: newValue,
+          previousMilestone: previousMilestone,
+          fields: [
+            {
+              name: '🎯 Milestone',
+              value: `${milestone}`,
+              inline: true
+            },
+            {
+              name: '📊 Current Count',
+              value: `${newValue}`,
+              inline: true
+            },
+            {
+              name: '📈 Progress',
+              value: `${previousMilestone} → ${milestone}`,
+              inline: true
+            }
+          ]
+        });
+      }
+
+      // Send channel (Twitch chat) notification if enabled
+      if (channelEnabled) {
+        const twitchService = req.app.get('twitchService');
+        if (twitchService) {
+          const emoji = counterType === 'deaths' ? '💀' : '🤬';
+          const counterName = counterType === 'deaths' ? 'deaths' : 'swears';
+          const chatMessage = `${emoji} MILESTONE REACHED! ${milestone} ${counterName}! Current count: ${newValue} ${emoji}`;
+
+          await twitchService.sendMessage(userId, chatMessage);
+          console.log(`💬 Sent milestone message to ${user.username}'s chat: ${chatMessage}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error checking milestones:', error);
+  }
+}
 
 /**
  * Get current counter state for authenticated user
@@ -24,7 +140,15 @@ router.get('/', requireAuth, async (req, res) => {
  */
 router.post('/deaths/increment', requireAuth, async (req, res) => {
   try {
+    // Get current count before incrementing
+    const currentData = await database.getCounters(req.user.userId);
+    const previousDeaths = currentData.deaths || 0;
+
     const data = await database.incrementDeaths(req.user.userId);
+    const newDeaths = data.deaths;
+
+    // Check for milestones and send notifications
+    await checkMilestones(req.user.userId, 'deaths', previousDeaths, newDeaths, req);
 
     // Emit WebSocket event to user's room
     req.app.get('io').to(`user:${req.user.userId}`).emit('counterUpdate', data);
@@ -57,8 +181,19 @@ router.post('/deaths/decrement', requireAuth, async (req, res) => {
  */
 router.post('/swears/increment', requireAuth, async (req, res) => {
   try {
+    // Get current count before incrementing
+    const currentData = await database.getCounters(req.user.userId);
+    const previousSwears = currentData.swears || 0;
+
     const data = await database.incrementSwears(req.user.userId);
+    const newSwears = data.swears;
+
+    // Check for milestones and send notifications
+    await checkMilestones(req.user.userId, 'swears', previousSwears, newSwears, req);
+
+    // Emit WebSocket event to user's room
     req.app.get('io').to(`user:${req.user.userId}`).emit('counterUpdate', data);
+
     res.json(data);
   } catch (error) {
     console.error('Error incrementing swears:', error);

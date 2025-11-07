@@ -1,602 +1,418 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import './UserManagementModal.css'
+import { ToggleSwitch, ActionButton, FormSection, InputGroup, StatusBadge, NotificationTypeCard } from './ui/CommonControls'
+import { useUserData, useNotificationSettings, useFormState, useToast, useLoading } from '../hooks'
+import {
+  createDefaultNotificationSettings,
+  validateNotificationSettings,
+  parseThresholdString
+} from '../utils/notificationHelpers'
+import { userAPI, notificationAPI, APIError } from '../utils/apiHelpers'
 
-function UserManagementModal({ user, features, onClose, onUpdate }) {
-  const [activeTab, setActiveTab] = useState('features')
-  const [userFeatures, setUserFeatures] = useState({})
-  const [overlaySettings, setOverlaySettings] = useState(null)
-  const [discordWebhook, setDiscordWebhook] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
-  const [messageType, setMessageType] = useState('')
+// Default feature flags for new users
+const defaultFeatures = {
+  chatCommands: true,
+  channelPoints: false,
+  autoClip: false,
+  streamOverlay: false,
+  discordWebhook: false,
+  templateStyle: 'asylum_themed',
+  customCommands: false,
+  analytics: false,
+  webhooks: false
+}
 
+const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
+  const { showToast } = useToast()
+  const { isLoading, withLoading } = useLoading()
+
+  // Form state management using our new hooks
+  const { formState, updateField, resetForm } = useFormState({
+    features: { ...defaultFeatures },
+    overlaySettings: null,
+    discordWebhook: ''
+  })
+
+  // Notification settings with our new helper
+  const {
+    notificationSettings,
+    updateNotificationSetting,
+    validateSettings,
+    resetToDefaults
+  } = useNotificationSettings()
+
+  const [originalUser, setOriginalUser] = useState(null)
+  const [message, setMessage] = useState({ text: '', type: '' })
+
+  const showMessage = (text, type) => {
+    setMessage({ text, type })
+    setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+  }
+
+  // Load user data when component mounts or user changes
   useEffect(() => {
     if (user) {
+      setOriginalUser({ ...user })
       loadUserData()
     }
   }, [user])
 
-  // Reload Discord webhook when user prop changes
-  useEffect(() => {
-    if (user && user.features?.discordNotifications) {
-      setDiscordWebhook(user.discordWebhookUrl || '')
-    }
-  }, [user.discordWebhookUrl])
-
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken')
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : ''
-    }
-  }
-
   const loadUserData = async () => {
+    if (!user) return
+
     try {
-      // Load features
-      setUserFeatures(user.features || {})
+      await withLoading(async () => {
+        // Load features
+        updateField('features', { ...defaultFeatures, ...user.features })
 
-      // Load overlay settings if streamOverlay feature is enabled
-      if (user.features?.streamOverlay) {
-        try {
-          const overlayRes = await fetch(`/api/admin/users/${user.twitchUserId}/overlay`, {
-            headers: getAuthHeaders(),
-            credentials: 'include'
-          })
-          if (overlayRes.ok) {
-            const data = await overlayRes.json()
-            setOverlaySettings(data.overlaySettings || getDefaultOverlaySettings())
-          } else {
-            // If API call fails, set default settings
-            setOverlaySettings(getDefaultOverlaySettings())
+        // Load overlay settings if enabled
+        if (user.features?.streamOverlay) {
+          try {
+            const overlayData = await userAPI.getOverlaySettings(user.twitchUserId)
+            updateField('overlaySettings', overlayData)
+          } catch (error) {
+            console.error('Error loading overlay settings:', error)
+            updateField('overlaySettings', { enabled: false })
           }
-        } catch (error) {
-          console.error('Error loading overlay settings:', error)
-          // On error, set default settings so UI still works
-          setOverlaySettings(getDefaultOverlaySettings())
+        } else {
+          updateField('overlaySettings', null)
         }
-      } else {
-        // Clear overlay settings if feature is disabled
-        setOverlaySettings(null)
-      }
 
-      // Load Discord webhook
-      if (user.features?.discordNotifications) {
-        setDiscordWebhook(user.discordWebhookUrl || '')
-      }
+        // Load Discord settings if enabled
+        if (user.features?.discordWebhook) {
+          try {
+            // Load notification settings
+            const discordData = await notificationAPI.getSettings(user.twitchUserId)
+
+            // Use our notification helper to create proper settings
+            const settings = createDefaultNotificationSettings()
+            Object.assign(settings, {
+              enableDiscordNotifications: discordData.enableDiscordNotifications || false,
+              enableChannelNotifications: discordData.enableChannelNotifications || false,
+              deathMilestoneEnabled: discordData.deathMilestoneEnabled || false,
+              swearMilestoneEnabled: discordData.swearMilestoneEnabled || false,
+              deathThresholds: discordData.deathThresholds || settings.deathThresholds,
+              swearThresholds: discordData.swearThresholds || settings.swearThresholds
+            })
+
+            resetToDefaults(settings)
+
+            // Load webhook URL
+            const webhookData = await notificationAPI.getWebhook(user.twitchUserId)
+            updateField('discordWebhook', webhookData.webhookUrl || '')
+          } catch (error) {
+            console.error('Error loading Discord settings:', error)
+            resetToDefaults()
+            updateField('discordWebhook', '')
+          }
+        } else {
+          resetToDefaults()
+          updateField('discordWebhook', '')
+        }
+      })
     } catch (error) {
       console.error('Error loading user data:', error)
+      showMessage('Failed to load user data', 'error')
     }
   }
 
-  const getDefaultOverlaySettings = () => ({
-    enabled: true,
-    position: 'top-right',
-    size: 'medium',
-    counters: {
-      deaths: true,
-      swears: true,
-      bits: false,
-      channelPoints: false
-    },
-    animations: {
-      enabled: true,
-      showAlerts: true,
-      celebrationEffects: false,
-      bounceOnUpdate: true,
-      fadeTransitions: true
-    },
-    theme: {
-      borderColor: '#9146ff',
-      textColor: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)'
-    }
-  })
-
-  const toggleFeature = (featureKey, currentValue) => {
-    const newValue = !currentValue
-    setUserFeatures(prev => ({
-      ...prev,
-      [featureKey]: newValue
-    }))
+  const handleFeatureChange = (feature, value) => {
+    const newFeatures = { ...formState.features, [feature]: value }
+    updateField('features', newFeatures)
   }
 
   const saveFeatures = async () => {
     try {
-      setSaving(true)
+      await withLoading(async () => {
+        // Merge current features with original user features to preserve any features not shown in UI
+        const updatedFeatures = { ...originalUser.features, ...formState.features }
 
-      // Merge current features with original user features to preserve any features not shown in UI
-      const originalFeatures = user.features || {}
-      const updatedFeatures = { ...originalFeatures, ...userFeatures }
+        await userAPI.updateFeatures(user.twitchUserId, { features: updatedFeatures })
 
-      const response = await fetch(`/api/admin/users/${user.twitchUserId}/features`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({
-          features: updatedFeatures
-        })
-      })
-
-      if (response.ok) {
-        showMessage('Features saved successfully!', 'success')
+        showMessage('Features updated successfully!', 'success')
         if (onUpdate) onUpdate()
-      } else {
-        throw new Error('Failed to save features')
-      }
+      })
     } catch (error) {
       console.error('Error saving features:', error)
       showMessage('Failed to save features', 'error')
-    } finally {
-      setSaving(false)
     }
   }
 
   const saveOverlaySettings = async () => {
-    try {
-      setSaving(true)
-      const response = await fetch(`/api/admin/users/${user.twitchUserId}/overlay`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({ overlaySettings })
-      })
+    if (!formState.overlaySettings) return
 
-      if (response.ok) {
+    try {
+      await withLoading(async () => {
+        await userAPI.updateOverlaySettings(user.twitchUserId, formState.overlaySettings)
+
         showMessage('Overlay settings saved!', 'success')
         if (onUpdate) onUpdate()
-      } else {
-        throw new Error('Failed to save overlay settings')
-      }
+      })
     } catch (error) {
       console.error('Error saving overlay settings:', error)
       showMessage('Failed to save overlay settings', 'error')
-    } finally {
-      setSaving(false)
     }
   }
 
-  const saveDiscordWebhook = async () => {
+  const saveDiscordSettings = async () => {
     try {
-      setSaving(true)
+      await withLoading(async () => {
+        // Validate webhook URL
+        if (formState.discordWebhook && !formState.discordWebhook.startsWith('https://discord.com/api/webhooks/')) {
+          showMessage('Invalid Discord webhook URL format', 'error')
+          return
+        }
 
-      // Validate webhook URL
-      if (discordWebhook && !discordWebhook.startsWith('https://discord.com/api/webhooks/')) {
-        showMessage('Invalid Discord webhook URL format', 'error')
-        return
-      }
+        // Validate notification settings
+        const validationResult = validateNotificationSettings(notificationSettings)
+        if (!validationResult.isValid) {
+          showMessage(validationResult.errors[0], 'error')
+          return
+        }
 
-      const response = await fetch(`/api/admin/users/${user.twitchUserId}/discord-webhook`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({ webhookUrl: discordWebhook })
-      })
+        // Save webhook URL
+        await notificationAPI.updateWebhook(user.twitchUserId, { webhookUrl: formState.discordWebhook })
 
-      if (response.ok) {
-        showMessage('Discord webhook saved!', 'success')
+        // Save notification settings
+        await notificationAPI.updateSettings(user.twitchUserId, notificationSettings)
+
+        showMessage('All Discord settings saved successfully!', 'success')
         if (onUpdate) onUpdate()
-      } else {
-        throw new Error('Failed to save Discord webhook')
-      }
+      })
     } catch (error) {
-      console.error('Error saving Discord webhook:', error)
-      showMessage('Failed to save Discord webhook', 'error')
-    } finally {
-      setSaving(false)
+      console.error('Error saving Discord settings:', error)
+      showMessage('Failed to save Discord settings', 'error')
     }
   }
 
   const testDiscordWebhook = async () => {
-    if (!discordWebhook) {
-      showMessage('Please save a webhook URL first', 'error')
+    if (!formState.discordWebhook) {
+      showMessage('Please enter a Discord webhook URL first', 'error')
+      return
+    }
+
+    if (!formState.discordWebhook.startsWith('https://discord.com/api/webhooks/')) {
+      showMessage('Invalid Discord webhook URL format', 'error')
       return
     }
 
     try {
-      setSaving(true)
-      const response = await fetch(`/api/admin/users/${user.twitchUserId}/discord-webhook/test`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
+      await withLoading(async () => {
+        await notificationAPI.testWebhook(user.twitchUserId, { webhookUrl: formState.discordWebhook })
 
-      if (response.ok) {
-        showMessage('Test notification sent! Check Discord.', 'success')
-      } else {
-        const error = await response.json()
-        showMessage(error.error || 'Failed to send test', 'error')
-      }
+        showMessage('Test message sent to Discord!', 'success')
+      })
     } catch (error) {
-      console.error('Error testing webhook:', error)
-      showMessage('Failed to send test notification', 'error')
-    } finally {
-      setSaving(false)
+      console.error('Error testing Discord webhook:', error)
+      showMessage(`Failed to test webhook: ${error.message}`, 'error')
     }
   }
 
-  const showMessage = (text, type) => {
-    setMessage(text)
-    setMessageType(type)
-    setTimeout(() => {
-      setMessage('')
-      setMessageType('')
-    }, 3000)
+  const handleOverlayChange = (key, value) => {
+    const newSettings = { ...formState.overlaySettings, [key]: value }
+    updateField('overlaySettings', newSettings)
   }
 
   if (!user) return null
 
   return (
-    <div className="user-management-modal-overlay" onClick={onClose}>
-      <div className="user-management-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="user-title">
+          <div className="user-info">
             <img
-              src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.username)}`}
+              src={user.profileImageUrl}
               alt={user.displayName}
-              className="user-avatar-small"
+              className="user-avatar"
             />
             <div>
-              <h2>{user.displayName}</h2>
-              <p className="username">@{user.username}</p>
+              <h3>{user.displayName}</h3>
+              <StatusBadge
+                status={user.isActive ? 'active' : 'inactive'}
+                text={user.isActive ? 'Active' : 'Inactive'}
+              />
             </div>
           </div>
-          <button onClick={onClose} className="btn-close">✕</button>
+          <ActionButton
+            variant="ghost"
+            onClick={onClose}
+            disabled={isLoading}
+          >
+            ✕
+          </ActionButton>
         </div>
 
-        {message && (
-          <div className={`message-banner ${messageType}`}>
-            {message}
+        {message.text && (
+          <div className={`message ${message.type}`}>
+            {message.text}
           </div>
         )}
 
-        <div className="modal-tabs">
-          <button
-            className={`tab ${activeTab === 'features' ? 'active' : ''}`}
-            onClick={() => setActiveTab('features')}
-          >
-            🎛️ Features
-          </button>
-          {userFeatures.streamOverlay && (
-            <button
-              className={`tab ${activeTab === 'overlay' ? 'active' : ''}`}
-              onClick={() => setActiveTab('overlay')}
-            >
-              🎨 Overlay Settings
-            </button>
-          )}
-          {userFeatures.discordNotifications && (
-            <button
-              className={`tab ${activeTab === 'discord' ? 'active' : ''}`}
-              onClick={() => setActiveTab('discord')}
-            >
-              🔔 Discord Notifications
-            </button>
-          )}
-        </div>
+        <div className="modal-body">
+          {/* Feature Management Section */}
+          <FormSection title="🎛️ Feature Management" collapsible defaultExpanded>
+            <div className="features-grid">
+              {Object.entries(defaultFeatures).map(([feature, defaultValue]) => {
+                if (feature === 'templateStyle') return null // Skip template style in main features
 
-        <div className="modal-content">
-          {activeTab === 'features' && (
-            <div className="features-panel">
-              <h3>Feature Assignment</h3>
-              <p className="panel-description">
-                Enable or disable features for this user. Enabled features will appear in their user portal.
-              </p>
-              <div className="features-list">
-                {features.map(feature => {
-                  const isEnabled = userFeatures[feature.id] || false
-                  return (
-                    <div key={feature.id} className="feature-item">
-                      <div className="feature-info">
-                        <div className="feature-header">
-                          <span className="feature-icon">{feature.icon || '📦'}</span>
-                          <strong>{feature.name}</strong>
-                          <span className={`status-badge ${isEnabled ? 'enabled' : 'disabled'}`}>
-                            {isEnabled ? '✅ Enabled' : '❌ Disabled'}
-                          </span>
-                        </div>
-                        <p className="feature-description">{feature.description}</p>
-                      </div>
-                      <label className="toggle-switch">
-                        <input
-                          type="checkbox"
-                          checked={isEnabled}
-                          onChange={() => toggleFeature(feature.id, isEnabled)}
-                          disabled={saving}
-                        />
-                        <span className="slider"></span>
-                      </label>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="panel-actions">
-                <button
-                  className="btn-save-features"
-                  onClick={saveFeatures}
-                  disabled={saving}
-                >
-                  {saving ? '💾 Saving...' : '💾 Save Features'}
-                </button>
-              </div>
+                return (
+                  <div key={feature} className="feature-item">
+                    <ToggleSwitch
+                      id={`feature-${feature}`}
+                      checked={formState.features[feature] ?? defaultValue}
+                      onChange={(checked) => handleFeatureChange(feature, checked)}
+                      label={feature.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                      disabled={isLoading}
+                    />
+                  </div>
+                )
+              })}
             </div>
-          )}
 
-          {activeTab === 'overlay' && (
-            <div className="overlay-panel">
-              {!overlaySettings ? (
-                <div className="loading-message">
-                  <p>Loading overlay settings...</p>
-                </div>
-              ) : (
-                <>
-                  <h3>Overlay Settings</h3>
-                  <p className="panel-description">
-                    Configure the stream overlay appearance for {user.displayName}.
-                  </p>
+            <div className="section-actions">
+              <ActionButton
+                variant="primary"
+                onClick={saveFeatures}
+                loading={isLoading}
+                disabled={isLoading}
+              >
+                💾 Save Features
+              </ActionButton>
+            </div>
+          </FormSection>
 
-                  <div className="settings-section">
-                    <h4>Position & Size</h4>
-                    <div className="settings-grid">
-                      <div className="setting-group">
-                        <label>Position</label>
-                        <select
-                      value={overlaySettings.position}
-                      onChange={(e) => setOverlaySettings({...overlaySettings, position: e.target.value})}
+          {/* Stream Overlay Settings */}
+          {formState.features.streamOverlay && (
+            <FormSection title="📺 Stream Overlay Settings" collapsible>
+              {formState.overlaySettings && (
+                <div className="overlay-settings">
+                  <ToggleSwitch
+                    id="overlay-enabled"
+                    checked={formState.overlaySettings.enabled || false}
+                    onChange={(checked) => handleOverlayChange('enabled', checked)}
+                    label="Enable Stream Overlay"
+                    disabled={isLoading}
+                  />
+
+                  <div className="section-actions">
+                    <ActionButton
+                      variant="primary"
+                      onClick={saveOverlaySettings}
+                      loading={isLoading}
+                      disabled={isLoading}
                     >
-                      <option value="top-left">Top Left</option>
-                      <option value="top-right">Top Right</option>
-                      <option value="bottom-left">Bottom Left</option>
-                      <option value="bottom-right">Bottom Right</option>
-                    </select>
-                  </div>
-                  <div className="setting-group">
-                    <label>Size</label>
-                    <select
-                      value={overlaySettings.size}
-                      onChange={(e) => setOverlaySettings({...overlaySettings, size: e.target.value})}
-                    >
-                      <option value="small">Small</option>
-                      <option value="medium">Medium</option>
-                      <option value="large">Large</option>
-                    </select>
+                      💾 Save Overlay Settings
+                    </ActionButton>
                   </div>
                 </div>
-              </div>
-
-              <div className="settings-section">
-                <h4>Counters</h4>
-                <div className="checkbox-grid">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.counters.deaths}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        counters: {...overlaySettings.counters, deaths: e.target.checked}
-                      })}
-                    />
-                    💀 Deaths
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.counters.swears}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        counters: {...overlaySettings.counters, swears: e.target.checked}
-                      })}
-                    />
-                    🤬 Swears
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.counters.bits}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        counters: {...overlaySettings.counters, bits: e.target.checked}
-                      })}
-                    />
-                    💎 Bits
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.counters.channelPoints}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        counters: {...overlaySettings.counters, channelPoints: e.target.checked}
-                      })}
-                    />
-                    🎯 Channel Points
-                  </label>
-                </div>
-              </div>
-
-              <div className="settings-section">
-                <h4>Animations</h4>
-                <div className="checkbox-grid">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.animations.enabled}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        animations: {...overlaySettings.animations, enabled: e.target.checked}
-                      })}
-                    />
-                    Enable Animations
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.animations.showAlerts}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        animations: {...overlaySettings.animations, showAlerts: e.target.checked}
-                      })}
-                    />
-                    Show Alerts
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.animations.celebrationEffects}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        animations: {...overlaySettings.animations, celebrationEffects: e.target.checked}
-                      })}
-                    />
-                    Celebration Effects
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={overlaySettings.animations.bounceOnUpdate}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        animations: {...overlaySettings.animations, bounceOnUpdate: e.target.checked}
-                      })}
-                    />
-                    Bounce on Update
-                  </label>
-                </div>
-              </div>
-
-              <div className="settings-section">
-                <h4>Theme</h4>
-                <div className="settings-grid">
-                  <div className="setting-group">
-                    <label>Border Color</label>
-                    <div className="color-input-wrapper">
-                      <input
-                        type="color"
-                        value={overlaySettings.theme.borderColor}
-                        onChange={(e) => setOverlaySettings({
-                          ...overlaySettings,
-                          theme: {...overlaySettings.theme, borderColor: e.target.value}
-                        })}
-                      />
-                      <span className="color-value">{overlaySettings.theme.borderColor}</span>
-                    </div>
-                  </div>
-                  <div className="setting-group">
-                    <label>Text Color</label>
-                    <div className="color-input-wrapper">
-                      <input
-                        type="color"
-                        value={overlaySettings.theme.textColor}
-                        onChange={(e) => setOverlaySettings({
-                          ...overlaySettings,
-                          theme: {...overlaySettings.theme, textColor: e.target.value}
-                        })}
-                      />
-                      <span className="color-value">{overlaySettings.theme.textColor}</span>
-                    </div>
-                  </div>
-                  <div className="setting-group">
-                    <label>Background Color</label>
-                    <input
-                      type="text"
-                      value={overlaySettings.theme.backgroundColor}
-                      onChange={(e) => setOverlaySettings({
-                        ...overlaySettings,
-                        theme: {...overlaySettings.theme, backgroundColor: e.target.value}
-                      })}
-                      placeholder="rgba(0, 0, 0, 0.8)"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="panel-actions">
-                <button
-                  onClick={saveOverlaySettings}
-                  disabled={saving}
-                  className="btn btn-primary"
-                >
-                  {saving ? '💾 Saving...' : '💾 Save Overlay Settings'}
-                </button>
-              </div>
-                </>
               )}
-            </div>
+            </FormSection>
           )}
 
-          {activeTab === 'discord' && (
-            <div className="discord-panel">
-              <h3>Discord Notifications</h3>
-              <p className="panel-description">
-                Configure Discord webhook for {user.displayName}'s stream notifications.
-              </p>
+          {/* Discord Notification Settings */}
+          {formState.features.discordWebhook && (
+            <FormSection title="🔔 Discord Notifications" collapsible>
+              <div className="discord-settings">
+                {/* Webhook URL Input */}
+                <InputGroup
+                  label="Discord Webhook URL"
+                  type="url"
+                  value={formState.discordWebhook}
+                  onChange={(e) => updateField('discordWebhook', e.target.value)}
+                  placeholder="https://discord.com/api/webhooks/..."
+                  disabled={isLoading}
+                  hint="Must start with https://discord.com/api/webhooks/"
+                />
 
-              <div className="discord-setup">
-                <div className="setup-instructions">
-                  <h4>📖 Setup Instructions</h4>
-                  <ol>
-                    <li>Go to your Discord server settings</li>
-                    <li>Navigate to <strong>Integrations → Webhooks</strong></li>
-                    <li>Click <strong>New Webhook</strong></li>
-                    <li>Name it (e.g., "Stream Notifications")</li>
-                    <li>Select the channel for notifications</li>
-                    <li>Copy the webhook URL and paste below</li>
-                  </ol>
-                </div>
-
-                <div className="webhook-config">
-                  <label>
-                    <strong>Discord Webhook URL</strong>
-                    <input
-                      type="url"
-                      value={discordWebhook}
-                      onChange={(e) => setDiscordWebhook(e.target.value)}
-                      placeholder="https://discord.com/api/webhooks/..."
-                      className="webhook-input"
+                {/* Notification Type Toggles */}
+                <div className="notification-types">
+                  <h4>Notification Types</h4>
+                  <div className="notification-grid">
+                    <NotificationTypeCard
+                      title="Discord Notifications"
+                      description="Send notifications to Discord channel"
+                      enabled={notificationSettings.enableDiscordNotifications}
+                      onChange={(enabled) => updateNotificationSetting('enableDiscordNotifications', enabled)}
+                      icon="🔔"
+                      disabled={isLoading}
                     />
-                  </label>
-                  <small className="input-hint">
-                    Must start with https://discord.com/api/webhooks/
-                  </small>
-                </div>
 
-                <div className="webhook-preview">
-                  <h4>📬 Preview</h4>
-                  <div className="discord-message-preview">
-                    <div className="discord-embed">
-                      <div className="embed-header">
-                        <img src={user.profileImageUrl} alt="" className="embed-avatar" />
-                        <strong>{user.displayName} is now live on Twitch!</strong>
-                      </div>
-                      <div className="embed-content">
-                        <p><strong>Game:</strong> [Current Game]</p>
-                        <p><strong>Title:</strong> [Stream Title]</p>
-                        <a href={`https://twitch.tv/${user.username}`} className="twitch-link">
-                          Watch Stream →
-                        </a>
-                      </div>
-                    </div>
+                    <NotificationTypeCard
+                      title="Twitch Chat Notifications"
+                      description="Send notifications to Twitch chat"
+                      enabled={notificationSettings.enableChannelNotifications}
+                      onChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
+                      icon="💬"
+                      disabled={isLoading}
+                    />
                   </div>
                 </div>
 
-                <div className="panel-actions">
-                  <button
-                    onClick={saveDiscordWebhook}
-                    disabled={saving}
-                    className="btn btn-primary"
+                {/* Milestone Settings */}
+                <div className="milestone-settings">
+                  <h4>Milestone Notifications</h4>
+
+                  <ToggleSwitch
+                    id="death-milestones"
+                    checked={notificationSettings.deathMilestoneEnabled}
+                    onChange={(checked) => updateNotificationSetting('deathMilestoneEnabled', checked)}
+                    label="Death Milestones"
+                    disabled={isLoading}
+                  />
+
+                  {notificationSettings.deathMilestoneEnabled && (
+                    <InputGroup
+                      label="Death Thresholds"
+                      value={notificationSettings.deathThresholds}
+                      onChange={(e) => updateNotificationSetting('deathThresholds', e.target.value)}
+                      placeholder="10,25,50,100,250,500,1000"
+                      disabled={isLoading}
+                      hint="Comma-separated numbers for milestone notifications"
+                    />
+                  )}
+
+                  <ToggleSwitch
+                    id="swear-milestones"
+                    checked={notificationSettings.swearMilestoneEnabled}
+                    onChange={(checked) => updateNotificationSetting('swearMilestoneEnabled', checked)}
+                    label="Swear Milestones"
+                    disabled={isLoading}
+                  />
+
+                  {notificationSettings.swearMilestoneEnabled && (
+                    <InputGroup
+                      label="Swear Thresholds"
+                      value={notificationSettings.swearThresholds}
+                      onChange={(e) => updateNotificationSetting('swearThresholds', e.target.value)}
+                      placeholder="25,50,100,250,500,1000,2500"
+                      disabled={isLoading}
+                      hint="Comma-separated numbers for milestone notifications"
+                    />
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="section-actions">
+                  <ActionButton
+                    variant="primary"
+                    onClick={saveDiscordSettings}
+                    loading={isLoading}
+                    disabled={isLoading}
                   >
-                    {saving ? '💾 Saving...' : '💾 Save Webhook'}
-                  </button>
-                  <button
+                    💾 Save All Settings
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
                     onClick={testDiscordWebhook}
-                    disabled={saving || !discordWebhook}
-                    className="btn btn-secondary"
+                    loading={isLoading}
+                    disabled={isLoading || !formState.discordWebhook}
                   >
-                    {saving ? '⏳ Sending...' : '🧪 Send Test'}
-                  </button>
+                    🧪 Send Test
+                  </ActionButton>
                 </div>
               </div>
-            </div>
+            </FormSection>
           )}
         </div>
       </div>
