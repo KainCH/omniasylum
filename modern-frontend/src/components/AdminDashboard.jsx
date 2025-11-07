@@ -608,16 +608,43 @@ function AdminDashboard() {
     }
   }
 
-  const deleteUser = async (userId, username) => {
-    if (!confirm(`Are you sure you want to delete user ${username}? This cannot be undone.`)) {
+  const deleteUser = async (userId, username, partitionKey, rowKey) => {
+    let displayName = username || 'Unknown User';
+    if (!username && userId && userId !== 'undefined') {
+      displayName = `User ${userId} (Incomplete Profile)`;
+    } else if (!userId || userId === 'undefined') {
+      displayName = 'Broken User Record';
+    }
+
+    if (!confirm(`Are you sure you want to delete ${displayName}? This cannot be undone.`)) {
       return
     }
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
+      let response;
+
+      // If we have a valid userId, use normal deletion
+      if (userId && userId !== 'undefined' && userId !== null) {
+        response = await fetch(`/api/admin/users/${userId}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+      }
+      // If no valid userId but we have table keys, delete by keys
+      else if (partitionKey && rowKey) {
+        response = await fetch(`/api/admin/users/by-keys/${encodeURIComponent(partitionKey)}/${encodeURIComponent(rowKey)}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+      }
+      // Fallback: try to delete by whatever identifier we have
+      else {
+        const fallbackId = userId || rowKey || 'unknown';
+        response = await fetch(`/api/admin/users/${fallbackId}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+      }
 
       if (response.ok) {
         fetchAdminData() // Refresh data
@@ -999,13 +1026,6 @@ function AdminDashboard() {
             <h2>👥 User Management</h2>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={cleanupUnknownUsers}
-                className="btn btn-warning"
-                title="Find and remove invalid/unknown users"
-              >
-                🧹 Cleanup Unknown Users
-              </button>
-              <button
                 onClick={() => setShowAddUser(true)}
                 className="btn btn-primary"
               >
@@ -1127,8 +1147,12 @@ function AdminDashboard() {
                       }}
                     />
                     <div>
-                      <h3>{user.displayName || 'Unknown User'}</h3>
-                      <p>@{user.username || 'unknown'}</p>
+                      <h3>
+                        {user.displayName || (user.userStatus === 'incomplete' ? `User ${user.twitchUserId} (Incomplete Profile)` : 'Broken User Record')}
+                        {user.userStatus === 'incomplete' && <span style={{fontSize: '0.8em', color: '#ffa500', marginLeft: '8px'}}>⚠️ Missing Data</span>}
+                        {user.userStatus === 'broken' && <span style={{fontSize: '0.8em', color: '#ff4444', marginLeft: '8px'}}>❌ Invalid</span>}
+                      </h3>
+                      <p>@{user.username || (user.userStatus === 'incomplete' ? `user_${user.twitchUserId}` : 'broken-record')}</p>
                       <p className={`status stream-status-${user.streamStatus || 'offline'}`}>
                         {(() => {
                           const status = user.streamStatus || 'offline';
@@ -1171,7 +1195,7 @@ function AdminDashboard() {
                             </button>
                             {user.role !== 'admin' && (
                               <button
-                                onClick={() => deleteUser(user.twitchUserId, user.username)}
+                                onClick={() => deleteUser(user.twitchUserId, user.username, user.partitionKey, user.rowKey)}
                                 className="btn btn-danger-outline"
                               >
                                 🗑️ Delete

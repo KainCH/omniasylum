@@ -70,21 +70,37 @@ router.get('/users', requireAuth, requireRole('manager'), async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
-    // Don't send sensitive data
-    const sanitizedUsers = users.map(user => ({
-      userId: user.twitchUserId,
-      twitchUserId: user.twitchUserId, // Add this for frontend compatibility
-      username: user.username,
-      displayName: user.displayName,
-      email: user.email,
-      profileImageUrl: user.profileImageUrl,
-      role: user.role,
-      features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
-      isActive: user.isActive !== undefined ? user.isActive : true,
-      createdAt: user.createdAt,
-      lastLogin: user.lastLogin,
-      discordWebhookUrl: user.discordWebhookUrl || ''
-    }));
+    // Don't send sensitive data and classify user status
+    const sanitizedUsers = users.map(user => {
+      const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
+      const hasMissingUsername = !user.username || user.username === 'undefined' || user.username === null;
+      const hasMissingDisplayName = !user.displayName || user.displayName === 'undefined' || user.displayName === null;
+
+      let userStatus = 'complete';
+      if (!hasValidUserId) {
+        userStatus = 'broken'; // No valid ID - truly unknown
+      } else if (hasMissingUsername || hasMissingDisplayName) {
+        userStatus = 'incomplete'; // Has ID but missing profile data
+      }
+
+      return {
+        userId: user.twitchUserId,
+        twitchUserId: user.twitchUserId, // Add this for frontend compatibility
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl,
+        role: user.role,
+        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
+        isActive: user.isActive !== undefined ? user.isActive : true,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin,
+        discordWebhookUrl: user.discordWebhookUrl || '',
+        userStatus: userStatus, // Add classification
+        partitionKey: user.partitionKey || user.twitchUserId,
+        rowKey: user.rowKey || user.twitchUserId
+      };
+    });
 
     res.json({
       users: sanitizedUsers,
@@ -485,26 +501,62 @@ router.get('/stats', requireAuth, requireRole('manager'), async (req, res) => {
  */
 router.delete('/users/:userId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    // Prevent deleting admin accounts
-    const user = await database.getUser(req.params.userId);
+    const userId = req.params.userId;
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Try to get user first
+    let user;
+    try {
+      user = await database.getUser(userId);
+    } catch (error) {
+      // User might not exist or be broken
+      user = null;
     }
 
-    if (user.role === 'admin') {
+    // If user exists and is admin, prevent deletion
+    if (user && user.role === 'admin') {
       return res.status(403).json({ error: 'Cannot delete admin accounts' });
     }
 
-    await database.deleteUser(req.params.userId);
+    // Try normal deletion first
+    if (user && user.twitchUserId) {
+      await database.deleteUser(userId);
+      console.log(`✅ Admin ${req.user.username} deleted user: ${userId}`);
+    } else {
+      // If user doesn't exist or has no twitchUserId, try to delete by table keys
+      // For broken records, userId might be the rowKey, partitionKey is usually 'user'
+      await database.deleteUserByKeys('user', userId);
+      console.log(`✅ Admin ${req.user.username} deleted broken user record: ${userId}`);
+    }
 
     res.json({
       message: 'User deleted successfully',
-      userId: req.params.userId
+      userId: userId
     });
   } catch (error) {
-    console.error('Error deleting user:', error);
+    console.error('❌ Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+/**
+ * Delete user by table keys (for broken records)
+ * DELETE /api/admin/users/by-keys/:partitionKey/:rowKey
+ */
+router.delete('/users/by-keys/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { partitionKey, rowKey } = req.params;
+
+    await database.deleteUserByKeys(partitionKey, rowKey);
+
+    console.log(`✅ Admin ${req.user.username} deleted user by keys: ${partitionKey}/${rowKey}`);
+    res.json({
+      message: 'User deleted successfully by table keys',
+      partitionKey,
+      rowKey
+    });
+  } catch (error) {
+    console.error('❌ Error deleting user by keys:', error);
+    res.status(500).json({ error: 'Failed to delete user by keys' });
   }
 });
 
@@ -1036,41 +1088,48 @@ router.post('/users/:userId/discord-webhook/test', requireAuth, requireAdmin, as
 });
 
 /**
- * Find unknown/invalid users
+ * Find users with incomplete data
  * GET /api/admin/cleanup/unknown-users
  */
 router.get('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const allUsers = await database.getAllUsers();
 
-    // Find users with TRULY missing or invalid data (must be explicitly 'undefined' string or null)
-    // DO NOT delete users with empty strings or other falsy values
-    const unknownUsers = allUsers.filter(user => {
-      // Only consider truly broken records where the string is literally 'undefined' or null/missing entirely
-      const hasInvalidUsername = user.username === 'undefined' || user.username === null || user.username === undefined;
-      const hasInvalidUserId = user.twitchUserId === 'undefined' || user.twitchUserId === null || user.twitchUserId === undefined;
-      const hasInvalidDisplayName = user.displayName === 'undefined' || user.displayName === null || user.displayName === undefined;
+    // Find users with missing profile data but valid twitchUserId (these should be FIXED, not deleted)
+    const incompleteUsers = allUsers.filter(user => {
+      const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
+      const hasMissingUsername = !user.username || user.username === 'undefined' || user.username === null;
+      const hasMissingDisplayName = !user.displayName || user.displayName === 'undefined' || user.displayName === null;
 
-      // User must have at least username AND twitchUserId to be valid
-      return hasInvalidUsername && hasInvalidUserId;
+      // Include users with valid ID but missing username/displayName
+      return hasValidUserId && (hasMissingUsername || hasMissingDisplayName);
     });
 
-    console.log(`🔍 Found ${unknownUsers.length} unknown/invalid users (strict criteria)`);
+    // Find TRULY broken users (no valid twitchUserId) - these can be safely deleted
+    const brokenUsers = allUsers.filter(user => {
+      const hasInvalidUserId = !user.twitchUserId || user.twitchUserId === 'undefined' || user.twitchUserId === null;
+      return hasInvalidUserId;
+    });
+
+    console.log(`🔍 Found ${incompleteUsers.length} users with incomplete data, ${brokenUsers.length} truly broken users`);
 
     res.json({
-      count: unknownUsers.length,
-      users: unknownUsers.map(u => ({
+      count: incompleteUsers.length + brokenUsers.length,
+      incomplete: incompleteUsers.length,
+      broken: brokenUsers.length,
+      users: [...incompleteUsers, ...brokenUsers].map(u => ({
         partitionKey: u.partitionKey || u.twitchUserId,
         rowKey: u.rowKey || u.twitchUserId,
         username: u.username,
         displayName: u.displayName,
         twitchUserId: u.twitchUserId,
-        createdAt: u.createdAt
+        createdAt: u.createdAt,
+        type: (u.twitchUserId && u.twitchUserId !== 'undefined' && u.twitchUserId !== null) ? 'incomplete' : 'broken'
       }))
     });
   } catch (error) {
-    console.error('❌ Error finding unknown users:', error);
-    res.status(500).json({ error: 'Failed to find unknown users' });
+    console.error('❌ Error finding users with issues:', error);
+    res.status(500).json({ error: 'Failed to find users with issues' });
   }
 });
 

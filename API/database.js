@@ -209,6 +209,20 @@ class Database {
     }
   }
 
+  /**
+   * Delete user by table keys (for broken records without valid twitchUserId)
+   */
+  async deleteUserByKeys(partitionKey, rowKey) {
+    if (this.mode === 'azure') {
+      await this.usersClient.deleteEntity(partitionKey, rowKey);
+    } else {
+      // In local mode, try to delete by rowKey as the user ID
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      delete users[rowKey];
+      fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+    }
+  }
+
   // ==================== COUNTER OPERATIONS ====================
 
   /**

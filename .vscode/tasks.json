@@ -189,6 +189,20 @@
       }
     },
     {
+      "label": "API Deploy: Docker & Azure (Skip Frontend)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build and Push Docker Image",
+        "Deploy to Azure Container Apps"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
       "label": "Full Deploy: Build, Docker & Azure",
       "dependsOrder": "sequence",
       "dependsOn": [
