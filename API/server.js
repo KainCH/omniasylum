@@ -30,7 +30,23 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling'],
   allowEIO3: true,
-  path: '/socket.io/'
+  path: '/socket.io/',
+  // Add security headers to Socket.IO responses
+  allowRequest: (req, callback) => {
+    // Socket.IO middleware - headers already set by Express middleware
+    callback(null, true);
+  }
+});
+
+// Configure Socket.IO engine to set proper content-type
+io.engine.on('headers', (headers, req) => {
+  headers['x-content-type-options'] = 'nosniff';
+  headers['content-security-policy'] = "frame-ancestors 'none'";
+  headers['referrer-policy'] = 'strict-origin-when-cross-origin';
+  // Ensure charset is set for text responses
+  if (headers['content-type'] && headers['content-type'].includes('text/')) {
+    headers['content-type'] = headers['content-type'].replace(/; charset=.*$/, '') + '; charset=utf-8';
+  }
 });
 
 // Add connection debugging
@@ -42,20 +58,72 @@ io.engine.on('connection_error', (err) => {
 // Make io available to routes
 app.set('io', io);
 
+// Security headers middleware
+app.use((req, res, next) => {
+  // Remove X-Powered-By header (security best practice)
+  res.removeHeader('X-Powered-By');
+
+  // Add essential security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // Use CSP with frame-ancestors instead of X-Frame-Options (modern approach)
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+
+  next();
+});
+
+// Disable X-Powered-By header globally
+app.disable('x-powered-by');
+
 // Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ type: 'application/json' }));
 app.use(cookieParser());
 
-// Serve static frontend files
+// Add cache-control headers to all API responses
+app.use('/api', (req, res, next) => {
+  // API responses should not be cached
+  res.setHeader('Cache-Control', 'no-cache, private');
+  // Set UTF-8 charset for JSON responses
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
+// Serve static frontend files with cache control
 const path = require('path');
 const frontendPath = process.env.NODE_ENV === 'production'
   ? path.join(__dirname, 'frontend')
   : path.join(__dirname, '..', 'modern-frontend', 'dist');
-app.use(express.static(frontendPath));
+
+// Configure static file serving with cache control
+app.use(express.static(frontendPath, {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : '0',
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // Set cache control based on file type
+    if (filePath.endsWith('.html')) {
+      // HTML files - no cache (always fresh)
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (filePath.match(/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico)$/)) {
+      // Static assets - cache for 1 year in production
+      if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=0');
+      }
+    } else {
+      // Other files - cache for 1 hour in production
+      res.setHeader('Cache-Control', process.env.NODE_ENV === 'production'
+        ? 'public, max-age=3600'
+        : 'no-cache');
+    }
+  }
+}));
 
 // Health check endpoint (unauthenticated)
 app.get('/api/health', (req, res) => {

@@ -140,7 +140,7 @@ class Database {
       bitsIntegration: false,
       streamOverlay: false,
       alertAnimations: false,
-      discordNotifications: false
+      discordNotifications: true
     };
 
     // Default overlay settings for new users
@@ -772,8 +772,15 @@ class Database {
     user.features = JSON.stringify(features);
 
     if (this.mode === 'azure') {
-      // Use upsertEntity to update just this user
-      await this.usersClient.upsertEntity(user, 'Merge');
+      // Ensure we have the required Azure Table Storage fields
+      const entity = {
+        partitionKey: user.partitionKey || 'user',
+        rowKey: user.rowKey || twitchUserId,
+        features: user.features
+      };
+
+      // Use Merge mode to update only the features field
+      await this.usersClient.upsertEntity(entity, 'Merge');
     } else {
       // Update in local JSON file
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
@@ -904,6 +911,9 @@ class Database {
    * Check if user has a specific feature enabled
    */
   async hasFeature(twitchUserId, featureName) {
+    if (!twitchUserId) {
+      return false;
+    }
     const features = await this.getUserFeatures(twitchUserId);
     return features && features[featureName] === true;
   }
@@ -990,6 +1000,50 @@ class Database {
       } else {
         throw new Error('User not found in local storage');
       }
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user's Discord webhook URL
+   */
+  async updateUserDiscordWebhook(twitchUserId, webhookUrl) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (this.mode === 'azure') {
+      // IMPORTANT: Use Merge to update only the discordWebhookUrl field
+      // This prevents overwriting other user data and prevents creating new entities
+      const updateEntity = {
+        partitionKey: twitchUserId,
+        rowKey: twitchUserId,
+        discordWebhookUrl: webhookUrl || ''
+      };
+
+      try {
+        // Use Merge mode which will fail if entity doesn't exist
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      // Update local user object for return
+      user.discordWebhookUrl = webhookUrl || '';
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].discordWebhookUrl = webhookUrl || '';
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.discordWebhookUrl = webhookUrl || '';
     }
 
     return user;

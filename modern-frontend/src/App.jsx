@@ -7,6 +7,7 @@ import AdminDashboard from './components/AdminDashboard'
 import UserAlertManager from './components/UserAlertManager'
 import AlertEffectsSettings from './components/AlertEffectsSettings'
 import SeriesSaveManager from './components/SeriesSaveManager'
+import DiscordWebhookSettings from './components/DiscordWebhookSettings'
 import './App.css'
 
 function App() {
@@ -55,6 +56,8 @@ function App() {
   const [showAlertManager, setShowAlertManager] = useState(false)
   const [showAlertEffectsSettings, setShowAlertEffectsSettings] = useState(false)
   const [showSeriesSaveManager, setShowSeriesSaveManager] = useState(false)
+  const [showDiscordSettings, setShowDiscordSettings] = useState(false)
+  const [userFeatures, setUserFeatures] = useState({})
   const [streamStatus, setStreamStatus] = useState('offline')
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
@@ -405,6 +408,7 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         if (data.streamStatus) setStreamStatus(data.streamStatus)
+        if (data.features) setUserFeatures(data.features)
         if (data.overlaySettings) {
           const settings = typeof data.overlaySettings === 'string'
             ? JSON.parse(data.overlaySettings)
@@ -770,6 +774,24 @@ function App() {
           >
             💾 Series Saves
           </button>
+          {userFeatures.discordNotifications && (
+            <button
+              onClick={() => setShowDiscordSettings(true)}
+              style={{
+                background: '#5865F2',
+                color: '#fff',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                flex: 1,
+                fontWeight: 'bold'
+              }}
+            >
+              🔔 Discord Notifications
+            </button>
+          )}
         </div>
 
         {/* Instructions Modal */}
@@ -959,6 +981,61 @@ function App() {
             isOpen={showSeriesSaveManager}
             onClose={() => setShowSeriesSaveManager(false)}
           />
+        )}
+
+        {/* Discord Notification Settings Modal */}
+        {showDiscordSettings && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowDiscordSettings(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '600px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <button
+                onClick={() => setShowDiscordSettings(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: '#dc3545',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  zIndex: 10
+                }}
+              >
+                ✖ Close
+              </button>
+              <DiscordWebhookSettings user={{ twitchUserId: userId, username }} />
+            </div>
+          </div>
         )}
 
         {/* Settings Modal */}

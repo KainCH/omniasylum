@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
+import UserManagementModal from './UserManagementModal'
+import './AdminDashboard.css'
 
 function AdminDashboard() {
   const [users, setUsers] = useState([])
@@ -17,6 +19,8 @@ function AdminDashboard() {
   const [showRewardsManager, setShowRewardsManager] = useState(false)
   const [showAlertsManager, setShowAlertsManager] = useState(false)
   const [showEventMappingManager, setShowEventMappingManager] = useState(false)
+  const [showUserManagementModal, setShowUserManagementModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState(null)
   const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -85,7 +89,6 @@ function AdminDashboard() {
   // Helper function to get auth headers
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken')
-
     const headers = {
       'Content-Type': 'application/json'
     }
@@ -95,6 +98,21 @@ function AdminDashboard() {
     }
 
     return headers
+  }
+
+  // Helper function to get fetch options with credentials
+  const getFetchOptions = (method = 'GET', body = null) => {
+    const options = {
+      method,
+      headers: getAuthHeaders(),
+      credentials: 'include' // Include cookies for authentication
+    }
+
+    if (body) {
+      options.body = JSON.stringify(body)
+    }
+
+    return options
   }
 
   // Logout function
@@ -109,18 +127,29 @@ function AdminDashboard() {
 
       // Fetch users
       const usersResponse = await fetch('/api/admin/users', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (usersResponse.ok) {
         const usersData = await usersResponse.json()
-        setUsers(usersData.users || usersData) // Handle both response formats
+        const fetchedUsers = usersData.users || usersData
+        setUsers(fetchedUsers) // Handle both response formats
+
+        // Update selectedUser if it exists (for modal refresh)
+        if (selectedUser) {
+          const updatedUser = fetchedUsers.find(u => u.twitchUserId === selectedUser.twitchUserId)
+          if (updatedUser) {
+            setSelectedUser(updatedUser)
+          }
+        }
       } else {
         console.error('Failed to fetch users:', usersResponse.status, usersResponse.statusText)
       }
 
       // Fetch system stats
       const statsResponse = await fetch('/api/admin/stats', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
@@ -131,7 +160,8 @@ function AdminDashboard() {
 
       // Fetch available features
       const featuresResponse = await fetch('/api/admin/features', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (featuresResponse.ok) {
         const featuresData = await featuresResponse.json()
@@ -142,7 +172,8 @@ function AdminDashboard() {
 
       // Fetch available roles
       const rolesResponse = await fetch('/api/admin/roles', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (rolesResponse.ok) {
         const rolesData = await rolesResponse.json()
@@ -153,7 +184,8 @@ function AdminDashboard() {
 
       // Fetch available permissions
       const permissionsResponse = await fetch('/api/admin/permissions', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (permissionsResponse.ok) {
         const permissionsData = await permissionsResponse.json()
@@ -164,7 +196,8 @@ function AdminDashboard() {
 
       // Fetch stream sessions
       const streamsResponse = await fetch('/api/admin/streams', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (streamsResponse.ok) {
         const streamsData = await streamsResponse.json()
@@ -175,7 +208,8 @@ function AdminDashboard() {
 
       // Fetch channel point rewards (admin view)
       const rewardsResponse = await fetch('/api/rewards/admin/all', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (rewardsResponse.ok) {
         const rewardsData = await rewardsResponse.json()
@@ -186,7 +220,8 @@ function AdminDashboard() {
 
       // Fetch alert configurations (admin view)
       const alertsResponse = await fetch('/api/alerts/admin/all', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (alertsResponse.ok) {
         const alertsData = await alertsResponse.json()
@@ -197,7 +232,8 @@ function AdminDashboard() {
 
       // Fetch alert templates
       const templatesResponse = await fetch('/api/alerts/templates', {
-        headers
+        headers,
+        credentials: 'include'
       })
       if (templatesResponse.ok) {
         const templatesData = await templatesResponse.json()
@@ -217,6 +253,7 @@ function AdminDashboard() {
       const response = await fetch(`/api/admin/users/${userId}/status`, {
         method: 'PUT',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ isActive: !isActive })
       })
 
@@ -594,6 +631,63 @@ function AdminDashboard() {
     }
   }
 
+  // Cleanup unknown users
+  const findUnknownUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/cleanup/unknown-users', {
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.count === 0) {
+          alert('✅ No unknown users found!')
+        } else {
+          alert(`⚠️ Found ${data.count} unknown/invalid users:\n\n${data.users.map(u => `- ${u.username || 'undefined'} (${u.twitchUserId || u.partitionKey || 'no ID'})`).join('\n')}`)
+        }
+        return data
+      } else {
+        const error = await response.json()
+        alert(`Failed to find unknown users: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to find unknown users:', error)
+      alert('Failed to find unknown users')
+    }
+  }
+
+  const cleanupUnknownUsers = async () => {
+    // First, find them to show the user
+    const data = await findUnknownUsers()
+
+    if (!data || data.count === 0) {
+      return
+    }
+
+    if (!confirm(`🗑️ Delete ${data.count} unknown/invalid users?\n\nThis will permanently remove:\n${data.users.map(u => `- ${u.username || 'undefined'} (${u.twitchUserId || u.partitionKey})`).join('\n')}\n\nThis action cannot be undone!`)) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/admin/cleanup/unknown-users', {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert(`✅ ${result.message}`)
+        fetchAdminData() // Refresh data
+      } else {
+        const error = await response.json()
+        alert(`Failed to cleanup unknown users: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Failed to cleanup unknown users:', error)
+      alert('Failed to cleanup unknown users')
+    }
+  }
+
   // Channel Point Reward Management Functions
   const createReward = async (userId) => {
     try {
@@ -899,420 +993,25 @@ function AdminDashboard() {
           )}
         </div>
 
-        <div className="admin-overlay-management">
-          <h2>🎨 Overlay Management</h2>
-          <div className="overlay-stats">
-            <div className="overlay-stat-card">
-              <h3>Users with Overlay</h3>
-              <p className="stat-number">{users.filter(u => u.features?.streamOverlay).length}</p>
-            </div>
-            <div className="overlay-stat-card">
-              <h3>Active Overlays</h3>
-              <p className="stat-number">
-                {users.filter(u => {
-                  try {
-                    const settings = typeof u.overlaySettings === 'string' ? JSON.parse(u.overlaySettings) : u.overlaySettings;
-                    return u.features?.streamOverlay && settings?.enabled;
-                  } catch {
-                    return false;
-                  }
-                }).length}
-              </p>
-            </div>
-            <div className="overlay-stat-card">
-              <h3>Setup Instructions</h3>
-              <select
-                onChange={(e) => {
-                  if (e.target.value) {
-                    const baseUrl = window.location.origin;
-                    window.open(`${baseUrl}/overlay/setup/${e.target.value}`, '_blank');
-                  }
-                }}
-                className="user-select"
-                defaultValue=""
-              >
-                <option value="">Select user for setup guide...</option>
-                {(() => {
-                  const currentRole = getCurrentUserRole();
-                  const isAdmin = currentRole === 'admin';
-                  const eligibleUsers = isAdmin ? users : users.filter(u => u.features?.streamOverlay);
-                  return eligibleUsers.map(user => (
-                    <option key={user.twitchUserId} value={user.twitchUserId}>
-                      {user.displayName} (@{user.username})
-                      {isAdmin && !user.features?.streamOverlay ? ' - No Overlay Permission' : ''}
-                    </option>
-                  ));
-                })()}
-              </select>
-            </div>
-          </div>
-
-          <div className="overlay-users-grid">
-            {users.map(user => {
-              let overlaySettings;
-              try {
-                overlaySettings = typeof user.overlaySettings === 'string'
-                  ? JSON.parse(user.overlaySettings)
-                  : user.overlaySettings || {
-                    enabled: false,
-                    position: 'top-right',
-                    counters: { deaths: true, swears: true, bits: false, channelPoints: false },
-                    theme: {
-                      backgroundColor: 'rgba(0,0,0,0.8)',
-                      borderColor: '#9146ff',
-                      textColor: '#ffffff',
-                      accentColor: '#f0f0f0'
-                    },
-                    animations: {
-                      enabled: true,
-                      showAlerts: true,
-                      celebrationEffects: true,
-                      bounceOnUpdate: true,
-                      fadeTransitions: true
-                    },
-                    display: {
-                      showLabels: true,
-                      showIcons: true,
-                      compactMode: false,
-                      hideWhenZero: false
-                    }
-                  };
-              } catch {
-                overlaySettings = {
-                  enabled: false,
-                  position: 'top-right',
-                  counters: { deaths: true, swears: true, bits: false, channelPoints: false },
-                  theme: {
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    borderColor: '#9146ff',
-                    textColor: '#ffffff',
-                    accentColor: '#f0f0f0'
-                  },
-                  animations: {
-                    enabled: true,
-                    showAlerts: true,
-                    celebrationEffects: true,
-                    bounceOnUpdate: true,
-                    fadeTransitions: true
-                  },
-                  display: {
-                    showLabels: true,
-                    showIcons: true,
-                    compactMode: false,
-                    hideWhenZero: false
-                  }
-                };
-              }
-
-              return (
-                <div key={user.twitchUserId} className="overlay-user-card">
-                  <div className="overlay-user-header">
-                    <img src={user.profileImageUrl} alt="" className="user-avatar" />
-                    <div className="user-info">
-                      <h4>{user.displayName}</h4>
-                      <p>@{user.username}</p>
-                      <span className={`overlay-status-badge ${overlaySettings.enabled ? 'enabled' : 'disabled'}`}>
-                        {overlaySettings.enabled ? '🟢 Active' : '🔴 Inactive'}
-                      </span>
-                    </div>
-                    <div className="overlay-actions">
-                      <button
-                        onClick={() => {
-                          const baseUrl = window.location.origin;
-                          window.open(`${baseUrl}/overlay/setup/${user.twitchUserId}`, '_blank');
-                        }}
-                        className="btn btn-sm btn-secondary"
-                        title="OBS Setup Instructions"
-                      >
-                        📺 Setup
-                      </button>
-                      <button
-                        onClick={() => {
-                          const baseUrl = window.location.origin;
-                          window.open(`${baseUrl}/overlay/${user.twitchUserId}`, '_blank');
-                        }}
-                        className="btn btn-sm btn-primary"
-                        title="Preview Overlay"
-                      >
-                        👁️ Preview
-                      </button>
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const currentRole = getCurrentUserRole();
-                    const isAdmin = currentRole === 'admin';
-                    const hasOverlayFeature = user.features?.streamOverlay;
-
-                    // Overlay status display - automatic based on feature permission and stream activity
-                    const currentUser = getCurrentUser();
-                    const isOwnCard = currentUser?.twitchUserId === user.twitchUserId;
-
-                    if (isAdmin || hasOverlayFeature || isOwnCard) {
-                      const streamStatus = user.streamStatus || 'offline';
-                      const isOverlayAvailable = hasOverlayFeature;
-                      const isStreamActive = streamStatus === 'live' || streamStatus === 'prepping';
-                      const isOverlayActive = isOverlayAvailable && streamStatus === 'live';
-
-                      return (
-                        <div className="overlay-feature-control">
-                          <div className="feature-section">
-                            <h5>� Stream Status</h5>
-                            <div className="overlay-status-display">
-                              <div className={`status-indicator ${isOverlayActive ? 'active' : 'inactive'}`}>
-                                <span className="status-icon">
-                                  {isOverlayActive ? '🟢' :
-                                   isOverlayAvailable ? (isStreamActive ? '🟡' : '⚪') : '🔴'}
-                                </span>
-                                <span className="status-text">
-                                  {!isOverlayAvailable ? (
-                                    <>❌ No Overlay Permission
-                                      {isAdmin && (
-                                        <button
-                                          className="grant-permission-btn"
-                                          onClick={() => toggleFeature(user.twitchUserId, 'streamOverlay', false)}
-                                        >
-                                          Grant Permission
-                                        </button>
-                                      )}
-                                    </>
-                                  ) : isOverlayActive ? (
-                                    '✅ Overlay Active (Stream Live)'
-                                  ) : isStreamActive ? (
-                                    '� Stream Active, Overlay Ready'
-                                  ) : (
-                                    '⚪ Overlay Available (Stream Offline)'
-                                  )}
-                                </span>
-                              </div>
-                              <div className="overlay-explanation">
-                                <small>
-                                  {isOverlayAvailable ?
-                                    'Overlay automatically activates when stream goes live' :
-                                    'Contact admin to enable overlay feature'
-                                  }
-                                </small>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {/* Phase 1: Stream Status Controls */}
-                  {(() => {
-                    const currentUser = getCurrentUser();
-                    const isAdmin = getCurrentUserRole() === 'admin';
-                    const isOwnCard = currentUser?.twitchUserId === user.twitchUserId;
-
-                    if (isAdmin || isOwnCard) {
-                      const streamStatus = user.streamStatus || 'offline';
-
-                      return (
-                        <div className="stream-status-control">
-                          <div className="feature-section">
-                            <h5>🎬 Stream Management</h5>
-                            <p>Status: <strong>{streamStatus}</strong></p>
-                            <div className="stream-controls">
-                              {streamStatus === 'offline' && (
-                                <button
-                                  onClick={() => updateStreamStatus(user.twitchUserId, 'prep')}
-                                  className="btn btn-warning btn-sm"
-                                >
-                                  🎭 Start Prepping
-                                </button>
-                              )}
-                              {streamStatus === 'prepping' && (
-                                <>
-                                  <button
-                                    onClick={() => updateStreamStatus(user.twitchUserId, 'go-live')}
-                                    className="btn btn-success btn-sm"
-                                  >
-                                    🚀 Go Live
-                                  </button>
-                                  <button
-                                    onClick={() => updateStreamStatus(user.twitchUserId, 'cancel-prep')}
-                                    className="btn btn-secondary btn-sm"
-                                  >
-                                    ❌ Cancel
-                                  </button>
-                                </>
-                              )}
-                              {(streamStatus === 'live' || streamStatus === 'ending') && (
-                                <button
-                                  onClick={() => updateStreamStatus(user.twitchUserId, 'end-stream')}
-                                  className="btn btn-danger btn-sm"
-                                >
-                                  🏁 End Stream
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {user.features?.streamOverlay && (
-                    <div className="overlay-settings-panel">
-                      <div className="settings-section">
-                        <h5>🎯 Overlay Position</h5>
-                      <div className="settings-row">
-                        <select
-                          value={overlaySettings.position}
-                          onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                            ...overlaySettings,
-                            position: e.target.value
-                          })}
-                          className="position-select"
-                        >
-                          <option value="top-left">↖️ Top Left</option>
-                          <option value="top-right">↗️ Top Right</option>
-                          <option value="bottom-left">↙️ Bottom Left</option>
-                          <option value="bottom-right">↘️ Bottom Right</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="settings-section">
-                      <h5>📊 Counters</h5>
-                      <div className="counter-grid">
-                        {[
-                          { key: 'deaths', label: '💀 Deaths', description: 'Track player deaths' },
-                          { key: 'swears', label: '🤬 Swears', description: 'Count profanity' },
-                          { key: 'bits', label: '💎 Bits', description: 'Show bit donations' },
-                          { key: 'channelPoints', label: '⭐ Channel Points', description: 'Channel point redemptions' }
-                        ].map(counter => (
-                          <label key={counter.key} className="counter-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={overlaySettings.counters[counter.key] || false}
-                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                ...overlaySettings,
-                                counters: { ...overlaySettings.counters, [counter.key]: e.target.checked }
-                              })}
-                            />
-                            <span className="counter-label">
-                              <strong>{counter.label}</strong>
-                              <small>{counter.description}</small>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="settings-section">
-                      <h5>✨ Animations & Effects</h5>
-                      <div className="animation-grid">
-                        {[
-                          { key: 'enabled', label: 'Basic Animations', description: 'Smooth transitions' },
-                          { key: 'showAlerts', label: 'Counter Alerts', description: 'Flash on updates' },
-                          { key: 'celebrationEffects', label: 'Celebrations', description: 'Milestone effects' },
-                          { key: 'bounceOnUpdate', label: 'Bounce Effect', description: 'Bounce when updated' },
-                          { key: 'fadeTransitions', label: 'Fade Transitions', description: 'Smooth fade effects' }
-                        ].map(animation => (
-                          <label key={animation.key} className="animation-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={overlaySettings.animations[animation.key] || false}
-                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                ...overlaySettings,
-                                animations: { ...overlaySettings.animations, [animation.key]: e.target.checked }
-                              })}
-                            />
-                            <span className="animation-label">
-                              <strong>{animation.label}</strong>
-                              <small>{animation.description}</small>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="settings-section">
-                      <h5>🎨 Theme & Display</h5>
-                      <div className="theme-controls">
-                        <div className="color-row">
-                          <label>
-                            <span>Background:</span>
-                            <input
-                              type="color"
-                              value={overlaySettings.theme.borderColor || '#9146ff'}
-                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                ...overlaySettings,
-                                theme: { ...overlaySettings.theme, borderColor: e.target.value }
-                              })}
-                              className="color-input"
-                            />
-                          </label>
-                          <label>
-                            <span>Text Color:</span>
-                            <input
-                              type="color"
-                              value={overlaySettings.theme.textColor || '#ffffff'}
-                              onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                ...overlaySettings,
-                                theme: { ...overlaySettings.theme, textColor: e.target.value }
-                              })}
-                              className="color-input"
-                            />
-                          </label>
-                        </div>
-                        <div className="display-options">
-                          {[
-                            { key: 'showLabels', label: 'Show Labels', description: 'Display counter names' },
-                            { key: 'showIcons', label: 'Show Icons', description: 'Display emoji icons' },
-                            { key: 'compactMode', label: 'Compact Mode', description: 'Smaller overlay size' },
-                            { key: 'hideWhenZero', label: 'Hide Zero Values', description: 'Hide counters at 0' }
-                          ].map(option => (
-                            <label key={option.key} className="display-checkbox">
-                              <input
-                                type="checkbox"
-                                checked={overlaySettings.display?.[option.key] || false}
-                                onChange={(e) => updateUserOverlaySettings(user.twitchUserId, {
-                                  ...overlaySettings,
-                                  display: {
-                                    ...overlaySettings.display,
-                                    [option.key]: e.target.checked
-                                  }
-                                })}
-                              />
-                              <span className="display-label">
-                                <strong>{option.label}</strong>
-                                <small>{option.description}</small>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {users.length === 0 && (
-            <div className="no-overlay-users">
-              <p>📺 No users found.</p>
-              <p>Add users in the User Management section above.</p>
-            </div>
-          )}
-        </div>
 
         <div className="admin-users">
           <div className="users-header">
             <h2>👥 User Management</h2>
-            <button
-              onClick={() => setShowAddUser(true)}
-              className="btn btn-primary"
-            >
-              ➕ Add User
-            </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={cleanupUnknownUsers}
+                className="btn btn-warning"
+                title="Find and remove invalid/unknown users"
+              >
+                🧹 Cleanup Unknown Users
+              </button>
+              <button
+                onClick={() => setShowAddUser(true)}
+                className="btn btn-primary"
+              >
+                ➕ Add User
+              </button>
+            </div>
           </div>
 
           {showAddUser && (
@@ -1456,6 +1155,15 @@ function AdminDashboard() {
                         return (
                           <>
                             <button
+                              onClick={() => {
+                                setSelectedUser(user)
+                                setShowUserManagementModal(true)
+                              }}
+                              className="btn btn-primary"
+                            >
+                              ⚙️ Manage User
+                            </button>
+                            <button
                               onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
                               className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
                             >
@@ -1497,28 +1205,25 @@ function AdminDashboard() {
                     })()}
                   </div>
 
-                  <div className="user-features">
-                    <h4>Features</h4>
-                    <div className="features-grid">
+                  <div className="user-features-summary">
+                    <h4>Enabled Features ({Object.values(userFeatures).filter(Boolean).length}/{Object.keys(userFeatures).length})</h4>
+                    <div className="features-badges">
                       {Object.entries(userFeatures).map(([featureKey, enabled]) => {
+                        if (!enabled) return null
                         const featureInfo = features.find(f => f.id === featureKey)
                         return (
-                          <label key={featureKey} className="feature-toggle" title={featureInfo?.description}>
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={() => toggleFeature(user.twitchUserId, featureKey, enabled)}
-                            />
-                            <span className="feature-name">
-                              {featureInfo?.name || featureKey}
-                            </span>
-                            <span className={`feature-status ${enabled ? 'enabled' : 'disabled'}`}>
-                              {enabled ? '✅' : '❌'}
-                            </span>
-                          </label>
+                          <span key={featureKey} className="feature-badge enabled">
+                            {featureInfo?.icon || '📦'} {featureInfo?.name || featureKey}
+                          </span>
                         )
                       })}
+                      {Object.values(userFeatures).filter(Boolean).length === 0 && (
+                        <span className="no-features">No features enabled</span>
+                      )}
                     </div>
+                    <p className="manage-hint">
+                      Click "⚙️ Manage User" to configure features, overlay settings, and Discord notifications
+                    </p>
                   </div>
 
                   <div className="user-role-management">
@@ -1551,18 +1256,6 @@ function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Overlay settings moved to dedicated Overlay Management section */}
-                  {userFeatures.streamOverlay && (
-                    <div className="overlay-feature-notice">
-                      <p>🎨 <strong>Overlay settings</strong> are managed in the Overlay Management section above.</p>
-                    </div>
-                  )}
-
-                  {/* Discord Webhook Settings */}
-                  {userFeatures.discordNotifications && (
-                    <DiscordWebhookSettings user={user} />
-                  )}
 
                   <div className="user-metadata">
                     <small>
@@ -2077,9 +1770,23 @@ function AdminDashboard() {
             />
           </div>
         )}
+
+        {/* User Management Modal */}
+        {showUserManagementModal && selectedUser && (
+          <UserManagementModal
+            user={selectedUser}
+            features={features}
+            onClose={() => {
+              setShowUserManagementModal(false)
+              setSelectedUser(null)
+            }}
+            onUpdate={fetchAdminData}
+          />
+        )}
       </div>
     </div>
   )
 }
 
 export default AdminDashboard
+

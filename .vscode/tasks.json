@@ -138,6 +138,71 @@
       "presentation": {
         "reveal": "silent"
       }
+    },
+    {
+      "label": "Build Frontend",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/modern-frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Copy Frontend to API",
+      "type": "shell",
+      "command": "Copy-Item -Path '${workspaceFolder}/modern-frontend/dist/*' -Destination '${workspaceFolder}/API/frontend' -Recurse -Force",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Build and Push Docker Image",
+      "type": "shell",
+      "command": "docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Deploy to Azure Container Apps",
+      "type": "shell",
+      "command": "az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format 'MMddHHmm')",
+      "options": {
+        "cwd": "${workspaceFolder}/API"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Full Deploy: Build, Docker & Azure",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build Frontend",
+        "Copy Frontend to API",
+        "Build and Push Docker Image",
+        "Deploy to Azure Container Apps"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
     }
   ],
   "inputs": [

@@ -319,6 +319,8 @@ function UserAlertManager({ onClose }) {
 
                   <div className="alert-selector">
                     <select
+                      id={`event-${eventType}`}
+                      name={`event-${eventType}`}
                       value={currentAlertId || ''}
                       onChange={(e) => handleMappingChange(eventType, e.target.value)}
                       className="alert-select"
@@ -387,8 +389,10 @@ function UserAlertManager({ onClose }) {
           <div className="alert-form">
             <div className="form-row">
               <div className="form-group">
-                <label>Alert Name *</label>
+                <label htmlFor="alert-name">Alert Name *</label>
                 <input
+                  id="alert-name"
+                  name="alertName"
                   type="text"
                   placeholder="e.g., Custom Follow Alert"
                   value={newAlert.name}
@@ -397,8 +401,10 @@ function UserAlertManager({ onClose }) {
               </div>
 
               <div className="form-group">
-                <label>Alert Type</label>
+                <label htmlFor="alert-type">Alert Type</label>
                 <select
+                  id="alert-type"
+                  name="alertType"
                   value={newAlert.type}
                   onChange={(e) => setNewAlert({...newAlert, type: e.target.value})}
                 >
@@ -414,8 +420,10 @@ function UserAlertManager({ onClose }) {
             </div>
 
             <div className="form-group full-width">
-              <label>Text Prompt * <span className="hint">Use [User], [Bits], [Months], [Tier], etc.</span></label>
+              <label htmlFor="text-prompt">Text Prompt * <span className="hint">Use [User], [Bits], [Months], [Tier], etc.</span></label>
               <input
+                id="text-prompt"
+                name="textPrompt"
                 type="text"
                 placeholder="e.g., Welcome to the asylum, [User]!"
                 value={newAlert.textPrompt}
@@ -425,8 +433,10 @@ function UserAlertManager({ onClose }) {
 
             <div className="form-row">
               <div className="form-group">
-                <label>Visual Cue <span className="hint">(optional)</span></label>
+                <label htmlFor="visual-cue">Visual Cue <span className="hint">(optional)</span></label>
                 <input
+                  id="visual-cue"
+                  name="visualCue"
                   type="text"
                   placeholder="Describe the visual effect"
                   value={newAlert.visualCue}
@@ -435,8 +445,10 @@ function UserAlertManager({ onClose }) {
               </div>
 
               <div className="form-group">
-                <label>Sound Description <span className="hint">(optional)</span></label>
+                <label htmlFor="sound-description">Sound Description <span className="hint">(optional)</span></label>
                 <input
+                  id="sound-description"
+                  name="soundDescription"
                   type="text"
                   placeholder="Describe the sound"
                   value={newAlert.soundDescription}
@@ -447,8 +459,10 @@ function UserAlertManager({ onClose }) {
 
             <div className="form-row">
               <div className="form-group">
-                <label>Duration (ms)</label>
+                <label htmlFor="alert-duration">Duration (ms)</label>
                 <input
+                  id="alert-duration"
+                  name="duration"
                   type="number"
                   min="1000"
                   max="30000"
@@ -458,8 +472,10 @@ function UserAlertManager({ onClose }) {
               </div>
 
               <div className="form-group">
-                <label>Background Color</label>
+                <label htmlFor="bg-color">Background Color</label>
                 <input
+                  id="bg-color"
+                  name="backgroundColor"
                   type="color"
                   value={newAlert.backgroundColor}
                   onChange={(e) => setNewAlert({...newAlert, backgroundColor: e.target.value})}
@@ -467,8 +483,10 @@ function UserAlertManager({ onClose }) {
               </div>
 
               <div className="form-group">
-                <label>Text Color</label>
+                <label htmlFor="text-color">Text Color</label>
                 <input
+                  id="text-color"
+                  name="textColor"
                   type="color"
                   value={newAlert.textColor}
                   onChange={(e) => setNewAlert({...newAlert, textColor: e.target.value})}
@@ -476,8 +494,10 @@ function UserAlertManager({ onClose }) {
               </div>
 
               <div className="form-group">
-                <label>Border Color</label>
+                <label htmlFor="border-color">Border Color</label>
                 <input
+                  id="border-color"
+                  name="borderColor"
                   type="color"
                   value={newAlert.borderColor}
                   onChange={(e) => setNewAlert({...newAlert, borderColor: e.target.value})}

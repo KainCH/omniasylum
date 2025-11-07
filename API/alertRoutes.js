@@ -260,11 +260,17 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req, res) => {
     const allAlerts = [];
 
     for (const user of users) {
-      const hasAlerts = await database.hasFeature(user.twitchUserId, 'streamAlerts');
+      // Skip users without valid twitchUserId
+      if (!user.twitchUserId && !user.partitionKey) {
+        continue;
+      }
+
+      const userId = user.twitchUserId || user.partitionKey;
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
       if (hasAlerts) {
-        const alerts = await database.getUserAlerts(user.twitchUserId);
+        const alerts = await database.getUserAlerts(userId);
         allAlerts.push({
-          userId: user.twitchUserId,
+          userId: userId,
           username: user.username,
           displayName: user.displayName,
           alerts: alerts

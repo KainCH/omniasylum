@@ -169,11 +169,17 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req, res) => {
     const allRewards = [];
 
     for (const user of users) {
-      const hasChannelPoints = await database.hasFeature(user.twitchUserId, 'channelPoints');
+      // Skip users without valid twitchUserId
+      if (!user.twitchUserId && !user.partitionKey) {
+        continue;
+      }
+
+      const userId = user.twitchUserId || user.partitionKey;
+      const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
-        const rewards = await database.getUserChannelPointRewards(user.twitchUserId);
+        const rewards = await database.getUserChannelPointRewards(userId);
         allRewards.push({
-          userId: user.twitchUserId,
+          userId: userId,
           username: user.username,
           displayName: user.displayName,
           rewards: rewards

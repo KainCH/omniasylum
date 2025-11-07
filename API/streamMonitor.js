@@ -947,20 +947,49 @@ class StreamMonitor extends EventEmitter {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: `🔴 **${data.displayName}** just went LIVE on Twitch!`,
+          content: `🔴 **${data.displayName}** is now live on Twitch!`,
           embeds: [{
-            title: data.streamTitle,
+            author: {
+              name: data.displayName,
+              url: data.streamUrl,
+              icon_url: data.profileImageUrl
+            },
+            title: `📺 ${data.streamTitle}`,
             url: data.streamUrl,
-            description: `Playing **${data.gameName}**\n\n[🎮 Watch Now!](${data.streamUrl})`,
+            description: `> Playing **${data.gameName}**\n\n🎮 **Ready to watch?** Click the button below to join the stream!`,
             color: 0x9146FF, // Twitch purple
-            thumbnail: {
-              url: data.profileImageUrl
+            fields: [
+              {
+                name: '🎯 Game',
+                value: data.gameName,
+                inline: true
+              },
+              {
+                name: '👤 Streamer',
+                value: data.displayName,
+                inline: true
+              }
+            ],
+            image: {
+              url: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${data.username.toLowerCase()}-1920x1080.jpg?timestamp=${Date.now()}`
             },
             footer: {
-              text: 'Twitch',
+              text: 'Twitch • Live Now',
               icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
             },
             timestamp: new Date().toISOString()
+          }],
+          components: [{
+            type: 1, // Action Row
+            components: [{
+              type: 2, // Button
+              style: 5, // Link button
+              label: 'Watch Stream →',
+              url: data.streamUrl,
+              emoji: {
+                name: '▶️'
+              }
+            }]
           }]
         })
       });
