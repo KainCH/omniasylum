@@ -309,6 +309,20 @@ class StreamMonitor extends EventEmitter {
 
       console.log(`🔴 ${user.username} went LIVE! Title: "${event.streamTitle}"`);
 
+      // Send Discord notification if enabled
+      const hasDiscordNotifications = await database.hasFeature(userId, 'discordNotifications');
+      if (hasDiscordNotifications && user.discordWebhookUrl) {
+        await this.sendDiscordNotification({
+          webhookUrl: user.discordWebhookUrl,
+          username: user.username,
+          displayName: user.displayName,
+          profileImageUrl: user.profileImageUrl,
+          streamTitle: event.streamTitle,
+          gameName: event.categoryName,
+          streamUrl: `https://twitch.tv/${user.username}`
+        });
+      }
+
       // Auto-start stream session if not already started
       const counters = await database.getCounters(userId);
       if (!counters.streamStarted) {
@@ -921,6 +935,44 @@ class StreamMonitor extends EventEmitter {
 
     } catch (error) {
       console.error('Error handling cheer event:', error);
+    }
+  }
+
+  /**
+   * Send Discord notification via webhook
+   */
+  async sendDiscordNotification(data) {
+    try {
+      const response = await fetch(data.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `🔴 **${data.displayName}** just went LIVE on Twitch!`,
+          embeds: [{
+            title: data.streamTitle,
+            url: data.streamUrl,
+            description: `Playing **${data.gameName}**\n\n[🎮 Watch Now!](${data.streamUrl})`,
+            color: 0x9146FF, // Twitch purple
+            thumbnail: {
+              url: data.profileImageUrl
+            },
+            footer: {
+              text: 'Twitch',
+              icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+
+      if (response.ok) {
+        console.log(`✅ Discord notification sent for ${data.username}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`❌ Discord notification failed for ${data.username}:`, errorText);
+      }
+    } catch (error) {
+      console.error(`❌ Error sending Discord notification for ${data.username}:`, error.message);
     }
   }
 

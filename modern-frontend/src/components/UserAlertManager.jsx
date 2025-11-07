@@ -324,7 +324,7 @@ function UserAlertManager({ onClose }) {
                       className="alert-select"
                     >
                       <option value="">No Alert (Disabled)</option>
-                      {alerts.filter(a => a.enabled !== false).map(alert => (
+                      {alerts.filter(a => a.isEnabled !== false).map(alert => (
                         <option key={alert.id} value={alert.id}>
                           {alert.name}
                         </option>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
+import DiscordWebhookSettings from './DiscordWebhookSettings'
 
 function AdminDashboard() {
   const [users, setUsers] = useState([])
@@ -1556,6 +1557,11 @@ function AdminDashboard() {
                     <div className="overlay-feature-notice">
                       <p>🎨 <strong>Overlay settings</strong> are managed in the Overlay Management section above.</p>
                     </div>
+                  )}
+
+                  {/* Discord Webhook Settings */}
+                  {userFeatures.discordNotifications && (
+                    <DiscordWebhookSettings user={user} />
                   )}
 
                   <div className="user-metadata">

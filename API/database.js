@@ -139,7 +139,8 @@ class Database {
       webhooks: false,
       bitsIntegration: false,
       streamOverlay: false,
-      alertAnimations: false
+      alertAnimations: false,
+      discordNotifications: false
     };
 
     // Default overlay settings for new users
@@ -177,6 +178,7 @@ class Database {
       role: userData.role || role,
       features: JSON.stringify(userData.features || defaultFeatures),
       overlaySettings: JSON.stringify(userData.overlaySettings || defaultOverlaySettings),
+      discordWebhookUrl: userData.discordWebhookUrl || '',
       isActive: userData.isActive !== undefined ? userData.isActive : true,
       streamStatus: userData.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
       createdAt: userData.createdAt || new Date().toISOString(),
