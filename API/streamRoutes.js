@@ -302,6 +302,38 @@ router.post('/monitor/unsubscribe', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Force reconnect EventSub WebSocket for current user
+ * POST /api/stream/monitor/reconnect
+ */
+router.post('/monitor/reconnect', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const success = await streamMonitor.forceReconnectUser(req.user.twitchUserId);
+
+    if (success) {
+      res.json({
+        message: 'Successfully reconnected EventSub WebSocket',
+        userId: req.user.twitchUserId,
+        status: 'connected'
+      });
+    } else {
+      res.status(500).json({
+        error: 'Failed to reconnect EventSub WebSocket',
+        userId: req.user.twitchUserId,
+        status: 'failed'
+      });
+    }
+  } catch (error) {
+    console.error('Error reconnecting EventSub WebSocket:', error);
+    res.status(500).json({
+      error: error?.message || 'Failed to reconnect EventSub WebSocket',
+      userId: req.user.twitchUserId,
+      status: 'error'
+    });
+  }
+});
+
 // ==================== PHASE 1: Enhanced Stream Status Management ====================
 
 /**
@@ -361,18 +393,19 @@ router.post('/prep', requireAuth, async (req, res) => {
       }
     }
 
-    // Start EventSub stream monitoring when entering prep mode
+    // Force reconnect EventSub stream monitoring when entering prep mode
+    // This ensures a fresh WebSocket connection every time prep is pressed
     const streamMonitor = req.app.get('streamMonitor');
     if (streamMonitor) {
       try {
-        const subscribed = await streamMonitor.subscribeToUser(req.user.twitchUserId);
-        if (subscribed) {
-          console.log(`🎬 Started EventSub monitoring for ${user.displayName} (prepping mode)`);
+        const reconnected = await streamMonitor.forceReconnectUser(req.user.twitchUserId);
+        if (reconnected) {
+          console.log(`🎬 Reconnected EventSub monitoring for ${user.displayName} (prepping mode)`);
         } else {
-          console.warn(`⚠️ Failed to start EventSub monitoring for ${user.displayName}`);
+          console.warn(`⚠️ Failed to reconnect EventSub monitoring for ${user.displayName}`);
         }
       } catch (error) {
-        console.error(`❌ Failed to start EventSub monitoring for ${user.displayName}:`, error);
+        console.error(`❌ Failed to reconnect EventSub monitoring for ${user.displayName}:`, error);
       }
     }
 

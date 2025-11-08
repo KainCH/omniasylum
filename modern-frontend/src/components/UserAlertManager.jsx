@@ -104,7 +104,7 @@ function UserAlertManager({ onClose }) {
   }
 
   const createAlert = async () => {
-    if (!newAlert.name || !newAlert.textPrompt) {
+    if (!newAlert?.name || !newAlert?.textPrompt) {
       alert('Please fill in alert name and text prompt')
       return
     }
@@ -207,7 +207,7 @@ function UserAlertManager({ onClose }) {
 
   const testAlert = (eventType) => {
     const alertId = eventMappings[eventType]
-    const alert = alerts.find(a => a.id === alertId)
+    const alert = alerts.find(a => a?.id === alertId)
 
     if (!alert) {
       window.alert('No alert configured for this event')
@@ -294,7 +294,7 @@ function UserAlertManager({ onClose }) {
             {availableEvents.map(eventType => {
               const eventInfo = eventDescriptions[eventType] || { name: eventType, icon: '📢' }
               const currentAlertId = eventMappings[eventType]
-              const currentAlert = alerts.find(a => a.id === currentAlertId)
+              const currentAlert = alerts.find(a => a?.id === currentAlertId)
               const defaultAlertId = defaultMappings[eventType]
 
               return (
@@ -326,9 +326,9 @@ function UserAlertManager({ onClose }) {
                       className="alert-select"
                     >
                       <option value="">No Alert (Disabled)</option>
-                      {alerts.filter(a => a.isEnabled !== false).map(alert => (
-                        <option key={alert.id} value={alert.id}>
-                          {alert.name}
+                      {alerts.filter(a => a?.isEnabled !== false).map(alert => (
+                        <option key={alert?.id} value={alert?.id}>
+                          {alert?.name}
                         </option>
                       ))}
                     </select>
@@ -395,7 +395,7 @@ function UserAlertManager({ onClose }) {
                   name="alertName"
                   type="text"
                   placeholder="e.g., Custom Follow Alert"
-                  value={newAlert.name}
+                  value={newAlert?.name}
                   onChange={(e) => setNewAlert({...newAlert, name: e.target.value})}
                 />
               </div>
@@ -537,7 +537,7 @@ function UserAlertManager({ onClose }) {
             <button
               onClick={createAlert}
               className="btn-create"
-              disabled={saving || !newAlert.name || !newAlert.textPrompt}
+              disabled={saving || !newAlert?.name || !newAlert?.textPrompt}
             >
               {saving ? '⏳ Creating...' : '✨ Create Alert'}
             </button>
@@ -548,15 +548,15 @@ function UserAlertManager({ onClose }) {
               <h3>My Alerts ({alerts.length})</h3>
               <div className="alerts-grid">
                 {alerts.map(alert => (
-                  <div key={alert.id} className="alert-item">
+                  <div key={alert?.id} className="alert-item">
                     <div className="alert-item-header">
-                      <strong>{alert.name}</strong>
-                      <span className="alert-type-badge">{alert.type}</span>
+                      <strong>{alert?.name}</strong>
+                      <span className="alert-type-badge">{alert?.type}</span>
                     </div>
-                    <div className="alert-item-text">"{alert.textPrompt}"</div>
+                    <div className="alert-item-text">"{alert?.textPrompt}"</div>
                     <div className="alert-item-actions">
                       <button
-                        onClick={() => deleteAlert(alert.id, alert.name)}
+                        onClick={() => deleteAlert(alert?.id, alert?.name)}
                         className="btn-delete-small"
                       >
                         🗑️ Delete

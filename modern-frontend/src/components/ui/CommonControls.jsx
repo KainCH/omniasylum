@@ -52,7 +52,7 @@ export const NotificationTypeCard = ({
       </div>
 
       <div className="notification-controls">
-        {notificationType.supportsDiscord && (
+        {notificationType?.supportsDiscord && (
           <ToggleSwitch
             checked={discordEnabled}
             onChange={onDiscordChange}
@@ -62,7 +62,7 @@ export const NotificationTypeCard = ({
           />
         )}
 
-        {notificationType.supportsChannel && (
+        {notificationType?.supportsChannel && (
           <ToggleSwitch
             checked={channelEnabled}
             onChange={onChannelChange}
@@ -90,15 +90,15 @@ export const TemplateStyleSelector = ({
       <div className="template-grid">
         {templates.map(template => (
           <div
-            key={template.id}
-            className={`template-option ${selectedStyle === template.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
-            onClick={() => !disabled && onStyleChange(template.id)}
+            key={template?.id}
+            className={`template-option ${selectedStyle === template?.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
+            onClick={() => !disabled && onStyleChange(template?.id)}
           >
             <div className="template-icon">{template?.icon || '🎨'}</div>
             <h5>{template?.name || 'Unknown Template'}</h5>
             <p>{template?.description || 'Template description unavailable'}</p>
-            <div className={`template-preview ${template.previewColor}`}>
-              <span>{template.previewText}</span>
+            <div className={`template-preview ${template?.previewColor}`}>
+              <span>{template?.previewText}</span>
             </div>
           </div>
         ))}

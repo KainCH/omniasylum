@@ -173,23 +173,38 @@ router.get('/discord-webhook', requireAuth, async (req, res) => {
 router.put('/discord-webhook', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { webhookUrl } = req.body;
+    const { webhookUrl, enabled } = req.body;
 
-    console.log(`🔔 Updating Discord webhook for user ${req.user.username}`);
+    console.log(`🔔 Updating Discord webhook for user ${req.user.username}:`, { webhookUrl: !!webhookUrl, enabled });
 
     // Validate webhook URL format (basic validation)
     if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
 
-    // Use the dedicated updateUserDiscordWebhook method (same as admin routes)
+    // Update webhook URL
     await database.updateUserDiscordWebhook(userId, webhookUrl || '');
+
+    // Update the discordNotifications feature flag based on enabled status
+    if (typeof enabled === 'boolean') {
+      const user = await database.getUser(userId);
+      const currentFeatures = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+
+      const updatedFeatures = {
+        ...currentFeatures,
+        discordNotifications: enabled
+      };
+
+      await database.updateUserFeatures(userId, updatedFeatures);
+      console.log(`✅ Discord notifications feature flag updated: ${enabled}`);
+    }
 
     console.log(`✅ Discord webhook updated for ${req.user.username}`);
 
     res.json({
       message: 'Discord webhook updated successfully',
-      webhookUrl: webhookUrl || ''
+      webhookUrl: webhookUrl || '',
+      enabled: enabled
     });
   } catch (error) {
     console.error('❌ Error updating Discord webhook:', error);
@@ -406,10 +421,8 @@ router.put('/discord-settings', requireAuth, async (req, res) => {
 
     console.log(`🔔 Updating Discord notification settings for user ${req.user.username}:`, settings);
 
-    // Update user with new Discord settings
-    const updatedUser = await database.updateUser(userId, {
-      discordSettings: JSON.stringify(settings)
-    });
+    // Update user with new Discord settings using the specific method
+    const updatedUser = await database.updateUserDiscordSettings(userId, settings);
 
     console.log(`✅ Discord notification settings updated for ${req.user.username}`);
     res.json({

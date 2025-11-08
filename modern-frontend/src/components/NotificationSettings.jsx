@@ -163,12 +163,12 @@ const NotificationSettings = ({
         <div className="notification-types-grid">
           {notificationTypes.map(type => (
             <NotificationTypeCard
-              key={type.id}
+              key={type?.id}
               notificationType={type}
-              discordEnabled={settings?.discordNotifications?.[type.id] || false}
-              channelEnabled={settings?.channelNotifications?.[type.id] || false}
-              onDiscordChange={(e) => handlers.updateDiscordNotification(type.id, e.target.checked)}
-              onChannelChange={(e) => handlers.updateChannelNotification(type.id, e.target.checked)}
+              discordEnabled={settings?.discordNotifications?.[type?.id] || false}
+              channelEnabled={settings?.channelNotifications?.[type?.id] || false}
+              onDiscordChange={(e) => handlers.updateDiscordNotification(type?.id, e.target.checked)}
+              onChannelChange={(e) => handlers.updateChannelNotification(type?.id, e.target.checked)}
               disabled={saving}
             />
           ))}

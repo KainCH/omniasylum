@@ -398,6 +398,42 @@ class StreamMonitor extends EventEmitter {
   }
 
   /**
+   * Force reconnect EventSub WebSocket for a user
+   * Useful when WebSocket connection seems stuck or when prep button is pressed
+   */
+  async forceReconnectUser(userId) {
+    try {
+      const user = await database.getUser(userId);
+      if (!user) {
+        console.error(`Cannot reconnect: User ${userId} not found`);
+        return false;
+      }
+
+      console.log(`🔄 Force reconnecting EventSub WebSocket for ${user.username}...`);
+
+      // Disconnect existing WebSocket connection if any
+      await this.unsubscribeFromUser(userId);
+
+      // Wait a brief moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Reconnect with fresh WebSocket
+      const success = await this.subscribeToUser(userId);
+
+      if (success) {
+        console.log(`✅ Successfully reconnected EventSub WebSocket for ${user.username}`);
+        return true;
+      } else {
+        console.error(`❌ Failed to reconnect EventSub WebSocket for ${user.username}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error during force reconnect for user ${userId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Handle stream going online
    */
   async handleStreamOnline(event, userId) {
@@ -426,17 +462,35 @@ class StreamMonitor extends EventEmitter {
       console.log(`🔴 ${user.username} went LIVE! Title: "${event.streamTitle}"`);
 
       // Send Discord notification if enabled
-      const hasDiscordNotifications = await database.hasFeature(userId, 'discordNotifications');
-      if (hasDiscordNotifications && user.discordWebhookUrl) {
-        await this.sendDiscordNotification({
-          webhookUrl: user.discordWebhookUrl,
-          username: user.username,
-          displayName: user.displayName,
-          profileImageUrl: user.profileImageUrl,
-          streamTitle: event.streamTitle,
-          gameName: event.categoryName,
-          streamUrl: `https://twitch.tv/${user.username}`
+      try {
+        // Check if Discord notifications are enabled via the new settings system
+        const discordSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : {};
+        const discordEnabled = discordSettings?.enableDiscordNotifications || false;
+        const webhookUrl = user?.discordWebhookUrl || '';
+
+        console.log(`🔔 Discord notification check for ${user.username}:`, {
+          discordEnabled,
+          hasWebhookUrl: !!webhookUrl,
+          settings: discordSettings
         });
+
+        if (discordEnabled && webhookUrl) {
+          console.log(`📤 Sending Discord live notification for ${user.username}...`);
+          await this.sendDiscordNotification({
+            webhookUrl,
+            username: user.username,
+            displayName: user.displayName,
+            profileImageUrl: user.profileImageUrl,
+            streamTitle: event.streamTitle,
+            gameName: event.categoryName,
+            streamUrl: `https://twitch.tv/${user.username}`
+          });
+          console.log(`✅ Discord live notification sent for ${user.username}`);
+        } else {
+          console.log(`⚠️ Discord notification skipped for ${user.username}: enabled=${discordEnabled}, hasWebhook=${!!webhookUrl}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error sending Discord notification for ${user.username}:`, error);
       }
 
       // Auto-start stream session if not already started
