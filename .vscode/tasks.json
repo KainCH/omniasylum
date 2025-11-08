@@ -153,9 +153,32 @@
       }
     },
     {
+      "label": "Clean API Frontend Assets",
+      "type": "shell",
+      "command": "if (Test-Path '${workspaceFolder}/API/frontend/assets') { Write-Host 'Cleaning old frontend assets...'; Remove-Item -Path '${workspaceFolder}/API/frontend/assets/*' -Recurse -Force; Write-Host 'Frontend assets cleaned.' } else { Write-Host 'No assets folder to clean.' }",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
       "label": "Copy Frontend to API",
       "type": "shell",
       "command": "Copy-Item -Path '${workspaceFolder}/modern-frontend/dist/*' -Destination '${workspaceFolder}/API/frontend' -Recurse -Force",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "dependsOn": [
+        "Clean API Frontend Assets"
+      ]
+    },
+    {
+      "label": "Clean and Copy Frontend to API",
+      "type": "shell",
+      "command": "Write-Host 'Starting frontend deployment...'; if (Test-Path '${workspaceFolder}/API/frontend/assets') { Write-Host 'Cleaning old assets...'; Remove-Item -Path '${workspaceFolder}/API/frontend/assets/*' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'Old assets cleaned.' } else { Write-Host 'No old assets to clean.' }; Write-Host 'Copying new frontend files...'; Copy-Item -Path '${workspaceFolder}/modern-frontend/dist/*' -Destination '${workspaceFolder}/API/frontend' -Recurse -Force; Write-Host 'Frontend deployment completed successfully!'",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -207,10 +230,38 @@
       "dependsOrder": "sequence",
       "dependsOn": [
         "Build Frontend",
-        "Copy Frontend to API",
+        "Clean and Copy Frontend to API",
         "Build and Push Docker Image",
         "Deploy to Azure Container Apps"
       ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Enhanced Full Deploy: Clean Build & Deploy",
+      "type": "shell",
+      "command": "powershell.exe -ExecutionPolicy Bypass -File '${workspaceFolder}/deploy-with-cleanup.ps1'",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Backend Only Deploy: Skip Frontend",
+      "type": "shell",
+      "command": "powershell.exe -ExecutionPolicy Bypass -File '${workspaceFolder}/deploy-with-cleanup.ps1' -SkipFrontend",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
