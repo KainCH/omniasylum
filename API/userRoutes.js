@@ -366,13 +366,21 @@ async function sendDiscordNotification(user, eventType, data) {
       // No description - let the title speak for itself
       description = null;
 
-      // Add Game field only (streamer name is already in the title)
+      // Add fields for stream title and category
       const fields = [];
 
-      // Add Game field - always show even if unknown
-      const gameValue = data?.game && data.game !== '' ? data.game : 'Unknown Game';
+      // Add Stream Title field - show actual title or placeholder
+      const streamTitle = data?.title && data.title !== '' ? data.title : 'Stream Title Not Set';
       fields.push({
-        name: '🎯 Game',
+        name: '📺 Title',
+        value: streamTitle,
+        inline: false
+      });
+
+      // Add Streaming Category field - always show even if unknown
+      const gameValue = data?.game && data.game !== '' ? data.game : 'Unknown Category';
+      fields.push({
+        name: '� Streaming',
         value: gameValue,
         inline: true
       });
@@ -426,9 +434,10 @@ async function sendDiscordNotification(user, eventType, data) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
     });
-    console.log(`✅ Discord notification sent: ${eventType} (${templateStyle}) for ${user?.username}`);
+    console.log(`✅ Discord notification sent: ${eventType} for ${user?.username}`);
   } catch (error) {
     console.error(`❌ Discord notification failed: ${eventType} for ${user?.username}:`, error);
+    throw error; // Re-throw to ensure proper error handling upstream
   }
 }
 
