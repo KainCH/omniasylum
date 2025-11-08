@@ -22,6 +22,15 @@ function DiscordWebhookSettings({ user }) {
     enabled: false
   })
 
+  // Debug form state changes
+  useEffect(() => {
+    console.log('🔄 FORM STATE CHANGED:', {
+      webhookUrl: formState.webhookUrl,
+      enabled: formState.enabled,
+      timestamp: new Date().toISOString()
+    })
+  }, [formState])
+
   // Notification settings with proper initialization
   const [notificationSettings, setNotificationSettings] = useState({
     enableChannelNotifications: false,
@@ -100,18 +109,18 @@ function DiscordWebhookSettings({ user }) {
     console.log('⚙️ Loading webhook configuration for configuration tab...')
     try {
       await withLoading(async () => {
-        console.log('🔗 Fetching current webhook URL...')
-        const webhookData = await userAPI.getDiscordWebhook()
-        console.log('🔗 Webhook data received:', webhookData)
-        console.log('🔗 Extracted webhook URL:', webhookData?.webhookUrl)
-        console.log('🔗 Extracted enabled status:', webhookData?.enabled)
+        console.log('🔗 Fetching configuration from consolidated notification settings...')
+        const discordData = await notificationAPI.getUserSettings()
+        console.log('🔗 Consolidated data received:', discordData)
+        console.log('🔗 Extracted webhook URL:', discordData?.webhookUrl)
+        console.log('🔗 Extracted enabled status:', discordData?.enabled)
 
-        updateField('webhookUrl', webhookData?.webhookUrl || '')
-        updateField('enabled', webhookData?.enabled || false)
+        updateField('webhookUrl', discordData?.webhookUrl || '')
+        updateField('enabled', discordData?.enabled || false)
 
-        if (webhookData?.webhookUrl) {
+        if (discordData?.webhookUrl) {
           console.log('✅ Existing webhook configuration loaded')
-          showMessage(`Configuration loaded: Webhook ${webhookData?.enabled ? 'enabled' : 'disabled'}`, 'success')
+          showMessage(`Configuration loaded: Webhook ${discordData?.enabled ? 'enabled' : 'disabled'}`, 'success')
         } else {
           console.log('ℹ️ No existing webhook configuration found')
           showMessage('No existing configuration found - you can set one up below', 'info')
@@ -135,8 +144,20 @@ function DiscordWebhookSettings({ user }) {
           console.log('🔗 Webhook data received:', webhookData)
           console.log('🔗 Extracted webhook URL:', webhookData?.webhookUrl)
           console.log('🔗 Extracted enabled status:', webhookData?.enabled)
+          console.log('🔧 UPDATING FORM FIELDS:', {
+            webhookUrl: webhookData?.webhookUrl || '',
+            enabled: webhookData?.enabled || false,
+            rawData: webhookData
+          })
+          console.log('🔧 UPDATING FORM FIELDS (loadUserDiscordSettings):', {
+            webhookUrl: webhookData?.webhookUrl || '',
+            enabled: webhookData?.enabled || false,
+            rawData: webhookData
+          })
           updateField('webhookUrl', webhookData?.webhookUrl || '')
           updateField('enabled', webhookData?.enabled || false)
+          console.log('🔧 FORM FIELDS UPDATED (loadUserDiscordSettings) - checking state next...')
+          console.log('🔧 FORM FIELDS UPDATED - checking state next...')
           console.log('✅ Webhook URL loaded successfully, form updated')
         } catch (error) {
           console.error('❌ Error loading webhook:', error)
@@ -149,6 +170,17 @@ function DiscordWebhookSettings({ user }) {
           console.log('📢 Loading notification settings...')
           const discordData = await notificationAPI.getUserSettings()
           console.log('📢 Notification data received:', discordData)
+
+          // Extract webhook data from the consolidated response
+          if (discordData?.webhookUrl !== undefined || discordData?.enabled !== undefined) {
+            console.log('🔗 Webhook data found in notification settings:', {
+              webhookUrl: discordData.webhookUrl ? `${discordData.webhookUrl.substring(0, 50)}...` : 'EMPTY',
+              enabled: discordData.enabled
+            })
+            updateField('webhookUrl', discordData.webhookUrl || '')
+            updateField('enabled', discordData.enabled || false)
+            console.log('🔧 Webhook fields updated from notification settings')
+          }
 
           // Set notification settings with proper defaults
           const settings = {

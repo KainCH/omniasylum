@@ -143,7 +143,9 @@ export const userAPI = {
 
   // User methods (for self-management)
   getDiscordWebhook: async () => {
-    return await apiRequest('/api/user/discord-webhook');
+    // Add cache-busting parameter to prevent browser caching
+    const timestamp = Date.now();
+    return await apiRequest(`/api/user/discord-webhook?_t=${timestamp}`);
   },
 
   updateDiscordWebhook: async (webhookData) => {

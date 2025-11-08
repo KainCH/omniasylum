@@ -131,6 +131,13 @@ class Database {
    * Create or update user
    */
   async saveUser(userData) {
+    // Get existing user data to preserve webhook URL and other settings
+    const existingUser = await this.getUser(userData.twitchUserId);
+    console.log(`💾 saveUser: Existing user data for ${userData.twitchUserId}:`, existingUser ? 'found' : 'not found');
+    if (existingUser) {
+      console.log(`🔗 saveUser: Preserving existing webhook URL: ${existingUser.discordWebhookUrl || 'none'}`);
+    }
+
     // Determine user role - riress is always admin
     let role = 'streamer';
     const safeUsername = userData.username ? userData.username.toString().toLowerCase() : '';
@@ -179,20 +186,22 @@ class Database {
       twitchUserId: userData.twitchUserId,
       username: userData.username,
       displayName: userData.displayName,
-      email: userData.email || '',
-      profileImageUrl: userData.profileImageUrl || '',
+      email: userData.email || existingUser?.email || '',
+      profileImageUrl: userData.profileImageUrl || existingUser?.profileImageUrl || '',
       accessToken: userData.accessToken,
       refreshToken: userData.refreshToken,
       tokenExpiry: userData.tokenExpiry,
-      role: userData.role || role,
-      features: JSON.stringify(userData.features || defaultFeatures),
-      overlaySettings: JSON.stringify(userData.overlaySettings || defaultOverlaySettings),
-      discordWebhookUrl: userData.discordWebhookUrl || '',
-      isActive: userData.isActive !== undefined ? userData.isActive : true,
-      streamStatus: userData.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
-      createdAt: userData.createdAt || new Date().toISOString(),
+      role: userData.role || existingUser?.role || role,
+      features: JSON.stringify(userData.features || (existingUser?.features ? JSON.parse(existingUser.features) : defaultFeatures)),
+      overlaySettings: JSON.stringify(userData.overlaySettings || (existingUser?.overlaySettings ? JSON.parse(existingUser.overlaySettings) : defaultOverlaySettings)),
+      discordWebhookUrl: userData.discordWebhookUrl || existingUser?.discordWebhookUrl || '',
+      isActive: userData.isActive !== undefined ? userData.isActive : (existingUser?.isActive !== undefined ? existingUser.isActive : true),
+      streamStatus: userData.streamStatus || existingUser?.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
+      createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
+
+    console.log(`💾 saveUser: Final user object discordWebhookUrl: ${user.discordWebhookUrl || 'none'}`);
 
     if (this.mode === 'azure') {
       await this.usersClient.upsertEntity(user, 'Replace');

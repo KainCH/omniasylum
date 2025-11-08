@@ -145,6 +145,7 @@ router.put('/overlay-settings', requireAuth, async (req, res) => {
  * GET /api/user/discord-webhook
  */
 router.get('/discord-webhook', requireAuth, async (req, res) => {
+  console.log(`🚨 WEBHOOK GET REQUEST RECEIVED - URL: ${req.originalUrl}, Method: ${req.method}`);
   try {
     const userId = req.user.userId;
     console.log(`🔍 WEBHOOK GET - User: ${req.user.username} (ID: ${userId}, Type: ${typeof userId})`);
@@ -165,9 +166,9 @@ router.get('/discord-webhook', requireAuth, async (req, res) => {
       }
     }
 
-    // Discord notifications are enabled when webhook URL is present (no separate feature flag)
+    // Use the enabled status from the database, don't recalculate it
     const webhookUrl = webhookData.webhookUrl || '';
-    const enabled = !!(webhookUrl && webhookUrl.trim());
+    const enabled = webhookData.enabled !== undefined ? webhookData.enabled : false;
 
     const result = {
       webhookUrl: webhookUrl,
@@ -460,8 +461,23 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
       swearThresholds: '25,50,100,250,500,1000,2500'
     };
 
-    console.log(`✅ Discord settings retrieved for ${req.user.username}`);
-    res.json(discordSettings);
+    // Include webhook data in the response
+    const webhookUrl = user?.discordWebhookUrl || '';
+    const webhookEnabled = !!(webhookUrl && webhookUrl.trim());
+
+    const completeSettings = {
+      ...discordSettings,
+      // Add webhook data to the settings response
+      webhookUrl: webhookUrl,
+      enabled: webhookEnabled
+    };
+
+    console.log(`✅ Discord settings retrieved for ${req.user.username}`, {
+      hasWebhookUrl: !!webhookUrl,
+      webhookEnabled: webhookEnabled,
+      webhookUrlLength: webhookUrl.length
+    });
+    res.json(completeSettings);
   } catch (error) {
     console.error('❌ Error getting Discord settings:', error);
     res.status(500).json({ error: 'Failed to get Discord notification settings' });
