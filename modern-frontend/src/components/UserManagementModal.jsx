@@ -556,10 +556,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           username={user.username}
           overlaySettings={formState?.overlaySettings || {}}
           onUpdate={(settings) => {
-            setFormState(prev => ({
-              ...prev,
-              overlaySettings: settings
-            }));
+            updateField('overlaySettings', settings);
           }}
           onClose={() => setShowOverlayManager(false)}
         />
