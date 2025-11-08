@@ -305,7 +305,7 @@ async function sendDiscordNotification(user, eventType, data) {
       death_milestone: true,
       swear_milestone: true,
       stream_start: true,
-      stream_end: true,
+      stream_end: false, // Disabled by default - user preference
       follower_goal: false,
       subscriber_milestone: false,
       channel_point_redemption: false

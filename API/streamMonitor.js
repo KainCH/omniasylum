@@ -225,13 +225,15 @@ class StreamMonitor extends EventEmitter {
         apiClient: userApiClient
       });
 
-      // Subscribe to stream online events (use Twitch user ID as broadcaster_user_id)
-      const onlineSubscription = userListener.onStreamOnline(twitchUserId, (event) => {
+      // Subscribe to stream online events (use our internal userId which is the Twitch user ID)
+      console.log(`🎯 Subscribing to EventSub for user ID: ${userId} (${user.username})`);
+
+      const onlineSubscription = userListener.onStreamOnline(userId, (event) => {
         this.handleStreamOnline(event, userId);
       });
 
       // Subscribe to stream offline events
-      const offlineSubscription = userListener.onStreamOffline(twitchUserId, (event) => {
+      const offlineSubscription = userListener.onStreamOffline(userId, (event) => {
         this.handleStreamOffline(event, userId);
       });
 
@@ -273,7 +275,7 @@ class StreamMonitor extends EventEmitter {
       const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
         console.log(`🏆 Subscribing to channel point redemptions for ${user.username}`);
-        redemptionSubscription = userListener.onChannelRedemptionAdd(twitchUserId, (event) => {
+        redemptionSubscription = userListener.onChannelRedemptionAdd(userId, (event) => {
           this.handleRewardRedemption(event, userId);
         });
       }
@@ -282,7 +284,7 @@ class StreamMonitor extends EventEmitter {
       let followSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`👥 Subscribing to follow events for ${user.username}`);
-        followSubscription = userListener.onChannelFollow(twitchUserId, twitchUserId, (event) => {
+        followSubscription = userListener.onChannelFollow(userId, userId, (event) => {
           this.handleFollowEvent(event, userId);
         });
       }
@@ -291,7 +293,7 @@ class StreamMonitor extends EventEmitter {
       let raidSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`🚨 Subscribing to raid events for ${user.username}`);
-        raidSubscription = userListener.onChannelRaidTo(twitchUserId, (event) => {
+        raidSubscription = userListener.onChannelRaidTo(userId, (event) => {
           this.handleRaidEvent(event, userId);
         });
       }
@@ -300,7 +302,7 @@ class StreamMonitor extends EventEmitter {
       let subscribeSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`⭐ Subscribing to subscription events for ${user.username}`);
-        subscribeSubscription = userListener.onChannelSubscription(twitchUserId, (event) => {
+        subscribeSubscription = userListener.onChannelSubscription(userId, (event) => {
           this.handleSubscribeEvent(event, userId);
         });
       }
@@ -309,7 +311,7 @@ class StreamMonitor extends EventEmitter {
       let subGiftSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`💝 Subscribing to gift subscription events for ${user.username}`);
-        subGiftSubscription = userListener.onChannelSubscriptionGift(twitchUserId, (event) => {
+        subGiftSubscription = userListener.onChannelSubscriptionGift(userId, (event) => {
           this.handleSubGiftEvent(event, userId);
         });
       }
@@ -318,7 +320,7 @@ class StreamMonitor extends EventEmitter {
       let subMessageSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`📝 Subscribing to resub message events for ${user.username}`);
-        subMessageSubscription = userListener.onChannelSubscriptionMessage(twitchUserId, (event) => {
+        subMessageSubscription = userListener.onChannelSubscriptionMessage(userId, (event) => {
           this.handleSubMessageEvent(event, userId);
         });
       }
@@ -327,7 +329,7 @@ class StreamMonitor extends EventEmitter {
       let cheerSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`💎 Subscribing to cheer/bits events for ${user.username}`);
-        cheerSubscription = userListener.onChannelCheer(twitchUserId, (event) => {
+        cheerSubscription = userListener.onChannelCheer(userId, (event) => {
           this.handleCheerEvent(event, userId);
         });
       }
@@ -356,7 +358,7 @@ class StreamMonitor extends EventEmitter {
       };
 
       this.connectedUsers.set(userId, {
-        twitchUserId,
+        twitchUserId: userId,
         username: user.username,
         userApiClient,
         userListener,
@@ -382,7 +384,7 @@ class StreamMonitor extends EventEmitter {
       }
 
       // Check current stream status
-      await this.checkCurrentStreamStatus(userId, twitchUserId, userApiClient);
+      await this.checkCurrentStreamStatus(userId, userId, userApiClient);
 
       return true;
     } catch (error) {
@@ -595,39 +597,10 @@ class StreamMonitor extends EventEmitter {
         console.log(`🎬 Auto-ended stream session for ${user.username}`);
       }
 
-      // Send Discord offline notification if webhook is configured
-      try {
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const webhookUrl = webhookData?.webhookUrl || '';
-        const discordWebhookConfigured = !!webhookUrl;
+      // No Discord notification for stream end - only log the event
+      console.log(`� Stream session ended for ${user.username} (no Discord notification sent)`);
 
-        if (discordWebhookConfigured && counters.streamStarted) {
-          console.log(`📤 Sending Discord offline notification for ${user.username}...`);
-
-          // Calculate stream duration
-          const startTime = new Date(counters.streamStarted);
-          const endTime = new Date();
-          const durationMs = endTime - startTime;
-          const hours = Math.floor(durationMs / (1000 * 60 * 60));
-          const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-          const duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-          await this.sendDiscordNotification({
-            webhookUrl,
-            username: user.username,
-            displayName: user.displayName,
-            profileImageUrl: user.profileImageUrl,
-            streamTitle: 'Stream Ended',
-            gameName: null,
-            streamUrl: `https://twitch.tv/${user.username}`,
-            isStreamEnd: true,
-            duration: duration
-          });
-          console.log(`✅ Discord offline notification sent for ${user.username}`);
-        }
-      } catch (error) {
-        console.error(`❌ Error sending Discord offline notification for ${user.username}:`, error);
-      }
+      // Stream offline notifications disabled by user preference
 
       // Emit event for real-time updates
       this.emit('streamOffline', {
@@ -1301,56 +1274,17 @@ class StreamMonitor extends EventEmitter {
    */
   async sendDiscordNotification(data) {
     try {
+      // Skip all stream end notifications
+      if (data.isStreamEnd) {
+        console.log(`🚫 Stream end Discord notification skipped for ${data.displayName} (disabled by user preference)`);
+        return;
+      }
+
       let discordPayload;
 
-      if (data.isStreamEnd) {
-        // Stream end notification
-        discordPayload = {
-          content: `⚫ **${data.displayName}** has ended their stream`,
-          embeds: [{
-            author: {
-              name: data.displayName,
-              url: data.streamUrl,
-              icon_url: data.profileImageUrl
-            },
-            title: `📺 Stream Ended`,
-            url: data.streamUrl,
-            description: `> **${data.displayName}** has finished streaming.\n\n⏱️ **Duration:** ${data.duration}\n💙 **Thanks for watching!**`,
-            color: 0x666666, // Gray color for ended stream
-            fields: [
-              {
-                name: '⏱️ Duration',
-                value: data.duration,
-                inline: true
-              },
-              {
-                name: '👤 Streamer',
-                value: data.displayName,
-                inline: true
-              }
-            ],
-            footer: {
-              text: 'Twitch • Stream Ended',
-              icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
-            },
-            timestamp: new Date().toISOString()
-          }],
-          components: [{
-            type: 1, // Action Row
-            components: [{
-              type: 2, // Button
-              style: 5, // Link button
-              label: 'Visit Channel →',
-              url: data.streamUrl,
-              emoji: {
-                name: '📺'
-              }
-            }]
-          }]
-        };
-      } else {
-        // Stream start notification (existing)
-        discordPayload = {
+      // Handle stream start notifications only
+      // Stream start notification
+      discordPayload = {
           content: `🔴 **${data.displayName}** is now live on Twitch!`,
           embeds: [{
             author: {
@@ -1396,7 +1330,6 @@ class StreamMonitor extends EventEmitter {
             }]
           }]
         };
-      }
 
       const response = await fetch(data.webhookUrl, {
         method: 'POST',

@@ -83,6 +83,14 @@ function App() {
     }
   }) // ALWAYS start in user mode
 
+  // EventSub monitoring state
+  const [eventSubStatus, setEventSubStatus] = useState({
+    connected: false,
+    monitoring: false,
+    lastConnected: null
+  })
+  const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
+
   // Refs for interval management
   const streamingHeartbeatRef = useRef(null)
 
@@ -244,6 +252,9 @@ function App() {
 
         // Fetch stream status and overlay settings
         fetchUserSettings(token)
+
+        // Check EventSub monitoring status
+        checkEventSubStatus()
 
         // Also decode token to get user info if we haven't already
         if (!username) {
@@ -483,6 +494,99 @@ function App() {
     }
   }
 
+  // EventSub monitoring functions
+  const startEventSubMonitoring = async () => {
+    setIsStartingMonitoring(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/monitor/start', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ EventSub monitoring started:', result)
+
+        setEventSubStatus({
+          connected: true,
+          monitoring: true,
+          lastConnected: new Date().toISOString()
+        })
+
+        alert('🎬 Stream monitoring started! We\'ll detect when you go live automatically.')
+      } else {
+        const error = await response.json()
+        console.error('❌ Failed to start monitoring:', error)
+        alert(`Failed to start monitoring: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('❌ Error starting EventSub monitoring:', error)
+      alert('Failed to start stream monitoring')
+    } finally {
+      setIsStartingMonitoring(false)
+    }
+  }
+
+  const stopEventSubMonitoring = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/monitor/stop', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ EventSub monitoring stopped:', result)
+
+        setEventSubStatus({
+          connected: false,
+          monitoring: false,
+          lastConnected: null
+        })
+
+        alert('⏹️ Stream monitoring stopped.')
+      } else {
+        const error = await response.json()
+        console.error('❌ Failed to stop monitoring:', error)
+        alert(`Failed to stop monitoring: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('❌ Error stopping EventSub monitoring:', error)
+      alert('Failed to stop stream monitoring')
+    }
+  }
+
+  const checkEventSubStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/eventsub-status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const status = await response.json()
+        setEventSubStatus({
+          connected: status.connectionStatus?.connected || false,
+          monitoring: status.connectionStatus?.connected || false,
+          lastConnected: status.connectionStatus?.lastConnected || null
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
   const resetCounters = () => {
     if (window.confirm('Are you sure you want to reset all counters?')) {
       sendSocketEvent('resetCounters')
@@ -677,6 +781,68 @@ function App() {
           border: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
           <h3 style={{ marginBottom: '15px', color: '#fff' }}>🤖 Auto-Detected Stream Status</h3>
+
+          {/* EventSub Monitoring Status */}
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  backgroundColor: eventSubStatus.monitoring ? '#28a745' : '#dc3545'
+                }}></div>
+                <p style={{ margin: 0, color: '#ccc' }}>
+                  Monitoring: <strong style={{
+                    color: eventSubStatus.monitoring ? '#28a745' : '#dc3545'
+                  }}>
+                    {eventSubStatus.monitoring ? '🟢 Active' : '🔴 Inactive'}
+                  </strong>
+                </p>
+              </div>
+
+              {eventSubStatus.monitoring ? (
+                <button
+                  onClick={stopEventSubMonitoring}
+                  style={{
+                    background: '#dc3545',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  ⏹️ Stop
+                </button>
+              ) : (
+                <button
+                  onClick={startEventSubMonitoring}
+                  disabled={isStartingMonitoring}
+                  style={{
+                    background: isStartingMonitoring ? '#6c757d' : '#28a745',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: isStartingMonitoring ? 'not-allowed' : 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  {isStartingMonitoring ? '⏳ Starting...' : '▶️ Start Monitoring'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Stream Status */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -698,7 +864,21 @@ function App() {
             </p>
           </div>
 
-          {counters.streamStarted ? (
+          {/* Status Messages */}
+          {!eventSubStatus.monitoring ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🚨 <strong>Stream monitoring not started!</strong><br/>
+                <small>Click "Start Monitoring" to detect when you go live on Twitch</small>
+              </p>
+            </div>
+          ) : counters.streamStarted ? (
             <div style={{
               background: 'rgba(40, 167, 69, 0.1)',
               border: '1px solid rgba(40, 167, 69, 0.3)',
@@ -720,7 +900,7 @@ function App() {
               color: '#6c757d'
             }}>
               <p style={{ margin: 0, fontSize: '14px' }}>
-                📡 <strong>Waiting for Twitch stream...</strong><br/>
+                📡 <strong>Monitoring active - waiting for stream...</strong><br/>
                 <small>Counters will activate automatically when you go live</small>
               </p>
             </div>

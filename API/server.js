@@ -851,11 +851,10 @@ async function startServer() {
     // Auto-connect Twitch bots for users with chatCommands feature enabled
     await autoStartTwitchBots();
 
-    // Initialize Stream Monitor
+    // Initialize Stream Monitor (but don't auto-subscribe to users)
     const streamMonitorInitialized = await streamMonitor.initialize();
     if (streamMonitorInitialized) {
-      // Subscribe to all active users for stream monitoring
-      await streamMonitor.subscribeToAllUsers();
+      console.log('✅ Stream Monitor ready - users can start monitoring manually');
 
       // Handle stream events
       streamMonitor.on('streamOnline', async (data) => {

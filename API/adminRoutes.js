@@ -359,7 +359,7 @@ router.put('/users/:userId/role', requireAuth, requireAdmin, async (req, res) =>
     }
 
     // Prevent user from demoting themselves if they're the only admin
-    if (req.user.twitchUserId === targetUserId && req.user.role === 'admin') {
+    if (req.user.userId === targetUserId && req.user.role === 'admin') {
       const users = await database.getAllUsers();
       const adminCount = users.filter(u => u.role === 'admin').length;
 
@@ -1064,7 +1064,7 @@ router.get('/users/:userId/discord-settings', requireAuth, requireAdmin, async (
         death_milestone: true,
         swear_milestone: true,
         stream_start: true,
-        stream_end: true,
+        stream_end: false, // Disabled by default - user preference
         follower_goal: false,
         subscriber_milestone: false,
         channel_point_redemption: false

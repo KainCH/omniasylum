@@ -346,6 +346,79 @@ router.post('/refresh', async (req, res) => {
 });
 
 /**
+ * Refresh JWT token
+ * POST /auth/refresh-jwt
+ */
+router.post('/refresh-jwt', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const jwtSecret = await getJwtSecret();
+
+    let decoded;
+    try {
+      // Try to verify token first
+      decoded = jwt.verify(token, jwtSecret);
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        // Decode without verification for expired tokens
+        decoded = jwt.decode(token);
+      } else {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+    }
+
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ error: 'Invalid token format' });
+    }
+
+    // Get user from database
+    const user = await database.getUser(decoded.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user's account is still active
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Account disabled' });
+    }
+
+    // Generate new JWT token
+    const newJwtToken = jwt.sign(
+      {
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role
+      },
+      jwtSecret,
+      { expiresIn: '30d' }
+    );
+
+    console.log(`🔄 JWT token manually refreshed for user: ${user.username}`);
+
+    res.json({
+      token: newJwtToken,
+      user: {
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role
+      },
+      expiresIn: '30d'
+    });
+
+  } catch (error) {
+    console.error('Error refreshing JWT token:', error);
+    res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
+/**
  * Logout (invalidate session)
  * POST /auth/logout
  */

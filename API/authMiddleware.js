@@ -14,6 +14,79 @@ async function getJwtSecret() {
 }
 
 /**
+ * Attempt to refresh expired JWT token
+ */
+async function attemptJwtRefresh(req, res, next, expiredToken) {
+  try {
+    console.log('🔄 Attempting JWT token refresh...');
+
+    // Decode expired token without verification to get user info
+    const jwtSecret = await getJwtSecret();
+    const decoded = jwt.decode(expiredToken);
+
+    if (!decoded || !decoded.userId) {
+      console.log('🔐 JWT Refresh - FAILED: Cannot decode expired token');
+      return res.status(401).json({ error: 'Token expired and cannot be refreshed' });
+    }
+
+    // Get user from database
+    const user = await database.getUser(decoded.userId);
+    if (!user) {
+      console.log('🔐 JWT Refresh - FAILED: User not found:', decoded.userId);
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Check if user's Twitch token is still valid (or can be refreshed)
+    const tokenExpiry = new Date(user.tokenExpiry);
+    const now = new Date();
+
+    // If Twitch token expired more than 60 days ago, user needs to re-authenticate
+    if (tokenExpiry < new Date(now - 60 * 24 * 60 * 60 * 1000)) {
+      console.log('🔐 JWT Refresh - FAILED: Twitch token too old, re-auth required');
+      return res.status(401).json({
+        error: 'Authentication expired',
+        requireReauth: true,
+        authUrl: '/auth/twitch'
+      });
+    }
+
+    // Generate new JWT token
+    const newJwtToken = jwt.sign(
+      {
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role
+      },
+      jwtSecret,
+      { expiresIn: '30d' }
+    );
+
+    console.log(`🔄 JWT token refreshed for user: ${user.username}`);
+
+    // Set the new token in response header
+    res.setHeader('X-New-Token', newJwtToken);
+    res.setHeader('X-Token-Refreshed', 'true');
+
+    // Attach user to request and continue
+    req.user = {
+      userId: user.twitchUserId,
+      username: user.username,
+      displayName: user.displayName,
+      accessToken: user.accessToken,
+      refreshToken: user.refreshToken,
+      role: user.role
+    };
+
+    next();
+
+  } catch (error) {
+    console.error('🔐 JWT Refresh - Error:', error);
+    return res.status(401).json({ error: 'Token expired and refresh failed' });
+  }
+}
+
+/**
  * Middleware to verify JWT token and attach user to request
  */
 async function requireAuth(req, res, next) {
@@ -63,7 +136,8 @@ async function requireAuth(req, res, next) {
         return res.status(401).json({ error: 'Invalid token' });
       }
       if (error.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'Token expired' });
+        // Attempt to refresh JWT token automatically
+        return await attemptJwtRefresh(req, res, next, token);
       }
       throw error;
     }
