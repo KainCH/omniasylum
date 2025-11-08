@@ -15,6 +15,7 @@ const adminRoutes = require('./adminRoutes');
 const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
 const userRoutes = require('./userRoutes');
+const debugRoutes = require('./debugRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -173,6 +174,9 @@ app.use('/api/rewards', channelPointRoutes);
 // Alert management routes (requires authentication)
 const alertRoutes = require('./alertRoutes');
 app.use('/api/alerts', alertRoutes);
+
+// Debug routes (requires authentication)
+app.use('/api/debug', debugRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {

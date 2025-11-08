@@ -160,7 +160,6 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
             // Use our notification helper to create proper settings
             const settings = createDefaultNotificationSettings()
             Object.assign(settings, {
-              enableDiscordNotifications: discordData?.enableDiscordNotifications || false,
               enableChannelNotifications: discordData?.enableChannelNotifications || false,
               deathMilestoneEnabled: discordData?.deathMilestoneEnabled || false,
               swearMilestoneEnabled: discordData?.swearMilestoneEnabled || false,
@@ -443,22 +442,16 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                   <h4>Notification Types</h4>
                   <div className="notification-grid">
                     <NotificationTypeCard
-                      title="Discord Notifications"
-                      description="Send notifications to Discord channel"
-                      enabled={notificationSettings?.enableDiscordNotifications || false}
-                      onChange={(enabled) => updateNotificationSetting('enableDiscordNotifications', enabled)}
-                      icon="🔔"
-                      disabled={isLoading}
-                    />
-
-                    <NotificationTypeCard
                       title="Twitch Chat Notifications"
                       description="Send notifications to Twitch chat"
                       enabled={notificationSettings?.enableChannelNotifications || false}
                       onChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
-                      icon="💬"
+                      icon="�"
                       disabled={isLoading}
                     />
+                  </div>
+                  <div className="discord-notification-info">
+                    <p><strong>ℹ️ Discord Notifications:</strong> Automatically enabled when webhook URL is configured above.</p>
                   </div>
                 </div>
 

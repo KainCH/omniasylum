@@ -267,12 +267,12 @@ router.get('/monitor/status', requireAuth, async (req, res) => {
 router.post('/monitor/subscribe', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
-    const success = await streamMonitor.subscribeToUser(req.user.twitchUserId);
+    const success = await streamMonitor.subscribeToUser(req.user.userId);
 
     if (success) {
       res.json({
         message: 'Successfully subscribed to stream monitoring',
-        userId: req.user.twitchUserId
+        userId: req.user.userId
       });
     } else {
       res.status(400).json({ error: 'Failed to subscribe to stream monitoring' });
@@ -658,6 +658,41 @@ router.post('/cancel-prep', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ Error cancelling stream prep:', error);
     res.status(500).json({ error: error?.message || 'Failed to cancel stream prep' });
+  }
+});
+
+/**
+ * Get EventSub connection status and subscription info
+ * GET /api/stream/eventsub-status
+ */
+router.get('/eventsub-status', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const database = require('./database');
+
+    // Get current status from streamMonitor
+    const connectionStatus = streamMonitor.getUserConnectionStatus(req.user.twitchUserId);
+
+    // Get user notification settings
+    const notificationSettings = await database.getUserNotificationSettings(req.user.twitchUserId);
+    const discordWebhook = await database.getUserDiscordWebhook(req.user.twitchUserId);
+
+    res.json({
+      userId: req.user.twitchUserId,
+      username: req.user.username,
+      connectionStatus: connectionStatus || {
+        connected: false,
+        subscriptions: [],
+        lastConnected: null
+      },
+      notificationSettings: notificationSettings,
+      discordWebhook: !!discordWebhook, // Don't expose the actual webhook URL
+      subscriptionsEnabled: !!(notificationSettings && discordWebhook),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error getting EventSub status:', error);
+    res.status(500).json({ error: error?.message || 'Failed to get EventSub status' });
   }
 });
 

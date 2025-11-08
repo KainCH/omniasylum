@@ -102,6 +102,42 @@ class StreamMonitor extends EventEmitter {
   }
 
   /**
+   * Check if user should receive notifications based on their settings
+   * @param {string} userId - The user ID to check
+   * @returns {Promise<{shouldNotifyDiscord: boolean, shouldNotifyChannel: boolean, shouldNotifyAny: boolean}>}
+   */
+  async checkUserNotificationSettings(userId) {
+    try {
+      // Check Discord webhook settings
+      const webhookData = await database.getUserDiscordWebhook(userId);
+      const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+      // Check notification settings - simplified to webhook-only for Discord
+      const notificationData = await database.getUserNotificationSettings(userId);
+      const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+      const shouldNotifyDiscord = discordWebhookEnabled; // Simplified: webhook presence = Discord notifications enabled
+      const shouldNotifyChannel = enableChannelNotifications;
+      const shouldNotifyAny = shouldNotifyDiscord || shouldNotifyChannel;
+
+      return {
+        shouldNotifyDiscord,
+        shouldNotifyChannel,
+        shouldNotifyAny,
+        settings: notificationData || {}
+      };
+    } catch (error) {
+      console.warn(`⚠️ Could not load notification settings for user ${userId}:`, error.message);
+      return {
+        shouldNotifyDiscord: false,
+        shouldNotifyChannel: false,
+        shouldNotifyAny: false,
+        settings: {}
+      };
+    }
+  }
+
+  /**
    * Get EventSub connection status for all users
    * Useful for debugging and monitoring
    */
@@ -189,7 +225,7 @@ class StreamMonitor extends EventEmitter {
         apiClient: userApiClient
       });
 
-      // Subscribe to stream online events (use twitchUserId from addUserForToken)
+      // Subscribe to stream online events (use Twitch user ID as broadcaster_user_id)
       const onlineSubscription = userListener.onStreamOnline(twitchUserId, (event) => {
         this.handleStreamOnline(event, userId);
       });
@@ -199,43 +235,80 @@ class StreamMonitor extends EventEmitter {
         this.handleStreamOffline(event, userId);
       });
 
-      // Subscribe to channel point redemptions (if enabled)
+      // Get user notification settings to determine which events to subscribe to
+      console.log(`🔍 Checking notification settings for ${user.username}...`);
+
+      // Ultra-simple notification logic: Only check if Discord webhook is configured
+      let discordWebhookConfigured = false;
+
+      try {
+        // Check if user has Discord webhook configured
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        discordWebhookConfigured = !!(webhookData?.webhookUrl);
+        console.log(`🔗 Discord webhook configured for ${user.username}: ${discordWebhookConfigured ? 'yes' : 'no'}`);
+
+        // Feature flag check removed - webhook presence is sufficient
+        // discordNotificationsEnabled = await database.hasFeature(userId, 'discordNotifications');
+        console.log(`🔔 EventSub subscription will be ${discordWebhookConfigured ? 'enabled' : 'disabled'} for ${user.username}`);
+
+      } catch (error) {
+        console.warn(`⚠️ Could not check Discord webhook status for ${user.username}:`, error.message);
+        discordWebhookConfigured = false;
+      }
+
+      // Simple decision: Subscribe to events if Discord webhook is configured
+      const shouldSubscribeToAlerts = discordWebhookConfigured;
+
+      // Enable milestones if alerts are enabled (can be made configurable later)
+      const shouldSubscribeToMilestones = shouldSubscribeToAlerts;
+
+      console.log(`🎯 EventSub subscription decisions for ${user.username}:`);
+      console.log(`   - Discord webhook configured: ${discordWebhookConfigured ? '✅' : '❌'}`);
+      console.log(`   - Will create EventSub subscriptions: ${shouldSubscribeToAlerts ? '✅' : '❌'}`);
+      console.log(`   - Alerts (follows, subs, raids, cheers): ${shouldSubscribeToAlerts ? '✅' : '❌'}`);
+      console.log(`   - Milestones: ${shouldSubscribeToMilestones ? '✅' : '❌'}`);
+
+      // Subscribe to channel point redemptions (if feature enabled)
       let redemptionSubscription = null;
       const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
+        console.log(`🏆 Subscribing to channel point redemptions for ${user.username}`);
         redemptionSubscription = userListener.onChannelRedemptionAdd(twitchUserId, (event) => {
           this.handleRewardRedemption(event, userId);
         });
       }
 
-      // Subscribe to follow events (if alerts enabled)
+      // Subscribe to follow events (if user wants notifications)
       let followSubscription = null;
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`👥 Subscribing to follow events for ${user.username}`);
         followSubscription = userListener.onChannelFollow(twitchUserId, twitchUserId, (event) => {
           this.handleFollowEvent(event, userId);
         });
       }
 
-      // Subscribe to raid events (if alerts enabled)
+      // Subscribe to raid events (if user wants notifications)
       let raidSubscription = null;
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`🚨 Subscribing to raid events for ${user.username}`);
         raidSubscription = userListener.onChannelRaidTo(twitchUserId, (event) => {
           this.handleRaidEvent(event, userId);
         });
       }
 
-      // Subscribe to subscription events (if alerts enabled)
+      // Subscribe to subscription events (if user wants notifications)
       let subscribeSubscription = null;
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`⭐ Subscribing to subscription events for ${user.username}`);
         subscribeSubscription = userListener.onChannelSubscription(twitchUserId, (event) => {
           this.handleSubscribeEvent(event, userId);
         });
       }
 
-      // Subscribe to subscription gift events (if alerts enabled)
+      // Subscribe to subscription gift events (if user wants notifications)
       let subGiftSubscription = null;
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`💝 Subscribing to gift subscription events for ${user.username}`);
         subGiftSubscription = userListener.onChannelSubscriptionGift(twitchUserId, (event) => {
           this.handleSubGiftEvent(event, userId);
         });
@@ -243,80 +316,45 @@ class StreamMonitor extends EventEmitter {
 
       // Subscribe to subscription message events (resubscriptions with messages)
       let subMessageSubscription = null;
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`📝 Subscribing to resub message events for ${user.username}`);
         subMessageSubscription = userListener.onChannelSubscriptionMessage(twitchUserId, (event) => {
           this.handleSubMessageEvent(event, userId);
         });
       }
 
-      // Subscribe to cheer/bits events (if alerts enabled)
+      // Subscribe to cheer/bits events (if user wants notifications)
       let cheerSubscription = null;
-      if (hasAlerts) {
+      if (shouldSubscribeToAlerts) {
+        console.log(`💎 Subscribing to cheer/bits events for ${user.username}`);
         cheerSubscription = userListener.onChannelCheer(twitchUserId, (event) => {
           this.handleCheerEvent(event, userId);
         });
       }
 
-      // Add enhanced connection lifecycle handlers
-      userListener.onConnect(() => {
-        console.log(`✅ EventSub WebSocket connected for ${user.username}`);
-        this.emit('userConnected', { userId, username: user.username });
+      // Note: Connection lifecycle will be handled by Twurple internally
+      // Focus on getting the basic subscriptions working first
+      console.log(`✅ EventSub WebSocket listener created for ${user.username}`);
 
-        // Start connection health monitoring with default timeout
-        // Twitch will send keepalive messages within this window
-        this.startConnectionHealthMonitoring(userId, this.defaultKeepaliveTimeout);
-      });
-
-      userListener.onDisconnect((manual, reason) => {
-        console.log(`⚠️  EventSub WebSocket disconnected for ${user.username}:`, { manual, reason });
-        this.emit('userDisconnected', { userId, username: user.username, manual, reason });
-
-        // Stop connection health monitoring
-        this.stopConnectionHealthMonitoring(userId);
-
-        // If not manually disconnected, attempt to resubscribe after a delay
-        if (!manual) {
-          console.log(`🔄 Will attempt to reconnect for ${user.username} in 30 seconds...`);
-          setTimeout(() => {
-            if (!this.connectedUsers.has(userId)) {
-              console.log(`🔄 Attempting to resubscribe for ${user.username}...`);
-              this.subscribeToUser(userId).catch(error => {
-                console.error(`❌ Failed to resubscribe for ${user.username}:`, error);
-              });
-            }
-          }, 30000); // 30 second delay before reconnection attempt
-        }
-      });
-
-      userListener.onRevoke((subscription) => {
-        console.log(`⚠️  EventSub subscription revoked for ${user.username}:`, {
-          subscriptionId: subscription.id,
-          type: subscription.type,
-          status: subscription.status
-        });
-
-        // Handle different revocation reasons
-        switch (subscription.status) {
-          case 'user_removed':
-            console.log(`👤 User ${user.username} no longer exists - removing from monitoring`);
-            this.unsubscribeFromUser(userId);
-            break;
-          case 'authorization_revoked':
-            console.log(`🔐 Authorization revoked for ${user.username} - user may need to re-authenticate`);
-            this.emit('authRevoked', { userId, username: user.username });
-            this.unsubscribeFromUser(userId);
-            break;
-          case 'version_removed':
-            console.log(`📦 EventSub version removed for ${user.username} - may need to update subscription type`);
-            // Could attempt to resubscribe with newer version
-            break;
-        }
-      });
+      // Note: Revocation events will be handled by Twurple internally
+      console.log(`� Setting up revocation handling for ${user.username}`);
 
       // Start the user's listener
       userListener.start();
 
       // Store user data and subscriptions
+      const subscriptions = {
+        online: !!onlineSubscription,
+        offline: !!offlineSubscription,
+        channelPoints: !!redemptionSubscription,
+        follows: !!followSubscription,
+        raids: !!raidSubscription,
+        subscriptions: !!subscribeSubscription,
+        giftSubs: !!subGiftSubscription,
+        resubMessages: !!subMessageSubscription,
+        cheers: !!cheerSubscription
+      };
+
       this.connectedUsers.set(userId, {
         twitchUserId,
         username: user.username,
@@ -330,10 +368,18 @@ class StreamMonitor extends EventEmitter {
         subscribeSubscription,
         subGiftSubscription,
         subMessageSubscription,
-        cheerSubscription
+        cheerSubscription,
+        subscriptions: Object.keys(subscriptions).filter(key => subscriptions[key])
       });
 
-      console.log(`🎬 Now monitoring streams for ${user.username} (${userId})`);
+      const activeSubscriptions = Object.keys(subscriptions).filter(key => subscriptions[key]);
+      console.log(`🎬 EventSub monitoring active for ${user.username} (${userId})`);
+      console.log(`📊 Active subscriptions (${activeSubscriptions.length}): ${activeSubscriptions.join(', ') || 'NONE'}`);
+
+      if (activeSubscriptions.length === 0) {
+        console.log(`⚠️  No EventSub subscriptions created for ${user.username} - Discord notifications will not work!`);
+        console.log(`   💡 To enable: Configure Discord webhook AND enable notification settings`);
+      }
 
       // Check current stream status
       await this.checkCurrentStreamStatus(userId, twitchUserId, userApiClient);
@@ -461,20 +507,19 @@ class StreamMonitor extends EventEmitter {
 
       console.log(`🔴 ${user.username} went LIVE! Title: "${event.streamTitle}"`);
 
-      // Send Discord notification if enabled
+      // Send Discord notification if webhook is configured
       try {
-        // Check if Discord notifications are enabled via the new settings system
-        const discordSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : {};
-        const discordEnabled = discordSettings?.enableDiscordNotifications || false;
-        const webhookUrl = user?.discordWebhookUrl || '';
+        // Simplified logic: Only check if webhook URL exists
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const webhookUrl = webhookData?.webhookUrl || '';
+        const discordWebhookConfigured = !!webhookUrl;
 
         console.log(`🔔 Discord notification check for ${user.username}:`, {
-          discordEnabled,
-          hasWebhookUrl: !!webhookUrl,
-          settings: discordSettings
+          discordWebhookConfigured,
+          hasWebhookUrl: !!webhookUrl
         });
 
-        if (discordEnabled && webhookUrl) {
+        if (discordWebhookConfigured) {
           console.log(`📤 Sending Discord live notification for ${user.username}...`);
           await this.sendDiscordNotification({
             webhookUrl,
@@ -487,7 +532,7 @@ class StreamMonitor extends EventEmitter {
           });
           console.log(`✅ Discord live notification sent for ${user.username}`);
         } else {
-          console.log(`⚠️ Discord notification skipped for ${user.username}: enabled=${discordEnabled}, hasWebhook=${!!webhookUrl}`);
+          console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
         }
       } catch (error) {
         console.error(`❌ Error sending Discord notification for ${user.username}:`, error);
@@ -542,6 +587,47 @@ class StreamMonitor extends EventEmitter {
       if (!user) return;
 
       console.log(`⚫ ${user.username} went OFFLINE`);
+
+      // Auto-end stream session if currently started
+      const counters = await database.getCounters(userId);
+      if (counters.streamStarted) {
+        await database.endStream(userId);
+        console.log(`🎬 Auto-ended stream session for ${user.username}`);
+      }
+
+      // Send Discord offline notification if webhook is configured
+      try {
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const webhookUrl = webhookData?.webhookUrl || '';
+        const discordWebhookConfigured = !!webhookUrl;
+
+        if (discordWebhookConfigured && counters.streamStarted) {
+          console.log(`📤 Sending Discord offline notification for ${user.username}...`);
+
+          // Calculate stream duration
+          const startTime = new Date(counters.streamStarted);
+          const endTime = new Date();
+          const durationMs = endTime - startTime;
+          const hours = Math.floor(durationMs / (1000 * 60 * 60));
+          const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+          const duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+          await this.sendDiscordNotification({
+            webhookUrl,
+            username: user.username,
+            displayName: user.displayName,
+            profileImageUrl: user.profileImageUrl,
+            streamTitle: 'Stream Ended',
+            gameName: null,
+            streamUrl: `https://twitch.tv/${user.username}`,
+            isStreamEnd: true,
+            duration: duration
+          });
+          console.log(`✅ Discord offline notification sent for ${user.username}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error sending Discord offline notification for ${user.username}:`, error);
+      }
 
       // Emit event for real-time updates
       this.emit('streamOffline', {
@@ -847,21 +933,39 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      // Check if user has alerts feature enabled
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for follow event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Follow notifications disabled for ${user.username} - skipping`);
         return;
       }
 
       console.log(`👥 New follower: ${event.userName} followed ${user.username}`);
 
-      // Emit follow event
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.follow');
+
+      // Emit follow event with alert data
       this.emit('newFollower', {
         userId,
         username: user.username,
         follower: event.userName,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        alert: alert
       });
 
     } catch (error) {
@@ -892,22 +996,40 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      // Check if user has alerts feature enabled
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for raid event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Raid notifications disabled for ${user.username} - skipping`);
         return;
       }
 
       console.log(`🚨 Raid: ${event.fromBroadcasterName} raided ${user.username} with ${event.viewers} viewers`);
 
-      // Emit raid event
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, 'channel.raid');
+
+      // Emit raid event with alert data
       this.emit('raidReceived', {
         userId,
         username: user.username,
         raider: event.fromBroadcasterName,
         viewers: event.viewers,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        alert: alert
       });
 
     } catch (error) {
@@ -937,9 +1059,24 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for subscribe event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Subscription notifications disabled for ${user.username} - skipping`);
         return;
       }
 
@@ -986,9 +1123,24 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for gift sub event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Gift subscription notifications disabled for ${user.username} - skipping`);
         return;
       }
 
@@ -1035,9 +1187,24 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for resub event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Resub notifications disabled for ${user.username} - skipping`);
         return;
       }
 
@@ -1086,9 +1253,24 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
-      if (!hasAlerts) {
-        console.log(`Alerts disabled for ${user.username}`);
+      // Check if user has notification settings that would want this alert
+      let shouldNotify = false;
+      try {
+        // Check Discord webhook settings
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Check notification settings - simplified to webhook-only for Discord
+        const notificationData = await database.getUserNotificationSettings(userId);
+        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
+
+        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
+      } catch (error) {
+        console.warn(`⚠️ Could not load notification settings for cheer event (${user.username}):`, error.message);
+      }
+
+      if (!shouldNotify) {
+        console.log(`📢 Cheer notifications disabled for ${user.username} - skipping`);
         return;
       }
 
@@ -1119,10 +1301,56 @@ class StreamMonitor extends EventEmitter {
    */
   async sendDiscordNotification(data) {
     try {
-      const response = await fetch(data.webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let discordPayload;
+
+      if (data.isStreamEnd) {
+        // Stream end notification
+        discordPayload = {
+          content: `⚫ **${data.displayName}** has ended their stream`,
+          embeds: [{
+            author: {
+              name: data.displayName,
+              url: data.streamUrl,
+              icon_url: data.profileImageUrl
+            },
+            title: `📺 Stream Ended`,
+            url: data.streamUrl,
+            description: `> **${data.displayName}** has finished streaming.\n\n⏱️ **Duration:** ${data.duration}\n💙 **Thanks for watching!**`,
+            color: 0x666666, // Gray color for ended stream
+            fields: [
+              {
+                name: '⏱️ Duration',
+                value: data.duration,
+                inline: true
+              },
+              {
+                name: '👤 Streamer',
+                value: data.displayName,
+                inline: true
+              }
+            ],
+            footer: {
+              text: 'Twitch • Stream Ended',
+              icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
+            },
+            timestamp: new Date().toISOString()
+          }],
+          components: [{
+            type: 1, // Action Row
+            components: [{
+              type: 2, // Button
+              style: 5, // Link button
+              label: 'Visit Channel →',
+              url: data.streamUrl,
+              emoji: {
+                name: '📺'
+              }
+            }]
+          }]
+        };
+      } else {
+        // Stream start notification (existing)
+        discordPayload = {
           content: `🔴 **${data.displayName}** is now live on Twitch!`,
           embeds: [{
             author: {
@@ -1167,7 +1395,13 @@ class StreamMonitor extends EventEmitter {
               }
             }]
           }]
-        })
+        };
+      }
+
+      const response = await fetch(data.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(discordPayload)
       });
 
       if (response.ok) {
@@ -1196,6 +1430,30 @@ class StreamMonitor extends EventEmitter {
       initialized: this.clientId !== null,
       connectedUsers: Array.from(this.connectedUsers.keys()),
       userCount: this.connectedUsers.size
+    };
+  }
+
+  /**
+   * Get connection status for a specific user
+   */
+  getUserConnectionStatus(userId) {
+    const userData = this.connectedUsers.get(userId);
+    if (!userData) {
+      return {
+        connected: false,
+        subscriptions: [],
+        lastConnected: null,
+        reconnectAttempts: 0
+      };
+    }
+
+    return {
+      connected: !!this.listener && this.listener.isConnected,
+      subscriptions: userData.subscriptions || [],
+      lastConnected: userData.lastConnected || null,
+      reconnectAttempts: userData.reconnectAttempts || 0,
+      hasValidToken: !!userData.apiClient,
+      userId: userId
     };
   }
 

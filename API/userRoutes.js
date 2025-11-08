@@ -147,67 +147,125 @@ router.put('/overlay-settings', requireAuth, async (req, res) => {
 router.get('/discord-webhook', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const user = await database.getUser(userId);
+    console.log(`🔍 WEBHOOK GET - User: ${req.user.username} (ID: ${userId}, Type: ${typeof userId})`);
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Call getUserDiscordWebhook instead of getUser to use enhanced logging
+    const webhookData = await database.getUserDiscordWebhook(userId);
+
+    if (!webhookData) {
+      console.log(`❌ No webhook data returned for user: ${userId}`);
+      // Fallback: try to get user directly
+      const user = await database.getUser(userId);
+      if (!user) {
+        console.log(`❌ User not found: ${userId}`);
+        return res.status(404).json({ error: 'User not found' });
+      } else {
+        console.log(`⚠️ User exists but getUserDiscordWebhook returned null`);
+        webhookData = { webhookUrl: '', enabled: false };
+      }
     }
 
-    // Check if feature is enabled
-    const hasFeature = await database.hasFeature(userId, 'discordNotifications');
+    // Discord notifications are enabled when webhook URL is present (no separate feature flag)
+    const webhookUrl = webhookData.webhookUrl || '';
+    const enabled = !!(webhookUrl && webhookUrl.trim());
 
-    res.json({
-      webhookUrl: user?.discordWebhookUrl || '',
-      enabled: hasFeature
+    const result = {
+      webhookUrl: webhookUrl,
+      enabled: enabled
+    };
+
+    console.log(`📋 WEBHOOK GET RESULT:`, {
+      webhookUrl: result.webhookUrl ? `${result.webhookUrl.substring(0, 50)}...` : 'EMPTY',
+      enabled: result.enabled,
+      fromGetUserDiscordWebhook: !!webhookData,
+      webhookPresent: !!webhookUrl
     });
+
+    res.json(result);
   } catch (error) {
     console.error('❌ Error fetching Discord webhook:', error);
     res.status(500).json({ error: 'Failed to fetch Discord webhook configuration' });
   }
-});
-
-/**
+});/**
  * Update Discord webhook URL
  * PUT /api/user/discord-webhook
  */
 router.put('/discord-webhook', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { webhookUrl, enabled } = req.body;
+    // Accept both 'webhookUrl' and 'discordWebhookUrl' for backward compatibility
+    const { webhookUrl, discordWebhookUrl, enabled } = req.body;
+    const actualWebhookUrl = webhookUrl || discordWebhookUrl;
 
-    console.log(`🔔 Updating Discord webhook for user ${req.user.username}:`, { webhookUrl: !!webhookUrl, enabled });
+    console.log(`🔔 WEBHOOK UPDATE START - User: ${req.user.username} (ID: ${userId})`);
+    console.log(`🔔 Raw request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔔 Field extraction:`, {
+      webhookUrl: webhookUrl,
+      discordWebhookUrl: discordWebhookUrl,
+      actualWebhookUrl: actualWebhookUrl,
+      webhookUrlType: typeof webhookUrl,
+      discordWebhookUrlType: typeof discordWebhookUrl,
+      actualWebhookUrlType: typeof actualWebhookUrl
+    });
+    console.log(`🔔 Request data:`, {
+      webhookUrl: actualWebhookUrl ? `${actualWebhookUrl.substring(0, 50)}...` : 'EMPTY',
+      enabled: enabled,
+      bodyKeys: Object.keys(req.body),
+      receivedFields: {
+        webhookUrl: !!webhookUrl,
+        discordWebhookUrl: !!discordWebhookUrl
+      }
+    });
 
     // Validate webhook URL format (basic validation)
-    if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+    if (actualWebhookUrl && !actualWebhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+      console.log(`❌ Invalid webhook URL format: ${actualWebhookUrl}`);
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
 
-    // Update webhook URL
-    await database.updateUserDiscordWebhook(userId, webhookUrl || '');
+    console.log(`💾 About to call database.updateUserDiscordWebhook(${userId}, ${actualWebhookUrl ? 'URL_PROVIDED' : 'EMPTY'})`);
 
-    // Update the discordNotifications feature flag based on enabled status
-    if (typeof enabled === 'boolean') {
-      const user = await database.getUser(userId);
-      const currentFeatures = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
-
-      const updatedFeatures = {
-        ...currentFeatures,
-        discordNotifications: enabled
-      };
-
-      await database.updateUserFeatures(userId, updatedFeatures);
-      console.log(`✅ Discord notifications feature flag updated: ${enabled}`);
+    // Update webhook URL with explicit error handling
+    let updatedUser;
+    try {
+      updatedUser = await database.updateUserDiscordWebhook(userId, actualWebhookUrl || '');
+      console.log(`✅ Database updateUserDiscordWebhook call completed successfully`);
+    } catch (dbError) {
+      console.error(`❌ Database updateUserDiscordWebhook failed:`, dbError);
+      console.error(`❌ Error details:`, {
+        name: dbError.name,
+        message: dbError.message,
+        stack: dbError.stack?.substring(0, 500)
+      });
+      throw dbError; // Re-throw to be caught by outer catch
     }
 
-    console.log(`✅ Discord webhook updated for ${req.user.username}`);
+    console.log(`✅ Database update completed. Verifying save...`);
+
+    // Verify the webhook was actually saved by reading it back
+    let verification;
+    try {
+      verification = await database.getUserDiscordWebhook(userId);
+      console.log(`🔍 Verification read completed:`, {
+        webhookUrl: verification?.webhookUrl ? `${verification.webhookUrl.substring(0, 50)}...` : 'EMPTY',
+        enabled: verification?.enabled
+      });
+    } catch (verifyError) {
+      console.error(`❌ Verification read failed:`, verifyError);
+      verification = null;
+    }
+
+    // No feature flag management needed - streamMonitor will check webhook presence directly
+
+    console.log(`🎉 WEBHOOK UPDATE SUCCESS - ${req.user.username}`);
 
     res.json({
       message: 'Discord webhook updated successfully',
-      webhookUrl: webhookUrl || '',
-      enabled: enabled
+      webhookUrl: actualWebhookUrl || '',
+      verified: verification
     });
   } catch (error) {
-    console.error('❌ Error updating Discord webhook:', error);
+    console.error('❌ WEBHOOK UPDATE FAILED:', error);
     res.status(500).json({ error: 'Failed to update Discord webhook' });
   }
 });

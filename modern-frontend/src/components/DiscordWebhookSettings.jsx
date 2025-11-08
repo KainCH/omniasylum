@@ -24,7 +24,6 @@ function DiscordWebhookSettings({ user }) {
 
   // Notification settings with proper initialization
   const [notificationSettings, setNotificationSettings] = useState({
-    enableDiscordNotifications: false,
     enableChannelNotifications: false,
     deathMilestoneEnabled: false,
     swearMilestoneEnabled: false,
@@ -61,7 +60,6 @@ function DiscordWebhookSettings({ user }) {
       setNotificationSettings(newSettings)
     } else {
       setNotificationSettings({
-        enableDiscordNotifications: false,
         enableChannelNotifications: false,
         deathMilestoneEnabled: false,
         swearMilestoneEnabled: false,
@@ -154,7 +152,6 @@ function DiscordWebhookSettings({ user }) {
 
           // Set notification settings with proper defaults
           const settings = {
-            enableDiscordNotifications: discordData?.enableDiscordNotifications || false,
             enableChannelNotifications: discordData?.enableChannelNotifications || false,
             deathMilestoneEnabled: discordData?.deathMilestoneEnabled || false,
             swearMilestoneEnabled: discordData?.swearMilestoneEnabled || false,
@@ -170,7 +167,6 @@ function DiscordWebhookSettings({ user }) {
           console.error('❌ Error loading notification settings:', error)
           // Set default notification settings on error
           setNotificationSettings({
-            enableDiscordNotifications: false,
             enableChannelNotifications: false,
             deathMilestoneEnabled: false,
             swearMilestoneEnabled: false,
@@ -328,39 +324,14 @@ function DiscordWebhookSettings({ user }) {
               {/* Notification Type Toggles */}
           <div className="notification-settings-grid">
 
-            {/* Discord Notifications */}
-            <div
-              className={`notification-option ${notificationSettings?.enableDiscordNotifications ? 'active' : ''}`}
-              onClick={() => {
-                console.log('🖱️ Discord notification card clicked')
-                console.log('📋 Current state:', {
-                  isLoading,
-                  hasWebhookUrl: !!formState?.webhookUrl,
-                  currentValue: notificationSettings?.enableDiscordNotifications
-                })
-                if (!isLoading) {
-                  const newValue = !notificationSettings?.enableDiscordNotifications
-                  console.log('🔄 Toggling Discord notifications to:', newValue)
-                  updateNotificationSetting('enableDiscordNotifications', newValue)
-                }
-              }}
-            >
+            {/* Discord Notifications - Auto-enabled when webhook is configured */}
+            <div className="notification-info">
               <div className="option-header">
                 <div className="option-icon">🔔</div>
                 <div className="option-content">
                   <h4>Discord Notifications</h4>
-                  <p>Send counter updates and milestones to your Discord channel</p>
+                  <p>Automatically enabled when webhook URL is configured above</p>
                 </div>
-              </div>
-              <div className="option-toggle">
-                <ToggleSwitch
-                  checked={notificationSettings?.enableDiscordNotifications || false}
-                  onChange={(e) => {
-                    console.log('🔧 Discord ToggleSwitch onChange fired:', e.target.checked)
-                    updateNotificationSetting('enableDiscordNotifications', e.target.checked)
-                  }}
-                  disabled={isLoading}
-                />
               </div>
             </div>
 

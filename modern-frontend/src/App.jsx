@@ -668,7 +668,7 @@ function App() {
           onExport={exportData}
         />
 
-        {/* Stream Status Controls */}
+        {/* Auto-Detected Stream Status */}
         <div style={{
           background: 'rgba(0, 0, 0, 0.3)',
           padding: '20px',
@@ -676,79 +676,55 @@ function App() {
           marginTop: '20px',
           border: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
-          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🎬 Stream Management</h3>
-          <p style={{ marginBottom: '10px', color: '#ccc' }}>
-            Status: <strong style={{ color: '#9146ff' }}>{streamStatus}</strong>
-          </p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {streamStatus === 'offline' && (
-              <button
-                onClick={() => updateStreamStatus('prep')}
-                style={{
-                  background: '#ffc107',
-                  color: '#000',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                🎭 Start Prepping
-              </button>
-            )}
-            {streamStatus === 'prepping' && (
-              <>
-                <button
-                  onClick={() => updateStreamStatus('go-live')}
-                  style={{
-                    background: '#28a745',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  🚀 Go Live
-                </button>
-                <button
-                  onClick={() => updateStreamStatus('cancel-prep')}
-                  style={{
-                    background: '#6c757d',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  ❌ Cancel
-                </button>
-              </>
-            )}
-            {(streamStatus === 'live' || streamStatus === 'ending') && (
-              <button
-                onClick={() => updateStreamStatus('end-stream')}
-                style={{
-                  background: '#dc3545',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                🏁 End Stream
-              </button>
-            )}
+          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🤖 Auto-Detected Stream Status</h3>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginBottom: '15px'
+          }}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              backgroundColor: counters.streamStarted ? '#28a745' : '#6c757d'
+            }}></div>
+            <p style={{ margin: 0, color: '#ccc' }}>
+              Status: <strong style={{
+                color: counters.streamStarted ? '#28a745' : '#9146ff'
+              }}>
+                {counters.streamStarted ? '🔴 Live' : '⚫ Offline'}
+              </strong>
+            </p>
           </div>
+
+          {counters.streamStarted ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🎬 <strong>Stream automatically detected!</strong><br/>
+                <small>Counter tracking started when you went live on Twitch</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                📡 <strong>Waiting for Twitch stream...</strong><br/>
+                <small>Counters will activate automatically when you go live</small>
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -897,9 +873,10 @@ function App() {
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• The overlay will automatically show when you go live!</p>
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Go to ⚙️ Overlay Settings to customize position & theme</p>
 
-                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>4. Go Live</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Click "Start Prepping" → "Go Live"</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Overlay will appear on your stream!</p>
+                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>4. Start Your Stream</strong></p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Just go live on Twitch as normal!</p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Overlay automatically activates when you go live</p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• No manual buttons needed - fully automated! 🤖</p>
                 </div>
 
                 <h3 style={{ color: '#fff', marginTop: '20px' }}>�🎮 Counter Controls</h3>
@@ -913,13 +890,12 @@ function App() {
                 <p>• <strong>!swear+</strong> or <strong>!s+</strong> - Increment swears</p>
                 <p>• <strong>!swear-</strong> or <strong>!s-</strong> - Decrement swears</p>
                 <p>• <strong>!resetcounters</strong> - Reset all counters</p>
-                <p>• <strong>!startstream</strong> - Start stream status</p>
-                <p>• <strong>!endstream</strong> - End stream status</p>
 
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>🎬 Stream Status</h3>
-                <p>• <strong>Start Prepping</strong> - Prepare for stream</p>
-                <p>• <strong>Go Live</strong> - Activate stream and overlay</p>
-                <p>• <strong>End Stream</strong> - Deactivate stream</p>
+                <h3 style={{ color: '#fff', marginTop: '20px' }}>🤖 Auto Stream Detection</h3>
+                <p>• Counters <strong>automatically activate</strong> when you go live on Twitch</p>
+                <p>• Stream session <strong>automatically ends</strong> when you stop streaming</p>
+                <p>• Discord notifications sent automatically (if webhook configured)</p>
+                <p>• No manual buttons needed - everything is detected via EventSub!</p>
 
                 <h3 style={{ color: '#fff', marginTop: '20px' }}>🔌 Real-time Sync</h3>
                 <p>All devices connected to your account will update automatically in real-time!</p>
