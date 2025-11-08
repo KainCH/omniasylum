@@ -103,6 +103,13 @@ export const notificationAPI = {
       method: 'PUT',
       body: JSON.stringify(settings)
     });
+  },
+
+  updateTemplateStyle: async (templateData) => {
+    return await apiRequest('/api/user/template-style', {
+      method: 'PUT',
+      body: JSON.stringify(templateData)
+    });
   }
 };
 

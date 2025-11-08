@@ -1126,6 +1126,53 @@ class Database {
   }
 
   /**
+   * Update user's Discord template style preference
+   */
+  async updateUserTemplateStyle(twitchUserId, templateStyle) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    console.log(`🎨 updateUserTemplateStyle - Updating template style for user ${twitchUserId} to ${templateStyle}`);
+
+    if (this.mode === 'azure') {
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
+      const updateEntity = {
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
+        templateStyle: templateStyle
+      };
+
+      try {
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+      } catch (error) {
+        console.error(`❌ updateUserTemplateStyle - Azure error:`, error);
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      user.templateStyle = templateStyle;
+    } else {
+      // Local mode implementation
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].templateStyle = templateStyle;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.templateStyle = templateStyle;
+    }
+
+    return user;
+  }
+
+  /**
    * Get user's Discord webhook configuration
    */
   async getUserDiscordWebhook(twitchUserId) {

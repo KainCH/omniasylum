@@ -194,6 +194,16 @@ function DiscordWebhookSettings({ user }) {
           console.log('📊 Final settings to apply:', settings)
           // Use setNotificationSettings instead of resetToDefaults for notification settings
           setNotificationSettings(settings)
+
+          // Load template style preference
+          if (discordData?.templateStyle) {
+            console.log('🎨 Setting template style from server:', discordData.templateStyle)
+            setMessageTemplate(discordData.templateStyle)
+          } else {
+            console.log('🎨 No template style found, defaulting to asylum_themed')
+            setMessageTemplate('asylum_themed')
+          }
+
           console.log('✅ Notification settings loaded successfully')
         } catch (error) {
           console.error('❌ Error loading notification settings:', error)
@@ -205,6 +215,8 @@ function DiscordWebhookSettings({ user }) {
             deathThresholds: '10,25,50,100,250,500,1000',
             swearThresholds: '25,50,100,250,500,1000,2500'
           })
+          // Set default template style on error
+          setMessageTemplate('asylum_themed')
         }
       })
     } catch (error) {
@@ -272,6 +284,28 @@ function DiscordWebhookSettings({ user }) {
     } catch (error) {
       console.error('❌ Error saving notification settings:', error)
       showMessage('Failed to save notification settings', 'error')
+    }
+  }
+
+  const saveTemplateSettings = async () => {
+    try {
+      console.log('🎨 Saving template settings...')
+      console.log('🎨 Template payload:', { templateStyle: messageTemplate })
+
+      await withLoading(async () => {
+        // Save template preference
+        const templatePayload = {
+          templateStyle: messageTemplate
+        }
+        console.log('🎨 Saving template settings:', templatePayload)
+        await notificationAPI.updateTemplateStyle(templatePayload)
+        console.log('✅ Template settings saved successfully')
+
+        showMessage('Template style saved successfully!', 'success')
+      })
+    } catch (error) {
+      console.error('❌ Error saving template settings:', error)
+      showMessage('Failed to save template settings', 'error')
     }
   }
 
@@ -641,22 +675,44 @@ function DiscordWebhookSettings({ user }) {
               <div className="template-selection">
                 <div className="template-options">
                   <div
-                    className={`template-option ${messageTemplate === 'default' ? 'selected' : ''}`}
-                    onClick={() => setMessageTemplate('default')}
+                    className={`template-option ${messageTemplate === 'asylum_themed' ? 'selected' : ''}`}
+                    onClick={() => setMessageTemplate('asylum_themed')}
                   >
                     <div className="template-header">
-                      <h4>🎮 Default Gaming</h4>
-                      <p>Clean and professional gaming notifications</p>
+                      <h4>�️ Asylum Themed</h4>
+                      <p>Dark and atmospheric notifications with horror theme</p>
+                    </div>
+                    <div className="template-preview" style={{
+                      background: '#1a0d0d',
+                      color: '#ff6b6b',
+                      border: '2px solid #8b1538',
+                      padding: '8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      marginTop: '8px'
+                    }}>
+                      💀 The asylum claims another victim...
                     </div>
                   </div>
 
                   <div
-                    className={`template-option ${messageTemplate === 'fun' ? 'selected' : ''}`}
-                    onClick={() => setMessageTemplate('fun')}
+                    className={`template-option ${messageTemplate === 'detailed' ? 'selected' : ''}`}
+                    onClick={() => setMessageTemplate('detailed')}
                   >
                     <div className="template-header">
-                      <h4>🎉 Fun & Energetic</h4>
-                      <p>Colorful with emojis and excitement</p>
+                      <h4>📊 Detailed Gaming</h4>
+                      <p>Rich notifications with progress and statistics</p>
+                    </div>
+                    <div className="template-preview" style={{
+                      background: '#e6f3ff',
+                      color: '#0066cc',
+                      border: '2px solid #0099cc',
+                      padding: '8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      marginTop: '8px'
+                    }}>
+                      📈 Progress & achievements tracked
                     </div>
                   </div>
 
@@ -666,8 +722,47 @@ function DiscordWebhookSettings({ user }) {
                   >
                     <div className="template-header">
                       <h4>📋 Minimal</h4>
-                      <p>Simple text-based notifications</p>
+                      <p>Simple and clean text-based notifications</p>
                     </div>
+                    <div className="template-preview" style={{
+                      background: '#f8f9fa',
+                      color: '#495057',
+                      border: '2px solid #dee2e6',
+                      padding: '8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      marginTop: '8px'
+                    }}>
+                      Simple & clean
+                    </div>
+                  </div>
+                </div>
+
+                <div className="template-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => {
+                      console.log('🎨 Save Template Settings button clicked')
+                      console.log('🎨 Selected template:', messageTemplate)
+                      saveTemplateSettings()
+                    }}
+                    loading={isLoading}
+                  >
+                    🎨 Save Template Style
+                  </ActionButton>
+
+                  <div style={{
+                    padding: '8px 12px',
+                    background: messageTemplate ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    border: `1px solid ${messageTemplate ? '#22c55e' : '#ef4444'}`,
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    color: messageTemplate ? '#22c55e' : '#ef4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    {messageTemplate ? '✅' : '❌'} Current: {messageTemplate || 'None selected'}
                   </div>
                 </div>
               </div>

@@ -300,7 +300,7 @@ async function sendDiscordNotification(user, eventType, data) {
 
   // Parse Discord settings (if available)
   let discordSettings = {
-    templateStyle: 'asylum_themed',
+    templateStyle: user?.templateStyle || 'asylum_themed', // Use user's preferred template style
     enabledNotifications: {
       death_milestone: true,
       swear_milestone: true,
@@ -314,7 +314,13 @@ async function sendDiscordNotification(user, eventType, data) {
 
   if (user?.discordSettings) {
     try {
-      discordSettings = JSON.parse(user?.discordSettings);
+      const parsedSettings = JSON.parse(user?.discordSettings);
+      discordSettings = {
+        ...discordSettings,
+        ...parsedSettings,
+        // Always use the user's templateStyle from the database field
+        templateStyle: user?.templateStyle || discordSettings.templateStyle
+      };
     } catch (error) {
       console.log('⚠️ Failed to parse Discord settings, using defaults');
     }
@@ -339,7 +345,11 @@ async function sendDiscordNotification(user, eventType, data) {
       } else if (templateStyle === 'minimal') {
         title = `💀 Death Counter`;
         description = `**${user.displayName}** • ${data.count} deaths`;
+      } else if (templateStyle === 'detailed') {
+        title = `💀 Death Milestone: ${data.count}`;
+        description = `**${user.displayName}** has reached ${data.count} deaths!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}\n🎮 **Stream Stats:** Updated live\n⏰ **Time:** ${new Date().toLocaleTimeString()}`;
       } else {
+        // Default fallback
         title = `💀 Death Milestone: ${data.count}`;
         description = `**${user.displayName}** has reached ${data.count} deaths!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
       }
@@ -353,7 +363,11 @@ async function sendDiscordNotification(user, eventType, data) {
       } else if (templateStyle === 'minimal') {
         title = `🤬 Swear Counter`;
         description = `**${user.displayName}** • ${data.count} swears`;
+      } else if (templateStyle === 'detailed') {
+        title = `🤬 Swear Milestone: ${data.count}`;
+        description = `**${user.displayName}** has reached ${data.count} swears!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}\n📈 **Milestone:** New threshold reached\n⏰ **Time:** ${new Date().toLocaleTimeString()}`;
       } else {
+        // Default fallback
         title = `🤬 Swear Milestone: ${data.count}`;
         description = `**${user.displayName}** has reached ${data.count} swears!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
       }
@@ -367,7 +381,11 @@ async function sendDiscordNotification(user, eventType, data) {
       } else if (templateStyle === 'minimal') {
         title = `🔴 Live Now`;
         description = `**${user.displayName}** is streaming`;
+      } else if (templateStyle === 'detailed') {
+        title = `🔴 Stream Started`;
+        description = `**${user?.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data?.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user?.username}\n⏰ **Started:** ${new Date().toLocaleTimeString()}\n🎯 **Ready for action!**`;
       } else {
+        // Default fallback
         title = `🔴 Stream Started`;
         description = `**${user?.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data?.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user?.username}`;
       }
@@ -442,7 +460,9 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
       ...discordSettings,
       // Add webhook data to the settings response
       webhookUrl: webhookUrl,
-      enabled: webhookEnabled
+      enabled: webhookEnabled,
+      // Add template style preference
+      templateStyle: user?.templateStyle || 'asylum_themed'
     };
 
     res.json(completeSettings);
@@ -474,6 +494,37 @@ router.put('/discord-settings', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ Error updating Discord notification settings:', error);
     res.status(500).json({ error: 'Failed to update Discord notification settings' });
+  }
+});
+
+/**
+ * Update user Discord template style preference
+ * PUT /api/user/template-style
+ */
+router.put('/template-style', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { templateStyle } = req.body;
+
+    console.log(`🎨 Updating template style for user ${req.user.username}:`, templateStyle);
+
+    // Validate template style
+    const validTemplates = ['asylum_themed', 'detailed', 'minimal'];
+    if (!validTemplates.includes(templateStyle)) {
+      return res.status(400).json({ error: 'Invalid template style' });
+    }
+
+    // Update user's template preference
+    const updatedUser = await database.updateUserTemplateStyle(userId, templateStyle);
+
+    console.log(`✅ Template style updated to ${templateStyle} for ${req.user.username}`);
+    res.json({
+      message: 'Template style updated successfully',
+      templateStyle: templateStyle
+    });
+  } catch (error) {
+    console.error('❌ Error updating template style:', error);
+    res.status(500).json({ error: 'Failed to update template style' });
   }
 });
 
