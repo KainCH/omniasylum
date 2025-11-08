@@ -145,23 +145,18 @@ router.put('/overlay-settings', requireAuth, async (req, res) => {
  * GET /api/user/discord-webhook
  */
 router.get('/discord-webhook', requireAuth, async (req, res) => {
-  console.log(`🚨 WEBHOOK GET REQUEST RECEIVED - URL: ${req.originalUrl}, Method: ${req.method}`);
   try {
     const userId = req.user.userId;
-    console.log(`🔍 WEBHOOK GET - User: ${req.user.username} (ID: ${userId}, Type: ${typeof userId})`);
 
     // Call getUserDiscordWebhook instead of getUser to use enhanced logging
     const webhookData = await database.getUserDiscordWebhook(userId);
 
     if (!webhookData) {
-      console.log(`❌ No webhook data returned for user: ${userId}`);
       // Fallback: try to get user directly
       const user = await database.getUser(userId);
       if (!user) {
-        console.log(`❌ User not found: ${userId}`);
         return res.status(404).json({ error: 'User not found' });
       } else {
-        console.log(`⚠️ User exists but getUserDiscordWebhook returned null`);
         webhookData = { webhookUrl: '', enabled: false };
       }
     }
@@ -174,13 +169,6 @@ router.get('/discord-webhook', requireAuth, async (req, res) => {
       webhookUrl: webhookUrl,
       enabled: enabled
     };
-
-    console.log(`📋 WEBHOOK GET RESULT:`, {
-      webhookUrl: result.webhookUrl ? `${result.webhookUrl.substring(0, 50)}...` : 'EMPTY',
-      enabled: result.enabled,
-      fromGetUserDiscordWebhook: !!webhookData,
-      webhookPresent: !!webhookUrl
-    });
 
     res.json(result);
   } catch (error) {
@@ -224,35 +212,21 @@ router.put('/discord-webhook', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
 
-    console.log(`💾 About to call database.updateUserDiscordWebhook(${userId}, ${actualWebhookUrl ? 'URL_PROVIDED' : 'EMPTY'})`);
-
     // Update webhook URL with explicit error handling
     let updatedUser;
     try {
       updatedUser = await database.updateUserDiscordWebhook(userId, actualWebhookUrl || '');
-      console.log(`✅ Database updateUserDiscordWebhook call completed successfully`);
     } catch (dbError) {
-      console.error(`❌ Database updateUserDiscordWebhook failed:`, dbError);
-      console.error(`❌ Error details:`, {
-        name: dbError.name,
-        message: dbError.message,
-        stack: dbError.stack?.substring(0, 500)
-      });
+      console.error('❌ Database updateUserDiscordWebhook failed:', dbError);
       throw dbError; // Re-throw to be caught by outer catch
     }
-
-    console.log(`✅ Database update completed. Verifying save...`);
 
     // Verify the webhook was actually saved by reading it back
     let verification;
     try {
       verification = await database.getUserDiscordWebhook(userId);
-      console.log(`🔍 Verification read completed:`, {
-        webhookUrl: verification?.webhookUrl ? `${verification.webhookUrl.substring(0, 50)}...` : 'EMPTY',
-        enabled: verification?.enabled
-      });
     } catch (verifyError) {
-      console.error(`❌ Verification read failed:`, verifyError);
+      console.error('❌ Verification read failed:', verifyError);
       verification = null;
     }
 
@@ -444,7 +418,6 @@ async function sendDiscordNotification(user, eventType, data) {
 router.get('/discord-settings', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    console.log(`📋 Getting Discord notification settings for user ${req.user.username}`);
 
     const user = await database.getUser(userId);
     if (!user) {
@@ -472,11 +445,6 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
       enabled: webhookEnabled
     };
 
-    console.log(`✅ Discord settings retrieved for ${req.user.username}`, {
-      hasWebhookUrl: !!webhookUrl,
-      webhookEnabled: webhookEnabled,
-      webhookUrlLength: webhookUrl.length
-    });
     res.json(completeSettings);
   } catch (error) {
     console.error('❌ Error getting Discord settings:', error);

@@ -1010,32 +1010,20 @@ router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
     userId = req.params.userId;
     const { webhookUrl } = req.body;
 
-    console.log(`🔧 [${startTime}] Admin ${req.user?.username || 'unknown'} attempting to update Discord webhook for user ${userId}`);
-    console.log(`📋 Request body size: ${JSON.stringify(req.body).length} bytes`);
-
     // Validate webhook URL if provided
     if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
-      console.log(`❌ [${startTime}] Invalid webhook URL format for user ${userId}`);
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
-
-    console.log(`🔍 [${startTime}] Looking up user ${userId}...`);
 
     // Check if user exists first
     const user = await database.getUser(userId);
     if (!user) {
-      console.log(`❌ [${startTime}] User ${userId} not found when updating Discord webhook`);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log(`📋 [${startTime}] User ${userId} found: username=${user.username}, displayName=${user.displayName}`);
-    console.log(`� [${startTime}] User keys: partitionKey=${user.partitionKey}, rowKey=${user.rowKey}, twitchUserId=${user.twitchUserId}`);
-    console.log(`�💾 [${startTime}] Updating Discord webhook...`);
-
     await database.updateUserDiscordWebhook(userId, webhookUrl || '');
 
-    const duration = Date.now() - startTime;
-    console.log(`✅ [${startTime}] Admin ${req.user.username} updated Discord webhook for user ${userId} (${duration}ms)`);
+    console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
 
     res.json({
       message: 'Discord webhook updated successfully',

@@ -107,15 +107,6 @@ class Database {
     if (this.mode === 'azure') {
       try {
         const entity = await this.usersClient.getEntity('user', twitchUserId);
-
-        // Debug logging to see the actual Azure Table Storage entity structure
-        console.log(`🔍 Azure entity for user ${twitchUserId}:`, {
-          keys: Object.keys(entity),
-          discordWebhookUrl: entity.discordWebhookUrl,
-          discordWebhookUrlType: typeof entity.discordWebhookUrl,
-          discordWebhookUrlValue: entity.discordWebhookUrl ? `${entity.discordWebhookUrl.toString().substring(0, 50)}...` : 'EMPTY_OR_UNDEFINED'
-        });
-
         return entity;
       } catch (error) {
         if (error.statusCode === 404) return null;
@@ -133,10 +124,6 @@ class Database {
   async saveUser(userData) {
     // Get existing user data to preserve webhook URL and other settings
     const existingUser = await this.getUser(userData.twitchUserId);
-    console.log(`💾 saveUser: Existing user data for ${userData.twitchUserId}:`, existingUser ? 'found' : 'not found');
-    if (existingUser) {
-      console.log(`🔗 saveUser: Preserving existing webhook URL: ${existingUser.discordWebhookUrl || 'none'}`);
-    }
 
     // Determine user role - riress is always admin
     let role = 'streamer';
@@ -200,8 +187,6 @@ class Database {
       createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
-
-    console.log(`💾 saveUser: Final user object discordWebhookUrl: ${user.discordWebhookUrl || 'none'}`);
 
     if (this.mode === 'azure') {
       await this.usersClient.upsertEntity(user, 'Replace');
@@ -1059,14 +1044,7 @@ class Database {
         discordWebhookUrl: webhookUrl || ''
       };
 
-      console.log(`💾 updateUserDiscordWebhook - Using keys: partitionKey=${actualPartitionKey}, rowKey=${actualRowKey}`);
-
       try {
-        console.log(`🔄 Attempting Azure Table update for webhook:`, {
-          partitionKey: actualPartitionKey,
-          rowKey: actualRowKey,
-          webhookUrl: webhookUrl ? `${webhookUrl.substring(0, 50)}...` : 'EMPTY'
-        });
 
         // Use Merge mode which will fail if entity doesn't exist
         await this.usersClient.updateEntity(updateEntity, 'Merge');
@@ -1086,7 +1064,6 @@ class Database {
 
       // Update local user object for return
       user.discordWebhookUrl = webhookUrl || '';
-      console.log(`📝 Local user object updated with webhook URL`);
     } else {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
       if (users[twitchUserId]) {
@@ -1152,40 +1129,15 @@ class Database {
    * Get user's Discord webhook configuration
    */
   async getUserDiscordWebhook(twitchUserId) {
-    console.log(`🔍 getUserDiscordWebhook called for user: ${twitchUserId}`);
-
     const user = await this.getUser(twitchUserId);
     if (!user) {
-      console.log(`❌ getUserDiscordWebhook: User not found for ID: ${twitchUserId}`);
       return null;
     }
-
-    console.log(`📋 getUserDiscordWebhook: User found, checking webhook data:`, {
-      userId: twitchUserId,
-      username: user.username || 'NO_USERNAME',
-      hasDiscordWebhookUrl: !!user.discordWebhookUrl,
-      discordWebhookUrl: user.discordWebhookUrl ? `${user.discordWebhookUrl.substring(0, 50)}...` : 'EMPTY',
-      userKeys: Object.keys(user).filter(k => k.includes('discord') || k.includes('webhook')),
-      allKeys: Object.keys(user) // Show ALL keys to debug Azure Table Storage structure
-    });
-
-    // Check for Azure Table Storage field variations
-    console.log(`🔍 Checking all possible webhook field variations:`, {
-      'user.discordWebhookUrl': user.discordWebhookUrl,
-      'user.DiscordWebhookUrl': user.DiscordWebhookUrl,
-      'user["discordWebhookUrl"]': user['discordWebhookUrl'],
-      'typeOfDiscordWebhookUrl': typeof user.discordWebhookUrl
-    });
 
     const result = {
       webhookUrl: user.discordWebhookUrl || '',
       enabled: !!(user.discordWebhookUrl) // Consider webhook enabled if URL exists
     };
-
-    console.log(`📤 getUserDiscordWebhook returning:`, {
-      webhookUrl: result.webhookUrl ? `${result.webhookUrl.substring(0, 50)}...` : 'EMPTY',
-      enabled: result.enabled
-    });
 
     return result;
   }
