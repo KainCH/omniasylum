@@ -60,7 +60,7 @@ function AlertEventManager({ userId, username, onClose }) {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       // Fetch user's alerts
       const alertsRes = await fetch(`/api/alerts/user/${userId}`, {
@@ -95,7 +95,7 @@ function AlertEventManager({ userId, username, onClose }) {
   const saveEventMappings = async () => {
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       const res = await fetch('/api/alerts/event-mappings', {
         method: 'PUT',
@@ -103,7 +103,7 @@ function AlertEventManager({ userId, username, onClose }) {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(eventMappings)
+        body: JSON.stringify({ mappings: eventMappings })
       })
 
       if (res.ok) {
@@ -126,7 +126,7 @@ function AlertEventManager({ userId, username, onClose }) {
 
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       const res = await fetch('/api/alerts/event-mappings/reset', {
         method: 'POST',

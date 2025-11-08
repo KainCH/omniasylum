@@ -98,7 +98,7 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
   const fetchEventSubscriptions = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken');
 
       const response = await fetch(`/api/eventsub/subscriptions/${userId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -118,7 +118,7 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
   const updateEventSubscription = async (eventType, enabled) => {
     try {
       setSaving(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken');
 
       const response = await fetch(`/api/eventsub/subscriptions/${userId}`, {
         method: 'PUT',
@@ -177,7 +177,7 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
 
     try {
       setSaving(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken');
 
       const response = await fetch(`/api/eventsub/subscriptions/${userId}/unsubscribe-all`, {
         method: 'POST',

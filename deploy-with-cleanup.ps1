@@ -110,6 +110,23 @@ try {
 
     if (-not $SkipDocker) {
         Write-Step '🐳 Step 3: Building and pushing Docker image...'
+
+        # Ensure we're authenticated with Azure Container Registry
+        Write-Info 'Verifying Azure Container Registry authentication...'
+        try {
+            $acrLoginResult = az acr login --name omniforgeacr 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "ACR login failed: $acrLoginResult"
+                throw 'Failed to authenticate with Azure Container Registry'
+            }
+            Write-Success 'Successfully authenticated with Azure Container Registry'
+        }
+        catch {
+            Write-Error "Azure Container Registry authentication failed: $($_.Exception.Message)"
+            Write-Info "Please run 'az login' and ensure you have access to omniforgeacr.azurecr.io"
+            throw
+        }
+
         Push-Location 'API'
         try {
             Write-Info 'Building Docker image...'

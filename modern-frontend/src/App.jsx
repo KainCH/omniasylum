@@ -8,6 +8,7 @@ import UserAlertManager from './components/UserAlertManager'
 import AlertEffectsSettings from './components/AlertEffectsSettings'
 import SeriesSaveManager from './components/SeriesSaveManager'
 import DiscordWebhookSettings from './components/DiscordWebhookSettings'
+import OverlayManager from './components/OverlayManager'
 import './App.css'
 
 function App() {
@@ -53,6 +54,7 @@ function App() {
   const [viewMode, setViewMode] = useState('user')
   const [showInstructionsModal, setShowInstructionsModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showOverlayManager, setShowOverlayManager] = useState(false)
   const [showAlertManager, setShowAlertManager] = useState(false)
   const [showAlertEffectsSettings, setShowAlertEffectsSettings] = useState(false)
   const [showSeriesSaveManager, setShowSeriesSaveManager] = useState(false)
@@ -728,9 +730,22 @@ function App() {
           monitoring: status.connectionStatus?.connected || false,
           lastConnected: status.connectionStatus?.lastConnected || null
         })
+      } else {
+        // Set waiting state when monitoring is not active
+        setEventSubStatus({
+          connected: false,
+          monitoring: false,
+          lastConnected: null
+        })
       }
     } catch (error) {
       console.error('❌ Error checking EventSub status:', error)
+      // Set waiting state on error
+      setEventSubStatus({
+        connected: false,
+        monitoring: false,
+        lastConnected: null
+      })
     }
   }
 
@@ -754,9 +769,28 @@ function App() {
           systemConnected: data.subscriptionStatus?.systemConnected || false,
           totalSystemSubscriptions: data.subscriptionStatus?.totalSystemSubscriptions || 0
         })
+      } else {
+        // Set waiting state when monitoring is not active
+        setEventSubSubscriptions({
+          totalActive: 0,
+          totalPossible: 10,
+          activeSubscriptions: [],
+          subscriptionsByCategory: {},
+          systemConnected: false,
+          totalSystemSubscriptions: 0
+        })
       }
     } catch (error) {
       console.error('❌ Error checking EventSub subscriptions:', error)
+      // Set waiting state on error
+      setEventSubSubscriptions({
+        totalActive: 0,
+        totalPossible: 10,
+        activeSubscriptions: [],
+        subscriptionsByCategory: {},
+        systemConnected: false,
+        totalSystemSubscriptions: 0
+      })
     }
   }
 
@@ -899,24 +933,7 @@ function App() {
     setViewMode('user')
   }
 
-  // Debug logging
-  console.log('🔍 Debug Info:', {
-    isAdmin,
-    userRole,
-    username: username.toLowerCase(),
-    viewMode,
-    isAuthenticated
-  })
 
-  // More specific debugging
-  console.log('🔍 Admin Check:', {
-    userRoleCheck: userRole === 'admin',
-    usernameCheck: username.toLowerCase() === 'riress',
-    combinedIsAdmin: isAdmin,
-    viewModeValue: viewMode,
-    willShowAdminDashboard: isAdmin && viewMode === 'admin',
-    willShowUserPortal: !(isAdmin && viewMode === 'admin')
-  })
 
   // Show admin dashboard ONLY if explicitly in admin mode
   if (isAdmin && viewMode === 'admin') {
@@ -953,12 +970,7 @@ function App() {
     )
   }
 
-  // EXPLICIT CHECK: Never show AdminDashboard for user mode
-  if (isAdmin && viewMode === 'user') {
-    console.log('🎬 RENDERING USER PORTAL - Admin in user mode')
-  } else if (!isAdmin) {
-    console.log('🎬 RENDERING USER PORTAL - Regular user')
-  }
+
 
   return (
     <div className="app">
@@ -1519,7 +1531,7 @@ function App() {
             📖 Instructions
           </button>
           <button
-            onClick={() => setShowSettingsModal(true)}
+            onClick={() => setShowOverlayManager(true)}
             style={{
               background: '#6f42c1',
               color: '#fff',
@@ -1779,6 +1791,17 @@ function App() {
               <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
             </div>
           </div>
+        )}
+
+        {/* Overlay Manager Modal */}
+        {showOverlayManager && (
+          <OverlayManager
+            userId={userId}
+            username={username}
+            overlaySettings={overlaySettings}
+            onUpdate={updateOverlaySettings}
+            onClose={() => setShowOverlayManager(false)}
+          />
         )}
 
         {/* Series Save Manager Modal */}
@@ -2062,12 +2085,7 @@ function App() {
         )}
 
         {/* Stream Overlay - Rendered when stream is live */}
-        {console.log('🎨 Overlay render check:', {
-          streamStatus,
-          overlayEnabled: overlaySettings.enabled,
-          shouldShow: (streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled,
-          overlayPosition: overlaySettings.position
-        }) || ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (() => {
+        {((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (() => {
           const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
           return (
           <div style={{

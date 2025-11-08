@@ -187,7 +187,7 @@ function UserAlertManager({ onClose }) {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(eventMappings)
+        body: JSON.stringify({ mappings: eventMappings })
       })
 
       if (res.ok) {

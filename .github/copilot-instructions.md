@@ -155,94 +155,112 @@ This application is deployed using Azure Container Apps with a complete infrastr
 1. **Azure CLI** installed and authenticated (`az login`)
 2. **Docker** installed for container builds
 3. **Azure Container Registry** access configured
+   - The deployment script automatically authenticates with `omniforgeacr.azurecr.io`
+   - Requires proper Azure permissions for the container registry
+   - Authentication is verified before each Docker build/push operation
 4. **Twitch Developer App** with OAuth credentials
 5. **Admin access** to Azure subscription
 
 ### Deployment Process
 
-**⚠️ MANDATORY: Use VS Code tasks for ALL deployments. NEVER use manual commands.**
+**⚠️ MANDATORY: Use ONLY the Enhanced deployment scripts. NEVER use individual docker/az commands.**
 
-#### **Task-Based Deployment Strategy**
+#### **Enhanced Automated Deployment Tasks**
 
-Choose the appropriate VS Code task based on the type of changes:
+The project uses enhanced PowerShell deployment scripts that handle the complete deployment pipeline with advanced cleanup and verification. **Always use `run_task()` tool with one of these two tasks:**
 
-#### **1. Frontend AND Backend Changes**
-**Task:** `Full Deploy: Build, Docker & Azure`
+#### **1. Complete Deployment (Frontend AND Backend Changes)**
+**Task:** `"Enhanced Full Deploy: Clean Build & Deploy"`
 
 **When to use:**
-- Modified React components in `modern-frontend/`
-- Changed CSS/styling files
-- Updated frontend JavaScript/JSX
-- Modified both frontend AND backend files
-- Any changes that affect the user interface
+- Modified ANY frontend files in `modern-frontend/`
+- Changed React components, CSS, or JavaScript
+- Updated both frontend AND backend files
+- Any UI-related changes
+- When uncertain about what changed (safer option)
 
-**What it does:**
-1. Builds the React frontend (`npm run build`)
-2. Copies built files to `API/frontend/`
-3. Builds and pushes Docker image
-4. Deploys to Azure Container Apps
+**Enhanced automated process:**
+1. ✅ Cleans previous build artifacts
+2. ✅ Builds React frontend (`npm run build`)
+3. ✅ Copies built files to `API/frontend/` with cleanup
+4. ✅ Verifies Azure Container Registry authentication
+5. ✅ Builds Docker image with new frontend
+6. ✅ Pushes to Azure Container Registry
+7. ✅ Deploys to Azure Container Apps
+8. ✅ Performs comprehensive verification
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
+**Usage:**
+```javascript
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clean Build & Deploy")
 ```
 
-#### **2. Backend-Only Changes**
-**Task:** `API Deploy: Docker & Azure (Skip Frontend)`
+#### **2. Backend-Only Changes (Skip Frontend Build)**
+**Task:** `"Backend Only Deploy: Skip Frontend"`
 
 **When to use:**
-- Modified Node.js server files in `API/`
-- Updated API routes, middleware, or services
-- Changed database logic or authentication
-- Modified environment configuration
+- Modified ONLY Node.js server files in `API/`
+- Updated API routes, middleware, database logic
+- Changed authentication or configuration
 - NO frontend changes whatsoever
 
-**What it does:**
-1. Builds and pushes Docker image (uses existing frontend)
-2. Deploys to Azure Container Apps
-3. Skips frontend build (faster deployment)
+**Enhanced automated process:**
+1. ✅ Skips frontend build for faster deployment
+2. ✅ Verifies Azure Container Registry authentication
+3. ✅ Builds Docker image (reuses existing frontend)
+4. ✅ Pushes to Azure Container Registry
+5. ✅ Deploys to Azure Container Apps
+6. ✅ Performs comprehensive verification
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "API Deploy: Docker & Azure (Skip Frontend)")
+**Usage:**
+```javascript
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Backend Only Deploy: Skip Frontend")
 ```
 
 #### **⚠️ CRITICAL: Task Selection Rules**
 
-- **If ANY frontend files changed** → Use `Full Deploy`
-- **If ONLY backend files changed** → Use `API Deploy (Skip Frontend)`
-- **When in doubt** → Use `Full Deploy` (safer but slower)
-- **NEVER mix manual commands with tasks**
+- **ANY frontend changes** → Use `"Enhanced Full Deploy: Clean Build & Deploy"`
+- **ONLY backend changes** → Use `"Backend Only Deploy: Skip Frontend"`
+- **When uncertain** → Use `"Enhanced Full Deploy"` (safer option)
+- **NEVER use manual docker/az commands** → Always use enhanced deployment tasks
+- **NEVER use old deployment tasks** → Only use the two Enhanced tasks above
 
-#### **3. Deployment Verification (Required After Every Task)**
+#### **3. Mandatory Deployment Verification**
 
-**⚠️ ALWAYS verify task completion using the established monitoring protocol:**
+**⚠️ ALWAYS verify task completion - NEVER assume success without checking:**
 
 ```javascript
-// 1. Check task output for completion
-get_task_output(workspaceFolder, taskId)
-terminal_last_command() // Verify actual execution
+// Step 1: Check task completion
+terminal_last_command() // Verify task finished with exit code 0
 
-// 2. Look for success indicators:
-"provisioningState": "Succeeded"
-"runningStatus": "Running"
-"latestRevisionName": "...-MMDDHHM" // New timestamp
+// Step 2: Look for success indicators in task output:
+"provisioningState": "Succeeded"      // MUST see this
+"runningStatus": "Running"            // MUST see this
+"latestRevisionName": "...-MMDDHHM"   // NEW timestamp (not old)
 
-// 3. Test application health
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
-// Expected: {"status":"ok","timestamp":"..."}
+// Step 3: Verify application health
+run_in_terminal('curl -s "https://stream-tool.cerillia.com/api/health"')
+// Expected: {"status":"ok","timestamp":"...","uptime":...}
 ```
 
-**Manual monitoring commands (only if tasks fail):**
-```powershell
-# Check deployment status
-az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --query "properties.provisioningState"
+**✅ Success Indicators:**
+- Task exits with code 0
+- Azure deployment shows "Succeeded" and "Running"
+- Health endpoint returns 200 with valid JSON
+- New revision timestamp reflects current deployment
 
-# View application logs
-az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 50
+**❌ Failure Indicators:**
+- Task exits with non-zero code
+- "provisioningState": "Failed"
+- Health endpoint returns error or timeout
+- Revision timestamp unchanged
 
-# Monitor Twitch bot connections
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/twitch/status"
+**Troubleshooting (only if tasks fail):**
+```javascript
+// Check Azure status manually
+run_in_terminal('az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --query "properties.[provisioningState,runningStatus]"')
+
+// View application logs
+run_in_terminal('az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 50')
 ```
 
 ### Environment Variables
@@ -362,13 +380,16 @@ az containerapp revision list --name omniforgestream-api-prod --resource-group S
 az containerapp revision activate --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --revision [REVISION-NAME]
 ```
 
-### VS Code Tasks Integration
+### Automated Task Pipeline
 
-The workspace includes pre-configured tasks for deployment:
+The workspace includes pre-configured enhanced deployment tasks that handle the complete process:
 
-- **Build Docker Image**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Build Docker Image`
-- **Deploy to Azure**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deploy to Azure`
-- **View Azure Logs**: `Ctrl+Shift+P` → `Tasks: Run Task` → `View Azure Logs`
+- **Enhanced Full Deploy Task**: Builds frontend + backend with cleanup, creates Docker image, deploys to Azure
+- **Backend Only Deploy Task**: Backend-only deployment with verification, skips frontend build for faster updates
+- **Health Monitoring**: Automatic verification of deployment success
+- **Error Recovery**: Built-in rollback capabilities and troubleshooting commands
+
+**Access via VS Code**: `Ctrl+Shift+P` → `Tasks: Run Task` → Select appropriate enhanced deployment task
 
 ### Security Considerations
 
@@ -458,37 +479,74 @@ try {
 - Multi-language support
 - Counter themes/customization
 
-## 🔍 **CRITICAL: Task Completion Monitoring**
+## 🔍 **CRITICAL: Task Completion Verification**
 
-**⚠️ MANDATORY: Always verify task completion before proceeding. NEVER assume tasks succeeded based on "no problems" messages.**
+**⚠️ MANDATORY: Always verify deployment task completion. Tasks handle complex multi-step processes.**
 
-### Task Verification Protocol
+### Deployment Task Verification Protocol
 
-#### 1. **For VS Code Tasks** (run_task tool):
+#### 1. **Execute Deployment Task**:
 ```javascript
-// ALWAYS follow this pattern:
-1. Execute: run_task(workspaceFolder, taskId)
-2. Wait for completion
-3. Verify: get_task_output(workspaceFolder, taskId)
-4. Check terminal_last_command() for actual output
-5. Look for completion indicators
+// Choose appropriate task based on changes
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clean Build & Deploy")
+// OR
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Backend Only Deploy: Skip Frontend")
 ```
 
-#### 2. **Required Completion Indicators**:
-- **Docker Build**: Look for `Successfully tagged` and `Successfully pushed`
-- **Azure Deploy**: Look for `"provisioningState": "Succeeded"` and `"runningStatus": "Running"`
-- **Frontend Build**: Look for `Built successfully` or `dist/` folder creation
-- **Terminal Commands**: Look for exit codes and actual output, not just "succeeded"
+#### 2. **Verify Task Completion**:
+```javascript
+// Check the task completed successfully
+terminal_last_command() // Must show exit code 0
 
-#### 3. **Deployment Verification Steps**:
-```powershell
-# ALWAYS verify these after deployment:
-1. Check provisioningState: "Succeeded"
-2. Check runningStatus: "Running"
-3. Verify new revision created (latestRevisionName)
-4. Test health endpoint: curl /api/health
-5. Check application logs if needed
+// Look for Azure deployment success indicators:
+"provisioningState": "Succeeded"
+"runningStatus": "Running"
+"latestRevisionName": "omniforgestream-api-prod--MMDDHHSS" // New timestamp
 ```
+
+#### 3. **Verify Application Health**:
+```javascript
+// Test the deployed application
+run_in_terminal('curl -s "https://stream-tool.cerillia.com/api/health"')
+// Expected: {"status":"ok","timestamp":"2024-XX-XX...","uptime":XX}
+```
+
+#### 4. **Success Criteria**:
+- ✅ Task exits with code 0
+- ✅ "provisioningState": "Succeeded"
+- ✅ "runningStatus": "Running"
+- ✅ Health endpoint returns valid JSON
+- ✅ New revision timestamp (not old one)
+
+#### 5. **Terminal Output Analysis**:
+```javascript
+// Look for these specific patterns:
+- "The terminal will be reused by tasks" = Task completed
+- JSON response with provisioningState = Deployment status
+- Exit Code: 0 = Success, non-zero = Failure
+- Error messages in stderr output
+```
+
+#### 6. **Never Skip Verification**:
+- ❌ **WRONG**: "The task succeeded with no problems" → Assume success
+- ✅ **CORRECT**: Check actual terminal output, verify JSON responses, test endpoints
+
+#### 7. **Failure Detection**:
+```javascript
+// Always check for these failure indicators:
+- Exit codes !== 0
+- Error messages in output
+- "provisioningState": "Failed"
+- Network timeouts or connection errors
+- Missing expected success messages
+```
+
+### **ENFORCEMENT RULES**:
+1. **NEVER** proceed without verifying task completion
+2. **ALWAYS** use `get_task_output()` and `terminal_last_command()`
+3. **ALWAYS** look for specific success/failure indicators
+4. **ALWAYS** verify deployment health after Azure updates
+5. If verification fails, **STOP** and troubleshoot before continuing
 
 #### 4. **Terminal Output Analysis**:
 ```javascript
