@@ -167,6 +167,19 @@ export const userAPI = {
       method: 'POST',
       body: JSON.stringify(webhookData)
     });
+  },
+
+  getDiscordInvite: async () => {
+    // Add cache-busting parameter to prevent browser caching
+    const timestamp = Date.now();
+    return await apiRequest(`/api/user/discord-invite?_t=${timestamp}`);
+  },
+
+  updateDiscordInvite: async (inviteData) => {
+    return await apiRequest('/api/user/discord-invite', {
+      method: 'PUT',
+      body: JSON.stringify(inviteData)
+    });
   }
 };
 

@@ -16,6 +16,7 @@ const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
 const userRoutes = require('./userRoutes');
 const debugRoutes = require('./debugRoutes');
+const eventSubRoutes = require('./eventSubRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -177,6 +178,13 @@ app.use('/api/alerts', alertRoutes);
 
 // Debug routes (requires authentication)
 app.use('/api/debug', debugRoutes);
+
+// EventSub management routes (requires authentication)
+app.use('/api/eventsub', (req, res, next) => {
+  req.database = database;
+  req.twitchService = twitchService;
+  next();
+}, eventSubRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
@@ -949,12 +957,12 @@ async function startServer() {
       });
 
       // Handle follow events
-      streamMonitor.on('newFollower', async ({ userId, username, follower, timestamp }) => {
+      streamMonitor.on('newFollower', async ({ userId, username, follower, timestamp, alert }) => {
         try {
           console.log(`👥 New follower: ${follower} followed ${username}`);
 
-          // Get custom alert configuration
-          const alertConfig = await database.getAlertForEventType(userId, 'follow');
+          // Use alert configuration provided by streamMonitor (already fetched with proper event mapping)
+          const alertConfig = alert;
 
           // Broadcast to overlay and connected clients
           io.to(`user:${userId}`).emit('newFollower', {
@@ -983,12 +991,12 @@ async function startServer() {
       });
 
       // Handle raid events
-      streamMonitor.on('raidReceived', async ({ userId, username, raider, viewers, timestamp }) => {
+      streamMonitor.on('raidReceived', async ({ userId, username, raider, viewers, timestamp, alert }) => {
         try {
           console.log(`🚨 Raid: ${raider} raided ${username} with ${viewers} viewers`);
 
-          // Get custom alert configuration
-          const alertConfig = await database.getAlertForEventType(userId, 'raid');
+          // Use alert configuration provided by streamMonitor (already fetched with proper event mapping)
+          const alertConfig = alert;
 
           // Broadcast to overlay and connected clients
           io.to(`user:${userId}`).emit('raidReceived', {

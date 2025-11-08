@@ -507,3 +507,48 @@
 .milestone-actions .action-button {
   min-width: 200px;
 }
+
+/* Discord Invite Link Section */
+.invite-setup {
+  background: rgba(100, 100, 255, 0.05);
+  border: 1px solid rgba(100, 100, 255, 0.2);
+  border-radius: 8px;
+  padding: 15px;
+  margin: 20px 0;
+}
+
+.invite-setup h4 {
+  color: #6464ff;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.invite-setup ol {
+  margin: 10px 0 0 20px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.invite-setup li {
+  margin: 5px 0;
+}
+
+.invite-setup code {
+  background: rgba(100, 100, 255, 0.2);
+  color: #6464ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+}
+
+.invite-actions {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+  justify-content: flex-start;
+}
+
+.invite-actions .action-button {
+  min-width: 180px;
+}

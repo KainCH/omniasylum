@@ -8,6 +8,7 @@ import {
   parseThresholdString
 } from '../utils/notificationHelpers'
 import { userAPI, notificationAPI, APIError } from '../utils/apiHelpers'
+import OverlayManager from './OverlayManager'
 
 // Default feature flags for new users
 const defaultFeatures = {
@@ -15,6 +16,7 @@ const defaultFeatures = {
   channelPoints: false,
   autoClip: false,
   streamOverlay: false,
+  streamAlerts: false,
   discordWebhook: false,
   templateStyle: 'asylum_themed',
   customCommands: false,
@@ -53,6 +55,11 @@ const getFeatureConfig = (featureKey) => {
       icon: '📺',
       title: 'Stream Overlay',
       description: 'Display live counters and notifications directly on your stream'
+    },
+    streamAlerts: {
+      icon: '🚨',
+      title: 'Stream Alerts',
+      description: 'Custom alerts for Twitch events (follows, subs, bits, raids) with event mappings'
     },
     discordWebhook: {
       icon: '🔔',
@@ -105,6 +112,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
 
   const [originalUser, setOriginalUser] = useState(null)
   const [message, setMessage] = useState({ text: '', type: '' })
+  const [showOverlayManager, setShowOverlayManager] = useState(false)
 
   const showMessage = (text, type) => {
     setMessage({ text, type })
@@ -397,8 +405,8 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           {/* Stream Overlay Settings */}
           {formState?.features?.streamOverlay && (
             <FormSection title="📺 Stream Overlay Settings" collapsible>
-              {formState?.overlaySettings && (
-                <div className="overlay-settings">
+              <div className="overlay-settings">
+                <div className="overlay-quick-status">
                   <ToggleSwitch
                     id="overlay-enabled"
                     checked={formState?.overlaySettings?.enabled || false}
@@ -407,18 +415,35 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                     disabled={isLoading}
                   />
 
-                  <div className="section-actions">
-                    <ActionButton
-                      variant="primary"
-                      onClick={saveOverlaySettings}
-                      loading={isLoading}
-                      disabled={isLoading}
-                    >
-                      💾 Save Overlay Settings
-                    </ActionButton>
-                  </div>
+                  <StatusBadge
+                    type={formState?.overlaySettings?.enabled ? 'success' : 'neutral'}
+                    text={formState?.overlaySettings?.enabled ? 'Active' : 'Inactive'}
+                  />
                 </div>
-              )}
+
+                <div className="overlay-description">
+                  <p>Configure your stream overlay appearance, position, and EventSub subscriptions.</p>
+                </div>
+
+                <div className="section-actions">
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => setShowOverlayManager(true)}
+                    disabled={isLoading}
+                  >
+                    ⚙️ Configure Overlay & Events
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={saveOverlaySettings}
+                    loading={isLoading}
+                    disabled={isLoading}
+                  >
+                    💾 Save Quick Settings
+                  </ActionButton>
+                </div>
+              </div>
             </FormSection>
           )}
 
@@ -523,6 +548,22 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           )}
         </div>
       </div>
+
+      {/* Overlay Manager Modal */}
+      {showOverlayManager && (
+        <OverlayManager
+          userId={user.twitchUserId}
+          username={user.username}
+          overlaySettings={formState?.overlaySettings || {}}
+          onUpdate={(settings) => {
+            setFormState(prev => ({
+              ...prev,
+              overlaySettings: settings
+            }));
+          }}
+          onClose={() => setShowOverlayManager(false)}
+        />
+      )}
     </div>
   )
 }

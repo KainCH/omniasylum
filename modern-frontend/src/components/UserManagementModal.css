@@ -1032,3 +1032,32 @@ input:disabled+.slider {
     justify-content: flex-end;
   }
 }
+
+/* Overlay Settings Styles */
+.overlay-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.overlay-quick-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(145, 71, 255, 0.1);
+  border: 1px solid rgba(145, 71, 255, 0.3);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.overlay-description {
+  margin-bottom: 16px;
+}
+
+.overlay-description p {
+  color: #b0b3b8;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}

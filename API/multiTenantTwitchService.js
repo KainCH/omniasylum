@@ -436,6 +436,267 @@ class MultiTenantTwitchService extends EventEmitter {
       await this.disconnectUser(userId);
     }
   }
+
+  /**
+   * Subscribe to an EventSub event for a user
+   */
+  async subscribeToEvent(user, eventType) {
+    const client = this.clients.get(user.twitchUserId);
+    if (!client) {
+      throw new Error(`User ${user.twitchUserId} is not connected`);
+    }
+
+    try {
+      const webhookUrl = `${process.env.FRONTEND_URL}/api/eventsub/webhook`;
+
+      // Create subscription based on event type
+      let subscription;
+      const userId = user.twitchUserId;
+
+      switch (eventType) {
+        case 'channel.follow':
+          subscription = await client.apiClient.eventSub.subscribeToChannelFollowEvents(
+            userId,
+            (event) => this.handleEventSubEvent('channel.follow', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'channel.subscribe':
+          subscription = await client.apiClient.eventSub.subscribeToChannelSubscriptionEvents(
+            userId,
+            (event) => this.handleEventSubEvent('channel.subscribe', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'channel.cheer':
+          subscription = await client.apiClient.eventSub.subscribeToChannelCheerEvents(
+            userId,
+            (event) => this.handleEventSubEvent('channel.cheer', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'channel.raid':
+          subscription = await client.apiClient.eventSub.subscribeToChannelRaidEvents(
+            userId,
+            (event) => this.handleEventSubEvent('channel.raid', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'stream.online':
+          subscription = await client.apiClient.eventSub.subscribeToStreamOnlineEvents(
+            userId,
+            (event) => this.handleEventSubEvent('stream.online', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'stream.offline':
+          subscription = await client.apiClient.eventSub.subscribeToStreamOfflineEvents(
+            userId,
+            (event) => this.handleEventSubEvent('stream.offline', userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        case 'channel.chat.message':
+          subscription = await client.apiClient.eventSub.subscribeToChannelChatMessageEvents(
+            userId,
+            userId, // broadcaster_user_id (same as user_id for own channel)
+            (event) => this.handleChatMessageEvent(userId, event),
+            { webhookUrl, secret: await keyVault.getSecret('EVENTSUB-WEBHOOK-SECRET') }
+          );
+          break;
+
+        default:
+          throw new Error(`Unsupported event type: ${eventType}`);
+      }
+
+      console.log(`✅ Subscribed ${user.username} to ${eventType} (ID: ${subscription.id})`);
+      return subscription.id;
+
+    } catch (error) {
+      console.error(`❌ Failed to subscribe ${user.username} to ${eventType}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unsubscribe from an EventSub event
+   */
+  async unsubscribeFromEvent(subscriptionId) {
+    try {
+      // We need any connected client to make the API call
+      const firstClient = Array.from(this.clients.values())[0];
+      if (!firstClient) {
+        throw new Error('No connected clients available for unsubscription');
+      }
+
+      await firstClient.apiClient.eventSub.deleteSubscription(subscriptionId);
+      console.log(`✅ Unsubscribed from EventSub subscription: ${subscriptionId}`);
+    } catch (error) {
+      console.error(`❌ Failed to unsubscribe from ${subscriptionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Handle EventSub events (placeholder - actual handling is done by streamMonitor)
+   */
+  handleEventSubEvent(eventType, userId, event) {
+    console.log(`📡 EventSub event received: ${eventType} for user ${userId}`);
+
+    // Emit to streamMonitor for processing
+    this.emit('eventSubEvent', {
+      type: eventType,
+      userId: userId,
+      event: event
+    });
+  }
+
+  /**
+   * Handle chat message events from EventSub
+   */
+  async handleChatMessageEvent(userId, event) {
+    try {
+      const message = event.message.text.toLowerCase().trim();
+      const username = event.chatter_user_name;
+      const messageId = event.message_id;
+
+      console.log(`💬 Chat message received: ${username}: ${event.message.text}`);
+
+      // Check for !discord command
+      if (message === '!discord') {
+        await this.handleDiscordCommand(userId, messageId, username);
+      }
+
+      // Emit to streamMonitor for other chat processing if needed
+      this.emit('chatMessageReceived', {
+        userId: userId,
+        username: username,
+        message: event.message.text,
+        messageId: messageId,
+        event: event
+      });
+
+    } catch (error) {
+      console.error(`❌ Error handling chat message event for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Handle !discord command - post Discord invite link to chat
+   */
+  async handleDiscordCommand(userId, messageId, username) {
+    try {
+      const client = this.clients.get(userId);
+      if (!client) {
+        console.error(`❌ No client found for user ${userId}`);
+        return;
+      }
+
+      // Get user's Discord invite link from database
+      const user = await database.getUser(userId);
+      if (!user || !user.discordInviteLink) {
+        console.log(`❌ No Discord invite link configured for user ${userId}`);
+
+        // Send a response indicating no Discord link is configured
+        await this.sendChatMessage(userId, `@${username} Discord invite link is not configured yet! 💙`);
+        return;
+      }
+
+      // Create a fancy message with the Discord invite
+      const discordMessage = `🎮 Join our Discord community! ${user.discordInviteLink} 💙✨`;
+
+      // Send the message to chat
+      const success = await this.sendChatMessage(userId, discordMessage);
+
+      if (success) {
+        console.log(`✅ Discord invite sent to chat for user ${userId} (triggered by ${username})`);
+
+        // Emit event for overlay effects
+        this.emit('discordCommandUsed', {
+          userId: userId,
+          triggeredBy: username,
+          messageId: messageId,
+          discordLink: user.discordInviteLink,
+          timestamp: new Date()
+        });
+      }
+
+    } catch (error) {
+      console.error(`❌ Error handling !discord command for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Send a chat message via Twitch API (not IRC chat client)
+   */
+  async sendChatMessage(userId, message) {
+    try {
+      const client = this.clients.get(userId);
+      if (!client) {
+        throw new Error(`No client found for user ${userId}`);
+      }
+
+      // Get broadcaster info
+      const broadcasterInfo = await client.apiClient.users.getUserByName(client.username);
+      if (!broadcasterInfo) {
+        throw new Error(`Could not get broadcaster info for ${client.username}`);
+      }
+
+      // Send message using Twitch API
+      await client.apiClient.chat.sendChatMessage(broadcasterInfo.id, {
+        message: message
+      });
+
+      return true;
+    } catch (error) {
+      console.error(`❌ Error sending chat message for user ${userId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get EventSub status and statistics
+   */
+  async getEventSubStatus() {
+    try {
+      // Use any connected client to get subscription info
+      const firstClient = Array.from(this.clients.values())[0];
+      if (!firstClient) {
+        return {
+          connected: false,
+          subscriptions: 0,
+          connectedClients: 0
+        };
+      }
+
+      const subscriptions = await firstClient.apiClient.eventSub.getSubscriptions();
+
+      return {
+        connected: true,
+        subscriptions: subscriptions.data.length,
+        connectedClients: this.clients.size,
+        subscriptionDetails: subscriptions.data.map(sub => ({
+          id: sub.id,
+          type: sub.type,
+          status: sub.status,
+          createdAt: sub.createdAt
+        }))
+      };
+    } catch (error) {
+      console.error('Error getting EventSub status:', error);
+      return {
+        connected: false,
+        error: error.message,
+        connectedClients: this.clients.size
+      };
+    }
+  }
 }
 
 // Export singleton instance

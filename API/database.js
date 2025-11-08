@@ -142,6 +142,7 @@ class Database {
       webhooks: false,
       bitsIntegration: false,
       streamOverlay: false,
+      streamAlerts: false,
       alertAnimations: false,
       discordNotifications: true
     };
@@ -182,6 +183,7 @@ class Database {
       features: JSON.stringify(userData.features || (existingUser?.features ? JSON.parse(existingUser.features) : defaultFeatures)),
       overlaySettings: JSON.stringify(userData.overlaySettings || (existingUser?.overlaySettings ? JSON.parse(existingUser.overlaySettings) : defaultOverlaySettings)),
       discordWebhookUrl: userData.discordWebhookUrl || existingUser?.discordWebhookUrl || '',
+      discordInviteLink: userData.discordInviteLink || existingUser?.discordInviteLink || '',
       isActive: userData.isActive !== undefined ? userData.isActive : (existingUser?.isActive !== undefined ? existingUser.isActive : true),
       streamStatus: userData.streamStatus || existingUser?.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
       createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
@@ -1079,6 +1081,63 @@ class Database {
   }
 
   /**
+   * Update user's Discord invite link
+   */
+  async updateUserDiscordInvite(twitchUserId, inviteLink) {
+    try {
+      const user = await this.getUser(twitchUserId);
+      if (!user) {
+        throw new Error(`User ${twitchUserId} not found`);
+      }
+
+      console.log(`🔗 updateUserDiscordInvite - Updating invite for user ${twitchUserId}`);
+
+      if (this.mode === 'azure') {
+        try {
+          await this.usersClient.upsertEntity({
+            partitionKey: user.partitionKey,
+            rowKey: user.rowKey,
+            twitchUserId: user.twitchUserId,
+            username: user.username,
+            displayName: user.displayName,
+            email: user.email || '',
+            profileImageUrl: user.profileImageUrl || '',
+            accessToken: user.accessToken,
+            refreshToken: user.refreshToken,
+            tokenExpiry: user.tokenExpiry,
+            role: user.role,
+            features: user.features,
+            overlaySettings: user.overlaySettings,
+            discordWebhookUrl: user.discordWebhookUrl || '',
+            discordInviteLink: inviteLink || ''
+          }, 'Replace');
+
+          console.log(`✅ updateUserDiscordInvite - Successfully updated user ${twitchUserId}`);
+        } catch (error) {
+          console.error(`❌ updateUserDiscordInvite - Azure error:`, error);
+          throw error;
+        }
+      } else {
+        // Local mode
+        const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+
+        if (users[twitchUserId]) {
+          users[twitchUserId].discordInviteLink = inviteLink || '';
+          fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+        } else {
+          user.discordInviteLink = inviteLink || '';
+        }
+      }
+
+      user.discordInviteLink = inviteLink || '';
+      return user;
+    } catch (error) {
+      console.error('❌ Error updating Discord invite link:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Update user's Discord notification settings
    */
   async updateUserDiscordSettings(twitchUserId, settings) {
@@ -1679,6 +1738,115 @@ class Database {
     }
 
     return alert || null;
+  }
+
+  /**
+   * Get EventSub subscriptions for a user
+   */
+  async getEventSubSubscriptions(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const entity = await this.usersClient.getEntity(twitchUserId, 'eventsub_subscriptions');
+        return JSON.parse(entity.subscriptions || '{}');
+      } catch (error) {
+        if (error.statusCode === 404) {
+          return {}; // No subscriptions yet
+        }
+        console.error('Error fetching EventSub subscriptions from Azure:', error);
+        throw error;
+      }
+    } else {
+      // Local mode - store in separate file
+      const subscriptionsFile = path.join(this.localDataDir, 'eventsub_subscriptions.json');
+
+      if (!fs.existsSync(subscriptionsFile)) {
+        return {};
+      }
+
+      try {
+        const allSubscriptions = JSON.parse(fs.readFileSync(subscriptionsFile, 'utf8'));
+        return allSubscriptions[twitchUserId] || {};
+      } catch (error) {
+        console.error('Error reading EventSub subscriptions file:', error);
+        return {};
+      }
+    }
+  }
+
+  /**
+   * Save EventSub subscriptions for a user
+   */
+  async saveEventSubSubscriptions(twitchUserId, subscriptions) {
+    if (this.mode === 'azure') {
+      try {
+        const entity = {
+          partitionKey: twitchUserId,
+          rowKey: 'eventsub_subscriptions',
+          subscriptions: JSON.stringify(subscriptions),
+          lastUpdated: new Date().toISOString()
+        };
+
+        await this.usersClient.upsertEntity(entity);
+        console.log(`✅ Saved EventSub subscriptions for user ${twitchUserId}`);
+      } catch (error) {
+        console.error('Error saving EventSub subscriptions to Azure:', error);
+        throw error;
+      }
+    } else {
+      // Local mode
+      const subscriptionsFile = path.join(this.localDataDir, 'eventsub_subscriptions.json');
+
+      let allSubscriptions = {};
+      if (fs.existsSync(subscriptionsFile)) {
+        try {
+          allSubscriptions = JSON.parse(fs.readFileSync(subscriptionsFile, 'utf8'));
+        } catch (error) {
+          console.error('Error reading EventSub subscriptions file:', error);
+          allSubscriptions = {};
+        }
+      }
+
+      allSubscriptions[twitchUserId] = subscriptions;
+      fs.writeFileSync(subscriptionsFile, JSON.stringify(allSubscriptions, null, 2), 'utf8');
+      console.log(`✅ Saved EventSub subscriptions for user ${twitchUserId} (local)`);
+    }
+  }
+
+  /**
+   * Get all EventSub subscriptions (admin only)
+   */
+  async getAllEventSubSubscriptions() {
+    if (this.mode === 'azure') {
+      try {
+        const entities = this.usersClient.listEntities({
+          queryOptions: { filter: `RowKey eq 'eventsub_subscriptions'` }
+        });
+
+        const allSubscriptions = {};
+        for await (const entity of entities) {
+          allSubscriptions[entity.partitionKey] = JSON.parse(entity.subscriptions || '{}');
+        }
+
+        return allSubscriptions;
+      } catch (error) {
+        console.error('Error fetching all EventSub subscriptions from Azure:', error);
+        throw error;
+      }
+    } else {
+      // Local mode
+      const subscriptionsFile = path.join(this.localDataDir, 'eventsub_subscriptions.json');
+
+      if (!fs.existsSync(subscriptionsFile)) {
+        return {};
+      }
+
+      try {
+        return JSON.parse(fs.readFileSync(subscriptionsFile, 'utf8'));
+      } catch (error) {
+        console.error('Error reading EventSub subscriptions file:', error);
+        return {};
+      }
+    }
   }
 }
 

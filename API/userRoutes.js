@@ -305,6 +305,66 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
 });
 
 /**
+ * Get Discord invite link configuration
+ * GET /api/user/discord-invite
+ */
+router.get('/discord-invite', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      discordInviteLink: user.discordInviteLink || '',
+      configured: !!user.discordInviteLink
+    });
+  } catch (error) {
+    console.error('❌ Error fetching Discord invite:', error);
+    res.status(500).json({ error: 'Failed to fetch Discord invite configuration' });
+  }
+});
+
+/**
+ * Update Discord invite link
+ * PUT /api/user/discord-invite
+ */
+router.put('/discord-invite', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { inviteLink } = req.body;
+
+    console.log(`🔗 Updating Discord invite for user ${req.user.username}:`, { inviteLink });
+
+    // Validate Discord invite URL format if provided
+    if (inviteLink && inviteLink.trim() !== '') {
+      const discordInviteRegex = /^https:\/\/(discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\/)/;
+      if (!discordInviteRegex.test(inviteLink.trim())) {
+        console.log('❌ Invalid Discord invite URL format');
+        return res.status(400).json({ error: 'Invalid Discord invite URL format. Must be a discord.gg/xxx or discord.com/invite/xxx link' });
+      }
+    }
+
+    // Update in database
+    const updatedUser = await database.updateUserDiscordInvite(userId, inviteLink ? inviteLink.trim() : '');
+
+    console.log(`✅ Discord invite updated for ${req.user.username}`);
+
+    res.json({
+      message: 'Discord invite link updated successfully',
+      discordInviteLink: updatedUser.discordInviteLink || '',
+      configured: !!updatedUser.discordInviteLink
+    });
+  } catch (error) {
+    console.error('❌ Error updating Discord invite:', error);
+    res.status(500).json({ error: 'Failed to update Discord invite link' });
+  }
+});
+
+/**
  * Send Discord notification for stream events
  */
 async function sendDiscordNotification(user, eventType, data) {

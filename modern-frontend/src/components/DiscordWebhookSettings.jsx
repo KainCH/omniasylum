@@ -19,7 +19,8 @@ function DiscordWebhookSettings({ user }) {
   // Form state management using our new hooks
   const { values: formState, setValue: updateField, reset: resetForm } = useFormState({
     webhookUrl: '',
-    enabled: false
+    enabled: false,
+    discordInviteLink: ''
   })
 
   // Debug form state changes
@@ -27,6 +28,7 @@ function DiscordWebhookSettings({ user }) {
     console.log('🔄 FORM STATE CHANGED:', {
       webhookUrl: formState.webhookUrl,
       enabled: formState.enabled,
+      discordInviteLink: formState.discordInviteLink,
       timestamp: new Date().toISOString()
     })
   }, [formState])
@@ -118,18 +120,24 @@ function DiscordWebhookSettings({ user }) {
         updateField('webhookUrl', discordData?.webhookUrl || '')
         updateField('enabled', discordData?.enabled || false)
 
-        if (discordData?.webhookUrl) {
-          console.log('✅ Existing webhook configuration loaded')
-          showMessage(`Configuration loaded: Webhook ${discordData?.enabled ? 'enabled' : 'disabled'}`, 'success')
+        // Load Discord invite link
+        console.log('🔗 Fetching Discord invite link...')
+        const inviteData = await userAPI.getDiscordInvite()
+        console.log('🔗 Discord invite data received:', inviteData)
+        updateField('discordInviteLink', inviteData?.discordInviteLink || '')
+
+        if (discordData?.webhookUrl || inviteData?.discordInviteLink) {
+          console.log('✅ Existing Discord configuration loaded')
+          showMessage(`Configuration loaded: Webhook ${discordData?.enabled ? 'enabled' : 'disabled'}, Invite ${inviteData?.configured ? 'configured' : 'not configured'}`, 'success')
         } else {
-          console.log('ℹ️ No existing webhook configuration found')
+          console.log('ℹ️ No existing Discord configuration found')
           showMessage('No existing configuration found - you can set one up below', 'info')
         }
       })
     } catch (error) {
-      console.error('❌ Error loading webhook configuration:', error)
+      console.error('❌ Error loading Discord configuration:', error)
       console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
-      showMessage('Failed to load webhook configuration', 'error')
+      showMessage('Failed to load Discord configuration', 'error')
     }
   }
 
@@ -286,6 +294,37 @@ function DiscordWebhookSettings({ user }) {
 
   // Template settings function removed - standard format used for all notifications
 
+  const saveDiscordInviteLink = async () => {
+    console.log('🔗 Save Discord Invite Link button clicked')
+    console.log('📊 Invite link to save:', formState?.discordInviteLink)
+
+    try {
+      await withLoading(async () => {
+        // Validate invite link format (optional validation)
+        if (formState?.discordInviteLink && !formState?.discordInviteLink.match(/^https:\/\/(discord\.gg\/|discord\.com\/invite\/)/)) {
+          console.log('❌ Discord invite URL validation failed')
+          showMessage('Invalid Discord invite URL format. Should start with https://discord.gg/ or https://discord.com/invite/', 'error')
+          return
+        }
+        console.log('✅ Discord invite URL validation passed')
+
+        // Save invite link
+        console.log('🔗 Saving Discord invite link...')
+        const payload = {
+          discordInviteLink: formState?.discordInviteLink || ''
+        }
+        console.log('🔗 Invite payload:', payload)
+        await userAPI.updateDiscordInvite(payload)
+        console.log('✅ Discord invite link saved successfully')
+
+        showMessage('Discord invite link saved successfully!', 'success')
+      })
+    } catch (error) {
+      console.error('❌ Error saving Discord invite link:', error)
+      showMessage('Failed to save Discord invite link', 'error')
+    }
+  }
+
   const testWebhook = async () => {
     if (!formState?.webhookUrl) {
       showMessage('Please enter a webhook URL first', 'error')
@@ -344,11 +383,11 @@ function DiscordWebhookSettings({ user }) {
         <button
           className={`tab-button ${activeTab === 'configuration' ? 'active' : ''}`}
           onClick={() => {
-            console.log('⚙️ Configuration tab clicked, switching and loading configuration...')
+            console.log('⚙️ Discord Settings tab clicked, switching and loading configuration...')
             setActiveTab('configuration')
           }}
         >
-          ⚙️ Configuration
+          ⚙️ Discord Settings
         </button>
       </div>
 
@@ -648,7 +687,80 @@ function DiscordWebhookSettings({ user }) {
               </div>
             </FormSection>
 
-            <FormSection title="📋 Notification Format" collapsible>
+            <FormSection title="� Discord Invite Link">
+              <div className="settings-info">
+                <p>Configure a Discord invite link for the !discord chat command!</p>
+              </div>
+
+              <div className="invite-setup">
+                <h4>How it works</h4>
+                <ol>
+                  <li>Set your Discord server invite link below</li>
+                  <li>When viewers type <code>!discord</code> in chat, the bot will post your invite</li>
+                  <li>The message includes special effects and your custom invite link</li>
+                </ol>
+              </div>
+
+              <InputGroup
+                label="Discord Invite Link"
+                required={false}
+              >
+                <input
+                  type="url"
+                  value={formState?.discordInviteLink || ''}
+                  onChange={(e) => updateField('discordInviteLink', e.target.value)}
+                  placeholder="https://discord.gg/yourserver or https://discord.com/invite/yourserver"
+                  disabled={isLoading}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: '#2a2a2a',
+                    border: `2px solid ${formState?.discordInviteLink ? '#22c55e' : '#444'}`,
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontFamily: 'Courier New, monospace'
+                  }}
+                />
+                <small style={{
+                  color: '#888',
+                  fontSize: '0.875rem',
+                  display: 'block',
+                  marginTop: '5px'
+                }}>
+                  Discord invite URLs typically start with https://discord.gg/ or https://discord.com/invite/
+                </small>
+                {formState?.discordInviteLink && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '6px 10px',
+                    background: '#22c55e1a',
+                    border: '1px solid #22c55e',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    color: '#22c55e'
+                  }}>
+                    ✅ Discord invite configured - !discord command will work in chat
+                  </div>
+                )}
+              </InputGroup>
+
+              <div className="invite-actions">
+                <ActionButton
+                  variant="primary"
+                  onClick={() => {
+                    console.log('🔗 Save Discord Invite Link button clicked')
+                    console.log('📊 Invite link:', formState?.discordInviteLink)
+                    saveDiscordInviteLink()
+                  }}
+                  loading={isLoading}
+                >
+                  💾 Save Invite Link
+                </ActionButton>
+              </div>
+            </FormSection>
+
+            <FormSection title="�📋 Notification Format" collapsible>
               <div style={{
                 background: 'rgba(34, 197, 94, 0.1)',
                 border: '1px solid #22c55e',

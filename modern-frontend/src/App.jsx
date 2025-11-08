@@ -95,6 +95,16 @@ function App() {
   })
   const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
 
+  // EventSub subscriptions state
+  const [eventSubSubscriptions, setEventSubSubscriptions] = useState({
+    totalActive: 0,
+    totalPossible: 10,
+    activeSubscriptions: [],
+    subscriptionsByCategory: {},
+    systemConnected: false,
+    totalSystemSubscriptions: 0
+  })
+
   // Discord notification status tracking
   const [discordNotificationStatus, setDiscordNotificationStatus] = useState({
     status: 'not_configured', // not_configured, ready, pending, sent, error
@@ -270,6 +280,9 @@ function App() {
 
         // Check EventSub monitoring status
         checkEventSubStatus()
+
+        // Check EventSub subscription status
+        checkEventSubSubscriptions()
 
         // Check Discord notification status
         checkDiscordNotificationStatus()
@@ -469,8 +482,12 @@ function App() {
     newSocket.on('connect', () => {
       console.log('🔌 Connected to server, requesting EventSub status...')
       // Trigger EventSub status check which will broadcast current status
+      const token = localStorage.getItem('authToken')
       fetch('/api/stream/eventsub-status', {
-        headers: getAuthHeaders()
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       }).catch(err => console.warn('❌ Failed to fetch EventSub status on connect:', err))
     })
 
@@ -714,6 +731,32 @@ function App() {
       }
     } catch (error) {
       console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
+  const checkEventSubSubscriptions = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/eventsub/subscription-status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setEventSubSubscriptions({
+          totalActive: data.subscriptionStatus?.totalActive || 0,
+          totalPossible: data.subscriptionStatus?.totalPossible || 10,
+          activeSubscriptions: data.subscriptionStatus?.activeSubscriptions || [],
+          subscriptionsByCategory: data.subscriptionStatus?.subscriptionsByCategory || {},
+          systemConnected: data.subscriptionStatus?.systemConnected || false,
+          totalSystemSubscriptions: data.subscriptionStatus?.totalSystemSubscriptions || 0
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error checking EventSub subscriptions:', error)
     }
   }
 
@@ -1123,6 +1166,103 @@ function App() {
               <p style={{ margin: 0, fontSize: '14px' }}>
                 ⚠️ <strong>Connection issues detected</strong><br/>
                 <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* EventSub Subscriptions Status */}
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          padding: '15px',
+          marginTop: '15px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h4 style={{ marginBottom: '15px', color: '#fff', fontSize: '16px' }}>📡 EventSub Subscriptions</h4>
+
+          {/* Subscription Status Indicator */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            marginBottom: '15px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: eventSubSubscriptions.totalActive > 0 ? '#28a745' : '#6c757d'
+              }}></div>
+              <p style={{ margin: 0, color: '#ccc' }}>
+                Active Events: <strong style={{
+                  color: eventSubSubscriptions.totalActive > 0 ? '#28a745' : '#6c757d'
+                }}>
+                  {eventSubSubscriptions.totalActive || 0}/{eventSubSubscriptions.totalPossible || 10}
+                </strong>
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowOverlayManager && setShowOverlayManager(true)}
+              style={{
+                background: '#9146ff',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              ⚙️ Configure
+            </button>
+          </div>
+
+          {/* Active Subscriptions List */}
+          {eventSubSubscriptions.subscriptionsByCategory && Object.keys(eventSubSubscriptions.subscriptionsByCategory).length > 0 ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <div style={{ marginBottom: '8px' }}>
+                <strong>📊 Active Event Categories:</strong>
+              </div>
+              {Object.entries(eventSubSubscriptions.subscriptionsByCategory).map(([category, events]) => (
+                <div key={category} style={{ fontSize: '13px', marginBottom: '4px' }}>
+                  <strong>{category}:</strong> {events.map(e => e.icon).join(' ')} ({events.length} events)
+                </div>
+              ))}
+            </div>
+          ) : eventSubStatus.monitoring ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⚠️ <strong>No EventSub subscriptions active</strong><br/>
+                <small>Configure which events to monitor in overlay settings</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                📡 <strong>EventSub monitoring not started</strong><br/>
+                <small>Start monitoring to enable event subscriptions</small>
               </p>
             </div>
           )}

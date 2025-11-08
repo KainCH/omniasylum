@@ -822,6 +822,14 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
         requiredRole: 'streamer'
       },
       {
+        id: 'streamAlerts',
+        name: 'Stream Alerts',
+        icon: '🚨',
+        description: 'Custom alerts for Twitch events (follows, subs, bits, raids) with event mappings',
+        defaultEnabled: false,
+        requiredRole: 'streamer'
+      },
+      {
         id: 'alertAnimations',
         name: 'Alert Animations',
         icon: '✨',
