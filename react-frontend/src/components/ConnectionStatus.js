@@ -33,9 +33,9 @@ function ConnectionStatus({ status }) {
   const config = getStatusConfig();
 
   return (
-    <div className={`connection-status ${config.className}`}>
-      <span className="status-icon">{config.icon}</span>
-      <span className="status-text">{config.text}</span>
+    <div className={`connection-status ${config?.className || ''}`}>
+      <span className="status-icon">{config?.icon}</span>
+      <span className="status-text">{config?.text}</span>
     </div>
   );
 }

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alert Effects Settings Test</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f0f23;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .test-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .test-controls {
+      background: #1a1a2e;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .test-controls h2 {
+      margin: 0 0 20px 0;
+      color: #9146ff;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+    }
+
+    .control-item {
+      background: #16213e;
+      padding: 15px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-label {
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 25px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #555;
+      transition: 0.4s;
+      border-radius: 25px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 17px;
+      width: 17px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #9146ff;
+    }
+
+    .toggle-switch input:checked+.toggle-slider:before {
+      transform: translateX(25px);
+    }
+
+    .volume-control {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .volume-slider {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: #444;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #9146ff;
+      cursor: pointer;
+    }
+
+    .trigger-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .trigger-button {
+      background: #9146ff;
+      color: #fff;
+      border: none;
+      padding: 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+
+    .trigger-button:hover {
+      background: #a560ff;
+      transform: translateY(-2px);
+    }
+
+    .current-settings {
+      background: #16213e;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #00ff00;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .alert-display {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="test-container">
+    <div class="test-controls">
+      <h2>🎭 Alert Effects Settings Control Panel</h2>
+
+      <div class="control-grid">
+        <div class="control-item">
+          <span class="control-label">🔊 Sound Effects</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-sound" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="control-item">
+          <span class="control-label">🎬 CSS Animations</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-animations" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="control-item">
+          <span class="control-label">✨ Particle Systems</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-particles" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="control-item">
+          <span class="control-label">📺 Screen Effects</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-screen" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="control-item">
+          <span class="control-label">🌫️ SVG Filters</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-svg" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="control-item">
+          <span class="control-label">🔤 Text Effects</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-text" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="volume-control">
+          <span class="control-label">🔊 Volume:</span>
+          <input type="range" class="volume-slider" id="volume" min="0" max="100" value="70">
+          <span id="volume-display">70%</span>
+        </div>
+      </div>
+
+      <div class="trigger-buttons">
+        <button class="trigger-button" onclick="testAlert('follow')">
+          👥 Test Follow
+        </button>
+        <button class="trigger-button" onclick="testAlert('subscribe')">
+          ⭐ Test Subscribe
+        </button>
+        <button class="trigger-button" onclick="testAlert('resub')">
+          📝 Test Resub
+        </button>
+        <button class="trigger-button" onclick="testAlert('bits')">
+          💎 Test Bits
+        </button>
+        <button class="trigger-button" onclick="testAlert('raid')">
+          🚨 Test Raid
+        </button>
+        <button class="trigger-button" onclick="testAlert('gift')">
+          💝 Test Gift Sub
+        </button>
+        <button class="trigger-button" onclick="testAlert('hype')">
+          🎉 Test Hype Train
+        </button>
+      </div>
+
+      <div class="current-settings" id="settings-display"></div>
+    </div>
+  </div>
+
+  <div class="alert-display" id="alert-container"></div>
+
+  <script src="/asylum-effects.js"></script>
+  <script>
+    // Initialize settings display
+    function updateSettingsDisplay() {
+      const settings = window.asylumEffects.getSettings();
+      const volume = Math.round(window.asylumEffects.audioVolume * 100);
+      const display = document.getElementById('settings-display');
+      display.textContent = `Current Settings (saved to localStorage):\n${JSON.stringify({
+        ...settings,
+        volume: `${volume}%`
+      }, null, 2)}`;
+    }
+
+    // Setup toggle listeners
+    document.getElementById('toggle-sound').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableSound', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('toggle-animations').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableAnimations', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('toggle-particles').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableParticles', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('toggle-screen').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableScreenEffects', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('toggle-svg').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableSVGFilters', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('toggle-text').addEventListener('change', (e) => {
+      window.asylumEffects.toggleSetting('enableTextEffects', e.target.checked);
+      updateSettingsDisplay();
+    });
+
+    document.getElementById('volume').addEventListener('input', (e) => {
+      const volume = parseInt(e.target.value);
+      window.asylumEffects.setVolume(volume / 100);
+      document.getElementById('volume-display').textContent = `${volume}%`;
+      updateSettingsDisplay();
+    });
+
+    // Test alerts
+    const alertTemplates = {
+      follow: {
+        textPrompt: 'Welcome to the asylum, TestUser!',
+        backgroundColor: '#2d1b1b',
+        textColor: '#ffffff',
+        duration: 4000,
+        effects: {
+          animation: 'doorCreak',
+          svgMask: 'fog',
+          particle: 'dust',
+          screenShake: true,
+          soundTrigger: 'doorCreak'
+        }
+      },
+      subscribe: {
+        textPrompt: 'TestUser subscribed! The experiment continues...',
+        backgroundColor: '#1a1a3e',
+        textColor: '#00ffff',
+        duration: 5000,
+        effects: {
+          animation: 'electricPulse',
+          svgMask: 'glassDistortion',
+          particle: 'sparks',
+          screenFlicker: true,
+          soundTrigger: 'electroshock'
+        }
+      },
+      resub: {
+        textPrompt: 'TestUser resubscribed for 6 months!',
+        backgroundColor: '#2d2d1b',
+        textColor: '#ffcc00',
+        duration: 5000,
+        effects: {
+          animation: 'typewriter',
+          svgMask: 'paperTexture',
+          particle: 'ink',
+          textScramble: true,
+          soundTrigger: 'typewriter'
+        }
+      },
+      bits: {
+        textPrompt: 'TestUser cheered 500 bits! 💊',
+        backgroundColor: '#3e1a3e',
+        textColor: '#ff00ff',
+        duration: 5000,
+        effects: {
+          animation: 'pillScatter',
+          particle: 'pills',
+          colorShift: true,
+          soundTrigger: 'pillRattle'
+        }
+      },
+      raid: {
+        textPrompt: 'TestUser raided with 100 patients! 🚨',
+        backgroundColor: '#3e1a1a',
+        textColor: '#ff0000',
+        duration: 6000,
+        effects: {
+          animation: 'sirenFlash',
+          particle: 'chaos',
+          redAlert: true,
+          soundTrigger: 'alarm'
+        }
+      },
+      gift: {
+        textPrompt: 'TestUser gifted 5 subs! 💝',
+        backgroundColor: '#1a2d2d',
+        textColor: '#ff6b9d',
+        duration: 5000,
+        effects: {
+          animation: 'heartbeatPulse',
+          svgMask: 'silhouette',
+          particle: 'hearts',
+          soundTrigger: 'heartMonitor'
+        }
+      },
+      hype: {
+        textPrompt: 'Hype Train Level 3! All aboard! 🎉',
+        backgroundColor: '#2d2d1b',
+        textColor: '#ffaa00',
+        duration: 8000,
+        effects: {
+          animation: 'wheelchairRoll',
+          svgMask: 'hallwayPerspective',
+          particle: 'smoke',
+          soundTrigger: 'hypeTrain'
+        }
+      }
+    };
+
+    function testAlert(type) {
+      const template = alertTemplates[type];
+      if (template) {
+        window.asylumEffects.triggerEffect(template);
+      }
+    }
+
+    // Initial display
+    updateSettingsDisplay();
+
+    console.log('✅ Alert Effects Test Page Ready');
+    console.log('🎭 Click buttons to test different alert types');
+    console.log('⚙️ Toggle settings to see effects change in real-time');
+  </script>
+</body>
+
+</html>

@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import Counter from './components/Counter'
 import AuthPrompt from './components/AuthPrompt'
 import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
+import UserAlertManager from './components/UserAlertManager'
+import AlertEffectsSettings from './components/AlertEffectsSettings'
+import SeriesSaveManager from './components/SeriesSaveManager'
+import DiscordWebhookSettings from './components/DiscordWebhookSettings'
 import './App.css'
 
 function App() {
@@ -49,6 +53,11 @@ function App() {
   const [viewMode, setViewMode] = useState('user')
   const [showInstructionsModal, setShowInstructionsModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showAlertManager, setShowAlertManager] = useState(false)
+  const [showAlertEffectsSettings, setShowAlertEffectsSettings] = useState(false)
+  const [showSeriesSaveManager, setShowSeriesSaveManager] = useState(false)
+  const [showDiscordSettings, setShowDiscordSettings] = useState(false)
+  const [userFeatures, setUserFeatures] = useState({})
   const [streamStatus, setStreamStatus] = useState('offline')
   const [overlaySettings, setOverlaySettings] = useState({
     enabled: true,
@@ -73,6 +82,32 @@ function App() {
       backgroundColor: 'rgba(0, 0, 0, 0.8)'
     }
   }) // ALWAYS start in user mode
+
+  // EventSub monitoring state
+  const [eventSubStatus, setEventSubStatus] = useState({
+    connected: false,
+    monitoring: false,
+    lastConnected: null,
+    subscriptionsEnabled: false,
+    lastStreamStart: null,
+    lastStreamEnd: null,
+    streamStatus: 'offline'  // Real-time stream status from EventSub
+  })
+  const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
+
+  // Discord notification status tracking
+  const [discordNotificationStatus, setDiscordNotificationStatus] = useState({
+    status: 'not_configured', // not_configured, ready, pending, sent, error
+    hasWebhook: false,
+    pendingChannelInfo: false,
+    pendingStreamInfo: false,
+    lastNotificationSent: null,
+    currentStreamId: null,
+    setupSteps: []
+  })
+
+  // Refs for interval management
+  const streamingHeartbeatRef = useRef(null)
 
   // Check authentication status
   useEffect(() => {
@@ -168,15 +203,38 @@ function App() {
     }
   }, [isAuthenticated])
 
-  // Cleanup socket only when component unmounts
+  // Cleanup socket and intervals when component unmounts
   useEffect(() => {
     return () => {
       if (socket) {
         console.log('🔌 Frontend: Component unmounting, disconnecting socket')
         socket.disconnect()
       }
+      if (streamingHeartbeatRef.current) {
+        clearInterval(streamingHeartbeatRef.current)
+        streamingHeartbeatRef.current = null
+        console.log('💓 Cleaned up streaming heartbeat on unmount')
+      }
     }
   }, [])
+
+  // Helper functions for streaming heartbeat management
+  const startStreamingHeartbeat = (socket) => {
+    if (!streamingHeartbeatRef.current && socket) {
+      streamingHeartbeatRef.current = setInterval(() => {
+        socket.emit('streamModeHeartbeat')
+      }, 30000) // Send heartbeat every 30 seconds
+      console.log('💓 Started streaming heartbeat (prep/live mode)')
+    }
+  }
+
+  const stopStreamingHeartbeat = () => {
+    if (streamingHeartbeatRef.current) {
+      clearInterval(streamingHeartbeatRef.current)
+      streamingHeartbeatRef.current = null
+      console.log('💓 Stopped streaming heartbeat (went offline)')
+    }
+  }
 
   const checkAuth = async () => {
     try {
@@ -209,6 +267,12 @@ function App() {
 
         // Fetch stream status and overlay settings
         fetchUserSettings(token)
+
+        // Check EventSub monitoring status
+        checkEventSubStatus()
+
+        // Check Discord notification status
+        checkDiscordNotificationStatus()
 
         // Also decode token to get user info if we haven't already
         if (!username) {
@@ -254,7 +318,7 @@ function App() {
     console.log('🔌 Frontend: Socket.io client created, attempting WebSocket-only connection...')
 
     newSocket.on('connect_error', (error) => {
-      console.error('❌ Socket.io connect error:', error.message)
+      console.error('❌ Socket.io connect error:', error?.message || 'Unknown error')
       console.error('❌ Error details:', error)
     })
 
@@ -283,32 +347,173 @@ function App() {
 
     newSocket.on('streamStatusUpdate', (data) => {
       console.log('🎬 Stream status update received:', data)
-      setStreamStatus(data.streamStatus)
+      setStreamStatus(data?.streamStatus)
     })
 
     newSocket.on('overlaySettingsUpdate', (data) => {
       console.log('🎨 Overlay settings update received:', data)
-      const settings = typeof data.overlaySettings === 'string'
-        ? JSON.parse(data.overlaySettings)
-        : data.overlaySettings
+      const settings = typeof data?.overlaySettings === 'string'
+        ? JSON.parse(data?.overlaySettings)
+        : data?.overlaySettings
       setOverlaySettings(settings)
     })
 
     newSocket.on('streamOnline', (data) => {
       console.log('🔴 Stream ONLINE event received:', data)
-      setStreamStatus('live')
-      // Could add notification or UI indicator here
-      console.log(`📺 ${data.username} went LIVE! "${data.streamTitle}"`)
+
+      // Update EventSub status with real-time stream status
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        streamStatus: 'live',
+        lastStreamStart: new Date().toISOString()
+      }))
+
+      console.log(`📺 ${data?.username || 'Unknown user'} went LIVE! "${data?.streamTitle || 'Untitled stream'}"`)
     })
 
     newSocket.on('streamOffline', (data) => {
       console.log('⚫ Stream OFFLINE event received:', data)
-      setStreamStatus('offline')
-      console.log(`📺 ${data.username} went offline`)
+
+      // Update EventSub status with real-time stream status
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        streamStatus: 'offline',
+        lastStreamEnd: new Date().toISOString()
+      }))
+
+      // Note: Monitoring stays active unless user manually stops it
+      console.log(`📺 ${data?.username || 'Unknown user'} went offline - monitoring continues`)
+    })
+
+    // Real-time EventSub status updates
+    newSocket.on('eventSubStatusChanged', (data) => {
+      console.log('🔄 EventSub status changed:', data)
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        connected: data.connected || false,
+        monitoring: data.monitoring || false,
+        lastConnected: data.lastConnected || prevStatus.lastConnected,
+        subscriptionsEnabled: data.subscriptionsEnabled || false,
+        lastStreamStart: data.lastStreamStart || prevStatus.lastStreamStart,
+        lastStreamEnd: data.lastStreamEnd || prevStatus.lastStreamEnd,
+        streamStatus: data.streamStatus || prevStatus.streamStatus  // Real-time stream status
+      }))
+
+      // Update Discord notification status when monitoring changes
+      if (data.monitoring !== undefined) {
+        checkDiscordNotificationStatus()
+      }
+    })
+
+    // Handle Discord notification status updates
+    newSocket.on('discordNotificationPending', (data) => {
+      console.log('📋 Discord notification pending:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'pending',
+        pendingChannelInfo: data.waitingFor?.includes('channel'),
+        pendingStreamInfo: data.waitingFor?.includes('stream'),
+        currentStreamId: data.streamId
+      }))
+    })
+
+    newSocket.on('discordNotificationSent', (data) => {
+      console.log('✅ Discord notification sent:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'sent',
+        lastNotificationSent: data.sentAt || new Date().toISOString(),
+        currentStreamId: data.streamId,
+        pendingChannelInfo: false,
+        pendingStreamInfo: false,
+        setupSteps: []
+      }))
+    })
+
+    newSocket.on('discordNotificationFailed', (data) => {
+      console.log('❌ Discord notification failed:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'error',
+        setupSteps: [`❌ Notification failed: ${data.error || 'Unknown error'}`]
+      }))
+    })
+
+    newSocket.on('discordNotificationReady', (data) => {
+      console.log('🎯 Discord notification ready:', data)
+
+      // Handle different ready states
+      if (data.monitoringStopped) {
+        // Monitoring was stopped, reset to ready state
+        setDiscordNotificationStatus(prevStatus => ({
+          ...prevStatus,
+          status: 'ready',
+          pendingChannelInfo: false,
+          pendingStreamInfo: false,
+          hasChannelInfo: false,
+          channelInfo: null,
+          setupSteps: []
+        }))
+      } else if (data.hasChannelInfo) {
+        // Channel info received, ready to stream
+        setDiscordNotificationStatus(prevStatus => ({
+          ...prevStatus,
+          status: 'channel_ready',
+          hasChannelInfo: data.hasChannelInfo,
+          channelInfo: data.channelInfo,
+          pendingChannelInfo: false,
+          pendingStreamInfo: data.waitingFor?.includes('stream')
+        }))
+      }
+    })
+
+    // Request initial EventSub status
+    newSocket.on('connect', () => {
+      console.log('🔌 Connected to server, requesting EventSub status...')
+      // Trigger EventSub status check which will broadcast current status
+      fetch('/api/stream/eventsub-status', {
+        headers: getAuthHeaders()
+      }).catch(err => console.warn('❌ Failed to fetch EventSub status on connect:', err))
     })
 
     newSocket.on('error', (error) => {
       console.error('❌ Socket error:', error)
+    })
+
+    // Handle stream mode events
+    newSocket.on('prepModeActive', (data) => {
+      console.log('🎬 Prep mode ACTIVE event received:', data)
+      setStreamStatus('prepping')
+      startStreamingHeartbeat(newSocket)
+    })
+
+    newSocket.on('streamModeActive', (data) => {
+      console.log('🔴 Live mode ACTIVE event received:', data)
+      setStreamStatus('live')
+      startStreamingHeartbeat(newSocket)
+    })
+
+    newSocket.on('streamModeStatus', (data) => {
+      console.log('💓 Stream mode status received:', data)
+      if (!data?.active || !data?.eventListenersConnected) {
+        console.warn('⚠️ Stream connection issues detected:', data)
+      }
+    })
+
+    newSocket.on('streamStatusChanged', (data) => {
+      console.log('🔄 Stream status changed:', data)
+      const newStatus = data?.streamStatus
+      setStreamStatus(newStatus)
+
+      // Start heartbeat when entering prep or live mode
+      if ((newStatus === 'prepping' || newStatus === 'live') && !streamingHeartbeatRef.current) {
+        startStreamingHeartbeat(newSocket)
+      }
+
+      // Stop heartbeat only when going offline
+      if (newStatus === 'offline' && streamingHeartbeatRef.current) {
+        stopStreamingHeartbeat()
+      }
     })
 
     setSocket(newSocket)
@@ -352,8 +557,8 @@ function App() {
 
       const result = await response.json()
       console.log('✅ Stream status API response:', result)
-      setStreamStatus(result.streamStatus)
-      console.log('✅ Stream status state updated to:', result.streamStatus)
+      setStreamStatus(result?.streamStatus)
+      console.log('✅ Stream status state updated to:', result?.streamStatus)
     } catch (error) {
       console.error('❌ Failed to update stream status:', error)
       alert('Failed to update stream status')
@@ -379,7 +584,7 @@ function App() {
       }
 
       const result = await response.json()
-      setOverlaySettings(result.overlaySettings)
+      setOverlaySettings(result?.overlaySettings)
       console.log('✅ Overlay settings updated')
     } catch (error) {
       console.error('❌ Failed to update overlay settings:', error)
@@ -398,16 +603,197 @@ function App() {
 
       if (response.ok) {
         const data = await response.json()
-        if (data.streamStatus) setStreamStatus(data.streamStatus)
-        if (data.overlaySettings) {
-          const settings = typeof data.overlaySettings === 'string'
-            ? JSON.parse(data.overlaySettings)
-            : data.overlaySettings
+        if (data?.streamStatus) setStreamStatus(data?.streamStatus)
+        if (data?.features) setUserFeatures(data?.features)
+        if (data?.overlaySettings) {
+          const settings = typeof data?.overlaySettings === 'string'
+            ? JSON.parse(data?.overlaySettings)
+            : data?.overlaySettings
           setOverlaySettings(settings)
         }
       }
     } catch (error) {
       console.error('❌ Failed to fetch user settings:', error)
+    }
+  }
+
+  // EventSub monitoring functions
+  const startEventSubMonitoring = async () => {
+    setIsStartingMonitoring(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/monitor/start', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ EventSub monitoring started:', result)
+
+        setEventSubStatus({
+          connected: true,
+          monitoring: true,
+          lastConnected: new Date().toISOString()
+        })
+
+        alert('🎬 Stream monitoring started! We\'ll detect when you go live automatically.')
+      } else {
+        const error = await response.json()
+        console.error('❌ Failed to start monitoring:', error)
+        alert(`Failed to start monitoring: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('❌ Error starting EventSub monitoring:', error)
+      alert('Failed to start stream monitoring')
+    } finally {
+      setIsStartingMonitoring(false)
+    }
+  }
+
+  const stopEventSubMonitoring = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/monitor/stop', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ EventSub monitoring stopped:', result)
+
+        setEventSubStatus({
+          connected: false,
+          monitoring: false,
+          lastConnected: null
+        })
+
+        // Clear pending Discord notifications and reset status
+        setDiscordNotificationStatus(prev => ({
+          ...prev,
+          status: prev.hasWebhook ? 'ready' : 'not_configured',
+          pendingChannelInfo: false,
+          pendingStreamInfo: false,
+          lastNotificationSent: null
+        }))
+
+        alert('⏹️ Stream monitoring stopped.')
+      } else {
+        const error = await response.json()
+        console.error('❌ Failed to stop monitoring:', error)
+        alert(`Failed to stop monitoring: ${error.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('❌ Error stopping EventSub monitoring:', error)
+      alert('Failed to stop stream monitoring')
+    }
+  }
+
+  const checkEventSubStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/eventsub-status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const status = await response.json()
+        setEventSubStatus({
+          connected: status.connectionStatus?.connected || false,
+          monitoring: status.connectionStatus?.connected || false,
+          lastConnected: status.connectionStatus?.lastConnected || null
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
+  const checkDiscordNotificationStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+
+      // Check if Discord webhook is configured
+      const webhookResponse = await fetch('/api/user/discord-webhook', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      let hasWebhook = false
+      if (webhookResponse.ok) {
+        const webhookData = await webhookResponse.json()
+        hasWebhook = !!(webhookData.webhookUrl && webhookData.enabled)
+      }
+
+      // Check current stream status
+      const countersResponse = await fetch('/api/counters', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const isStreamActive = countersResponse.ok && (await countersResponse.json()).streamStarted
+
+      // Determine notification status and setup steps
+      let status = 'not_configured'
+      let setupSteps = []
+
+      if (!hasWebhook) {
+        status = 'not_configured'
+        setupSteps = [
+          '1. Click "Discord Settings" below',
+          '2. Add your Discord webhook URL',
+          '3. Start monitoring to receive notifications'
+        ]
+      } else if (!eventSubStatus.monitoring) {
+        status = 'ready'
+        setupSteps = [
+          '1. ✅ Discord webhook configured',
+          '2. Click "Start Monitoring" to enable notifications',
+          '3. Go live on Twitch to test'
+        ]
+      } else if (isStreamActive) {
+        status = 'sent'
+        setupSteps = []
+      } else {
+        status = 'ready'
+        setupSteps = [
+          '1. ✅ Discord webhook configured',
+          '2. ✅ Monitoring active',
+          '3. Go live on Twitch to trigger notification'
+        ]
+      }
+
+      setDiscordNotificationStatus({
+        status,
+        hasWebhook: !!hasWebhook,
+        pendingChannelInfo: false,
+        pendingStreamInfo: false,
+        lastNotificationSent: null,
+        currentStreamId: null,
+        setupSteps
+      })
+
+    } catch (error) {
+      console.error('❌ Error checking Discord notification status:', error)
+      setDiscordNotificationStatus(prev => ({
+        ...prev,
+        status: 'error',
+        setupSteps: ['❌ Error checking configuration - please refresh']
+      }))
     }
   }
 
@@ -434,9 +820,9 @@ function App() {
 
   const exportData = () => {
     const data = {
-      deaths: counters.deaths,
-      swears: counters.swears,
-      total: counters.deaths + counters.swears,
+      deaths: counters?.deaths || 0,
+      swears: counters?.swears || 0,
+      total: (counters?.deaths || 0) + (counters?.swears || 0),
       timestamp: new Date().toLocaleString()
     }
 
@@ -596,7 +982,7 @@ function App() {
           onExport={exportData}
         />
 
-        {/* Stream Status Controls */}
+        {/* Auto-Detected Stream Status */}
         <div style={{
           background: 'rgba(0, 0, 0, 0.3)',
           padding: '20px',
@@ -604,79 +990,372 @@ function App() {
           marginTop: '20px',
           border: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
-          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🎬 Stream Management</h3>
-          <p style={{ marginBottom: '10px', color: '#ccc' }}>
-            Status: <strong style={{ color: '#9146ff' }}>{streamStatus}</strong>
-          </p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {streamStatus === 'offline' && (
-              <button
-                onClick={() => updateStreamStatus('prep')}
-                style={{
-                  background: '#ffc107',
-                  color: '#000',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                🎭 Start Prepping
-              </button>
-            )}
-            {streamStatus === 'prepping' && (
-              <>
+          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🤖 Auto-Detected Stream Status</h3>
+
+          {/* EventSub Monitoring Status */}
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  backgroundColor: eventSubStatus.monitoring ? '#28a745' : '#dc3545'
+                }}></div>
+                <p style={{ margin: 0, color: '#ccc' }}>
+                  Monitoring: <strong style={{
+                    color: eventSubStatus.monitoring ? '#28a745' : '#dc3545'
+                  }}>
+                    {eventSubStatus.monitoring ? '🟢 Active' : '🔴 Inactive'}
+                  </strong>
+                </p>
+              </div>
+
+              {eventSubStatus.monitoring ? (
                 <button
-                  onClick={() => updateStreamStatus('go-live')}
+                  onClick={stopEventSubMonitoring}
                   style={{
-                    background: '#28a745',
+                    background: '#dc3545',
                     color: '#fff',
                     border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
                     cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
+                    fontSize: '12px'
                   }}
                 >
-                  🚀 Go Live
+                  ⏹️ Stop
                 </button>
+              ) : (
                 <button
-                  onClick={() => updateStreamStatus('cancel-prep')}
+                  onClick={startEventSubMonitoring}
+                  disabled={isStartingMonitoring}
                   style={{
-                    background: '#6c757d',
+                    background: isStartingMonitoring ? '#6c757d' : '#28a745',
                     color: '#fff',
                     border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: isStartingMonitoring ? 'not-allowed' : 'pointer',
+                    fontSize: '12px'
                   }}
                 >
-                  ❌ Cancel
+                  {isStartingMonitoring ? '⏳ Starting...' : '▶️ Start Monitoring'}
                 </button>
-              </>
-            )}
-            {(streamStatus === 'live' || streamStatus === 'ending') && (
-              <button
-                onClick={() => updateStreamStatus('end-stream')}
-                style={{
-                  background: '#dc3545',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                🏁 End Stream
-              </button>
-            )}
+              )}
+            </div>
           </div>
+
+          {/* Stream Status - Real-time from EventSub */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginBottom: '15px'
+          }}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              backgroundColor: eventSubStatus.streamStatus === 'live' ? '#28a745' : '#6c757d'
+            }}></div>
+            <p style={{ margin: 0, color: '#ccc' }}>
+              Status: <strong style={{
+                color: eventSubStatus.streamStatus === 'live' ? '#28a745' : '#9146ff'
+              }}>
+                {eventSubStatus.streamStatus === 'live' ? '💎 Live' : '⚫ Offline'}
+              </strong>
+            </p>
+          </div>
+
+          {/* Status Messages - Real-time Updates */}
+          {!eventSubStatus.monitoring ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🚨 <strong>Stream monitoring not started!</strong><br/>
+                <small>Click "Start Monitoring" to detect when you go live on Twitch</small>
+              </p>
+            </div>
+          ) : eventSubStatus.streamStatus === 'live' ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                💎 <strong>LIVE on Twitch!</strong><br/>
+                <small>Stream detected at {eventSubStatus.lastStreamStart ? new Date(eventSubStatus.lastStreamStart).toLocaleTimeString() : 'recently'} • Monitoring continues</small>
+              </p>
+            </div>
+          ) : eventSubStatus.connected ? (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                📡 <strong>Monitoring active - stream offline</strong><br/>
+                <small>EventSub connected • Will update when you go live • Click "Stop" to end monitoring</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⚠️ <strong>Connection issues detected</strong><br/>
+                <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Discord Notification Status */}
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          padding: '15px',
+          marginTop: '15px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h4 style={{ marginBottom: '15px', color: '#fff', fontSize: '16px' }}>📢 Discord Notifications</h4>
+
+          {/* Discord Notification Status Indicator */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            marginBottom: '15px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor:
+                  discordNotificationStatus.status === 'sent' ? '#28a745' :
+                  discordNotificationStatus.status === 'pending' ? '#ffc107' :
+                  discordNotificationStatus.status === 'channel_ready' ? '#6f42c1' :
+                  discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '#17a2b8' : '#fd7e14') :
+                  discordNotificationStatus.status === 'error' ? '#dc3545' : '#6c757d'
+              }}></div>
+              <p style={{ margin: 0, color: '#ccc' }}>
+                Status: <strong style={{
+                  color:
+                    discordNotificationStatus.status === 'sent' ? '#28a745' :
+                    discordNotificationStatus.status === 'pending' ? '#ffc107' :
+                    discordNotificationStatus.status === 'channel_ready' ? '#6f42c1' :
+                    discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '#17a2b8' : '#fd7e14') :
+                    discordNotificationStatus.status === 'error' ? '#dc3545' : '#6c757d'
+                }}>
+                  {discordNotificationStatus.status === 'sent' ? '✅ Notification Sent' :
+                   discordNotificationStatus.status === 'pending' ? '⏳ Waiting for Stream Data' :
+                   discordNotificationStatus.status === 'channel_ready' ? '🎬 Ready to Stream' :
+                   discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '🎯 Ready' : '▶️ Start Monitoring') :
+                   discordNotificationStatus.status === 'error' ? '❌ Error' : '⚙️ Not Configured'}
+                </strong>
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowDiscordSettings(true)}
+              style={{
+                background: '#5865F2',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              ⚙️ Discord Settings
+            </button>
+          </div>
+
+          {/* Real-time Status Messages */}
+          {discordNotificationStatus.status === 'sent' ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🎉 <strong>Discord notification sent!</strong><br/>
+                <small>
+                  {discordNotificationStatus.lastNotificationSent ?
+                    `Sent at ${new Date(discordNotificationStatus.lastNotificationSent).toLocaleTimeString()}` :
+                    'Notification delivered to your Discord server'
+                  } • No duplicate notifications will be sent while stream is active
+                </small>
+              </p>
+            </div>
+          ) : discordNotificationStatus.status === 'pending' ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⏳ <strong>Waiting for complete stream information...</strong><br/>
+                <small>
+                  {discordNotificationStatus.pendingChannelInfo && discordNotificationStatus.pendingStreamInfo ?
+                    'Waiting for stream title, category, and stream status' :
+                    discordNotificationStatus.pendingChannelInfo ?
+                    'Waiting for stream title and category information' :
+                    'Waiting for stream to go live'
+                  }
+                </small>
+              </p>
+              <div style={{
+                marginTop: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}>
+                <strong>💡 Action Required:</strong><br/>
+                Please update your channel settings in OBS or Twitch:
+                <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>
+                  <li>Change your stream title or category</li>
+                  <li>Or simply click "Done" if no changes needed</li>
+                </ul>
+                <small style={{ fontStyle: 'italic', opacity: 0.8 }}>
+                  This triggers the channel update event needed for notifications
+                </small>
+              </div>
+            </div>
+          ) : discordNotificationStatus.status === 'channel_ready' ? (
+            <div style={{
+              background: 'rgba(111, 66, 193, 0.1)',
+              border: '1px solid rgba(111, 66, 193, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6f42c1'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🎬 <strong>Channel information received - Ready to stream!</strong><br/>
+                <small>
+                  {discordNotificationStatus.channelInfo ?
+                    `Title: "${discordNotificationStatus.channelInfo.title}" • Category: "${discordNotificationStatus.channelInfo.category}"` :
+                    'Channel settings updated successfully'
+                  }
+                </small>
+              </p>
+              <div style={{
+                marginTop: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}>
+                <strong>🚀 Ready for Action:</strong><br/>
+                Start streaming in OBS to automatically trigger your Discord notification!
+                <br/><small style={{ fontStyle: 'italic', opacity: 0.8 }}>
+                  Notification will be sent as soon as your stream goes live
+                </small>
+              </div>
+            </div>
+          ) : discordNotificationStatus.status === 'ready' ? (
+            eventSubStatus.monitoring ? (
+              <div style={{
+                background: 'rgba(23, 162, 184, 0.1)',
+                border: '1px solid rgba(23, 162, 184, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                color: '#17a2b8'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  🎯 <strong>Ready for notifications!</strong><br/>
+                  <small>Discord webhook configured and monitoring active • Go live to test</small>
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                background: 'rgba(253, 126, 20, 0.1)',
+                border: '1px solid rgba(253, 126, 20, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                color: '#fd7e14'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  ▶️ <strong>Start monitoring to enable notifications</strong><br/>
+                  <small>Discord webhook is configured but EventSub monitoring is not active</small>
+                </p>
+                <div style={{
+                  marginTop: '8px',
+                  padding: '8px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '4px',
+                  fontSize: '13px'
+                }}>
+                  <strong>👆 Action Required:</strong><br/>
+                  Click "Start Monitoring" in the EventSub section above to begin automatic stream detection
+                </div>
+              </div>
+            )
+          ) : discordNotificationStatus.status === 'error' ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ❌ <strong>Notification failed</strong><br/>
+                <small>Check Discord webhook settings and try again</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <div>
+                <p style={{ margin: '0 0 10px 0', fontSize: '14px' }}>
+                  ⚙️ <strong>Setup required</strong>
+                </p>
+                {discordNotificationStatus.setupSteps.length > 0 && (
+                  <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                    {discordNotificationStatus.setupSteps.map((step, index) => (
+                      <div key={index} style={{ marginBottom: '2px' }}>
+                        {step}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -716,6 +1395,71 @@ function App() {
           >
             ⚙️ Overlay Settings
           </button>
+          <button
+            onClick={() => setShowAlertManager(true)}
+            style={{
+              background: '#fd7e14',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            🎯 Manage Alerts
+          </button>
+          <button
+            onClick={() => setShowAlertEffectsSettings(true)}
+            style={{
+              background: '#9146ff',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            🎭 Alert Effects
+          </button>
+          <button
+            onClick={() => setShowSeriesSaveManager(true)}
+            style={{
+              background: '#4CAF50',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+          >
+            💾 Series Saves
+          </button>
+          <button
+            onClick={() => setShowDiscordSettings(true)}
+            style={{
+              background: userFeatures.discordNotifications ? '#5865F2' : '#6c757d',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              flex: 1,
+              fontWeight: 'bold'
+            }}
+            title={userFeatures.discordNotifications ? 'Configure Discord notifications' : 'Set up Discord notifications'}
+          >
+            🔔 Discord Notifications
+          </button>
         </div>
 
         {/* Instructions Modal */}
@@ -744,7 +1488,7 @@ function App() {
               <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>📖 How to Use</h2>
 
               <div style={{ color: '#fff', lineHeight: '1.8' }}>
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>� OBS Setup (Browser Source)</h3>
+                <h3 style={{ color: '#fff', marginTop: '20px' }}>� OBS ??? Setup (Browser Source)</h3>
                 <div style={{ background: 'rgba(145, 70, 255, 0.2)', padding: '15px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #9146ff' }}>
                   <p style={{ marginBottom: '10px' }}><strong>1. Add Browser Source to OBS</strong></p>
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Right-click in Sources → Add → Browser</p>
@@ -760,9 +1504,10 @@ function App() {
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• The overlay will automatically show when you go live!</p>
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Go to ⚙️ Overlay Settings to customize position & theme</p>
 
-                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>4. Go Live</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Click "Start Prepping" → "Go Live"</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Overlay will appear on your stream!</p>
+                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>4. Start Your Stream</strong></p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Just go live on Twitch as normal!</p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Overlay automatically activates when you go live</p>
+                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• No manual buttons needed - fully automated! 🤖</p>
                 </div>
 
                 <h3 style={{ color: '#fff', marginTop: '20px' }}>�🎮 Counter Controls</h3>
@@ -776,13 +1521,12 @@ function App() {
                 <p>• <strong>!swear+</strong> or <strong>!s+</strong> - Increment swears</p>
                 <p>• <strong>!swear-</strong> or <strong>!s-</strong> - Decrement swears</p>
                 <p>• <strong>!resetcounters</strong> - Reset all counters</p>
-                <p>• <strong>!startstream</strong> - Start stream status</p>
-                <p>• <strong>!endstream</strong> - End stream status</p>
 
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>🎬 Stream Status</h3>
-                <p>• <strong>Start Prepping</strong> - Prepare for stream</p>
-                <p>• <strong>Go Live</strong> - Activate stream and overlay</p>
-                <p>• <strong>End Stream</strong> - Deactivate stream</p>
+                <h3 style={{ color: '#fff', marginTop: '20px' }}>🤖 Auto Stream Detection</h3>
+                <p>• Counters <strong>automatically activate</strong> when you go live on Twitch</p>
+                <p>• Stream session <strong>automatically ends</strong> when you stop streaming</p>
+                <p>• Discord notifications sent automatically (if webhook configured)</p>
+                <p>• No manual buttons needed - everything is detected via EventSub!</p>
 
                 <h3 style={{ color: '#fff', marginTop: '20px' }}>🔌 Real-time Sync</h3>
                 <p>All devices connected to your account will update automatically in real-time!</p>
@@ -804,6 +1548,160 @@ function App() {
               >
                 ✅ Got it!
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Alert Manager Modal */}
+        {showAlertManager && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAlertManager(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '1200px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <button
+                onClick={() => setShowAlertManager(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: '#dc3545',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  zIndex: 10
+                }}
+              >
+                ✖ Close
+              </button>
+              <UserAlertManager userId={userId} />
+            </div>
+          </div>
+        )}
+
+        {/* Alert Effects Settings Modal */}
+        {showAlertEffectsSettings && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowAlertEffectsSettings(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '900px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
+            </div>
+          </div>
+        )}
+
+        {/* Series Save Manager Modal */}
+        {showSeriesSaveManager && (
+          <SeriesSaveManager
+            isOpen={showSeriesSaveManager}
+            onClose={() => setShowSeriesSaveManager(false)}
+          />
+        )}
+
+        {/* Discord Notification Settings Modal */}
+        {showDiscordSettings && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: '20px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowDiscordSettings(false)
+            }}
+          >
+            <div
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '600px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                position: 'relative'
+              }}
+            >
+              <button
+                onClick={() => setShowDiscordSettings(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: '#dc3545',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  zIndex: 10
+                }}
+              >
+                ✖ Close
+              </button>
+              <DiscordWebhookSettings user={{ twitchUserId: userId, username }} />
             </div>
           </div>
         )}
@@ -1079,7 +1977,7 @@ function App() {
                     color: overlaySettings.theme.textColor,
                     fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
-                  }}>{counters.deaths}</span>
+                  }}>{counters?.deaths || 0}</span>
                 </div>
               )}
 
@@ -1102,11 +2000,11 @@ function App() {
                     color: overlaySettings.theme.textColor,
                     fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
-                  }}>{counters.swears}</span>
+                  }}>{counters?.swears || 0}</span>
                 </div>
               )}
 
-              {overlaySettings.counters.bits && counters.bits > 0 && (
+              {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
                 <div style={{
                   background: 'rgba(145, 70, 255, 0.2)',
                   padding: sizeStyles.itemPadding,
@@ -1139,3 +2037,5 @@ function App() {
 }
 
 export default App
+
+

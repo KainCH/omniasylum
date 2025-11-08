@@ -14,9 +14,11 @@ class Database {
     this.usersClient = null;
     this.countersClient = null;
     this.alertsClient = null;
+    this.seriesSavesClient = null;
     this.localDataDir = path.join(__dirname, 'data');
     this.localUsersFile = path.join(this.localDataDir, 'users.json');
     this.localCountersFile = path.join(this.localDataDir, 'counters.json');
+    this.localSeriesSavesFile = path.join(this.localDataDir, 'series_saves.json');
 
     this.initialize();
   }
@@ -54,11 +56,13 @@ class Database {
       this.usersClient = new TableClient(serviceUrl, 'users', credential);
       this.countersClient = new TableClient(serviceUrl, 'counters', credential);
       this.alertsClient = new TableClient(serviceUrl, 'alerts', credential);
+      this.seriesSavesClient = new TableClient(serviceUrl, 'seriessaves', credential);
 
       // Create tables if they don't exist
       await this.usersClient.createTable();
       await this.countersClient.createTable();
       await this.alertsClient.createTable();
+      await this.seriesSavesClient.createTable();
 
       console.log('✅ Connected to Azure Table Storage');
     } catch (error) {
@@ -87,6 +91,10 @@ class Database {
     if (!fs.existsSync(localRewardsFile)) {
       fs.writeFileSync(localRewardsFile, JSON.stringify({}), 'utf8');
     }
+    // Initialize series saves file
+    if (!fs.existsSync(this.localSeriesSavesFile)) {
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify({}), 'utf8');
+    }
     console.log('✅ Using local JSON storage');
   }
 
@@ -114,6 +122,9 @@ class Database {
    * Create or update user
    */
   async saveUser(userData) {
+    // Get existing user data to preserve webhook URL and other settings
+    const existingUser = await this.getUser(userData.twitchUserId);
+
     // Determine user role - riress is always admin
     let role = 'streamer';
     const safeUsername = userData.username ? userData.username.toString().toLowerCase() : '';
@@ -131,7 +142,8 @@ class Database {
       webhooks: false,
       bitsIntegration: false,
       streamOverlay: false,
-      alertAnimations: false
+      alertAnimations: false,
+      discordNotifications: true
     };
 
     // Default overlay settings for new users
@@ -161,17 +173,18 @@ class Database {
       twitchUserId: userData.twitchUserId,
       username: userData.username,
       displayName: userData.displayName,
-      email: userData.email || '',
-      profileImageUrl: userData.profileImageUrl || '',
+      email: userData.email || existingUser?.email || '',
+      profileImageUrl: userData.profileImageUrl || existingUser?.profileImageUrl || '',
       accessToken: userData.accessToken,
       refreshToken: userData.refreshToken,
       tokenExpiry: userData.tokenExpiry,
-      role: userData.role || role,
-      features: JSON.stringify(userData.features || defaultFeatures),
-      overlaySettings: JSON.stringify(userData.overlaySettings || defaultOverlaySettings),
-      isActive: userData.isActive !== undefined ? userData.isActive : true,
-      streamStatus: userData.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
-      createdAt: userData.createdAt || new Date().toISOString(),
+      role: userData.role || existingUser?.role || role,
+      features: JSON.stringify(userData.features || (existingUser?.features ? JSON.parse(existingUser.features) : defaultFeatures)),
+      overlaySettings: JSON.stringify(userData.overlaySettings || (existingUser?.overlaySettings ? JSON.parse(existingUser.overlaySettings) : defaultOverlaySettings)),
+      discordWebhookUrl: userData.discordWebhookUrl || existingUser?.discordWebhookUrl || '',
+      isActive: userData.isActive !== undefined ? userData.isActive : (existingUser?.isActive !== undefined ? existingUser.isActive : true),
+      streamStatus: userData.streamStatus || existingUser?.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
+      createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
 
@@ -195,6 +208,20 @@ class Database {
     } else {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
       delete users[twitchUserId];
+      fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+    }
+  }
+
+  /**
+   * Delete user by table keys (for broken records without valid twitchUserId)
+   */
+  async deleteUserByKeys(partitionKey, rowKey) {
+    if (this.mode === 'azure') {
+      await this.usersClient.deleteEntity(partitionKey, rowKey);
+    } else {
+      // In local mode, try to delete by rowKey as the user ID
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      delete users[rowKey];
       fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
     }
   }
@@ -388,6 +415,170 @@ class Database {
 
     console.log(`🎬 Stream ended for user ${twitchUserId}`);
     return saved;
+  }
+
+  // ==================== SERIES SAVE STATE OPERATIONS ====================
+
+  /**
+   * Save current counter state as a series save point
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesName - Name of the series (e.g., "Elden Ring Episode 5")
+   * @param {string} description - Optional description
+   * @returns {Object} The saved series data
+   */
+  async saveSeries(twitchUserId, seriesName, description = '') {
+    const currentCounters = await this.getCounters(twitchUserId);
+    const seriesId = `${Date.now()}_${seriesName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    const saveData = {
+      partitionKey: twitchUserId,
+      rowKey: seriesId,
+      seriesName: seriesName,
+      description: description,
+      deaths: currentCounters.deaths,
+      swears: currentCounters.swears,
+      bits: currentCounters.bits,
+      savedAt: new Date().toISOString()
+    };
+
+    if (this.mode === 'azure') {
+      await this.seriesSavesClient.upsertEntity(saveData, 'Replace');
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId]) {
+        saves[twitchUserId] = {};
+      }
+      saves[twitchUserId][seriesId] = saveData;
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify(saves, null, 2), 'utf8');
+    }
+
+    console.log(`💾 Series save created for user ${twitchUserId}: "${seriesName}"`);
+    return saveData;
+  }
+
+  /**
+   * Load a series save state and restore counters
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesId - The ID of the series save to load
+   * @returns {Object} The loaded counter data
+   */
+  async loadSeries(twitchUserId, seriesId) {
+    let saveData = null;
+
+    if (this.mode === 'azure') {
+      try {
+        saveData = await this.seriesSavesClient.getEntity(twitchUserId, seriesId);
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error('Series save not found');
+        }
+        throw error;
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId] || !saves[twitchUserId][seriesId]) {
+        throw new Error('Series save not found');
+      }
+      saveData = saves[twitchUserId][seriesId];
+    }
+
+    // Restore the counters from the save
+    const restoredCounters = {
+      deaths: saveData.deaths || 0,
+      swears: saveData.swears || 0,
+      bits: saveData.bits || 0,
+      streamStarted: null
+    };
+
+    await this.saveCounters(twitchUserId, restoredCounters);
+
+    console.log(`📂 Series save loaded for user ${twitchUserId}: "${saveData.seriesName}"`);
+    return {
+      ...restoredCounters,
+      seriesName: saveData.seriesName,
+      description: saveData.description,
+      savedAt: saveData.savedAt,
+      lastUpdated: new Date().toISOString()
+    };
+  }
+
+  /**
+   * List all series saves for a user
+   * @param {string} twitchUserId - User's Twitch ID
+   * @returns {Array} List of series saves
+   */
+  async listSeriesSaves(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const entities = this.seriesSavesClient.listEntities({
+          queryOptions: { filter: `PartitionKey eq '${twitchUserId}'` }
+        });
+
+        const saves = [];
+        for await (const entity of entities) {
+          saves.push({
+            seriesId: entity.rowKey,
+            seriesName: entity.seriesName,
+            description: entity.description,
+            deaths: entity.deaths,
+            swears: entity.swears,
+            bits: entity.bits,
+            savedAt: entity.savedAt
+          });
+        }
+
+        // Sort by savedAt descending (most recent first)
+        saves.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+        return saves;
+      } catch (error) {
+        console.error('Error listing series saves:', error);
+        return [];
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      const userSaves = saves[twitchUserId] || {};
+
+      const savesList = Object.keys(userSaves).map(seriesId => ({
+        seriesId: seriesId,
+        seriesName: userSaves[seriesId].seriesName,
+        description: userSaves[seriesId].description,
+        deaths: userSaves[seriesId].deaths,
+        swears: userSaves[seriesId].swears,
+        bits: userSaves[seriesId].bits,
+        savedAt: userSaves[seriesId].savedAt
+      }));
+
+      // Sort by savedAt descending (most recent first)
+      savesList.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+      return savesList;
+    }
+  }
+
+  /**
+   * Delete a series save
+   * @param {string} twitchUserId - User's Twitch ID
+   * @param {string} seriesId - The ID of the series save to delete
+   */
+  async deleteSeries(twitchUserId, seriesId) {
+    if (this.mode === 'azure') {
+      try {
+        await this.seriesSavesClient.deleteEntity(twitchUserId, seriesId);
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error('Series save not found');
+        }
+        throw error;
+      }
+    } else {
+      const saves = JSON.parse(fs.readFileSync(this.localSeriesSavesFile, 'utf8'));
+      if (!saves[twitchUserId] || !saves[twitchUserId][seriesId]) {
+        throw new Error('Series save not found');
+      }
+      delete saves[twitchUserId][seriesId];
+      fs.writeFileSync(this.localSeriesSavesFile, JSON.stringify(saves, null, 2), 'utf8');
+    }
+
+    console.log(`🗑️  Series save deleted for user ${twitchUserId}: ${seriesId}`);
   }
 
   /**
@@ -598,8 +789,15 @@ class Database {
     user.features = JSON.stringify(features);
 
     if (this.mode === 'azure') {
-      // Use upsertEntity to update just this user
-      await this.usersClient.upsertEntity(user, 'Merge');
+      // Ensure we have the required Azure Table Storage fields
+      const entity = {
+        partitionKey: user.partitionKey || 'user',
+        rowKey: user.rowKey || twitchUserId,
+        features: user.features
+      };
+
+      // Use Merge mode to update only the features field
+      await this.usersClient.upsertEntity(entity, 'Merge');
     } else {
       // Update in local JSON file
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
@@ -730,6 +928,9 @@ class Database {
    * Check if user has a specific feature enabled
    */
   async hasFeature(twitchUserId, featureName) {
+    if (!twitchUserId) {
+      return false;
+    }
     const features = await this.getUserFeatures(twitchUserId);
     return features && features[featureName] === true;
   }
@@ -821,10 +1022,209 @@ class Database {
     return user;
   }
 
+  /**
+   * Update user's Discord webhook URL
+   */
+  async updateUserDiscordWebhook(twitchUserId, webhookUrl) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    console.log(`🔑 updateUserDiscordWebhook - User keys: partitionKey=${user.partitionKey}, rowKey=${user.rowKey}, twitchUserId=${user.twitchUserId}`);
+
+    if (this.mode === 'azure') {
+      // IMPORTANT: Use the actual partition/row keys from the user record, not the twitchUserId
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
+      const updateEntity = {
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
+        discordWebhookUrl: webhookUrl || ''
+      };
+
+      try {
+
+        // Use Merge mode which will fail if entity doesn't exist
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+        console.log(`✅ Azure Table webhook update succeeded`);
+      } catch (error) {
+        console.error(`❌ updateUserDiscordWebhook - Azure error:`, error);
+        console.error(`❌ Error details:`, {
+          statusCode: error.statusCode,
+          message: error.message,
+          code: error.code
+        });
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      // Update local user object for return
+      user.discordWebhookUrl = webhookUrl || '';
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].discordWebhookUrl = webhookUrl || '';
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.discordWebhookUrl = webhookUrl || '';
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user's Discord notification settings
+   */
+  async updateUserDiscordSettings(twitchUserId, settings) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    console.log(`🔔 updateUserDiscordSettings - Updating settings for user ${twitchUserId}`);
+
+    if (this.mode === 'azure') {
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
+      const updateEntity = {
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
+        discordSettings: JSON.stringify(settings)
+      };
+
+      try {
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+      } catch (error) {
+        console.error(`❌ updateUserDiscordSettings - Azure error:`, error);
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      user.discordSettings = JSON.stringify(settings);
+    } else {
+      // Local mode implementation
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].discordSettings = JSON.stringify(settings);
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.discordSettings = JSON.stringify(settings);
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user's Discord template style preference
+   */
+  async updateUserTemplateStyle(twitchUserId, templateStyle) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    console.log(`🎨 updateUserTemplateStyle - Updating template style for user ${twitchUserId} to ${templateStyle}`);
+
+    if (this.mode === 'azure') {
+      const actualPartitionKey = user.partitionKey || twitchUserId;
+      const actualRowKey = user.rowKey || twitchUserId;
+
+      const updateEntity = {
+        partitionKey: actualPartitionKey,
+        rowKey: actualRowKey,
+        templateStyle: templateStyle
+      };
+
+      try {
+        await this.usersClient.updateEntity(updateEntity, 'Merge');
+      } catch (error) {
+        console.error(`❌ updateUserTemplateStyle - Azure error:`, error);
+        if (error.statusCode === 404) {
+          throw new Error('User not found in storage');
+        }
+        throw error;
+      }
+
+      user.templateStyle = templateStyle;
+    } else {
+      // Local mode implementation
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[twitchUserId]) {
+        users[twitchUserId].templateStyle = templateStyle;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('User not found in local storage');
+      }
+      user.templateStyle = templateStyle;
+    }
+
+    return user;
+  }
+
+  /**
+   * Get user's Discord webhook configuration
+   */
+  async getUserDiscordWebhook(twitchUserId) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    const result = {
+      webhookUrl: user.discordWebhookUrl || '',
+      enabled: !!(user.discordWebhookUrl) // Consider webhook enabled if URL exists
+    };
+
+    return result;
+  }
+
+  /**
+   * Get user's notification settings
+   */
+  async getUserNotificationSettings(twitchUserId) {
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    // Parse Discord settings from user object, with defaults
+    let settings = {
+      enableDiscordNotifications: false,
+      enableChannelNotifications: false,
+      deathMilestoneEnabled: false,
+      swearMilestoneEnabled: false,
+      deathThresholds: '10,25,50,100,250,500,1000',
+      swearThresholds: '25,50,100,250,500,1000,2500'
+    };
+
+    if (user.discordSettings) {
+      try {
+        const parsedSettings = JSON.parse(user.discordSettings);
+        settings = { ...settings, ...parsedSettings };
+      } catch (error) {
+        console.warn(`⚠️ Could not parse Discord settings for user ${twitchUserId}:`, error.message);
+      }
+    }
+
+    return settings;
+  }
+
   // ==================== ALERT MANAGEMENT ====================
 
   /**
    * Get default alert templates for Omni's asylum theme
+   * Enhanced with advanced visual effects: CSS keyframes, SVG masks, canvas filters
    */
   getDefaultAlertTemplates() {
     return [
@@ -835,12 +1235,19 @@ class Database {
         visualCue: 'A door creaks open slowly',
         sound: 'distant-footsteps',
         soundDescription: 'Distant footsteps or whisper',
-        textPrompt: 'A new patient has arrived…',
-        duration: 4000,
+        textPrompt: '🚪 A new patient has arrived… [User]',
+        duration: 5000,
         backgroundColor: '#1a0d0d',
         textColor: '#ff6b6b',
         borderColor: '#8b1538',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'doorCreak',
+          svgMask: 'fog',
+          particle: 'dust',
+          screenShake: true,
+          soundTrigger: 'doorCreak.mp3'
+        }
       },
       {
         id: 'subscription',
@@ -849,12 +1256,20 @@ class Database {
         visualCue: 'Restraints snap shut',
         sound: 'electroshock-buzz',
         soundDescription: 'Electroshock buzz or echoing scream',
-        textPrompt: 'They\'ve committed for the long stay.',
-        duration: 5000,
+        textPrompt: '⚡ They\'ve committed for the long stay. [User] - Tier [Tier]',
+        duration: 6000,
         backgroundColor: '#1a0d1a',
         textColor: '#9147ff',
         borderColor: '#6441a5',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'electricPulse',
+          svgMask: 'glassDistortion',
+          particle: 'sparks',
+          screenFlicker: true,
+          glowIntensity: 'high',
+          soundTrigger: 'electroshock.mp3'
+        }
       },
       {
         id: 'resub',
@@ -863,12 +1278,19 @@ class Database {
         visualCue: 'A file slams shut on a desk',
         sound: 'typewriter-ding',
         soundDescription: 'Pen scribble + typewriter ding',
-        textPrompt: 'Case file reopened: [User] returns.',
-        duration: 5000,
+        textPrompt: '📋 Case file reopened: [User] returns. [Months] months confined.',
+        duration: 5500,
         backgroundColor: '#0d1a0d',
         textColor: '#00ff88',
         borderColor: '#1db954',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'typewriter',
+          svgMask: 'paperTexture',
+          particle: 'ink',
+          textScramble: true,
+          soundTrigger: 'typewriter.mp3'
+        }
       },
       {
         id: 'bits',
@@ -877,12 +1299,20 @@ class Database {
         visualCue: 'Pills scatter across the floor',
         sound: 'pill-rattle',
         soundDescription: 'Pill bottle rattle + distorted laugh',
-        textPrompt: '[User] offers their dosage.',
-        duration: 4000,
+        textPrompt: '💊 [User] offers their dosage: [Bits] bits',
+        duration: 4500,
         backgroundColor: '#1a1a0d',
         textColor: '#ffd700',
         borderColor: '#ffcc00',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'pillScatter',
+          svgMask: 'none',
+          particle: 'pills',
+          bounce: true,
+          colorShift: true,
+          soundTrigger: 'pillRattle.mp3'
+        }
       },
       {
         id: 'raid',
@@ -891,12 +1321,21 @@ class Database {
         visualCue: 'Sirens blare, lights flicker red',
         sound: 'asylum-alarm',
         soundDescription: 'Alarm + overlapping voices',
-        textPrompt: 'The ward is breached—[X] intruders!',
-        duration: 6000,
+        textPrompt: '🚨 THE WARD IS BREACHED — [X] INTRUDERS!',
+        duration: 7000,
         backgroundColor: '#1a0000',
         textColor: '#ff0000',
         borderColor: '#cc0000',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'sirenFlash',
+          svgMask: 'none',
+          particle: 'chaos',
+          screenShake: true,
+          screenFlicker: true,
+          redAlert: true,
+          soundTrigger: 'alarm.mp3'
+        }
       },
       {
         id: 'giftsub',
@@ -905,12 +1344,20 @@ class Database {
         visualCue: 'A nurse silhouette appears behind glass',
         sound: 'heart-monitor-flatline',
         soundDescription: 'Heart monitor flatline',
-        textPrompt: '[User] sedates another soul.',
-        duration: 5000,
+        textPrompt: '💉 [User] sedates another soul.',
+        duration: 5500,
         backgroundColor: '#0d0d1a',
         textColor: '#88ddff',
         borderColor: '#0099cc',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'heartbeatPulse',
+          svgMask: 'glassDistortion',
+          particle: 'heartbeats',
+          silhouette: true,
+          heartbeatLine: true,
+          soundTrigger: 'heartMonitor.mp3'
+        }
       },
       {
         id: 'hypetrain',
@@ -919,12 +1366,20 @@ class Database {
         visualCue: 'Wheelchair rolls down a hallway',
         sound: 'train-screech-heartbeat',
         soundDescription: 'Rising heartbeat + train screech',
-        textPrompt: 'The asylum stirs… the frenzy begins.',
+        textPrompt: '🎢 THE ASYLUM STIRS… THE FRENZY BEGINS!',
         duration: 8000,
         backgroundColor: '#1a1a1a',
         textColor: '#ffffff',
         borderColor: '#ff6600',
-        isDefault: true
+        isDefault: true,
+        effects: {
+          animation: 'wheelchairRoll',
+          svgMask: 'hallwayPerspective',
+          particle: 'smoke',
+          screenShake: true,
+          crescendo: true,
+          soundTrigger: 'hypeTrain.mp3'
+        }
       }
     ];
   }
@@ -1100,6 +1555,9 @@ class Database {
 
       console.log(`✅ Initialized ${defaultTemplates.length} default alerts for user ${twitchUserId}`);
     }
+
+    // Initialize default event mappings
+    await this.initializeEventMappings(twitchUserId);
   }
 
   /**
@@ -1108,6 +1566,119 @@ class Database {
   async getAlertForEventType(userId, eventType) {
     const alerts = await this.getUserAlerts(userId);
     return alerts.find(alert => alert.type === eventType && alert.isEnabled) || null;
+  }
+
+  // ==================== EVENT-TO-ALERT MAPPING ====================
+
+  /**
+   * Get default event-to-alert mappings for EventSub events
+   */
+  getDefaultEventMappings() {
+    return {
+      'channel.follow': 'follow',
+      'channel.subscribe': 'subscription',
+      'channel.subscription.gift': 'giftsub',
+      'channel.subscription.message': 'resub',
+      'channel.cheer': 'bits',
+      'channel.bits.use': 'bits'  // NEW bits event type
+    };
+  }
+
+  /**
+   * Initialize default event mappings for a user
+   */
+  async initializeEventMappings(twitchUserId) {
+    const existingMappings = await this.getEventMappings(twitchUserId);
+
+    // Only initialize if no mappings exist
+    if (!existingMappings || Object.keys(existingMappings).length === 0) {
+      const defaultMappings = this.getDefaultEventMappings();
+      await this.saveEventMappings(twitchUserId, defaultMappings);
+    }
+  }
+
+  /**
+   * Get event-to-alert mappings for a user
+   */
+  async getEventMappings(twitchUserId) {
+    if (this.mode === 'azure') {
+      try {
+        const entity = await this.usersClient.getEntity(twitchUserId, 'event-mappings');
+        return JSON.parse(entity.mappings || '{}');
+      } catch (error) {
+        if (error.statusCode === 404) {
+          return {};
+        }
+        throw error;
+      }
+    } else {
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+
+      if (!fs.existsSync(mappingsFile)) {
+        return {};
+      }
+
+      try {
+        const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+        return allMappings[twitchUserId] || {};
+      } catch (error) {
+        console.error('Error reading event mappings:', error);
+        return {};
+      }
+    }
+  }
+
+  /**
+   * Save event-to-alert mappings for a user
+   */
+  async saveEventMappings(twitchUserId, mappings) {
+    if (this.mode === 'azure') {
+      const entity = {
+        partitionKey: twitchUserId,
+        rowKey: 'event-mappings',
+        mappings: JSON.stringify(mappings),
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.usersClient.upsertEntity(entity, 'Merge');
+    } else {
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+
+      let allMappings = {};
+      if (fs.existsSync(mappingsFile)) {
+        try {
+          allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+        } catch (error) {
+          console.error('Error reading event mappings file:', error);
+          allMappings = {};
+        }
+      }
+
+      allMappings[twitchUserId] = mappings;
+      fs.writeFileSync(mappingsFile, JSON.stringify(allMappings, null, 2), 'utf8');
+    }
+  }
+
+  /**
+   * Get alert configuration for a specific EventSub event
+   */
+  async getAlertForEvent(twitchUserId, eventType) {
+    const mappings = await this.getEventMappings(twitchUserId);
+    const alertType = mappings[eventType];
+
+    if (!alertType) {
+      console.log(`No alert mapping for event type: ${eventType}`);
+      return null;
+    }
+
+    const alerts = await this.getUserAlerts(twitchUserId);
+    const alert = alerts.find(alert => alert.type === alertType && alert.isEnabled);
+
+    if (!alert) {
+      console.log(`No enabled alert found for type: ${alertType}`);
+    }
+
+    return alert || null;
   }
 }
 

@@ -160,65 +160,86 @@ This application is deployed using Azure Container Apps with a complete infrastr
 
 ### Deployment Process
 
-#### 0. **CRITICAL: Build Frontend First**
+**⚠️ MANDATORY: Use VS Code tasks for ALL deployments. NEVER use manual commands.**
 
-**⚠️ ALWAYS build the modern-frontend before deploying to Azure:**
+#### **Task-Based Deployment Strategy**
 
-```powershell
-# Navigate to modern-frontend and build React app
-cd "c:\Game Data\Coding Projects\doc-omni\modern-frontend"
-npm run build
+Choose the appropriate VS Code task based on the type of changes:
 
-# Copy built files to API frontend folder
-Copy-Item -Path "dist\*" -Destination "..\API\frontend" -Recurse -Force
-```
+#### **1. Frontend AND Backend Changes**
+**Task:** `Full Deploy: Build, Docker & Azure`
 
-**This step is REQUIRED** because:
-- The API serves the frontend from the `API/frontend` folder
-- Docker builds include whatever is in `API/frontend` at build time
-- Skipping this step deploys an outdated frontend version
+**When to use:**
+- Modified React components in `modern-frontend/`
+- Changed CSS/styling files
+- Updated frontend JavaScript/JSX
+- Modified both frontend AND backend files
+- Any changes that affect the user interface
 
-#### 1. Build and Push Container Image
-
-```powershell
-# Navigate to API directory
-cd "c:\Game Data\Coding Projects\doc-omni\API"
-
-# Build Docker image
-docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest .
-
-# Push to Azure Container Registry
-docker push omniforgeacr.azurecr.io/omniforgestream-api:latest
-
-# Deploy to Container Apps (with timestamp revision)
-az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
-```
-
-#### 2. Complete Deployment (Frontend + Backend)
+**What it does:**
+1. Builds the React frontend (`npm run build`)
+2. Copies built files to `API/frontend/`
+3. Builds and pushes Docker image
+4. Deploys to Azure Container Apps
 
 ```powershell
-# Build frontend, copy to API, build Docker, push, and deploy in one command
-cd "c:\Game Data\Coding Projects\doc-omni\modern-frontend" && npm run build && Copy-Item -Path "dist\*" -Destination "..\API\frontend" -Recurse -Force && cd "..\API" && docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest && az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
+# Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
 ```
 
-#### 3. Backend-Only Deployment (if frontend unchanged)
+#### **2. Backend-Only Changes**
+**Task:** `API Deploy: Docker & Azure (Skip Frontend)`
+
+**When to use:**
+- Modified Node.js server files in `API/`
+- Updated API routes, middleware, or services
+- Changed database logic or authentication
+- Modified environment configuration
+- NO frontend changes whatsoever
+
+**What it does:**
+1. Builds and pushes Docker image (uses existing frontend)
+2. Deploys to Azure Container Apps
+3. Skips frontend build (faster deployment)
 
 ```powershell
-# Backend-only build, push, and deploy (skip frontend build)
-cd "c:\Game Data\Coding Projects\doc-omni\API" && docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest && az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format "MMddHHmm")
+# Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "API Deploy: Docker & Azure (Skip Frontend)")
 ```
 
-#### 4. Monitor Deployment
+#### **⚠️ CRITICAL: Task Selection Rules**
 
+- **If ANY frontend files changed** → Use `Full Deploy`
+- **If ONLY backend files changed** → Use `API Deploy (Skip Frontend)`
+- **When in doubt** → Use `Full Deploy` (safer but slower)
+- **NEVER mix manual commands with tasks**
+
+#### **3. Deployment Verification (Required After Every Task)**
+
+**⚠️ ALWAYS verify task completion using the established monitoring protocol:**
+
+```javascript
+// 1. Check task output for completion
+get_task_output(workspaceFolder, taskId)
+terminal_last_command() // Verify actual execution
+
+// 2. Look for success indicators:
+"provisioningState": "Succeeded"
+"runningStatus": "Running"
+"latestRevisionName": "...-MMDDHHM" // New timestamp
+
+// 3. Test application health
+curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
+// Expected: {"status":"ok","timestamp":"..."}
+```
+
+**Manual monitoring commands (only if tasks fail):**
 ```powershell
 # Check deployment status
 az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --query "properties.provisioningState"
 
 # View application logs
 az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 50
-
-# Check health endpoint
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
 
 # Monitor Twitch bot connections
 curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/twitch/status"
@@ -281,6 +302,27 @@ Rules:
 - **Application Insights**: Performance and error tracking
 - **Container Logs**: Real-time via Azure CLI
 - **Health Checks**: `/api/health` endpoint
+
+#### **CRITICAL: Deployment Verification Requirements**
+
+**⚠️ MANDATORY: After EVERY Azure deployment, verify these specific indicators:**
+
+```powershell
+# 1. Check deployment JSON response for:
+"provisioningState": "Succeeded"     # MUST be "Succeeded"
+"runningStatus": "Running"           # MUST be "Running"
+"latestRevisionName": "...-MMDDHHM"  # NEW revision with current timestamp
+
+# 2. Verify health endpoint responds:
+curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
+# Expected response: {"status":"ok","timestamp":"..."}
+
+# 3. Check for Docker build completion markers:
+# Look for: "Successfully tagged omniforgeacr.azurecr.io/omniforgestream-api:latest"
+# Look for: "Successfully pushed omniforgeacr.azurecr.io/omniforgestream-api:latest"
+```
+
+**🚨 NEVER proceed without confirming ALL three verification steps pass!**
 
 ### Troubleshooting Deployment
 
@@ -415,6 +457,68 @@ try {
 - StreamElements/StreamLabs integration
 - Multi-language support
 - Counter themes/customization
+
+## 🔍 **CRITICAL: Task Completion Monitoring**
+
+**⚠️ MANDATORY: Always verify task completion before proceeding. NEVER assume tasks succeeded based on "no problems" messages.**
+
+### Task Verification Protocol
+
+#### 1. **For VS Code Tasks** (run_task tool):
+```javascript
+// ALWAYS follow this pattern:
+1. Execute: run_task(workspaceFolder, taskId)
+2. Wait for completion
+3. Verify: get_task_output(workspaceFolder, taskId)
+4. Check terminal_last_command() for actual output
+5. Look for completion indicators
+```
+
+#### 2. **Required Completion Indicators**:
+- **Docker Build**: Look for `Successfully tagged` and `Successfully pushed`
+- **Azure Deploy**: Look for `"provisioningState": "Succeeded"` and `"runningStatus": "Running"`
+- **Frontend Build**: Look for `Built successfully` or `dist/` folder creation
+- **Terminal Commands**: Look for exit codes and actual output, not just "succeeded"
+
+#### 3. **Deployment Verification Steps**:
+```powershell
+# ALWAYS verify these after deployment:
+1. Check provisioningState: "Succeeded"
+2. Check runningStatus: "Running"
+3. Verify new revision created (latestRevisionName)
+4. Test health endpoint: curl /api/health
+5. Check application logs if needed
+```
+
+#### 4. **Terminal Output Analysis**:
+```javascript
+// Look for these specific patterns:
+- "The terminal will be reused by tasks" = Task completed
+- JSON response with provisioningState = Deployment status
+- Exit Code: 0 = Success, non-zero = Failure
+- Error messages in stderr output
+```
+
+#### 5. **Never Skip Verification**:
+- ❌ **WRONG**: "The task succeeded with no problems" → Assume success
+- ✅ **CORRECT**: Check actual terminal output, verify JSON responses, test endpoints
+
+#### 6. **Failure Detection**:
+```javascript
+// Always check for these failure indicators:
+- Exit codes !== 0
+- Error messages in output
+- "provisioningState": "Failed"
+- Network timeouts or connection errors
+- Missing expected success messages
+```
+
+### **ENFORCEMENT RULES**:
+1. **NEVER** proceed without verifying task completion
+2. **ALWAYS** use `get_task_output()` and `terminal_last_command()`
+3. **ALWAYS** look for specific success/failure indicators
+4. **ALWAYS** verify deployment health after Azure updates
+5. If verification fails, **STOP** and troubleshoot before continuing
 
 ## When Writing New Code
 

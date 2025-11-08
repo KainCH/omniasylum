@@ -100,37 +100,48 @@ Frontend stores token, uses for all API calls
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/auth/twitch` | Initiate Twitch OAuth login |
-| GET | `/auth/twitch/callback` | OAuth callback handler |
-| GET | `/auth/me` | Get current user info (requires auth) |
-| POST | `/auth/refresh` | Refresh Twitch access token |
-| POST | `/auth/logout` | Logout current user |
+| Method | Endpoint                | Description                           |
+| ------ | ----------------------- | ------------------------------------- |
+| GET    | `/auth/twitch`          | Initiate Twitch OAuth login           |
+| GET    | `/auth/twitch/callback` | OAuth callback handler                |
+| GET    | `/auth/me`              | Get current user info (requires auth) |
+| POST   | `/auth/refresh`         | Refresh Twitch access token           |
+| POST   | `/auth/logout`          | Logout current user                   |
 
 ### Counters (All require authentication)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/counters` | Get user's counter state |
-| POST | `/api/counters/deaths/increment` | Increment deaths |
-| POST | `/api/counters/deaths/decrement` | Decrement deaths |
-| POST | `/api/counters/swears/increment` | Increment swears |
-| POST | `/api/counters/swears/decrement` | Decrement swears |
-| POST | `/api/counters/reset` | Reset all counters |
-| GET | `/api/counters/export` | Export counter data |
+| Method | Endpoint                         | Description              |
+| ------ | -------------------------------- | ------------------------ |
+| GET    | `/api/counters`                  | Get user's counter state |
+| POST   | `/api/counters/deaths/increment` | Increment deaths         |
+| POST   | `/api/counters/deaths/decrement` | Decrement deaths         |
+| POST   | `/api/counters/swears/increment` | Increment swears         |
+| POST   | `/api/counters/swears/decrement` | Decrement swears         |
+| POST   | `/api/counters/reset`            | Reset all counters       |
+| GET    | `/api/counters/export`           | Export counter data      |
+
+### Series Save States (All require authentication)
+
+| Method | Endpoint                         | Description                |
+| ------ | -------------------------------- | -------------------------- |
+| POST   | `/api/counters/series/save`      | Save current counter state |
+| POST   | `/api/counters/series/load`      | Load a saved counter state |
+| GET    | `/api/counters/series/list`      | List all series saves      |
+| DELETE | `/api/counters/series/:seriesId` | Delete a series save       |
+
+> **💾 New Feature!** Save and reload counter states for different stream series. Perfect for episodic content or switching between games. See [SERIES-SAVE-STATES.md](API/SERIES-SAVE-STATES.md) for details.
 
 ### Admin (Requires admin role)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/admin/users` | List all registered users |
-| GET | `/api/admin/users/:userId` | Get user details + counters |
-| PUT | `/api/admin/users/:userId/features` | Update user feature flags |
-| PUT | `/api/admin/users/:userId/status` | Enable/disable user account |
-| GET | `/api/admin/stats` | Get system statistics |
-| DELETE | `/api/admin/users/:userId` | Delete user account |
-| GET | `/api/admin/features` | List available features |
+| Method | Endpoint                            | Description                 |
+| ------ | ----------------------------------- | --------------------------- |
+| GET    | `/api/admin/users`                  | List all registered users   |
+| GET    | `/api/admin/users/:userId`          | Get user details + counters |
+| PUT    | `/api/admin/users/:userId/features` | Update user feature flags   |
+| PUT    | `/api/admin/users/:userId/status`   | Enable/disable user account |
+| GET    | `/api/admin/stats`                  | Get system statistics       |
+| DELETE | `/api/admin/users/:userId`          | Delete user account         |
+| GET    | `/api/admin/features`               | List available features     |
 
 **Admin Access**: Only user with Twitch username `riress` has admin role.
 
@@ -197,10 +208,10 @@ fetch('http://localhost:3000/api/admin/stats', {
 
 ### System
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check (no auth) |
-| GET | `/api/twitch/status` | Twitch integration status |
+| Method | Endpoint             | Description               |
+| ------ | -------------------- | ------------------------- |
+| GET    | `/api/health`        | Health check (no auth)    |
+| GET    | `/api/twitch/status` | Twitch integration status |
 
 ### Example API Call
 
@@ -267,6 +278,15 @@ socket.on('counterUpdate', (data) => {
 - `!swear+` or `!s+` - Increment swears
 - `!swear-` or `!s-` - Decrement swears
 - `!resetcounters` - Reset all counters
+
+### Series Save States (Broadcaster & Mods)
+
+- `!saveseries <name>` - Save current counter state with a name
+- `!loadseries <seriesId>` - Load a previously saved state
+- `!listseries` - Show recent series saves
+- `!deleteseries <seriesId>` - Delete a series save
+
+> **Example**: `!saveseries Elden Ring Episode 5` saves the current counters. Next stream, use `!listseries` to find the ID, then `!loadseries <id>` to continue where you left off!
 
 ## ☁️ Azure Deployment
 
@@ -335,14 +355,14 @@ The Twitch user `riress` is automatically assigned the `admin` role. Admins can:
 
 Each user can be assigned the following features:
 
-| Feature | Description | Default |
-|---------|-------------|---------|
-| `chatCommands` | Twitch chat integration | ✅ Enabled |
-| `channelPoints` | Channel points redemptions | ❌ Disabled |
-| `autoClip` | Auto-clip on milestones | ❌ Disabled |
-| `customCommands` | Custom chat commands | ❌ Disabled |
-| `analytics` | Analytics dashboard | ❌ Disabled |
-| `webhooks` | External webhook integration | ❌ Disabled |
+| Feature          | Description                  | Default    |
+| ---------------- | ---------------------------- | ---------- |
+| `chatCommands`   | Twitch chat integration      | ✅ Enabled  |
+| `channelPoints`  | Channel points redemptions   | ❌ Disabled |
+| `autoClip`       | Auto-clip on milestones      | ❌ Disabled |
+| `customCommands` | Custom chat commands         | ❌ Disabled |
+| `analytics`      | Analytics dashboard          | ❌ Disabled |
+| `webhooks`       | External webhook integration | ❌ Disabled |
 
 Admins can toggle these features for any user via the admin API.
 
@@ -415,14 +435,14 @@ Estimated monthly costs:
 
 ## 🔒 Security Features
 
-✅ OAuth 2.0 authentication via Twitch  
-✅ JWT tokens for API access  
-✅ All secrets in Azure Key Vault  
-✅ Managed Identity (no credentials to manage)  
-✅ HTTPS enforced in Azure  
-✅ Per-user data isolation  
-✅ RBAC for Azure resources  
-✅ Token refresh handling  
+✅ OAuth 2.0 authentication via Twitch
+✅ JWT tokens for API access
+✅ All secrets in Azure Key Vault
+✅ Managed Identity (no credentials to manage)
+✅ HTTPS enforced in Azure
+✅ Per-user data isolation
+✅ RBAC for Azure resources
+✅ Token refresh handling
 
 ## 🤝 Frontend Integration
 
@@ -467,6 +487,7 @@ MIT - See LICENSE file in project root
 - [ ] Add analytics dashboard
 - [ ] Support custom chat commands
 - [ ] Add webhook integrations
+- [ ] **Discord Template System** - Add customizable notification templates (asylum-themed, minimal, detailed, etc.) to allow users to personalize their Discord notification styles
 
 ---
 

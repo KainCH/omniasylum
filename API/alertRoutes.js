@@ -11,16 +11,16 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
     if (!hasAlerts) {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
     // Initialize default alerts if user has none
-    await database.initializeUserAlerts(req.user.twitchUserId);
+    await database.initializeUserAlerts(req.user.userId);
 
     // Get all alerts for user
-    const alerts = await database.getUserAlerts(req.user.twitchUserId);
+    const alerts = await database.getUserAlerts(req.user.userId);
     const defaultTemplates = database.getDefaultAlertTemplates();
 
     res.json({
@@ -41,7 +41,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
     if (!hasAlerts) {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
@@ -76,7 +76,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const alertConfig = {
-      userId: req.user.twitchUserId,
+      userId: req.user.userId,
       type,
       name: name.trim(),
       visualCue: visualCue?.trim() || '',
@@ -125,13 +125,13 @@ router.put('/:alertId', requireAuth, async (req, res) => {
     } = req.body;
 
     // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
     if (!hasAlerts) {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
     // Get existing alert to verify ownership
-    const existingAlerts = await database.getUserAlerts(req.user.twitchUserId);
+    const existingAlerts = await database.getUserAlerts(req.user.userId);
     const existingAlert = existingAlerts.find(alert => alert.id === alertId);
 
     if (!existingAlert) {
@@ -183,13 +183,13 @@ router.delete('/:alertId', requireAuth, async (req, res) => {
     const { alertId } = req.params;
 
     // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
     if (!hasAlerts) {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
     // Get existing alert to verify ownership
-    const existingAlerts = await database.getUserAlerts(req.user.twitchUserId);
+    const existingAlerts = await database.getUserAlerts(req.user.userId);
     const existingAlert = existingAlerts.find(alert => alert.id === alertId);
 
     if (!existingAlert) {
@@ -201,7 +201,7 @@ router.delete('/:alertId', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete default alert templates. Disable them instead.' });
     }
 
-    await database.deleteAlert(req.user.twitchUserId, alertId);
+    await database.deleteAlert(req.user.userId, alertId);
 
     res.json({
       message: 'Alert deleted successfully',
@@ -220,24 +220,24 @@ router.delete('/:alertId', requireAuth, async (req, res) => {
 router.post('/reset', requireAuth, async (req, res) => {
   try {
     // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.twitchUserId, 'streamAlerts');
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
     if (!hasAlerts) {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
     // Get all user alerts and delete non-default ones
-    const existingAlerts = await database.getUserAlerts(req.user.twitchUserId);
+    const existingAlerts = await database.getUserAlerts(req.user.userId);
 
     for (const alert of existingAlerts) {
       if (!alert.isDefault) {
-        await database.deleteAlert(req.user.twitchUserId, alert.id);
+        await database.deleteAlert(req.user.userId, alert.id);
       }
     }
 
     // Re-initialize default alerts
-    await database.initializeUserAlerts(req.user.twitchUserId);
+    await database.initializeUserAlerts(req.user.userId);
 
-    const alerts = await database.getUserAlerts(req.user.twitchUserId);
+    const alerts = await database.getUserAlerts(req.user.userId);
 
     res.json({
       message: 'Alerts reset to defaults successfully',
@@ -260,11 +260,17 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req, res) => {
     const allAlerts = [];
 
     for (const user of users) {
-      const hasAlerts = await database.hasFeature(user.twitchUserId, 'streamAlerts');
+      // Skip users without valid twitchUserId
+      if (!user.twitchUserId && !user.partitionKey) {
+        continue;
+      }
+
+      const userId = user.twitchUserId || user.partitionKey;
+      const hasAlerts = await database.hasFeature(userId, 'streamAlerts');
       if (hasAlerts) {
-        const alerts = await database.getUserAlerts(user.twitchUserId);
+        const alerts = await database.getUserAlerts(userId);
         allAlerts.push({
-          userId: user.twitchUserId,
+          userId: userId,
           username: user.username,
           displayName: user.displayName,
           alerts: alerts
@@ -298,6 +304,107 @@ router.get('/templates', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error getting alert templates:', error);
     res.status(500).json({ error: 'Failed to get alert templates' });
+  }
+});
+
+// ==================== EVENT-TO-ALERT MAPPING ENDPOINTS ====================
+
+/**
+ * Get event-to-alert mappings for current user
+ * GET /api/alerts/event-mappings
+ */
+router.get('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const mappings = await database.getEventMappings(req.user.userId);
+    const defaultMappings = database.getDefaultEventMappings();
+
+    res.json({
+      mappings: mappings,
+      defaultMappings: defaultMappings,
+      availableEvents: Object.keys(defaultMappings)
+    });
+  } catch (error) {
+    console.error('Error getting event mappings:', error);
+    res.status(500).json({ error: 'Failed to get event mappings' });
+  }
+});
+
+/**
+ * Update event-to-alert mappings for current user
+ * PUT /api/alerts/event-mappings
+ */
+router.put('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const { mappings } = req.body;
+
+    if (!mappings || typeof mappings !== 'object') {
+      return res.status(400).json({ error: 'Invalid mappings format' });
+    }
+
+    // Validate that all event types are valid
+    const validEvents = Object.keys(database.getDefaultEventMappings());
+    for (const eventType of Object.keys(mappings)) {
+      if (!validEvents.includes(eventType)) {
+        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
+      }
+    }
+
+    // Validate that all alert types exist for this user
+    const userAlerts = await database.getUserAlerts(req.user.userId);
+    const validAlertTypes = userAlerts.map(alert => alert.type);
+
+    for (const alertType of Object.values(mappings)) {
+      if (alertType && !validAlertTypes.includes(alertType)) {
+        return res.status(400).json({ error: `No alert found with type: ${alertType}` });
+      }
+    }
+
+    await database.saveEventMappings(req.user.userId, mappings);
+
+    res.json({
+      message: 'Event mappings updated successfully',
+      mappings: mappings
+    });
+  } catch (error) {
+    console.error('Error updating event mappings:', error);
+    res.status(500).json({ error: 'Failed to update event mappings' });
+  }
+});
+
+/**
+ * Reset event mappings to defaults
+ * POST /api/alerts/event-mappings/reset
+ */
+router.post('/event-mappings/reset', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    const defaultMappings = database.getDefaultEventMappings();
+    await database.saveEventMappings(req.user.userId, defaultMappings);
+
+    res.json({
+      message: 'Event mappings reset to defaults successfully',
+      mappings: defaultMappings
+    });
+  } catch (error) {
+    console.error('Error resetting event mappings:', error);
+    res.status(500).json({ error: 'Failed to reset event mappings' });
   }
 });
 

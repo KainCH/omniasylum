@@ -70,20 +70,37 @@ router.get('/users', requireAuth, requireRole('manager'), async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
-    // Don't send sensitive data
-    const sanitizedUsers = users.map(user => ({
-      userId: user.twitchUserId,
-      twitchUserId: user.twitchUserId, // Add this for frontend compatibility
-      username: user.username,
-      displayName: user.displayName,
-      email: user.email,
-      profileImageUrl: user.profileImageUrl,
-      role: user.role,
-      features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
-      isActive: user.isActive !== undefined ? user.isActive : true,
-      createdAt: user.createdAt,
-      lastLogin: user.lastLogin
-    }));
+    // Don't send sensitive data and classify user status
+    const sanitizedUsers = users.map(user => {
+      const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
+      const hasMissingUsername = !user.username || user.username === 'undefined' || user.username === null;
+      const hasMissingDisplayName = !user.displayName || user.displayName === 'undefined' || user.displayName === null;
+
+      let userStatus = 'complete';
+      if (!hasValidUserId) {
+        userStatus = 'broken'; // No valid ID - truly unknown
+      } else if (hasMissingUsername || hasMissingDisplayName) {
+        userStatus = 'incomplete'; // Has ID but missing profile data
+      }
+
+      return {
+        userId: user.twitchUserId,
+        twitchUserId: user.twitchUserId, // Add this for frontend compatibility
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl,
+        role: user.role,
+        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
+        isActive: user.isActive !== undefined ? user.isActive : true,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin,
+        discordWebhookUrl: user.discordWebhookUrl || '',
+        userStatus: userStatus, // Add classification
+        partitionKey: user.partitionKey || user.twitchUserId,
+        rowKey: user.rowKey || user.twitchUserId
+      };
+    });
 
     res.json({
       users: sanitizedUsers,
@@ -342,7 +359,7 @@ router.put('/users/:userId/role', requireAuth, requireAdmin, async (req, res) =>
     }
 
     // Prevent user from demoting themselves if they're the only admin
-    if (req.user.twitchUserId === targetUserId && req.user.role === 'admin') {
+    if (req.user.userId === targetUserId && req.user.role === 'admin') {
       const users = await database.getAllUsers();
       const adminCount = users.filter(u => u.role === 'admin').length;
 
@@ -484,26 +501,62 @@ router.get('/stats', requireAuth, requireRole('manager'), async (req, res) => {
  */
 router.delete('/users/:userId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    // Prevent deleting admin accounts
-    const user = await database.getUser(req.params.userId);
+    const userId = req.params.userId;
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Try to get user first
+    let user;
+    try {
+      user = await database.getUser(userId);
+    } catch (error) {
+      // User might not exist or be broken
+      user = null;
     }
 
-    if (user.role === 'admin') {
+    // If user exists and is admin, prevent deletion
+    if (user && user.role === 'admin') {
       return res.status(403).json({ error: 'Cannot delete admin accounts' });
     }
 
-    await database.deleteUser(req.params.userId);
+    // Try normal deletion first
+    if (user && user.twitchUserId) {
+      await database.deleteUser(userId);
+      console.log(`✅ Admin ${req.user.username} deleted user: ${userId}`);
+    } else {
+      // If user doesn't exist or has no twitchUserId, try to delete by table keys
+      // For broken records, userId might be the rowKey, partitionKey is usually 'user'
+      await database.deleteUserByKeys('user', userId);
+      console.log(`✅ Admin ${req.user.username} deleted broken user record: ${userId}`);
+    }
 
     res.json({
       message: 'User deleted successfully',
-      userId: req.params.userId
+      userId: userId
     });
   } catch (error) {
-    console.error('Error deleting user:', error);
+    console.error('❌ Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+/**
+ * Delete user by table keys (for broken records)
+ * DELETE /api/admin/users/by-keys/:partitionKey/:rowKey
+ */
+router.delete('/users/by-keys/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { partitionKey, rowKey } = req.params;
+
+    await database.deleteUserByKeys(partitionKey, rowKey);
+
+    console.log(`✅ Admin ${req.user.username} deleted user by keys: ${partitionKey}/${rowKey}`);
+    res.json({
+      message: 'User deleted successfully by table keys',
+      partitionKey,
+      rowKey
+    });
+  } catch (error) {
+    console.error('❌ Error deleting user by keys:', error);
+    res.status(500).json({ error: 'Failed to delete user by keys' });
   }
 });
 
@@ -663,6 +716,41 @@ router.get('/streams', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
+ * Reset stream state for a user (clear duplicate notification flag)
+ * POST /api/admin/streams/:userId/reset
+ */
+router.post('/streams/:userId/reset', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const streamMonitor = require('./streamMonitor');
+
+    // Verify user exists
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Reset the stream state
+    const success = await streamMonitor.resetStreamState(userId);
+
+    if (success) {
+      console.log(`🔧 Admin ${req.user.username} reset stream state for ${user.username}`);
+      res.json({
+        message: `Stream state reset successfully for ${user.displayName}`,
+        userId: userId,
+        resetBy: req.user.username,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to reset stream state' });
+    }
+  } catch (error) {
+    console.error('Error resetting stream state:', error);
+    res.status(500).json({ error: error?.message || 'Failed to reset stream state' });
+  }
+});
+
+/**
  * Available features configuration
  * GET /api/admin/features
  */
@@ -672,6 +760,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'chatCommands',
         name: 'Chat Commands',
+        icon: '💬',
         description: 'Enable Twitch chat command integration (!deaths, !swears, etc.)',
         defaultEnabled: true,
         requiredRole: 'streamer'
@@ -679,6 +768,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'channelPoints',
         name: 'Channel Points',
+        icon: '⭐',
         description: 'Allow viewers to use channel points to trigger counters',
         defaultEnabled: false,
         requiredRole: 'streamer'
@@ -686,6 +776,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'autoClip',
         name: 'Auto Clip Creation',
+        icon: '🎬',
         description: 'Automatically create clips on milestone achievements',
         defaultEnabled: false,
         requiredRole: 'moderator'
@@ -693,6 +784,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'customCommands',
         name: 'Custom Commands',
+        icon: '⚙️',
         description: 'Create custom chat commands beyond defaults',
         defaultEnabled: false,
         requiredRole: 'moderator'
@@ -700,6 +792,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'analytics',
         name: 'Analytics Dashboard',
+        icon: '📊',
         description: 'Access to detailed analytics and historical data',
         defaultEnabled: false,
         requiredRole: 'manager'
@@ -707,6 +800,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'webhooks',
         name: 'Webhook Integration',
+        icon: '🔗',
         description: 'Send counter updates to external services via webhooks',
         defaultEnabled: false,
         requiredRole: 'manager'
@@ -714,6 +808,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'bitsIntegration',
         name: 'Bits Celebrations',
+        icon: '💎',
         description: 'Show celebration effects and thank you messages for bit donations (does not auto-increment counters)',
         defaultEnabled: false,
         requiredRole: 'streamer'
@@ -721,6 +816,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'streamOverlay',
         name: 'Stream Overlay',
+        icon: '📺',
         description: 'Display counters as browser source overlay in OBS/streaming software',
         defaultEnabled: false,
         requiredRole: 'streamer'
@@ -728,9 +824,18 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
       {
         id: 'alertAnimations',
         name: 'Alert Animations',
+        icon: '✨',
         description: 'Show animated pop-ups when counters change during stream',
         defaultEnabled: false,
         requiredRole: 'moderator'
+      },
+      {
+        id: 'discordNotifications',
+        name: 'Discord Notifications',
+        icon: '🔔',
+        description: 'Send counter updates and stream events to Discord channel via webhook',
+        defaultEnabled: true,
+        requiredRole: 'streamer'
       }
     ]
   });
@@ -852,6 +957,361 @@ router.get('/permissions', requireAuth, requireRole('manager'), async (req, res)
       }
     ]
   });
+});
+
+/**
+ * Get user's overlay settings (admin)
+ * GET /api/admin/users/:userId/overlay
+ */
+router.get('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    let overlaySettings = user.overlaySettings;
+    if (typeof overlaySettings === 'string') {
+      try {
+        overlaySettings = JSON.parse(overlaySettings);
+      } catch (e) {
+        overlaySettings = null;
+      }
+    }
+
+    res.json({ overlaySettings });
+  } catch (error) {
+    console.error('❌ Error fetching user overlay settings:', error);
+    res.status(500).json({ error: 'Failed to fetch overlay settings' });
+  }
+});
+
+/**
+ * Update user's overlay settings (admin)
+ * PUT /api/admin/users/:userId/overlay
+ */
+router.put('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { overlaySettings } = req.body;
+
+  await database.updateUserOverlaySettings(userId, overlaySettings);
+
+    console.log(`✅ Admin ${req.user.username} updated overlay settings for user ${userId}`);
+    res.json({
+      message: 'Overlay settings updated successfully',
+      overlaySettings
+    });
+  } catch (error) {
+    console.error('❌ Error updating user overlay settings:', error);
+    res.status(500).json({ error: 'Failed to update overlay settings' });
+  }
+});
+
+/**
+ * Get user's Discord webhook (admin)
+ * GET /api/admin/users/:userId/discord-webhook
+ */
+router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      webhookUrl: user.discordWebhookUrl || '',
+      enabled: user.features?.discordNotifications || false
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user Discord webhook:', error);
+    res.status(500).json({ error: 'Failed to fetch Discord webhook' });
+  }
+});
+
+/**
+ * Update user's Discord webhook (admin)
+ * PUT /api/admin/users/:userId/discord-webhook
+ */
+router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
+  const startTime = Date.now();
+  let userId = 'unknown';
+
+  try {
+    userId = req.params.userId;
+    const { webhookUrl } = req.body;
+
+    // Validate webhook URL if provided
+    if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+      return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
+    }
+
+    // Check if user exists first
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await database.updateUserDiscordWebhook(userId, webhookUrl || '');
+
+    console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
+
+    res.json({
+      message: 'Discord webhook updated successfully',
+      webhookUrl,
+      duration: `${duration}ms`
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${startTime}] Error updating Discord webhook for user ${userId} (${duration}ms):`, error.message);
+    console.error(`❌ [${startTime}] Full error:`, error);
+    console.error(`❌ [${startTime}] Stack trace:`, error.stack);
+
+    res.status(500).json({
+      error: 'Failed to update Discord webhook',
+      details: error.message,
+      duration: `${duration}ms`
+    });
+  }
+});
+
+/**
+ * Get user's Discord notification settings (admin)
+ * GET /api/admin/users/:userId/discord-settings
+ */
+router.get('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Return Discord settings or defaults
+    const defaultSettings = {
+      templateStyle: 'asylum_themed',
+      enabledNotifications: {
+        death_milestone: true,
+        swear_milestone: true,
+        stream_start: true,
+        stream_end: false, // Disabled by default - user preference
+        follower_goal: false,
+        subscriber_milestone: false,
+        channel_point_redemption: false
+      },
+      milestoneThresholds: {
+        deaths: [10, 25, 50, 100, 250, 500],
+        swears: [25, 50, 100, 200, 500]
+      }
+    };
+
+    const settings = user.discordSettings ? JSON.parse(user.discordSettings) : defaultSettings;
+
+    res.json({ discordSettings: settings });
+  } catch (error) {
+    console.error('❌ Error getting Discord settings:', error);
+    res.status(500).json({ error: 'Failed to get Discord settings' });
+  }
+});
+
+/**
+ * Update user's Discord notification settings (admin)
+ * PUT /api/admin/users/:userId/discord-settings
+ */
+router.put('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const settings = req.body;
+
+    console.log(`🔔 Admin ${req.user.username} updating Discord settings for user ${userId}`);
+
+    // Validate settings structure
+    if (!settings.templateStyle || !settings.enabledNotifications || !settings.milestoneThresholds) {
+      return res.status(400).json({ error: 'Invalid Discord settings format' });
+    }
+
+    await database.updateUserDiscordSettings(userId, settings);
+
+    console.log(`✅ Discord settings updated for user ${userId}`);
+    res.json({ message: 'Discord settings updated successfully' });
+  } catch (error) {
+    console.error('❌ Error updating Discord settings:', error);
+    res.status(500).json({ error: 'Failed to update Discord settings' });
+  }
+});
+
+/**
+ * Test endpoint for troubleshooting
+ * PUT /api/admin/test-put
+ */
+router.put('/test-put', requireAuth, requireAdmin, async (req, res) => {
+  console.log('🧪 Test PUT endpoint hit by:', req.user?.username);
+  console.log('🧪 Request body:', req.body);
+  res.json({
+    message: 'PUT test successful',
+    user: req.user?.username,
+    timestamp: new Date().toISOString(),
+    body: req.body
+  });
+});
+
+/**
+ * Test user's Discord webhook (admin)
+ * POST /api/admin/users/:userId/discord-webhook/test
+ */
+router.post('/users/:userId/discord-webhook/test', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const webhookUrl = user.discordWebhookUrl;
+    if (!webhookUrl) {
+      return res.status(400).json({ error: 'No Discord webhook configured for this user' });
+    }
+
+    // Send test notification
+    const embed = {
+      title: `🧪 Test Notification for ${user.displayName}`,
+      description: `This is a test notification sent by admin ${req.user.username}`,
+      color: 0x9146FF,
+      fields: [
+        {
+          name: 'User',
+          value: `@${user.username}`,
+          inline: true
+        },
+        {
+          name: 'Status',
+          value: 'Test successful ✅',
+          inline: true
+        }
+      ],
+      footer: {
+        text: 'OmniAsylum Stream Counter - Admin Test',
+        icon_url: user.profileImageUrl
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [embed] })
+    });
+
+    if (response.ok) {
+      console.log(`✅ Admin ${req.user.username} sent test Discord notification for user ${userId}`);
+      res.json({ message: 'Test notification sent successfully' });
+    } else {
+      const errorText = await response.text();
+      console.error('Discord webhook error:', errorText);
+      throw new Error('Discord webhook returned an error');
+    }
+  } catch (error) {
+    console.error('❌ Error testing Discord webhook:', error);
+    res.status(500).json({ error: 'Failed to send test notification' });
+  }
+});
+
+/**
+ * Find users with incomplete data
+ * GET /api/admin/cleanup/unknown-users
+ */
+router.get('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const allUsers = await database.getAllUsers();
+
+    // Find users with missing profile data but valid twitchUserId (these should be FIXED, not deleted)
+    const incompleteUsers = allUsers.filter(user => {
+      const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
+      const hasMissingUsername = !user.username || user.username === 'undefined' || user.username === null;
+      const hasMissingDisplayName = !user.displayName || user.displayName === 'undefined' || user.displayName === null;
+
+      // Include users with valid ID but missing username/displayName
+      return hasValidUserId && (hasMissingUsername || hasMissingDisplayName);
+    });
+
+    // Find TRULY broken users (no valid twitchUserId) - these can be safely deleted
+    const brokenUsers = allUsers.filter(user => {
+      const hasInvalidUserId = !user.twitchUserId || user.twitchUserId === 'undefined' || user.twitchUserId === null;
+      return hasInvalidUserId;
+    });
+
+    console.log(`🔍 Found ${incompleteUsers.length} users with incomplete data, ${brokenUsers.length} truly broken users`);
+
+    res.json({
+      count: incompleteUsers.length + brokenUsers.length,
+      incomplete: incompleteUsers.length,
+      broken: brokenUsers.length,
+      users: [...incompleteUsers, ...brokenUsers].map(u => ({
+        partitionKey: u.partitionKey || u.twitchUserId,
+        rowKey: u.rowKey || u.twitchUserId,
+        username: u.username,
+        displayName: u.displayName,
+        twitchUserId: u.twitchUserId,
+        createdAt: u.createdAt,
+        type: (u.twitchUserId && u.twitchUserId !== 'undefined' && u.twitchUserId !== null) ? 'incomplete' : 'broken'
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Error finding users with issues:', error);
+    res.status(500).json({ error: 'Failed to find users with issues' });
+  }
+});
+
+/**
+ * Delete unknown/invalid users
+ * DELETE /api/admin/cleanup/unknown-users
+ */
+router.delete('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const allUsers = await database.getAllUsers();
+
+    // Find users with TRULY missing or invalid data (must be explicitly 'undefined' string or null)
+    // DO NOT delete users with empty strings or other falsy values
+    const unknownUsers = allUsers.filter(user => {
+      // Only consider truly broken records where the string is literally 'undefined' or null/missing entirely
+      const hasInvalidUsername = user.username === 'undefined' || user.username === null || user.username === undefined;
+      const hasInvalidUserId = user.twitchUserId === 'undefined' || user.twitchUserId === null || user.twitchUserId === undefined;
+      const hasInvalidDisplayName = user.displayName === 'undefined' || user.displayName === null || user.displayName === undefined;
+
+      // User must have at least username AND twitchUserId to be valid
+      return hasInvalidUsername && hasInvalidUserId;
+    });
+
+    console.log(`🗑️ Deleting ${unknownUsers.length} unknown/invalid users (strict criteria)...`);
+
+    let deleted = 0;
+    for (const user of unknownUsers) {
+      try {
+        const userId = user.partitionKey || user.twitchUserId || user.rowKey;
+        await database.deleteUser(userId);
+        deleted++;
+        console.log(`✅ Deleted unknown user: ${userId}`);
+      } catch (error) {
+        console.error(`❌ Failed to delete user:`, error);
+      }
+    }
+
+    console.log(`✅ Admin ${req.user.username} deleted ${deleted} unknown users`);
+    res.json({
+      message: `Deleted ${deleted} unknown users`,
+      deleted: deleted,
+      total: unknownUsers.length
+    });
+  } catch (error) {
+    console.error('❌ Error deleting unknown users:', error);
+    res.status(500).json({ error: 'Failed to delete unknown users' });
+  }
 });
 
 module.exports = router;

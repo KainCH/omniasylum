@@ -84,16 +84,16 @@ router.post('/status', requireAuth, async (req, res) => {
  */
 router.get('/session', requireAuth, async (req, res) => {
   try {
-    const counters = await database.getCounters(req.user.twitchUserId);
-    const settings = await database.getStreamSettings(req.user.twitchUserId);
+    const counters = await database.getCounters(req.user.userId);
+    const settings = await database.getStreamSettings(req.user.userId);
 
     res.json({
-      isLive: !!counters.streamStarted,
-      streamStarted: counters.streamStarted,
+      isLive: !!counters?.streamStarted,
+      streamStarted: counters?.streamStarted,
       counters: {
-        deaths: counters.deaths,
-        swears: counters.swears,
-        bits: counters.bits
+        deaths: counters?.deaths || 0,
+        swears: counters?.swears || 0,
+        bits: counters?.bits || 0
       },
       settings: settings
     });
@@ -109,19 +109,19 @@ router.get('/session', requireAuth, async (req, res) => {
  */
 router.post('/start', requireAuth, async (req, res) => {
   try {
-    const counters = await database.startStream(req.user.twitchUserId);
+    const counters = await database.startStream(req.user.userId);
 
     // Broadcast to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStarted', {
-      userId: req.user.twitchUserId,
-      streamStarted: counters.streamStarted,
+    io.to(`user:${req.user.userId}`).emit('streamStarted', {
+      userId: req.user.userId,
+      streamStarted: counters?.streamStarted,
       counters: counters
     });
 
     res.json({
       message: 'Stream started successfully',
-      streamStarted: counters.streamStarted,
+      streamStarted: counters?.streamStarted,
       counters: counters
     });
   } catch (error) {
@@ -136,12 +136,12 @@ router.post('/start', requireAuth, async (req, res) => {
  */
 router.post('/end', requireAuth, async (req, res) => {
   try {
-    const counters = await database.endStream(req.user.twitchUserId);
+    const counters = await database.endStream(req.user.userId);
 
     // Broadcast to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamEnded', {
-      userId: req.user.twitchUserId,
+    io.to(`user:${req.user.userId}`).emit('streamEnded', {
+      userId: req.user.userId,
       counters: counters
     });
 
@@ -161,7 +161,7 @@ router.post('/end', requireAuth, async (req, res) => {
  */
 router.get('/settings', requireAuth, async (req, res) => {
   try {
-    const settings = await database.getStreamSettings(req.user.twitchUserId);
+    const settings = await database.getStreamSettings(req.user.userId);
     res.json(settings);
   } catch (error) {
     console.error('Error getting stream settings:', error);
@@ -197,7 +197,7 @@ router.put('/settings', requireAuth, async (req, res) => {
       autoIncrementCounters: !!autoIncrementCounters
     };
 
-    await database.updateStreamSettings(req.user.twitchUserId, settings);
+    await database.updateStreamSettings(req.user.userId, settings);
 
     res.json({
       message: 'Stream settings updated successfully',
@@ -215,17 +215,17 @@ router.put('/settings', requireAuth, async (req, res) => {
  */
 router.post('/reset-bits', requireAuth, async (req, res) => {
   try {
-    const counters = await database.getCounters(req.user.twitchUserId);
-    const updated = await database.saveCounters(req.user.twitchUserId, {
+    const counters = await database.getCounters(req.user.userId);
+    const updated = await database.saveCounters(req.user.userId, {
       ...counters,
       bits: 0
     });
 
     // Broadcast to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('counterUpdate', {
+    io.to(`user:${req.user.userId}`).emit('counterUpdate', {
       ...updated,
-      change: { deaths: 0, swears: 0, bits: -counters.bits }
+      change: { deaths: 0, swears: 0, bits: -(counters?.bits || 0) }
     });
 
     res.json({
@@ -248,7 +248,7 @@ router.get('/monitor/status', requireAuth, async (req, res) => {
     const status = streamMonitor.getStatus();
 
     // Check if current user is being monitored
-    const userMonitored = status.monitoredUsers.some(u => u.userId === req.user.twitchUserId);
+    const userMonitored = status?.monitoredUsers?.some(u => u?.userId === req.user.userId) || false;
 
     res.json({
       ...status,
@@ -267,12 +267,21 @@ router.get('/monitor/status', requireAuth, async (req, res) => {
 router.post('/monitor/subscribe', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
-    const success = await streamMonitor.subscribeToUser(req.user.twitchUserId);
+    const success = await streamMonitor.subscribeToUser(req.user.userId);
 
     if (success) {
+      // Broadcast EventSub status change to user's clients
+      const io = req.app.get('io');
+      io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+        connected: true,
+        monitoring: true,
+        lastConnected: new Date().toISOString(),
+        subscriptionsEnabled: true
+      });
+
       res.json({
         message: 'Successfully subscribed to stream monitoring',
-        userId: req.user.twitchUserId
+        userId: req.user.userId
       });
     } else {
       res.status(400).json({ error: 'Failed to subscribe to stream monitoring' });
@@ -290,15 +299,122 @@ router.post('/monitor/subscribe', requireAuth, async (req, res) => {
 router.post('/monitor/unsubscribe', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
-    await streamMonitor.unsubscribeFromUser(req.user.twitchUserId);
+    await streamMonitor.unsubscribeFromUser(req.user.userId);
+
+    // Broadcast EventSub status change to user's clients
+    const io = req.app.get('io');
+    io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+      connected: false,
+      monitoring: false,
+      lastConnected: new Date().toISOString(),
+      subscriptionsEnabled: false
+    });
 
     res.json({
       message: 'Successfully unsubscribed from stream monitoring',
-      userId: req.user.twitchUserId
+      userId: req.user.userId
     });
   } catch (error) {
     console.error('Error unsubscribing from stream monitoring:', error);
     res.status(500).json({ error: 'Failed to unsubscribe from stream monitoring' });
+  }
+});
+
+/**
+ * Force reconnect EventSub WebSocket for current user
+ * POST /api/stream/monitor/reconnect
+ */
+router.post('/monitor/reconnect', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const success = await streamMonitor.forceReconnectUser(req.user.userId);
+
+    if (success) {
+      res.json({
+        message: 'Successfully reconnected EventSub WebSocket',
+        userId: req.user.userId,
+        status: 'connected'
+      });
+    } else {
+      res.status(500).json({
+        error: 'Failed to reconnect EventSub WebSocket',
+        userId: req.user.userId,
+        status: 'failed'
+      });
+    }
+  } catch (error) {
+    console.error('Error reconnecting EventSub WebSocket:', error);
+    res.status(500).json({
+      error: error?.message || 'Failed to reconnect EventSub WebSocket',
+      userId: req.user.userId,
+      status: 'error'
+    });
+  }
+});
+
+/**
+ * Start EventSub monitoring for current user
+ * POST /api/stream/monitor/start
+ */
+router.post('/monitor/start', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+
+    console.log(`🎬 Starting EventSub monitoring for user ${req.user.username}`);
+
+    const success = await streamMonitor.subscribeToUser(req.user.userId);
+
+    if (success) {
+      res.json({
+        message: 'EventSub monitoring started successfully',
+        userId: req.user.userId,
+        username: req.user.username,
+        status: 'monitoring',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({
+        error: 'Failed to start EventSub monitoring',
+        userId: req.user.userId,
+        status: 'failed'
+      });
+    }
+  } catch (error) {
+    console.error('Error starting EventSub monitoring:', error);
+    res.status(500).json({
+      error: error?.message || 'Failed to start EventSub monitoring',
+      userId: req.user.userId,
+      status: 'error'
+    });
+  }
+});
+
+/**
+ * Stop EventSub monitoring for current user
+ * POST /api/stream/monitor/stop
+ */
+router.post('/monitor/stop', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+
+    console.log(`⏹️ Stopping EventSub monitoring for user ${req.user.username}`);
+
+    await streamMonitor.unsubscribeFromUser(req.user.userId);
+
+    res.json({
+      message: 'EventSub monitoring stopped successfully',
+      userId: req.user.userId,
+      username: req.user.username,
+      status: 'stopped',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error stopping EventSub monitoring:', error);
+    res.status(500).json({
+      error: error?.message || 'Failed to stop EventSub monitoring',
+      userId: req.user.userId,
+      status: 'error'
+    });
   }
 });
 
@@ -310,16 +426,16 @@ router.post('/monitor/unsubscribe', requireAuth, async (req, res) => {
  */
 router.get('/status', requireAuth, async (req, res) => {
   try {
-    const user = await database.getUser(req.user.twitchUserId);
+    const user = await database.getUser(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Get current counters for context
-    const counters = await database.getCounters(req.user.twitchUserId);
+    const counters = await database.getCounters(req.user.userId);
 
     res.json({
-      userId: req.user.twitchUserId,
+      userId: req.user.userId,
       username: user.username,
       displayName: user.displayName,
       streamStatus: user.streamStatus || 'offline',
@@ -339,13 +455,13 @@ router.get('/status', requireAuth, async (req, res) => {
  */
 router.post('/prep', requireAuth, async (req, res) => {
   try {
-    const user = await database.getUser(req.user.twitchUserId);
+    const user = await database.getUser(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Update status to prepping
-    const updatedUser = await database.updateStreamStatus(req.user.twitchUserId, 'prepping');
+    const updatedUser = await database.updateStreamStatus(req.user.userId, 'prepping');
 
     // Start Twitch bot if chat commands are enabled
     const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
@@ -353,7 +469,7 @@ router.post('/prep', requireAuth, async (req, res) => {
       const twitchService = req.app.get('twitchService');
       if (twitchService) {
         try {
-          await twitchService.connectUser(req.user.twitchUserId);
+          await twitchService.connectUser(req.user.userId);
           console.log(`🤖 Started Twitch bot for ${user.displayName} (prepping mode)`);
         } catch (error) {
           console.error(`❌ Failed to start Twitch bot for ${user.displayName}:`, error);
@@ -361,10 +477,26 @@ router.post('/prep', requireAuth, async (req, res) => {
       }
     }
 
+    // Force reconnect EventSub stream monitoring when entering prep mode
+    // This ensures a fresh WebSocket connection every time prep is pressed
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        const reconnected = await streamMonitor.forceReconnectUser(req.user.userId);
+        if (reconnected) {
+          console.log(`🎬 Reconnected EventSub monitoring for ${user.displayName} (prepping mode)`);
+        } else {
+          console.warn(`⚠️ Failed to reconnect EventSub monitoring for ${user.displayName}`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to reconnect EventSub monitoring for ${user.displayName}:`, error);
+      }
+    }
+
     // Broadcast status change to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
-      userId: req.user.twitchUserId,
+    io.to(`user:${req.user.userId}`).emit('streamStatusChanged', {
+      userId: req.user.userId,
       username: user.username,
       streamStatus: 'prepping',
       isActive: true,
@@ -378,14 +510,14 @@ router.post('/prep', requireAuth, async (req, res) => {
       streamStatus: 'prepping',
       isActive: true,
       user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName
+        userId: updatedUser?.twitchUserId,
+        username: updatedUser?.username,
+        displayName: updatedUser?.displayName
       }
     });
   } catch (error) {
     console.error('❌ Error starting stream prep:', error);
-    res.status(500).json({ error: error.message || 'Failed to start stream prep' });
+    res.status(500).json({ error: error?.message || 'Failed to start stream prep' });
   }
 });
 
@@ -395,7 +527,7 @@ router.post('/prep', requireAuth, async (req, res) => {
  */
 router.post('/go-live', requireAuth, async (req, res) => {
   try {
-    const user = await database.getUser(req.user.twitchUserId);
+    const user = await database.getUser(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -410,15 +542,15 @@ router.post('/go-live', requireAuth, async (req, res) => {
     }
 
     // Update status to live
-    const updatedUser = await database.updateStreamStatus(req.user.twitchUserId, 'live');
+    const updatedUser = await database.updateStreamStatus(req.user.userId, 'live');
 
     // Update stream start time in counters
-    await database.startStream(req.user.twitchUserId);
+    await database.startStream(req.user.userId);
 
     // Broadcast status change to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
-      userId: req.user.twitchUserId,
+    io.to(`user:${req.user.userId}`).emit('streamStatusChanged', {
+      userId: req.user.userId,
       username: user.username,
       streamStatus: 'live',
       isActive: true,
@@ -426,9 +558,9 @@ router.post('/go-live', requireAuth, async (req, res) => {
     });
 
     // Also broadcast old streamStarted event for backward compatibility
-    const counters = await database.getCounters(req.user.twitchUserId);
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStarted', {
-      userId: req.user.twitchUserId,
+    const counters = await database.getCounters(req.user.userId);
+    io.to(`user:${req.user.userId}`).emit('streamStarted', {
+      userId: req.user.userId,
       streamStarted: counters.streamStarted,
       counters: counters
     });
@@ -439,16 +571,16 @@ router.post('/go-live', requireAuth, async (req, res) => {
       message: 'Stream went live successfully',
       streamStatus: 'live',
       isActive: true,
-      streamStarted: counters.streamStarted,
+      streamStarted: counters?.streamStarted,
       user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName
+        userId: updatedUser?.twitchUserId,
+        username: updatedUser?.username,
+        displayName: updatedUser?.displayName
       }
     });
   } catch (error) {
     console.error('❌ Error going live:', error);
-    res.status(500).json({ error: error.message || 'Failed to go live' });
+    res.status(500).json({ error: error?.message || 'Failed to go live' });
   }
 });
 
@@ -458,7 +590,7 @@ router.post('/go-live', requireAuth, async (req, res) => {
  */
 router.post('/end-stream', requireAuth, async (req, res) => {
   try {
-    const user = await database.getUser(req.user.twitchUserId);
+    const user = await database.getUser(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -473,28 +605,39 @@ router.post('/end-stream', requireAuth, async (req, res) => {
     }
 
     // Update status to offline
-    const updatedUser = await database.updateStreamStatus(req.user.twitchUserId, 'offline');
+    const updatedUser = await database.updateStreamStatus(req.user.userId, 'offline');
 
     // End stream session if it was live
     if (currentStatus === 'live') {
-      await database.endStream(req.user.twitchUserId);
+      await database.endStream(req.user.userId);
     }
 
     // Stop Twitch bot
     const twitchService = req.app.get('twitchService');
     if (twitchService) {
       try {
-        await twitchService.disconnectUser(req.user.twitchUserId);
+        await twitchService.disconnectUser(req.user.userId);
         console.log(`🤖 Stopped Twitch bot for ${user.displayName}`);
       } catch (error) {
         console.error(`❌ Failed to stop Twitch bot for ${user.displayName}:`, error);
       }
     }
 
+    // Stop EventSub stream monitoring when ending stream
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        await streamMonitor.unsubscribeFromUser(req.user.userId);
+        console.log(`🎬 Stopped EventSub monitoring for ${user.displayName} (ended stream)`);
+      } catch (error) {
+        console.error(`❌ Failed to stop EventSub monitoring for ${user.displayName}:`, error);
+      }
+    }
+
     // Broadcast status change to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
-      userId: req.user.twitchUserId,
+    io.to(`user:${req.user.userId}`).emit('streamStatusChanged', {
+      userId: req.user.userId,
       username: user.username,
       streamStatus: 'offline',
       isActive: false,
@@ -503,9 +646,9 @@ router.post('/end-stream', requireAuth, async (req, res) => {
 
     // Also broadcast old streamEnded event for backward compatibility
     if (currentStatus === 'live') {
-      const counters = await database.getCounters(req.user.twitchUserId);
-      io.to(`user:${req.user.twitchUserId}`).emit('streamEnded', {
-        userId: req.user.twitchUserId,
+      const counters = await database.getCounters(req.user.userId);
+      io.to(`user:${req.user.userId}`).emit('streamEnded', {
+        userId: req.user.userId,
         streamEnded: new Date().toISOString(),
         counters: counters
       });
@@ -525,7 +668,7 @@ router.post('/end-stream', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error ending stream:', error);
-    res.status(500).json({ error: error.message || 'Failed to end stream' });
+    res.status(500).json({ error: error?.message || 'Failed to end stream' });
   }
 });
 
@@ -535,7 +678,7 @@ router.post('/end-stream', requireAuth, async (req, res) => {
  */
 router.post('/cancel-prep', requireAuth, async (req, res) => {
   try {
-    const user = await database.getUser(req.user.twitchUserId);
+    const user = await database.getUser(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -550,23 +693,34 @@ router.post('/cancel-prep', requireAuth, async (req, res) => {
     }
 
     // Update status to offline
-    const updatedUser = await database.updateStreamStatus(req.user.twitchUserId, 'offline');
+    const updatedUser = await database.updateStreamStatus(req.user.userId, 'offline');
 
     // Stop Twitch bot
     const twitchService = req.app.get('twitchService');
     if (twitchService) {
       try {
-        await twitchService.disconnectUser(req.user.twitchUserId);
+        await twitchService.disconnectUser(req.user.userId);
         console.log(`🤖 Stopped Twitch bot for ${user.displayName} (cancelled prep)`);
       } catch (error) {
         console.error(`❌ Failed to stop Twitch bot for ${user.displayName}:`, error);
       }
     }
 
+    // Stop EventSub stream monitoring when cancelling prep
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        await streamMonitor.unsubscribeFromUser(req.user.userId);
+        console.log(`🎬 Stopped EventSub monitoring for ${user.displayName} (cancelled prep)`);
+      } catch (error) {
+        console.error(`❌ Failed to stop EventSub monitoring for ${user.displayName}:`, error);
+      }
+    }
+
     // Broadcast status change to connected clients
     const io = req.app.get('io');
-    io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
-      userId: req.user.twitchUserId,
+    io.to(`user:${req.user.userId}`).emit('streamStatusChanged', {
+      userId: req.user.userId,
       username: user.username,
       streamStatus: 'offline',
       isActive: false,
@@ -587,7 +741,55 @@ router.post('/cancel-prep', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error cancelling stream prep:', error);
-    res.status(500).json({ error: error.message || 'Failed to cancel stream prep' });
+    res.status(500).json({ error: error?.message || 'Failed to cancel stream prep' });
+  }
+});
+
+/**
+ * Get EventSub connection status and subscription info
+ * GET /api/stream/eventsub-status
+ */
+router.get('/eventsub-status', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+    const database = require('./database');
+
+    // Get current status from streamMonitor
+    const connectionStatus = streamMonitor.getUserConnectionStatus(req.user.userId);
+
+    // Get user notification settings
+    const notificationSettings = await database.getUserNotificationSettings(req.user.userId);
+    const discordWebhook = await database.getUserDiscordWebhook(req.user.userId);
+
+    const statusData = {
+      userId: req.user.userId,
+      username: req.user.username,
+      connectionStatus: connectionStatus || {
+        connected: false,
+        subscriptions: [],
+        lastConnected: null
+      },
+      notificationSettings: notificationSettings,
+      discordWebhook: !!discordWebhook, // Don't expose the actual webhook URL
+      subscriptionsEnabled: !!(notificationSettings && discordWebhook),
+      timestamp: new Date().toISOString()
+    };
+
+    // Also broadcast current status to all connected clients for this user
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+        connected: connectionStatus?.connected || false,
+        monitoring: streamMonitor.isUserSubscribed(req.user.userId),
+        lastConnected: connectionStatus?.lastConnected,
+        subscriptionsEnabled: !!(notificationSettings && discordWebhook)
+      });
+    }
+
+    res.json(statusData);
+  } catch (error) {
+    console.error('❌ Error getting EventSub status:', error);
+    res.status(500).json({ error: error?.message || 'Failed to get EventSub status' });
   }
 });
 

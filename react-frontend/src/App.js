@@ -108,9 +108,9 @@ function App() {
 
   const exportData = () => {
     const data = {
-      deaths: counters.deaths,
-      swears: counters.swears,
-      total: counters.deaths + counters.swears,
+      deaths: counters?.deaths || 0,
+      swears: counters?.swears || 0,
+      total: (counters?.deaths || 0) + (counters?.swears || 0),
       timestamp: new Date().toLocaleString()
     };
 

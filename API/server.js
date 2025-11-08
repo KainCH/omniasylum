@@ -15,6 +15,7 @@ const adminRoutes = require('./adminRoutes');
 const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
 const userRoutes = require('./userRoutes');
+const debugRoutes = require('./debugRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
 
 // Initialize Express app
@@ -30,7 +31,23 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling'],
   allowEIO3: true,
-  path: '/socket.io/'
+  path: '/socket.io/',
+  // Add security headers to Socket.IO responses
+  allowRequest: (req, callback) => {
+    // Socket.IO middleware - headers already set by Express middleware
+    callback(null, true);
+  }
+});
+
+// Configure Socket.IO engine to set proper content-type
+io.engine.on('headers', (headers, req) => {
+  headers['x-content-type-options'] = 'nosniff';
+  headers['content-security-policy'] = "frame-ancestors 'none'";
+  headers['referrer-policy'] = 'strict-origin-when-cross-origin';
+  // Ensure charset is set for text responses
+  if (headers['content-type'] && headers['content-type'].includes('text/')) {
+    headers['content-type'] = headers['content-type'].replace(/; charset=.*$/, '') + '; charset=utf-8';
+  }
 });
 
 // Add connection debugging
@@ -39,23 +56,77 @@ io.engine.on('connection_error', (err) => {
   console.log('❌ Socket.io error details:', err.code, err.message, err.context);
 });
 
-// Make io available to routes
+// Make io, twitchService, and streamMonitor available to routes
 app.set('io', io);
+app.set('twitchService', twitchService);
+app.set('streamMonitor', streamMonitor);
+
+// Security headers middleware
+app.use((req, res, next) => {
+  // Remove X-Powered-By header (security best practice)
+  res.removeHeader('X-Powered-By');
+
+  // Add essential security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // Use CSP with frame-ancestors instead of X-Frame-Options (modern approach)
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+
+  next();
+});
+
+// Disable X-Powered-By header globally
+app.disable('x-powered-by');
 
 // Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ type: 'application/json' }));
 app.use(cookieParser());
 
-// Serve static frontend files
+// Add cache-control headers to all API responses
+app.use('/api', (req, res, next) => {
+  // API responses should not be cached
+  res.setHeader('Cache-Control', 'no-cache, private');
+  // Set UTF-8 charset for JSON responses
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
+// Serve static frontend files with cache control
 const path = require('path');
 const frontendPath = process.env.NODE_ENV === 'production'
   ? path.join(__dirname, 'frontend')
   : path.join(__dirname, '..', 'modern-frontend', 'dist');
-app.use(express.static(frontendPath));
+
+// Configure static file serving with cache control
+app.use(express.static(frontendPath, {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : '0',
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // Set cache control based on file type
+    if (filePath.endsWith('.html')) {
+      // HTML files - no cache (always fresh)
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (filePath.match(/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico)$/)) {
+      // Static assets - cache for 1 year in production
+      if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=0');
+      }
+    } else {
+      // Other files - cache for 1 hour in production
+      res.setHeader('Cache-Control', process.env.NODE_ENV === 'production'
+        ? 'public, max-age=3600'
+        : 'no-cache');
+    }
+  }
+}));
 
 // Health check endpoint (unauthenticated)
 app.get('/api/health', (req, res) => {
@@ -104,11 +175,25 @@ app.use('/api/rewards', channelPointRoutes);
 const alertRoutes = require('./alertRoutes');
 app.use('/api/alerts', alertRoutes);
 
+// Debug routes (requires authentication)
+app.use('/api/debug', debugRoutes);
+
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
-  res.json({
+  const chatStatus = {
     initialized: true,
     connectedUsers: twitchService.getConnectedUsers().length
+  };
+
+  const eventSubStatus = streamMonitor ? streamMonitor.getConnectionStatus() : {
+    totalConnections: 0,
+    users: []
+  };
+
+  res.json({
+    chat: chatStatus,
+    eventsub: eventSubStatus,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -138,10 +223,51 @@ io.on('connection', (socket) => {
 
   // Send current state to newly connected authenticated client
   if (userId) {
+    // Send counter state
     database.getCounters(userId).then(data => {
       socket.emit('counterUpdate', data);
     }).catch(error => {
       console.error('❌ Error fetching counters for new connection:', error);
+    });
+
+    // Send current stream status and features
+    database.getUser(userId).then(user => {
+      if (user) {
+        const streamStatus = user.streamStatus || 'offline';
+        const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+
+        socket.emit('streamStatusUpdate', {
+          streamStatus: streamStatus,
+          isActive: user.isActive || false
+        });
+
+        socket.emit('userFeaturesUpdate', features);
+
+        // If user is in streaming mode (prep or live), send active stream status
+        if (streamStatus === 'prepping') {
+          socket.emit('prepModeActive', {
+            userId: userId,
+            username: user.username,
+            displayName: user.displayName,
+            streamStatus: 'prepping',
+            eventListenersActive: true
+          });
+
+          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring active`);
+        } else if (streamStatus === 'live') {
+          socket.emit('streamModeActive', {
+            userId: userId,
+            username: user.username,
+            displayName: user.displayName,
+            streamStatus: 'live',
+            eventListenersActive: true
+          });
+
+          console.log(`🔴 Client connected in live mode: ${user.displayName}, EventSub monitoring active`);
+        }
+      }
+    }).catch(error => {
+      console.error('❌ Error fetching user data for new connection:', error);
     });
   }
 
@@ -205,7 +331,7 @@ io.on('connection', (socket) => {
       socket.emit('twitchConnected', { success });
     } catch (error) {
       console.error('Error connecting Twitch:', error);
-      socket.emit('twitchConnected', { success: false, error: error.message });
+      socket.emit('twitchConnected', { success: false, error: error?.message });
     }
   });
 
@@ -221,6 +347,31 @@ io.on('connection', (socket) => {
     }).catch(error => {
       console.error('❌ Error fetching counters for overlay:', error);
     });
+  });
+
+  // Handle heartbeat/ping for any connections
+  socket.on('ping', (callback) => {
+    if (typeof callback === 'function') {
+      callback('pong');
+    }
+  });
+
+  socket.on('streamModeHeartbeat', async () => {
+    if (!userId) return;
+
+    try {
+      const user = await database.getUser(userId);
+      if (user && (user.streamStatus === 'prepping' || user.streamStatus === 'live')) {
+        socket.emit('streamModeStatus', {
+          active: true,
+          streamStatus: user.streamStatus,
+          eventListenersConnected: streamMonitor && streamMonitor.isUserSubscribed ? streamMonitor.isUserSubscribed(userId) : false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error handling stream mode heartbeat:', error);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -318,6 +469,127 @@ twitchService.on('resetBits', async ({ userId, username }) => {
     console.error('Error handling bits reset:', error);
   }
 });
+
+// ==================== SERIES SAVE STATE EVENTS ====================
+
+twitchService.on('saveSeries', async ({ userId, username, seriesName }) => {
+  try {
+    const saveData = await database.saveSeries(userId, seriesName);
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `💾 Series saved: "${seriesName}" (Deaths: ${saveData.deaths}, Swears: ${saveData.swears})`
+    );
+
+    console.log(`💾 Series saved by ${username}: "${seriesName}"`);
+  } catch (error) {
+    console.error('Error handling series save:', error);
+    await twitchService.sendMessage(
+      userId,
+      '❌ Failed to save series. Please try again.'
+    );
+  }
+});
+
+twitchService.on('loadSeries', async ({ userId, username, seriesId }) => {
+  try {
+    const loadedData = await database.loadSeries(userId, seriesId);
+
+    // Broadcast counter update to all connected devices
+    io.to(`user:${userId}`).emit('counterUpdate', {
+      deaths: loadedData.deaths,
+      swears: loadedData.swears,
+      bits: loadedData.bits,
+      lastUpdated: loadedData.lastUpdated,
+      streamStarted: loadedData.streamStarted,
+      change: { deaths: 0, swears: 0, bits: 0 }
+    });
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `📂 Series loaded: "${loadedData.seriesName}" (Deaths: ${loadedData.deaths}, Swears: ${loadedData.swears})`
+    );
+
+    console.log(`📂 Series loaded by ${username}: "${loadedData.seriesName}"`);
+  } catch (error) {
+    console.error('Error handling series load:', error);
+    if (error?.message === 'Series save not found') {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Series save not found. Use !listseries to see available saves.'
+      );
+    } else {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Failed to load series. Please try again.'
+      );
+    }
+  }
+});
+
+twitchService.on('listSeries', async ({ userId, username, channel }) => {
+  try {
+    const saves = await database.listSeriesSaves(userId);
+
+    if (saves.length === 0) {
+      await twitchService.sendMessage(
+        userId,
+        'No series saves found. Use !saveseries [name] to create one.'
+      );
+      return;
+    }
+
+    // Show the 3 most recent saves
+    const recentSaves = saves.slice(0, 3);
+    const savesList = recentSaves.map((save, index) => {
+      const date = new Date(save.savedAt).toLocaleDateString();
+      return `${index + 1}. "${save.seriesName}" (${date}) - ID: ${save.seriesId}`;
+    }).join(' | ');
+
+    await twitchService.sendMessage(
+      userId,
+      `📋 Recent saves: ${savesList} | Total: ${saves.length}`
+    );
+
+    console.log(`📋 Series list requested by ${username}`);
+  } catch (error) {
+    console.error('Error handling series list:', error);
+    await twitchService.sendMessage(
+      userId,
+      '❌ Failed to list series saves.'
+    );
+  }
+});
+
+twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
+  try {
+    await database.deleteSeries(userId, seriesId);
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `🗑️  Series save deleted: ${seriesId}`
+    );
+
+    console.log(`🗑️  Series deleted by ${username}: ${seriesId}`);
+  } catch (error) {
+    console.error('Error handling series delete:', error);
+    if (error?.message === 'Series save not found') {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Series save not found.'
+      );
+    } else {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Failed to delete series save.'
+      );
+    }
+  }
+});
+
 
 // Handle bits events
 twitchService.on('bitsReceived', async ({ userId, username, channel, amount, message, timestamp, thresholds }) => {
@@ -579,38 +851,55 @@ async function startServer() {
     // Auto-connect Twitch bots for users with chatCommands feature enabled
     await autoStartTwitchBots();
 
-    // Initialize Stream Monitor
+    // Initialize Stream Monitor (but don't auto-subscribe to users)
     const streamMonitorInitialized = await streamMonitor.initialize();
     if (streamMonitorInitialized) {
-      // Subscribe to all active users for stream monitoring
-      await streamMonitor.subscribeToAllUsers();
+      // Pass Socket.io instance for real-time notification status updates
+      streamMonitor.setSocketIo(io);
+      console.log('✅ Stream Monitor ready - users can start monitoring manually');
 
       // Handle stream events
       streamMonitor.on('streamOnline', async (data) => {
         console.log(`🔴 ${data.username} went LIVE! "${data.streamTitle}"`);
-        io.to(`user:${data.userId}`).emit('streamOnline', data);
+        io.to(`user:${data.userId}`).emit('streamOnline', {
+          ...data,
+          timestamp: new Date().toISOString()
+        });
+
+        // Broadcast EventSub status change
+        io.to(`user:${data.userId}`).emit('eventSubStatusChanged', {
+          connected: true,
+          monitoring: true,
+          lastConnected: new Date().toISOString(),
+          subscriptionsEnabled: true,
+          lastStreamStart: new Date().toISOString(),
+          streamStatus: 'live'  // Current stream status
+        });
       });
 
       streamMonitor.on('streamOffline', async (data) => {
         console.log(`⚫ ${data.username} went OFFLINE`);
 
-        try {
-          // Automatically deactivate user when stream goes offline
-          await database.updateUserStatus(data.userId, false);
-          console.log(`🔄 Auto-deactivated ${data.username} after stream ended`);
+        // Keep monitoring active - DO NOT auto-deactivate user
+        // Only update the stream status in real-time UI
+        console.log(`� User ${data.username} remains active - monitoring continues`);
 
-          // Notify admin dashboard of user status change
-          io.emit('userStatusChanged', {
-            userId: data.userId,
-            username: data.username,
-            isActive: false,
-            reason: 'Stream ended'
-          });
-        } catch (error) {
-          console.error(`❌ Failed to auto-deactivate ${data.username}:`, error);
-        }
+        // Broadcast offline status but keep monitoring active
+        io.to(`user:${data.userId}`).emit('streamOffline', {
+          ...data,
+          timestamp: new Date().toISOString(),
+          monitoringActive: true  // Monitoring stays active
+        });
 
-        io.to(`user:${data.userId}`).emit('streamOffline', data);
+        // Broadcast EventSub status change (monitoring still active)
+        io.to(`user:${data.userId}`).emit('eventSubStatusChanged', {
+          connected: true,
+          monitoring: true,  // Keep monitoring active
+          lastConnected: new Date().toISOString(),
+          subscriptionsEnabled: true,
+          lastStreamEnd: new Date().toISOString(),
+          streamStatus: 'offline'  // Current stream status
+        });
       });
 
       // Handle channel point reward redemptions
@@ -630,6 +919,33 @@ async function startServer() {
             redeemedBy: data.redeemedBy
           });
         }
+      });
+
+      // Handle EventSub connection events
+      streamMonitor.on('userConnected', (data) => {
+        console.log(`🔗 EventSub connected for ${data.username}`);
+        io.to(`user:${data.userId}`).emit('eventSubConnected', {
+          status: 'connected',
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      streamMonitor.on('userDisconnected', (data) => {
+        console.log(`🔌 EventSub disconnected for ${data.username}:`, data.reason || 'Unknown reason');
+        io.to(`user:${data.userId}`).emit('eventSubDisconnected', {
+          status: 'disconnected',
+          manual: data.manual,
+          reason: data.reason,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      streamMonitor.on('authRevoked', (data) => {
+        console.log(`🔐 EventSub auth revoked for ${data.username} - user needs to re-authenticate`);
+        io.to(`user:${data.userId}`).emit('authRevoked', {
+          message: 'Your Twitch authorization has been revoked. Please re-authenticate to continue receiving stream notifications.',
+          timestamp: new Date().toISOString()
+        });
       });
 
       // Handle follow events
@@ -698,6 +1014,141 @@ async function startServer() {
 
         } catch (error) {
           console.error('Error handling raid event:', error);
+        }
+      });
+
+      // Handle new subscription events
+      streamMonitor.on('newSubscription', async ({ userId, username, subscriber, tier, isGift, timestamp, alert }) => {
+        try {
+          console.log(`⭐ New subscription: ${subscriber} subscribed to ${username} (Tier ${tier})`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newSubscription', {
+            userId,
+            username,
+            subscriber,
+            tier,
+            isGift,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'subscription',
+              userId,
+              username: subscriber,
+              data: { subscriber, tier, isGift },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling subscription event:', error);
+        }
+      });
+
+      // Handle gift sub events
+      streamMonitor.on('newGiftSub', async ({ userId, username, gifter, amount, tier, timestamp, alert }) => {
+        try {
+          console.log(`🎁 Gift subs: ${gifter} gifted ${amount} subs to ${username} (Tier ${tier})`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newGiftSub', {
+            userId,
+            username,
+            gifter,
+            amount,
+            tier,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'giftsub',
+              userId,
+              username: gifter,
+              data: { gifter, amount, tier },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling gift sub event:', error);
+        }
+      });
+
+      // Handle resub events
+      streamMonitor.on('newResub', async ({ userId, username, subscriber, tier, months, streakMonths, message, timestamp, alert }) => {
+        try {
+          console.log(`🔄 Resub: ${subscriber} resubscribed to ${username} (${months} months)`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newResub', {
+            userId,
+            username,
+            subscriber,
+            tier,
+            months,
+            streakMonths,
+            message,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'resub',
+              userId,
+              username: subscriber,
+              data: { subscriber, tier, months, streakMonths, message },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling resub event:', error);
+        }
+      });
+
+      // Handle cheer/bits events
+      streamMonitor.on('newCheer', async ({ userId, username, cheerer, bits, message, isAnonymous, timestamp, alert }) => {
+        try {
+          console.log(`💎 Cheer: ${cheerer} cheered ${bits} bits to ${username}`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newCheer', {
+            userId,
+            username,
+            cheerer,
+            bits,
+            message,
+            isAnonymous,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'bits',
+              userId,
+              username: cheerer,
+              data: { cheerer, bits, message, isAnonymous },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling cheer event:', error);
         }
       });
     }

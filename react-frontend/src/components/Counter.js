@@ -9,7 +9,7 @@ function Counter({
   onReset,
   onExport
 }) {
-  const total = counters.deaths + counters.swears;
+  const total = (counters?.deaths || 0) + (counters?.swears || 0);
 
   return (
     <div className="counter-grid">
@@ -19,7 +19,7 @@ function Counter({
           <h2>💀 Deaths</h2>
         </div>
         <div className="counter-value" id="deaths-count">
-          {counters.deaths}
+          {counters?.deaths || 0}
         </div>
         <div className="counter-controls">
           <button
@@ -45,7 +45,7 @@ function Counter({
           <h2>🤬 Swears</h2>
         </div>
         <div className="counter-value" id="swears-count">
-          {counters.swears}
+          {counters?.swears || 0}
         </div>
         <div className="counter-controls">
           <button

@@ -12,12 +12,12 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     // Check if user has channel points feature enabled
-    const hasChannelPoints = await database.hasFeature(req.user.twitchUserId, 'channelPoints');
+    const hasChannelPoints = await database.hasFeature(req.user.userId, 'channelPoints');
     if (!hasChannelPoints) {
       return res.status(403).json({ error: 'Channel points feature not enabled' });
     }
 
-    const rewards = await database.getUserChannelPointRewards(req.user.twitchUserId);
+    const rewards = await database.getUserChannelPointRewards(req.user.userId);
     res.json({
       rewards: rewards,
       count: rewards.length
@@ -35,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     // Check if user has channel points feature enabled
-    const hasChannelPoints = await database.hasFeature(req.user.twitchUserId, 'channelPoints');
+    const hasChannelPoints = await database.hasFeature(req.user.userId, 'channelPoints');
     if (!hasChannelPoints) {
       return res.status(403).json({ error: 'Channel points feature not enabled' });
     }
@@ -78,7 +78,7 @@ router.post('/', requireAuth, async (req, res) => {
       globalCooldown
     };
 
-    const result = await streamMonitor.createCustomReward(req.user.twitchUserId, rewardData);
+    const result = await streamMonitor.createCustomReward(req.user.userId, rewardData);
 
     if (result.success) {
       res.json({
@@ -101,7 +101,7 @@ router.post('/', requireAuth, async (req, res) => {
 router.delete('/:rewardId', requireAuth, async (req, res) => {
   try {
     // Check if user has channel points feature enabled
-    const hasChannelPoints = await database.hasFeature(req.user.twitchUserId, 'channelPoints');
+    const hasChannelPoints = await database.hasFeature(req.user.userId, 'channelPoints');
     if (!hasChannelPoints) {
       return res.status(403).json({ error: 'Channel points feature not enabled' });
     }
@@ -109,12 +109,12 @@ router.delete('/:rewardId', requireAuth, async (req, res) => {
     const { rewardId } = req.params;
 
     // Verify the reward belongs to the current user
-    const reward = await database.getChannelPointReward(req.user.twitchUserId, rewardId);
+    const reward = await database.getChannelPointReward(req.user.userId, rewardId);
     if (!reward) {
       return res.status(404).json({ error: 'Reward not found' });
     }
 
-    const result = await streamMonitor.deleteCustomReward(req.user.twitchUserId, rewardId);
+    const result = await streamMonitor.deleteCustomReward(req.user.userId, rewardId);
 
     if (result.success) {
       res.json({
@@ -136,8 +136,8 @@ router.delete('/:rewardId', requireAuth, async (req, res) => {
 router.get('/history', requireAuth, async (req, res) => {
   try {
     // Check if user has both channel points and analytics features enabled
-    const hasChannelPoints = await database.hasFeature(req.user.twitchUserId, 'channelPoints');
-    const hasAnalytics = await database.hasFeature(req.user.twitchUserId, 'analytics');
+    const hasChannelPoints = await database.hasFeature(req.user.userId, 'channelPoints');
+    const hasAnalytics = await database.hasFeature(req.user.userId, 'analytics');
 
     if (!hasChannelPoints) {
       return res.status(403).json({ error: 'Channel points feature not enabled' });
@@ -169,11 +169,17 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req, res) => {
     const allRewards = [];
 
     for (const user of users) {
-      const hasChannelPoints = await database.hasFeature(user.twitchUserId, 'channelPoints');
+      // Skip users without valid twitchUserId
+      if (!user.twitchUserId && !user.partitionKey) {
+        continue;
+      }
+
+      const userId = user.twitchUserId || user.partitionKey;
+      const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
-        const rewards = await database.getUserChannelPointRewards(user.twitchUserId);
+        const rewards = await database.getUserChannelPointRewards(userId);
         allRewards.push({
-          userId: user.twitchUserId,
+          userId: userId,
           username: user.username,
           displayName: user.displayName,
           rewards: rewards

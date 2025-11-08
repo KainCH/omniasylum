@@ -175,6 +175,20 @@ class MultiTenantTwitchService extends EventEmitter {
       this.emit('endStream', { userId, username });
     } else if (text === '!resetbits') {
       this.emit('resetBits', { userId, username });
+    } else if (text.startsWith('!saveseries ')) {
+      // Extract series name from command
+      const seriesName = message.substring('!saveseries '.length).trim();
+      this.emit('saveSeries', { userId, username, seriesName });
+    } else if (text === '!listseries') {
+      this.emit('listSeries', { userId, username, channel });
+    } else if (text.startsWith('!loadseries ')) {
+      // Extract series ID from command
+      const seriesId = message.substring('!loadseries '.length).trim();
+      this.emit('loadSeries', { userId, username, seriesId });
+    } else if (text.startsWith('!deleteseries ')) {
+      // Extract series ID from command
+      const seriesId = message.substring('!deleteseries '.length).trim();
+      this.emit('deleteSeries', { userId, username, seriesId });
     }
   }
 

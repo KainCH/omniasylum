@@ -1,3 +1,5 @@
+import { ActionButton } from './ui/CommonControls'
+
 function Counter({
   counters,
   onIncrementDeaths,
@@ -7,7 +9,7 @@ function Counter({
   onReset,
   onExport
 }) {
-  const total = counters.deaths + counters.swears
+  const total = (counters?.deaths || 0) + (counters?.swears || 0)
 
   return (
     <div className="counter-grid">
@@ -17,23 +19,25 @@ function Counter({
           <h2>💀 Deaths</h2>
         </div>
         <div className="counter-value" id="deaths-count">
-          {counters.deaths}
+          {counters?.deaths || 0}
         </div>
         <div className="counter-controls">
-          <button
-            className="counter-btn decrement"
+          <ActionButton
+            variant="danger"
             onClick={onDecrementDeaths}
             title="Decrease deaths"
+            size="small"
           >
             -
-          </button>
-          <button
-            className="counter-btn increment"
+          </ActionButton>
+          <ActionButton
+            variant="primary"
             onClick={onIncrementDeaths}
             title="Increase deaths"
+            size="small"
           >
             +
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -43,23 +47,25 @@ function Counter({
           <h2>🤬 Swears</h2>
         </div>
         <div className="counter-value" id="swears-count">
-          {counters.swears}
+          {counters?.swears || 0}
         </div>
         <div className="counter-controls">
-          <button
-            className="counter-btn decrement"
+          <ActionButton
+            variant="danger"
             onClick={onDecrementSwears}
             title="Decrease swears"
+            size="small"
           >
             -
-          </button>
-          <button
-            className="counter-btn increment"
+          </ActionButton>
+          <ActionButton
+            variant="primary"
             onClick={onIncrementSwears}
             title="Increase swears"
+            size="small"
           >
             +
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -78,20 +84,20 @@ function Counter({
 
       {/* Action Buttons */}
       <div className="action-buttons">
-        <button
-          className="action-btn reset-btn"
+        <ActionButton
+          variant="warning"
           onClick={onReset}
           title="Reset all counters to zero"
         >
           🔄 Reset All
-        </button>
-        <button
-          className="action-btn export-btn"
+        </ActionButton>
+        <ActionButton
+          variant="secondary"
           onClick={onExport}
           title="Export counter data as JSON"
         >
           💾 Export Data
-        </button>
+        </ActionButton>
       </div>
     </div>
   )
