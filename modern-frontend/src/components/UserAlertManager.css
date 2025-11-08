@@ -170,6 +170,20 @@
   box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.2);
 }
 
+.alert-select optgroup {
+  background: #2a2a3e;
+  color: #9146ff;
+  font-weight: bold;
+  font-size: 13px;
+  padding: 8px;
+}
+
+.alert-select option {
+  background: #1e1e2e;
+  color: #ffffff;
+  padding: 8px;
+}
+
 .custom-badge {
   background: #ffa500;
   color: #000;
