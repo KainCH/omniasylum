@@ -19,14 +19,28 @@ router.get('/', requireAuth, async (req, res) => {
     // Initialize default alerts if user has none
     await database.initializeUserAlerts(req.user.userId);
 
-    // Get all alerts for user
-    const alerts = await database.getUserAlerts(req.user.userId);
+    // Get user's custom alerts
+    const customAlerts = await database.getUserAlerts(req.user.userId);
+    
+    // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
+    // Combine custom alerts and default templates
+    const allAlerts = [
+      ...defaultTemplates.map(template => ({
+        ...template,
+        isDefault: true,
+        enabled: true, // Default templates are always enabled
+        userId: req.user.userId
+      })),
+      ...customAlerts.filter(alert => !alert.isDefault) // Only include custom alerts
+    ];
+
     res.json({
-      alerts: alerts,
+      alerts: allAlerts,
+      customAlerts: customAlerts,
       defaultTemplates: defaultTemplates,
-      count: alerts.length
+      count: allAlerts.length
     });
   } catch (error) {
     console.error('Error getting user alerts:', error);
@@ -286,6 +300,63 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error getting all alerts (admin):', error);
     res.status(500).json({ error: 'Failed to get alerts data' });
+  }
+});
+
+/**
+ * Get alerts for a specific user (admin endpoint)
+ * GET /api/alerts/user/:userId
+ */
+router.get('/user/:userId', requireAuth, async (req, res) => {
+  try {
+    const targetUserId = req.params.userId;
+
+    // Admin can access any user's alerts, regular users only their own
+    if (req.user.role !== 'admin' && req.user.userId !== targetUserId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Check if target user exists
+    const targetUser = await database.getUser(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(targetUserId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled for this user' });
+    }
+
+    // Initialize default alerts if user has none
+    await database.initializeUserAlerts(targetUserId);
+
+    // Get user's custom alerts
+    const customAlerts = await database.getUserAlerts(targetUserId);
+    
+    // Get default alert templates
+    const defaultTemplates = database.getDefaultAlertTemplates();
+
+    // Combine custom alerts and default templates
+    const allAlerts = [
+      ...defaultTemplates.map(template => ({
+        ...template,
+        isDefault: true,
+        enabled: true, // Default templates are always enabled
+        userId: targetUserId
+      })),
+      ...customAlerts.filter(alert => !alert.isDefault) // Only include custom alerts
+    ];
+
+    res.json({
+      alerts: allAlerts,
+      customAlerts: customAlerts,
+      defaultTemplates: defaultTemplates,
+      count: allAlerts.length
+    });
+  } catch (error) {
+    console.error('Error getting user alerts:', error);
+    res.status(500).json({ error: 'Failed to get alerts' });
   }
 });
 

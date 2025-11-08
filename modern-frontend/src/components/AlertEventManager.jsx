@@ -251,14 +251,29 @@ function AlertEventManager({ userId, username, onClose }) {
                   className="alert-select"
                 >
                   <option value="">No Alert (Disabled)</option>
-                  {alerts.filter(a => a.enabled).map(alert => (
-                    <option key={alert.id} value={alert.id}>
-                      {alert.name} ({alert.type})
-                    </option>
-                  ))}
+                  
+                  {/* Default Alert Templates */}
+                  <optgroup label="🎭 Default Alert Templates">
+                    {alerts.filter(a => a.isDefault && a.enabled !== false).map(alert => (
+                      <option key={alert.id} value={alert.id}>
+                        {alert.name} ({alert.type})
+                      </option>
+                    ))}
+                  </optgroup>
+                  
+                  {/* Custom Alerts */}
+                  {alerts.filter(a => !a.isDefault && a.enabled !== false).length > 0 && (
+                    <optgroup label="✨ Custom Alerts">
+                      {alerts.filter(a => !a.isDefault && a.enabled !== false).map(alert => (
+                        <option key={alert.id} value={alert.id}>
+                          {alert.name} ({alert.type})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
 
-                {currentAlertId !== defaultAlertId && (
+                {currentAlertId && !alerts.find(a => a.id === currentAlertId && a.isDefault) && (
                   <span className="custom-badge">Custom</span>
                 )}
               </div>
