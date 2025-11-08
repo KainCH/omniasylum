@@ -323,24 +323,24 @@ Rules:
 
 #### **CRITICAL: Deployment Verification Requirements**
 
-**⚠️ MANDATORY: After EVERY Azure deployment, verify these specific indicators:**
+**⚠️ MANDATORY: Use ONLY the Enhanced deployment tasks with built-in health verification:**
 
-```powershell
-# 1. Check deployment JSON response for:
-"provisioningState": "Succeeded"     # MUST be "Succeeded"
-"runningStatus": "Running"           # MUST be "Running"
-"latestRevisionName": "...-MMDDHHM"  # NEW revision with current timestamp
+```javascript
+// ALWAYS use these tasks - they include automatic health checks:
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clean Build & Deploy")
+run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Backend Only Deploy: Skip Frontend")
 
-# 2. Verify health endpoint responds:
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
-# Expected response: {"status":"ok","timestamp":"..."}
-
-# 3. Check for Docker build completion markers:
-# Look for: "Successfully tagged omniforgeacr.azurecr.io/omniforgestream-api:latest"
-# Look for: "Successfully pushed omniforgeacr.azurecr.io/omniforgestream-api:latest"
+// WAIT 60 seconds, then verify task completion:
+get_task_output("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clean Build & Deploy")
 ```
 
-**🚨 NEVER proceed without confirming ALL three verification steps pass!**
+**Built-in verification includes:**
+- ✅ Container build and push to ACR
+- ✅ Azure Container Apps deployment
+- ✅ **Automatic health endpoint verification**
+- ✅ Application response validation
+
+**🚨 NEVER run separate health checks - the task handles all verification internally!**
 
 ### Troubleshooting Deployment
 
@@ -481,7 +481,7 @@ try {
 
 ## 🔍 **CRITICAL: Task Completion Verification**
 
-**⚠️ MANDATORY: Always verify deployment task completion. Tasks handle complex multi-step processes.**
+**⚠️ MANDATORY: Always verify deployment task completion. Tasks handle complex multi-step processes with built-in health checks.**
 
 ### Deployment Task Verification Protocol
 
@@ -493,60 +493,83 @@ run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clea
 run_task("c:\\Game Data\\Coding Projects\\doc-omni", "Backend Only Deploy: Skip Frontend")
 ```
 
-#### 2. **Verify Task Completion**:
+#### 2. **MANDATORY 60-Second Wait Rule**:
+**⚠️ CRITICAL: ALWAYS wait 60 seconds before checking task completion**
+- Deployment tasks include built-in health checks that take time to complete
+- The task output may show "succeeded" before all verification steps finish
+- Wait a full 60 seconds after task initiation before verification
+
+#### 3. **Verify Task Completion**:
 ```javascript
-// Check the task completed successfully
+// FIRST: Wait 60 seconds after task starts
+// THEN: Check the task completed successfully
+get_task_output("c:\\Game Data\\Coding Projects\\doc-omni", "Enhanced Full Deploy: Clean Build & Deploy")
 terminal_last_command() // Must show exit code 0
-
-// Look for Azure deployment success indicators:
-"provisioningState": "Succeeded"
-"runningStatus": "Running"
-"latestRevisionName": "omniforgestream-api-prod--MMDDHHSS" // New timestamp
 ```
 
-#### 3. **Verify Application Health**:
-```javascript
-// Test the deployed application
-run_in_terminal('curl -s "https://stream-tool.cerillia.com/api/health"')
-// Expected: {"status":"ok","timestamp":"2024-XX-XX...","uptime":XX}
+#### 4. **Built-in Health Check Verification**:
+The enhanced deployment script automatically performs these checks:
+- ✅ Frontend build completion (if applicable)
+- ✅ Docker image build and push to ACR
+- ✅ Azure Container Apps deployment
+- ✅ **Automatic health endpoint verification**
+- ✅ Application response validation
+
+**🚨 DO NOT run separate health checks - monitor the task output for built-in verification**
+
+#### 5. **Success Indicators in Task Output**:
+Look for these specific patterns in the deployment task output:
+```
+[STEP] Step 1: Building React Frontend...          # Frontend build (if full deploy)
+[STEP] Step 2: Cleaning old assets...              # Asset management
+[STEP] Step 3: Building and pushing Docker image... # Container build
+[STEP] Step 4: Deploying to Azure Container Apps... # Azure deployment
+[OK] Application is healthy and responding          # CRITICAL: Health check passed
+SUMMARY:                                           # Final summary
+  [OK] Frontend built and assets cleaned          # (if applicable)
+  [OK] Docker image updated                       # Container success
+  [OK] Azure deployment successful               # Deployment success
+TOTAL TIME: XX:XX                                 # Completion time
 ```
 
-#### 4. **Success Criteria**:
-- ✅ Task exits with code 0
-- ✅ "provisioningState": "Succeeded"
-- ✅ "runningStatus": "Running"
-- ✅ Health endpoint returns valid JSON
-- ✅ New revision timestamp (not old one)
+#### 6. **Deployment Completion Criteria**:
+- ✅ Task exits with code 0 (no errors)
+- ✅ "Application is healthy and responding" message appears
+- ✅ All summary items show "[OK]" status
+- ✅ "TOTAL TIME" indicates completion
+- ✅ No error messages in output
 
-#### 5. **Terminal Output Analysis**:
-```javascript
-// Look for these specific patterns:
-- "The terminal will be reused by tasks" = Task completed
-- JSON response with provisioningState = Deployment status
-- Exit Code: 0 = Success, non-zero = Failure
-- Error messages in stderr output
-```
+#### 7. **Never Skip the 60-Second Wait**:
+- ❌ **WRONG**: Check immediately after task starts
+- ❌ **WRONG**: Run separate health checks outside the task
+- ✅ **CORRECT**: Wait 60 seconds, then check task output for built-in verification
+- ✅ **CORRECT**: Trust the task's internal health check results
 
-#### 6. **Never Skip Verification**:
-- ❌ **WRONG**: "The task succeeded with no problems" → Assume success
-- ✅ **CORRECT**: Check actual terminal output, verify JSON responses, test endpoints
-
-#### 7. **Failure Detection**:
+#### 8. **Failure Detection**:
 ```javascript
 // Always check for these failure indicators:
 - Exit codes !== 0
-- Error messages in output
-- "provisioningState": "Failed"
-- Network timeouts or connection errors
-- Missing expected success messages
+- Missing "Application is healthy and responding" message
+- "[ERROR]" messages in task output
+- "Deployment failed:" error messages
+- Task hanging without completion
 ```
 
 ### **ENFORCEMENT RULES**:
-1. **NEVER** proceed without verifying task completion
-2. **ALWAYS** use `get_task_output()` and `terminal_last_command()`
-3. **ALWAYS** look for specific success/failure indicators
-4. **ALWAYS** verify deployment health after Azure updates
-5. If verification fails, **STOP** and troubleshoot before continuing
+1. **ALWAYS** wait 60 seconds before checking deployment completion
+2. **NEVER** run separate health checks - use the task's built-in verification
+3. **ALWAYS** look for "Application is healthy and responding" in task output
+4. **ALWAYS** verify all "[OK]" indicators in the summary
+5. **NEVER** assume success without seeing the complete task output
+6. If verification fails, **STOP** and troubleshoot before continuing
+
+### **Deployment Monitoring Workflow**:
+1. Execute deployment task
+2. **Wait exactly 60 seconds**
+3. Check `get_task_output()` for completion status
+4. Verify built-in health check passed
+5. Confirm all summary items show "[OK]"
+6. Only then consider deployment complete and verified
 
 #### 4. **Terminal Output Analysis**:
 ```javascript

@@ -422,7 +422,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                 </div>
 
                 <div className="overlay-description">
-                  <p>Configure your stream overlay appearance, position, and EventSub subscriptions.</p>
+                  <p>Configure your stream overlay appearance, position, and visual settings.</p>
                 </div>
 
                 <div className="section-actions">
