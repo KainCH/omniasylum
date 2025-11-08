@@ -231,10 +231,10 @@ function AlertEventManager({ userId, username, onClose }) {
           return (
             <div key={eventType} className="event-mapping-card">
               <div className="event-header">
-                <span className="event-icon">{eventInfo.icon}</span>
+                <span className="event-icon">{eventInfo?.icon || '📅'}</span>
                 <div className="event-info">
-                  <h3>{eventInfo.name}</h3>
-                  <p className="event-description">{eventInfo.description}</p>
+                  <h3>{eventInfo?.name || 'Unknown Event'}</h3>
+                  <p className="event-description">{eventInfo?.description || 'Event description unavailable'}</p>
                   {eventInfo.variables && (
                     <div className="event-variables">
                       <small>Available variables: {eventInfo.variables.join(', ')}</small>
@@ -342,7 +342,7 @@ function AlertEventManager({ userId, username, onClose }) {
             )}
           </div>
           <div className="preview-info">
-            Testing: {previewData.eventInfo.name} {previewData.eventInfo.icon}
+            Testing: {previewData.eventInfo?.name || 'Unknown'} {previewData.eventInfo?.icon || '📅'}
           </div>
         </div>
       )}

@@ -24,7 +24,7 @@ export const useNotificationSettings = (userId) => {
 
     try {
       const data = await notificationAPI.getDiscordSettings(userId);
-      setSettings(data.discordSettings || null);
+      setSettings(data?.discordSettings || null);
     } catch (err) {
       setError(utils.formatErrorMessage(err));
       utils.handleAuthError(err);
@@ -40,7 +40,7 @@ export const useNotificationSettings = (userId) => {
 
     try {
       await notificationAPI.updateDiscordSettings(userId, newSettings);
-      setSettings(newSettings.discordSettings);
+      setSettings(newSettings?.discordSettings);
       return { success: true };
     } catch (err) {
       const errorMessage = utils.formatErrorMessage(err);

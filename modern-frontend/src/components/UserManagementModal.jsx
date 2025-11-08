@@ -24,6 +24,15 @@ const defaultFeatures = {
 
 // Professional feature configuration
 const getFeatureConfig = (featureKey) => {
+  // Ensure featureKey is valid
+  if (!featureKey || typeof featureKey !== 'string') {
+    return {
+      icon: '🔧',
+      title: 'Unknown Feature',
+      description: 'Feature configuration unavailable'
+    }
+  }
+
   const configs = {
     chatCommands: {
       icon: '💬',
@@ -123,16 +132,16 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
       await withLoading(async () => {
         // Load features with safe access
         const userFeatures = user?.features
-          ? (typeof user.features === 'string'
-              ? JSON.parse(user.features)
-              : user.features)
+          ? (typeof user?.features === 'string'
+              ? JSON.parse(user?.features)
+              : user?.features)
           : {}
         updateField('features', { ...defaultFeatures, ...userFeatures })
 
         // Load overlay settings if enabled
         if (userFeatures?.streamOverlay) {
           try {
-            const overlayData = await userAPI.getOverlaySettings(user.twitchUserId)
+            const overlayData = await userAPI.getOverlaySettings(user?.twitchUserId)
             updateField('overlaySettings', overlayData)
           } catch (error) {
             console.error('Error loading overlay settings:', error)
@@ -146,24 +155,24 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
         if (userFeatures?.discordWebhook) {
           try {
             // Load notification settings
-            const discordData = await notificationAPI.getSettings(user.twitchUserId)
+            const discordData = await notificationAPI.getSettings(user?.twitchUserId)
 
             // Use our notification helper to create proper settings
             const settings = createDefaultNotificationSettings()
             Object.assign(settings, {
-              enableDiscordNotifications: discordData.enableDiscordNotifications || false,
-              enableChannelNotifications: discordData.enableChannelNotifications || false,
-              deathMilestoneEnabled: discordData.deathMilestoneEnabled || false,
-              swearMilestoneEnabled: discordData.swearMilestoneEnabled || false,
-              deathThresholds: discordData.deathThresholds || settings.deathThresholds,
-              swearThresholds: discordData.swearThresholds || settings.swearThresholds
+              enableDiscordNotifications: discordData?.enableDiscordNotifications || false,
+              enableChannelNotifications: discordData?.enableChannelNotifications || false,
+              deathMilestoneEnabled: discordData?.deathMilestoneEnabled || false,
+              swearMilestoneEnabled: discordData?.swearMilestoneEnabled || false,
+              deathThresholds: discordData?.deathThresholds || settings?.deathThresholds || '',
+              swearThresholds: discordData?.swearThresholds || settings?.swearThresholds || ''
             })
 
             setNotificationSettings(settings)
 
             // Load webhook URL
-            const webhookData = await notificationAPI.getWebhook(user.twitchUserId)
-            updateField('discordWebhook', webhookData.webhookUrl || '')
+            const webhookData = await notificationAPI.getWebhook(user?.twitchUserId)
+            updateField('discordWebhook', webhookData?.webhookUrl || '')
           } catch (error) {
             console.error('Error loading Discord settings:', error)
             setNotificationSettings(createDefaultNotificationSettings())
@@ -191,13 +200,13 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
       await withLoading(async () => {
         // Merge current features with original user features to preserve any features not shown in UI
         const originalFeatures = originalUser?.features
-          ? (typeof originalUser.features === 'string'
-              ? JSON.parse(originalUser.features)
-              : originalUser.features)
+          ? (typeof originalUser?.features === 'string'
+              ? JSON.parse(originalUser?.features)
+              : originalUser?.features)
           : {}
         const updatedFeatures = { ...originalFeatures, ...(formState?.features || {}) }
 
-        await userAPI.updateFeatures(user.twitchUserId, { features: updatedFeatures })
+        await userAPI.updateFeatures(user?.twitchUserId, { features: updatedFeatures })
 
         showMessage('Features updated successfully!', 'success')
         if (onUpdate) onUpdate()
@@ -213,7 +222,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
 
     try {
       await withLoading(async () => {
-        await userAPI.updateOverlaySettings(user.twitchUserId, formState?.overlaySettings)
+        await userAPI.updateOverlaySettings(user?.twitchUserId, formState?.overlaySettings)
 
         showMessage('Overlay settings saved!', 'success')
         if (onUpdate) onUpdate()
@@ -235,16 +244,16 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
 
         // Validate notification settings
         const validationResult = validateNotificationSettings(notificationSettings)
-        if (!validationResult.isValid) {
-          showMessage(validationResult.errors[0], 'error')
+        if (!validationResult?.isValid) {
+          showMessage(validationResult?.errors?.[0] || 'Validation failed', 'error')
           return
         }
 
         // Save webhook URL
-        await notificationAPI.updateWebhook(user.twitchUserId, { webhookUrl: formState?.discordWebhook || '' })
+        await notificationAPI.updateWebhook(user?.twitchUserId, { webhookUrl: formState?.discordWebhook || '' })
 
         // Save notification settings
-        await notificationAPI.updateSettings(user.twitchUserId, notificationSettings)
+        await notificationAPI.updateSettings(user?.twitchUserId, notificationSettings)
 
         showMessage('All Discord settings saved successfully!', 'success')
         if (onUpdate) onUpdate()
@@ -268,13 +277,13 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
 
     try {
       await withLoading(async () => {
-        await notificationAPI.testWebhook(user.twitchUserId, { webhookUrl: formState.discordWebhook })
+        await notificationAPI.testWebhook(user?.twitchUserId, { webhookUrl: formState?.discordWebhook || '' })
 
         showMessage('Test message sent to Discord!', 'success')
       })
     } catch (error) {
       console.error('Error testing Discord webhook:', error)
-      showMessage(`Failed to test webhook: ${error.message}`, 'error')
+      showMessage(`Failed to test webhook: ${error?.message || 'Unknown error'}`, 'error')
     }
   }
 
@@ -299,8 +308,8 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
             <div>
               <h3>{user?.displayName || 'Unknown User'}</h3>
               <StatusBadge
-                status={user.isActive ? 'active' : 'inactive'}
-                text={user.isActive ? 'Active' : 'Inactive'}
+                status={user?.isActive ? 'active' : 'inactive'}
+                text={user?.isActive ? 'Active' : 'Inactive'}
               />
             </div>
           </div>
@@ -323,8 +332,9 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           {/* Feature Management Section */}
           <FormSection title="🎛️ Feature Management" collapsible defaultExpanded>
             <div className="professional-features-grid">
-              {Object.entries(defaultFeatures).map(([feature, defaultValue]) => {
-                if (feature === 'templateStyle') return null // Skip template style in main features
+              {Object.entries(defaultFeatures || {}).map(([feature, defaultValue]) => {
+                // Ensure feature is valid
+                if (!feature || typeof feature !== 'string' || feature === 'templateStyle') return null
 
                 const isEnabled = formState?.features?.[feature] ?? defaultValue
                 const featureConfig = getFeatureConfig(feature)
@@ -334,14 +344,14 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                     <div className="feature-info-section">
                       <div className="feature-header">
                         <div className="feature-icon-container">
-                          <span className="feature-icon">{featureConfig.icon}</span>
+                          <span className="feature-icon">{featureConfig?.icon || '🔧'}</span>
                           <div className={`status-indicator ${isEnabled ? 'active' : 'inactive'}`}>
                             {isEnabled ? '✅' : '❌'}
                           </div>
                         </div>
                         <div className="feature-details">
-                          <h4 className="feature-title">{featureConfig.title}</h4>
-                          <p className="feature-description">{featureConfig.description}</p>
+                          <h4 className="feature-title">{featureConfig?.title || 'Unknown Feature'}</h4>
+                          <p className="feature-description">{featureConfig?.description || 'Feature configuration unavailable'}</p>
                         </div>
                       </div>
                       <div className={`feature-status-badge ${isEnabled ? 'enabled' : 'disabled'}`}>

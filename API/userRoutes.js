@@ -8,13 +8,13 @@ const { requireAuth } = require('./authMiddleware');
 function createDiscordEmbed(title, description, user, options = {}) {
   return {
     username: 'OmniForge',
-    avatar_url: options.botAvatar || user.profileImageUrl,
+    avatar_url: options?.botAvatar || user?.profileImageUrl,
     embeds: [{
       title: title,
       description: description,
       color: options.color || 0x5865F2, // Discord blurple
       thumbnail: {
-        url: user.profileImageUrl
+        url: user?.profileImageUrl
       },
       footer: {
         text: `OmniForge Stream Tools • Today at ${new Date().toLocaleTimeString('en-US', {
@@ -24,8 +24,8 @@ function createDiscordEmbed(title, description, user, options = {}) {
         })}`
       },
       timestamp: new Date().toISOString(),
-      ...(options.fields && { fields: options.fields }),
-      ...(options.image && { image: { url: options.image } })
+      ...(options?.fields && { fields: options.fields }),
+      ...(options?.image && { image: { url: options.image } })
     }]
   };
 }
@@ -48,7 +48,7 @@ router.get('/settings', requireAuth, async (req, res) => {
     }
 
     // Parse overlay settings if stored as string
-    let overlaySettings = user.overlaySettings;
+    let overlaySettings = user?.overlaySettings;
     if (typeof overlaySettings === 'string') {
       try {
         overlaySettings = JSON.parse(overlaySettings);
@@ -86,9 +86,9 @@ router.get('/settings', requireAuth, async (req, res) => {
     }
 
     res.json({
-      streamStatus: user.streamStatus || 'offline',
+      streamStatus: user?.streamStatus || 'offline',
       overlaySettings: overlaySettings,
-      features: user.features || {}
+      features: user?.features || {}
     });
   } catch (error) {
     console.error('❌ Error fetching user settings:', error);
@@ -157,7 +157,7 @@ router.get('/discord-webhook', requireAuth, async (req, res) => {
     const hasFeature = await database.hasFeature(userId, 'discordNotifications');
 
     res.json({
-      webhookUrl: user.discordWebhookUrl || '',
+      webhookUrl: user?.discordWebhookUrl || '',
       enabled: hasFeature
     });
   } catch (error) {
@@ -210,7 +210,7 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (!user.discordWebhookUrl) {
+    if (!user?.discordWebhookUrl) {
       return res.status(400).json({ error: 'No Discord webhook URL configured' });
     }
 
@@ -224,7 +224,7 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
       { color: 0x00FF00 } // Green for success
     );
 
-    const response = await fetch(user.discordWebhookUrl, {
+    const response = await fetch(user?.discordWebhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
@@ -248,7 +248,7 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
  * Send Discord notification for stream events
  */
 async function sendDiscordNotification(user, eventType, data) {
-  if (!user.discordWebhookUrl) return;
+  if (!user?.discordWebhookUrl) return;
 
   // Parse Discord settings (if available)
   let discordSettings = {
@@ -264,9 +264,9 @@ async function sendDiscordNotification(user, eventType, data) {
     }
   };
 
-  if (user.discordSettings) {
+  if (user?.discordSettings) {
     try {
-      discordSettings = JSON.parse(user.discordSettings);
+      discordSettings = JSON.parse(user?.discordSettings);
     } catch (error) {
       console.log('⚠️ Failed to parse Discord settings, using defaults');
     }
@@ -274,7 +274,7 @@ async function sendDiscordNotification(user, eventType, data) {
 
   // Check if this notification type is enabled
   if (!discordSettings.enabledNotifications[eventType]) {
-    console.log(`🔇 Discord notification disabled for ${eventType} by user ${user.username}`);
+    console.log(`🔇 Discord notification disabled for ${eventType} by user ${user?.username}`);
     return;
   }
 
@@ -321,7 +321,7 @@ async function sendDiscordNotification(user, eventType, data) {
         description = `**${user.displayName}** is streaming`;
       } else {
         title = `🔴 Stream Started`;
-        description = `**${user.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user.username}`;
+        description = `**${user?.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data?.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user?.username}`;
       }
       color = 0x00FF00; // Green
       break;
@@ -348,18 +348,18 @@ async function sendDiscordNotification(user, eventType, data) {
 
   const discordPayload = createDiscordEmbed(title, description, user, {
     color,
-    fields: data.fields || []
+    fields: data?.fields || []
   });
 
   try {
-    await fetch(user.discordWebhookUrl, {
+    await fetch(user?.discordWebhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
     });
-    console.log(`✅ Discord notification sent: ${eventType} (${templateStyle}) for ${user.username}`);
+    console.log(`✅ Discord notification sent: ${eventType} (${templateStyle}) for ${user?.username}`);
   } catch (error) {
-    console.error(`❌ Discord notification failed: ${eventType} for ${user.username}:`, error);
+    console.error(`❌ Discord notification failed: ${eventType} for ${user?.username}:`, error);
   }
 }
 
@@ -378,7 +378,7 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
     }
 
     // Parse Discord settings from user object, with defaults
-    const discordSettings = user.discordSettings ? JSON.parse(user.discordSettings) : {
+    const discordSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : {
       enableDiscordNotifications: false,
       enableChannelNotifications: false,
       deathMilestoneEnabled: false,

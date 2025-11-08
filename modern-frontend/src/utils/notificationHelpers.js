@@ -163,15 +163,15 @@ export const updateMilestoneThresholds = (settings, counterType, thresholds) => 
 export const validateNotificationSettings = (settings) => {
   const errors = [];
 
-  if (!settings.templateStyle) {
+  if (!settings?.templateStyle) {
     errors.push('Template style is required');
   }
 
-  if (!settings.milestoneThresholds.deaths || !Array.isArray(settings.milestoneThresholds.deaths)) {
+  if (!settings?.milestoneThresholds?.deaths || !Array.isArray(settings.milestoneThresholds.deaths)) {
     errors.push('Death milestone thresholds must be an array');
   }
 
-  if (!settings.milestoneThresholds.swears || !Array.isArray(settings.milestoneThresholds.swears)) {
+  if (!settings?.milestoneThresholds?.swears || !Array.isArray(settings.milestoneThresholds.swears)) {
     errors.push('Swear milestone thresholds must be an array');
   }
 
@@ -198,15 +198,15 @@ export const formatThresholdsForDisplay = (thresholds) => {
 
 // Helper function to check if notification type is enabled for any platform
 export const isNotificationTypeEnabled = (settings, notificationType) => {
-  return settings.discordNotifications[notificationType] ||
-         settings.channelNotifications[notificationType];
+  return settings?.discordNotifications?.[notificationType] ||
+         settings?.channelNotifications?.[notificationType];
 };
 
 // Helper function to get enabled platforms for notification type
 export const getEnabledPlatforms = (settings, notificationType) => {
   const platforms = [];
-  if (settings.discordNotifications[notificationType]) platforms.push('discord');
-  if (settings.channelNotifications[notificationType]) platforms.push('channel');
+  if (settings?.discordNotifications?.[notificationType]) platforms.push('discord');
+  if (settings?.channelNotifications?.[notificationType]) platforms.push('channel');
   return platforms;
 };
 

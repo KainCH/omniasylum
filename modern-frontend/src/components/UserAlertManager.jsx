@@ -85,16 +85,16 @@ function UserAlertManager({ onClose }) {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const alertsData = await alertsRes.json()
-      setAlerts(alertsData.alerts || [])
+      setAlerts(alertsData?.alerts || [])
 
       // Fetch event mappings
       const mappingsRes = await fetch('/api/alerts/event-mappings', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const mappingsData = await mappingsRes.json()
-      setEventMappings(mappingsData.mappings || {})
-      setDefaultMappings(mappingsData.defaultMappings || {})
-      setAvailableEvents(mappingsData.availableEvents || [])
+      setEventMappings(mappingsData?.mappings || {})
+      setDefaultMappings(mappingsData?.defaultMappings || {})
+      setAvailableEvents(mappingsData?.availableEvents || [])
 
     } catch (error) {
       console.error('Error fetching alert data:', error)
@@ -300,10 +300,10 @@ function UserAlertManager({ onClose }) {
               return (
                 <div key={eventType} className="event-mapping-card">
                   <div className="event-header">
-                    <span className="event-icon">{eventInfo.icon}</span>
+                    <span className="event-icon">{eventInfo?.icon || '📅'}</span>
                     <div className="event-info">
-                      <h3>{eventInfo.name}</h3>
-                      <p className="event-description">{eventInfo.description}</p>
+                      <h3>{eventInfo?.name || 'Unknown Event'}</h3>
+                      <p className="event-description">{eventInfo?.description || 'Event description unavailable'}</p>
                       {eventInfo.variables && (
                         <div className="event-variables">
                           <small>Variables: {eventInfo.variables.join(', ')}</small>
@@ -601,7 +601,7 @@ function UserAlertManager({ onClose }) {
             )}
           </div>
           <div className="preview-info">
-            Testing: {previewData.eventInfo.name} {previewData.eventInfo.icon}
+            Testing: {previewData.eventInfo?.name || 'Unknown'} {previewData.eventInfo?.icon || '📅'}
           </div>
         </div>
       )}

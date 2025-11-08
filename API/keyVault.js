@@ -31,7 +31,7 @@ class KeyVault {
         this.useKeyVault = true;
         console.log('✅ Connected to Azure Key Vault with User Assigned Managed Identity');
       } catch (error) {
-        console.warn('⚠️  Failed to connect to Key Vault, using environment variables:', error.message);
+        console.warn('⚠️  Failed to connect to Key Vault, using environment variables:', error?.message);
         this.useKeyVault = false;
       }
     } else {
@@ -51,7 +51,7 @@ class KeyVault {
         const secret = await this.client.getSecret(secretName);
         return secret.value;
       } catch (error) {
-        console.warn(`⚠️  Failed to get ${secretName} from Key Vault:`, error.message);
+        console.warn(`⚠️  Failed to get ${secretName} from Key Vault:`, error?.message);
         // Fall back to environment variable
         return this.getFromEnv(secretName);
       }

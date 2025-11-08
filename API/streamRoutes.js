@@ -88,12 +88,12 @@ router.get('/session', requireAuth, async (req, res) => {
     const settings = await database.getStreamSettings(req.user.twitchUserId);
 
     res.json({
-      isLive: !!counters.streamStarted,
-      streamStarted: counters.streamStarted,
+      isLive: !!counters?.streamStarted,
+      streamStarted: counters?.streamStarted,
       counters: {
-        deaths: counters.deaths,
-        swears: counters.swears,
-        bits: counters.bits
+        deaths: counters?.deaths || 0,
+        swears: counters?.swears || 0,
+        bits: counters?.bits || 0
       },
       settings: settings
     });
@@ -115,13 +115,13 @@ router.post('/start', requireAuth, async (req, res) => {
     const io = req.app.get('io');
     io.to(`user:${req.user.twitchUserId}`).emit('streamStarted', {
       userId: req.user.twitchUserId,
-      streamStarted: counters.streamStarted,
+      streamStarted: counters?.streamStarted,
       counters: counters
     });
 
     res.json({
       message: 'Stream started successfully',
-      streamStarted: counters.streamStarted,
+      streamStarted: counters?.streamStarted,
       counters: counters
     });
   } catch (error) {
@@ -225,7 +225,7 @@ router.post('/reset-bits', requireAuth, async (req, res) => {
     const io = req.app.get('io');
     io.to(`user:${req.user.twitchUserId}`).emit('counterUpdate', {
       ...updated,
-      change: { deaths: 0, swears: 0, bits: -counters.bits }
+      change: { deaths: 0, swears: 0, bits: -(counters?.bits || 0) }
     });
 
     res.json({
@@ -248,7 +248,7 @@ router.get('/monitor/status', requireAuth, async (req, res) => {
     const status = streamMonitor.getStatus();
 
     // Check if current user is being monitored
-    const userMonitored = status.monitoredUsers.some(u => u.userId === req.user.twitchUserId);
+    const userMonitored = status?.monitoredUsers?.some(u => u?.userId === req.user.twitchUserId) || false;
 
     res.json({
       ...status,
@@ -393,14 +393,14 @@ router.post('/prep', requireAuth, async (req, res) => {
       streamStatus: 'prepping',
       isActive: true,
       user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName
+        userId: updatedUser?.twitchUserId,
+        username: updatedUser?.username,
+        displayName: updatedUser?.displayName
       }
     });
   } catch (error) {
     console.error('❌ Error starting stream prep:', error);
-    res.status(500).json({ error: error.message || 'Failed to start stream prep' });
+    res.status(500).json({ error: error?.message || 'Failed to start stream prep' });
   }
 });
 
@@ -454,16 +454,16 @@ router.post('/go-live', requireAuth, async (req, res) => {
       message: 'Stream went live successfully',
       streamStatus: 'live',
       isActive: true,
-      streamStarted: counters.streamStarted,
+      streamStarted: counters?.streamStarted,
       user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName
+        userId: updatedUser?.twitchUserId,
+        username: updatedUser?.username,
+        displayName: updatedUser?.displayName
       }
     });
   } catch (error) {
     console.error('❌ Error going live:', error);
-    res.status(500).json({ error: error.message || 'Failed to go live' });
+    res.status(500).json({ error: error?.message || 'Failed to go live' });
   }
 });
 
@@ -551,7 +551,7 @@ router.post('/end-stream', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error ending stream:', error);
-    res.status(500).json({ error: error.message || 'Failed to end stream' });
+    res.status(500).json({ error: error?.message || 'Failed to end stream' });
   }
 });
 
@@ -624,7 +624,7 @@ router.post('/cancel-prep', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error cancelling stream prep:', error);
-    res.status(500).json({ error: error.message || 'Failed to cancel stream prep' });
+    res.status(500).json({ error: error?.message || 'Failed to cancel stream prep' });
   }
 });
 

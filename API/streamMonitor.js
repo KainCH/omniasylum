@@ -722,7 +722,7 @@ class StreamMonitor extends EventEmitter {
       console.error('Error creating custom reward:', error);
       return {
         success: false,
-        error: error.message
+        error: error?.message
       };
     }
   }
@@ -765,7 +765,7 @@ class StreamMonitor extends EventEmitter {
       console.error('Error deleting custom reward:', error);
       return {
         success: false,
-        error: error.message
+        error: error?.message
       };
     }
   }
@@ -1123,7 +1123,7 @@ class StreamMonitor extends EventEmitter {
         console.error(`❌ Discord notification failed for ${data.username}:`, errorText);
       }
     } catch (error) {
-      console.error(`❌ Error sending Discord notification for ${data.username}:`, error.message);
+      console.error(`❌ Error sending Discord notification for ${data.username}:`, error?.message);
     }
   }
 

@@ -979,9 +979,9 @@ function AdminDashboard() {
               const roleCount = users.filter(u => u.role === role.id).length
               return (
                 <div key={role.id} className="stat-card">
-                  <h3>{role.icon} {role.name}</h3>
+                  <h3>{role?.icon || '👤'} {role?.name || 'Unknown Role'}</h3>
                   <p className="stat-number">{roleCount}</p>
-                  <small className="role-description">{role.description}</small>
+                  <small className="role-description">{role?.description || 'Role description unavailable'}</small>
                 </div>
               )
             })}
@@ -1278,17 +1278,20 @@ function AdminDashboard() {
                         >
                           {roles.map(role => (
                             <option key={role.id} value={role.id}>
-                              {role.icon} {role.name}
+                              {role?.icon || '👤'} {role?.name || 'Unknown Role'}
                             </option>
                           ))}
                         </select>
                       </label>
                       <div className="role-info">
-                        {roles.find(r => r.id === user.role) && (
-                          <div className="role-badge" style={{ backgroundColor: roles.find(r => r.id === user.role).color }}>
-                            {roles.find(r => r.id === user.role).icon} {roles.find(r => r.id === user.role).name}
-                          </div>
-                        )}
+                        {(() => {
+                          const userRole = roles.find(r => r.id === user.role);
+                          return userRole && (
+                            <div className="role-badge" style={{ backgroundColor: userRole?.color || '#ccc' }}>
+                              {userRole?.icon || '👤'} {userRole?.name || 'Unknown Role'}
+                            </div>
+                          )
+                        })()}
                         <p className="role-description">
                           {roles.find(r => r.id === user.role)?.description || 'No description available'}
                         </p>

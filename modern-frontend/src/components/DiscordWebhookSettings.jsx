@@ -113,7 +113,7 @@ function DiscordWebhookSettings({ user }) {
 
         if (webhookData?.webhookUrl) {
           console.log('✅ Existing webhook configuration loaded')
-          showMessage(`Configuration loaded: Webhook ${webhookData.enabled ? 'enabled' : 'disabled'}`, 'success')
+          showMessage(`Configuration loaded: Webhook ${webhookData?.enabled ? 'enabled' : 'disabled'}`, 'success')
         } else {
           console.log('ℹ️ No existing webhook configuration found')
           showMessage('No existing configuration found - you can set one up below', 'info')
@@ -121,8 +121,8 @@ function DiscordWebhookSettings({ user }) {
       })
     } catch (error) {
       console.error('❌ Error loading webhook configuration:', error)
-      console.error('❌ Full error details:', error.message, error.stack)
-      showMessage('Failed to load existing webhook configuration', 'error')
+      console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
+      showMessage('Failed to load webhook configuration', 'error')
     }
   }
 
@@ -142,7 +142,8 @@ function DiscordWebhookSettings({ user }) {
           console.log('✅ Webhook URL loaded successfully, form updated')
         } catch (error) {
           console.error('❌ Error loading webhook:', error)
-          console.error('❌ Full error details:', error.message, error.stack)
+          console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
+          showMessage(`Failed to load Discord settings: ${error?.message || 'Unknown error'}`, 'error')
         }
 
         // Load notification settings
@@ -188,13 +189,13 @@ function DiscordWebhookSettings({ user }) {
     console.log('� Save Webhook Configuration button clicked')
     console.log('📊 Form state:', formState)
     console.log('📊 Values to save:')
-    console.log('   - Webhook URL:', formState.webhookUrl)
-    console.log('   - Webhook enabled:', formState.enabled)
+    console.log('   - Webhook URL:', formState?.webhookUrl)
+    console.log('   - Webhook enabled:', formState?.enabled)
 
     try {
       await withLoading(async () => {
         // Validate webhook URL
-        if (formState.webhookUrl && !formState.webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+        if (formState?.webhookUrl && !formState?.webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
           console.log('❌ Webhook URL validation failed')
           showMessage('Invalid Discord webhook URL format', 'error')
           return
@@ -204,8 +205,8 @@ function DiscordWebhookSettings({ user }) {
         // Save webhook URL only
         console.log('🔗 Saving webhook configuration...')
         const webhookPayload = {
-          webhookUrl: formState.webhookUrl,
-          enabled: formState.enabled
+          webhookUrl: formState?.webhookUrl || '',
+          enabled: formState?.enabled || false
         }
         console.log('🔗 Webhook payload:', webhookPayload)
         await userAPI.updateDiscordWebhook(webhookPayload)
@@ -227,9 +228,9 @@ function DiscordWebhookSettings({ user }) {
       await withLoading(async () => {
         // Validate notification settings
         const validationResult = validateNotificationSettings(notificationSettings)
-        if (!validationResult.isValid) {
-          console.log('❌ Notification settings validation failed:', validationResult.errors)
-          showMessage(validationResult.errors[0], 'error')
+        if (!validationResult?.isValid) {
+          console.log('❌ Notification settings validation failed:', validationResult?.errors || [])
+          showMessage(validationResult?.errors?.[0] || 'Validation failed', 'error')
           return
         }
         console.log('✅ Notification settings validation passed')
@@ -252,19 +253,19 @@ function DiscordWebhookSettings({ user }) {
       return
     }
 
-    if (!formState.webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+    if (!formState?.webhookUrl?.startsWith('https://discord.com/api/webhooks/')) {
       showMessage('Invalid Discord webhook URL format', 'error')
       return
     }
 
     try {
       await withLoading(async () => {
-        await userAPI.testDiscordWebhook({ webhookUrl: formState.webhookUrl })
+        await userAPI.testDiscordWebhook({ webhookUrl: formState?.webhookUrl || '' })
         showMessage('Test notification sent! Check your Discord channel.', 'success')
       })
     } catch (error) {
       console.error('Error testing Discord webhook:', error)
-      showMessage(`Failed to test webhook: ${error.message}`, 'error')
+      showMessage(`Failed to test webhook: ${error?.message || 'Unknown error'}`, 'error')
     }
   }
 
@@ -274,9 +275,9 @@ function DiscordWebhookSettings({ user }) {
         <h3>🔔 Discord Integration</h3>
         {formState && (
           <StatusBadge
-            status={formState.enabled ? 'success' : 'info'}
+            status={formState?.enabled ? 'success' : 'info'}
           >
-            {formState.enabled ? 'Enabled' : 'Disabled'}
+            {formState?.enabled ? 'Enabled' : 'Disabled'}
           </StatusBadge>
         )}
       </div>
@@ -512,7 +513,7 @@ function DiscordWebhookSettings({ user }) {
             <FormSection title={`🔧 Webhook Setup ${isLoading ? '(Loading...)' : ''}`}>
               <div className="settings-info">
                 <p>Connect your Discord server to receive stream notifications!</p>
-                {formState.webhookUrl && !isLoading && (
+                {formState?.webhookUrl && !isLoading && (
                   <div className="info-box" style={{
                     background: '#22c55e1a',
                     border: '1px solid #22c55e',
@@ -551,12 +552,12 @@ function DiscordWebhookSettings({ user }) {
               </div>
 
               <InputGroup
-                label={`Discord Webhook URL ${formState.enabled ? '(✅ Enabled)' : '(❌ Disabled)'}`}
+                label={`Discord Webhook URL ${formState?.enabled ? '(✅ Enabled)' : '(❌ Disabled)'}`}
                 required={true}
               >
                 <input
                   type="url"
-                  value={formState.webhookUrl}
+                  value={formState?.webhookUrl || ''}
                   onChange={(e) => updateField('webhookUrl', e.target.value)}
                   placeholder="https://discord.com/api/webhooks/..."
                   disabled={isLoading}
@@ -564,7 +565,7 @@ function DiscordWebhookSettings({ user }) {
                     width: '100%',
                     padding: '12px',
                     background: '#2a2a2a',
-                    border: `2px solid ${formState.webhookUrl ? '#22c55e' : '#444'}`,
+                    border: `2px solid ${formState?.webhookUrl ? '#22c55e' : '#444'}`,
                     borderRadius: '8px',
                     color: '#fff',
                     fontSize: '1rem',
@@ -579,17 +580,17 @@ function DiscordWebhookSettings({ user }) {
                 }}>
                   Must start with https://discord.com/api/webhooks/
                 </small>
-                {formState.webhookUrl && (
+                {formState?.webhookUrl && (
                   <div style={{
                     marginTop: '8px',
                     padding: '6px 10px',
-                    background: formState.enabled ? '#22c55e1a' : '#ef44441a',
-                    border: `1px solid ${formState.enabled ? '#22c55e' : '#ef4444'}`,
+                    background: formState?.enabled ? '#22c55e1a' : '#ef44441a',
+                    border: `1px solid ${formState?.enabled ? '#22c55e' : '#ef4444'}`,
                     borderRadius: '4px',
                     fontSize: '0.8rem',
-                    color: formState.enabled ? '#22c55e' : '#ef4444'
+                    color: formState?.enabled ? '#22c55e' : '#ef4444'
                   }}>
-                    Status: {formState.enabled ? '✅ Webhook is enabled and ready to receive notifications' : '❌ Webhook is disabled - notifications will not be sent'}
+                    Status: {formState?.enabled ? '✅ Webhook is enabled and ready to receive notifications' : '❌ Webhook is disabled - notifications will not be sent'}
                   </div>
                 )}
               </InputGroup>
@@ -611,11 +612,11 @@ function DiscordWebhookSettings({ user }) {
                   variant="secondary"
                   onClick={() => {
                     console.log('🧪 Test Webhook button clicked')
-                    console.log('🔗 Webhook URL:', formState.webhookUrl)
+                    console.log('🔗 Webhook URL:', formState?.webhookUrl)
                     testWebhook()
                   }}
                   loading={isLoading}
-                  disabled={isLoading || !formState.webhookUrl}
+                  disabled={isLoading || !formState?.webhookUrl}
                 >
                   🧪 Send Test
                 </ActionButton>

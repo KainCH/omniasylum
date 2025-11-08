@@ -327,7 +327,7 @@ io.on('connection', (socket) => {
       socket.emit('twitchConnected', { success });
     } catch (error) {
       console.error('Error connecting Twitch:', error);
-      socket.emit('twitchConnected', { success: false, error: error.message });
+      socket.emit('twitchConnected', { success: false, error: error?.message });
     }
   });
 
@@ -511,7 +511,7 @@ twitchService.on('loadSeries', async ({ userId, username, seriesId }) => {
     console.log(`📂 Series loaded by ${username}: "${loadedData.seriesName}"`);
   } catch (error) {
     console.error('Error handling series load:', error);
-    if (error.message === 'Series save not found') {
+    if (error?.message === 'Series save not found') {
       await twitchService.sendMessage(
         userId,
         '❌ Series save not found. Use !listseries to see available saves.'
@@ -572,7 +572,7 @@ twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
     console.log(`🗑️  Series deleted by ${username}: ${seriesId}`);
   } catch (error) {
     console.error('Error handling series delete:', error);
-    if (error.message === 'Series save not found') {
+    if (error?.message === 'Series save not found') {
       await twitchService.sendMessage(
         userId,
         '❌ Series save not found.'

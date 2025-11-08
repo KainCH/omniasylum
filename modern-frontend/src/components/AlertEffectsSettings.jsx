@@ -132,10 +132,10 @@ function AlertEffectsSettings({ onClose }) {
           {effectOptions.map(option => (
             <div key={option.key} className="effect-option">
               <div className="option-header">
-                <span className="option-icon">{option.icon}</span>
+                <span className="option-icon">{option?.icon || '⚙️'}</span>
                 <div className="option-info">
-                  <h3>{option.title}</h3>
-                  <p>{option.description}</p>
+                  <h3>{option?.title || 'Unknown Effect'}</h3>
+                  <p>{option?.description || 'Effect description unavailable'}</p>
                 </div>
               </div>
               <label className="toggle-switch">

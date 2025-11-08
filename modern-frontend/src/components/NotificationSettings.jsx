@@ -37,7 +37,7 @@ const NotificationSettings = ({
       setSettings(initialSettings);
     }
     if (user?.discordWebhookUrl) {
-      setWebhookUrl(user.discordWebhookUrl);
+      setWebhookUrl(user?.discordWebhookUrl || '');
     }
   }, [initialSettings, user]);
 

@@ -44,10 +44,10 @@ export const NotificationTypeCard = ({
   return (
     <div className={`notification-type-card ${disabled ? 'disabled' : ''}`}>
       <div className="notification-header">
-        <div className="notification-icon">{notificationType.icon}</div>
+        <div className="notification-icon">{notificationType?.icon || '🔔'}</div>
         <div className="notification-info">
-          <h5>{notificationType.title}</h5>
-          <p>{notificationType.description}</p>
+          <h5>{notificationType?.title || 'Unknown Notification'}</h5>
+          <p>{notificationType?.description || 'Description unavailable'}</p>
         </div>
       </div>
 
@@ -94,9 +94,9 @@ export const TemplateStyleSelector = ({
             className={`template-option ${selectedStyle === template.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
             onClick={() => !disabled && onStyleChange(template.id)}
           >
-            <div className="template-icon">{template.icon}</div>
-            <h5>{template.name}</h5>
-            <p>{template.description}</p>
+            <div className="template-icon">{template?.icon || '🎨'}</div>
+            <h5>{template?.name || 'Unknown Template'}</h5>
+            <p>{template?.description || 'Template description unavailable'}</p>
             <div className={`template-preview ${template.previewColor}`}>
               <span>{template.previewText}</span>
             </div>

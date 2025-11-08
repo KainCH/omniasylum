@@ -289,7 +289,7 @@ function App() {
     console.log('🔌 Frontend: Socket.io client created, attempting WebSocket-only connection...')
 
     newSocket.on('connect_error', (error) => {
-      console.error('❌ Socket.io connect error:', error.message)
+      console.error('❌ Socket.io connect error:', error?.message || 'Unknown error')
       console.error('❌ Error details:', error)
     })
 
@@ -318,14 +318,14 @@ function App() {
 
     newSocket.on('streamStatusUpdate', (data) => {
       console.log('🎬 Stream status update received:', data)
-      setStreamStatus(data.streamStatus)
+      setStreamStatus(data?.streamStatus)
     })
 
     newSocket.on('overlaySettingsUpdate', (data) => {
       console.log('🎨 Overlay settings update received:', data)
-      const settings = typeof data.overlaySettings === 'string'
-        ? JSON.parse(data.overlaySettings)
-        : data.overlaySettings
+      const settings = typeof data?.overlaySettings === 'string'
+        ? JSON.parse(data?.overlaySettings)
+        : data?.overlaySettings
       setOverlaySettings(settings)
     })
 
@@ -333,13 +333,13 @@ function App() {
       console.log('🔴 Stream ONLINE event received:', data)
       setStreamStatus('live')
       // Could add notification or UI indicator here
-      console.log(`📺 ${data.username} went LIVE! "${data.streamTitle}"`)
+      console.log(`📺 ${data?.username || 'Unknown user'} went LIVE! "${data?.streamTitle || 'Untitled stream'}"`)
     })
 
     newSocket.on('streamOffline', (data) => {
       console.log('⚫ Stream OFFLINE event received:', data)
       setStreamStatus('offline')
-      console.log(`📺 ${data.username} went offline`)
+      console.log(`📺 ${data?.username || 'Unknown user'} went offline`)
     })
 
     newSocket.on('error', (error) => {
@@ -361,14 +361,14 @@ function App() {
 
     newSocket.on('streamModeStatus', (data) => {
       console.log('💓 Stream mode status received:', data)
-      if (!data.active || !data.eventListenersConnected) {
+      if (!data?.active || !data?.eventListenersConnected) {
         console.warn('⚠️ Stream connection issues detected:', data)
       }
     })
 
     newSocket.on('streamStatusChanged', (data) => {
       console.log('🔄 Stream status changed:', data)
-      const newStatus = data.streamStatus
+      const newStatus = data?.streamStatus
       setStreamStatus(newStatus)
 
       // Start heartbeat when entering prep or live mode
@@ -423,8 +423,8 @@ function App() {
 
       const result = await response.json()
       console.log('✅ Stream status API response:', result)
-      setStreamStatus(result.streamStatus)
-      console.log('✅ Stream status state updated to:', result.streamStatus)
+      setStreamStatus(result?.streamStatus)
+      console.log('✅ Stream status state updated to:', result?.streamStatus)
     } catch (error) {
       console.error('❌ Failed to update stream status:', error)
       alert('Failed to update stream status')
@@ -450,7 +450,7 @@ function App() {
       }
 
       const result = await response.json()
-      setOverlaySettings(result.overlaySettings)
+      setOverlaySettings(result?.overlaySettings)
       console.log('✅ Overlay settings updated')
     } catch (error) {
       console.error('❌ Failed to update overlay settings:', error)
@@ -469,12 +469,12 @@ function App() {
 
       if (response.ok) {
         const data = await response.json()
-        if (data.streamStatus) setStreamStatus(data.streamStatus)
-        if (data.features) setUserFeatures(data.features)
-        if (data.overlaySettings) {
-          const settings = typeof data.overlaySettings === 'string'
-            ? JSON.parse(data.overlaySettings)
-            : data.overlaySettings
+        if (data?.streamStatus) setStreamStatus(data?.streamStatus)
+        if (data?.features) setUserFeatures(data?.features)
+        if (data?.overlaySettings) {
+          const settings = typeof data?.overlaySettings === 'string'
+            ? JSON.parse(data?.overlaySettings)
+            : data?.overlaySettings
           setOverlaySettings(settings)
         }
       }
