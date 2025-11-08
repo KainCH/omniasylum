@@ -61,7 +61,7 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
     'channel.chat.message': {
       name: 'Chat Messages',
       icon: '💬',
-      description: 'Chat messages (for !discord command)',
+      description: 'Chat messages (for !discord command) - Requires re-authentication',
       category: 'Chat',
       cost: 'High'
     },
@@ -142,11 +142,29 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
         // Show success message
         console.log(`✅ ${enabled ? 'Subscribed to' : 'Unsubscribed from'} ${eventType}`);
       } else {
-        throw new Error(`Failed to update subscription for ${eventType}`);
+        const errorData = await response.json();
+
+        // Check if this is a re-authentication required error
+        if (errorData.requiresReauth && errorData.missingScope) {
+          const shouldReauth = confirm(
+            `${errorData.error}\n\nWould you like to re-authenticate your account now to enable this feature?`
+          );
+
+          if (shouldReauth) {
+            window.location.href = '/auth/twitch';
+            return;
+          }
+        }
+
+        throw new Error(errorData.error || `Failed to update subscription for ${eventType}`);
       }
     } catch (error) {
       console.error(`Error updating ${eventType} subscription:`, error);
-      alert(`Failed to update ${eventType} subscription`);
+
+      // Don't show alert if user cancelled re-authentication
+      if (!error.message.includes('re-authenticate')) {
+        alert(`Failed to update ${eventType} subscription: ${error.message}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -230,39 +248,85 @@ function OverlayManager({ userId, username, overlaySettings, onUpdate, onClose }
 
       <div className="config-section">
         <h3>🎨 Visual Settings</h3>
-        <div className="color-settings">
-          <div className="color-input">
-            <label>Background Color:</label>
-            <input
-              type="color"
-              value={overlaySettings?.theme?.backgroundColor || '#1a1a1a'}
-              onChange={(e) => onUpdate({
-                ...overlaySettings,
-                theme: { ...overlaySettings?.theme, backgroundColor: e.target.value }
-              })}
-            />
+        <div className="visual-settings-grid">
+          <div className="color-settings-group">
+            <h4>🎨 Color Palette</h4>
+            <div className="color-settings">
+              <div className="color-input">
+                <label>Background Color</label>
+                <input
+                  type="color"
+                  value={overlaySettings?.theme?.backgroundColor || '#1a1a1a'}
+                  onChange={(e) => onUpdate({
+                    ...overlaySettings,
+                    theme: { ...overlaySettings?.theme, backgroundColor: e.target.value }
+                  })}
+                />
+              </div>
+              <div className="color-input">
+                <label>Text Color</label>
+                <input
+                  type="color"
+                  value={overlaySettings?.theme?.textColor || '#ffffff'}
+                  onChange={(e) => onUpdate({
+                    ...overlaySettings,
+                    theme: { ...overlaySettings?.theme, textColor: e.target.value }
+                  })}
+                />
+              </div>
+              <div className="color-input">
+                <label>Border Color</label>
+                <input
+                  type="color"
+                  value={overlaySettings?.theme?.borderColor || '#9146ff'}
+                  onChange={(e) => onUpdate({
+                    ...overlaySettings,
+                    theme: { ...overlaySettings?.theme, borderColor: e.target.value }
+                  })}
+                />
+              </div>
+            </div>
           </div>
-          <div className="color-input">
-            <label>Text Color:</label>
-            <input
-              type="color"
-              value={overlaySettings?.theme?.textColor || '#ffffff'}
-              onChange={(e) => onUpdate({
-                ...overlaySettings,
-                theme: { ...overlaySettings?.theme, textColor: e.target.value }
-              })}
-            />
-          </div>
-          <div className="color-input">
-            <label>Border Color:</label>
-            <input
-              type="color"
-              value={overlaySettings?.theme?.borderColor || '#9146ff'}
-              onChange={(e) => onUpdate({
-                ...overlaySettings,
-                theme: { ...overlaySettings?.theme, borderColor: e.target.value }
-              })}
-            />
+
+          <div className="visual-options-group">
+            <h4>🔧 Display Options</h4>
+            <div className="setting-row">
+              <label>
+                Overlay Opacity
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.1"
+                value={overlaySettings?.theme?.opacity || 0.9}
+                onChange={(e) => onUpdate({
+                  ...overlaySettings,
+                  theme: { ...overlaySettings?.theme, opacity: parseFloat(e.target.value) }
+                })}
+                className="opacity-slider"
+              />
+              <span className="opacity-value">{Math.round((overlaySettings?.theme?.opacity || 0.9) * 100)}%</span>
+            </div>
+
+            <div className="setting-row">
+              <label>
+                Border Radius
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="20"
+                step="2"
+                value={overlaySettings?.theme?.borderRadius || 8}
+                onChange={(e) => onUpdate({
+                  ...overlaySettings,
+                  theme: { ...overlaySettings?.theme, borderRadius: parseInt(e.target.value) }
+                })}
+                className="radius-slider"
+              />
+              <span className="radius-value">{overlaySettings?.theme?.borderRadius || 8}px</span>
+            </div>
           </div>
         </div>
       </div>

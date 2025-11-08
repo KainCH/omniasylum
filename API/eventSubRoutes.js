@@ -83,7 +83,17 @@ router.put('/subscriptions/:userId', async (req, res) => {
         console.log(`✅ Subscribed ${userId} to ${eventType} (ID: ${subscriptionId})`);
       } catch (error) {
         console.error(`❌ Failed to subscribe ${userId} to ${eventType}:`, error);
-        return res.status(500).json({ error: `Failed to subscribe to ${eventType}` });
+
+        // Check for specific scope-related errors
+        if (error.message && error.message.includes('requested scopes') && error.message.includes('user:read:chat')) {
+          return res.status(400).json({
+            error: `The ${eventType} subscription requires additional permissions. Please re-authenticate your account to enable chat message events.`,
+            requiresReauth: true,
+            missingScope: 'user:read:chat'
+          });
+        }
+
+        return res.status(500).json({ error: `Failed to subscribe to ${eventType}: ${error.message}` });
       }
     } else {
       // Unsubscribe from event

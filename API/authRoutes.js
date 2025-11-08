@@ -30,6 +30,7 @@ router.get('/twitch', async (req, res) => {
     // Scopes needed for the app
     const scopes = [
       'user:read:email',              // Read user email
+      'user:read:chat',               // Read chat messages for EventSub
       'chat:read',                    // Read chat messages
       'chat:edit',                    // Send chat messages
       'channel:read:subscriptions',   // Read subscriptions (EventSub cost reduction)

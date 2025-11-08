@@ -44,27 +44,27 @@ function Write-Step {
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "✅ $Message" -ForegroundColor Green
+    Write-Host "[OK] $Message" -ForegroundColor Green
 }
 
 function Write-Info {
     param([string]$Message)
-    Write-Host "ℹ️ $Message" -ForegroundColor Cyan
+    Write-Host "[INFO] $Message" -ForegroundColor Cyan
 }
 
-function Write-Error {
+function Write-Step {
     param([string]$Message)
-    Write-Host "❌ $Message" -ForegroundColor Red
+    Write-Host "[STEP] $Message" -ForegroundColor Yellow
 }
 
 try {
-    Write-Host '🚀 Starting Enhanced OmniAsylum Deployment Pipeline...' -ForegroundColor Green
-    Write-Host "📅 Deployment Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+    Write-Host 'STARTING Enhanced OmniAsylum Deployment Pipeline...' -ForegroundColor Green
+    Write-Host "DEPLOYMENT TIME: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
 
     $startTime = Get-Date
 
     if (-not $SkipFrontend) {
-        Write-Step '📦 Step 1: Building React Frontend...'
+        Write-Step 'Step 1: Building React Frontend...'
         Push-Location 'modern-frontend'
         try {
             npm run build
@@ -75,7 +75,7 @@ try {
             Pop-Location
         }
 
-        Write-Step '🧹 Step 2: Cleaning old assets and deploying new frontend...'
+        Write-Step 'Step 2: Cleaning old assets and deploying new frontend...'
 
         $assetsPath = 'API/frontend/assets'
         if (Test-Path $assetsPath) {
@@ -83,11 +83,11 @@ try {
             $oldCount = ($oldFiles | Measure-Object).Count
 
             if ($oldCount -gt 0) {
-                Write-Info "Found $oldCount old asset files to clean:"
+                Write-Info "Found $($oldCount) old asset files to clean:"
                 $oldFiles | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor DarkGray }
 
                 Remove-Item -Path "$assetsPath/*" -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Success "Cleaned $oldCount old asset files"
+                Write-Success "Cleaned $($oldCount) old asset files"
             } else {
                 Write-Info 'No old assets to clean'
             }
@@ -103,20 +103,20 @@ try {
         Write-Info "New asset files deployed:"
         $newFiles | ForEach-Object { Write-Host "  + $($_.Name)" -ForegroundColor Green }
 
-        Write-Success "Frontend deployment completed ($newCount files)"
+        Write-Success "Frontend deployment completed ($($newCount) files)"
     } else {
         Write-Info 'Skipping frontend build and deployment'
     }
 
     if (-not $SkipDocker) {
-        Write-Step '🐳 Step 3: Building and pushing Docker image...'
+        Write-Step 'Step 3: Building and pushing Docker image...'
 
         # Ensure we're authenticated with Azure Container Registry
         Write-Info 'Verifying Azure Container Registry authentication...'
         try {
             $acrLoginResult = az acr login --name omniforgeacr 2>&1
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "ACR login failed: $acrLoginResult"
+                Write-Error "ACR login failed: $($acrLoginResult)"
                 throw 'Failed to authenticate with Azure Container Registry'
             }
             Write-Success 'Successfully authenticated with Azure Container Registry'
@@ -147,10 +147,10 @@ try {
     }
 
     if (-not $SkipDeploy) {
-        Write-Step '☁️ Step 4: Deploying to Azure Container Apps...'
+        Write-Step 'Step 4: Deploying to Azure Container Apps...'
 
         $revision = Get-Date -Format 'MMddHHmm'
-        Write-Info "Creating revision: $revision"
+        Write-Info "Creating revision: $($revision)"
 
         $deployResult = az containerapp update `
             --name omniforgestream-api-prod `
@@ -166,15 +166,15 @@ try {
             $runningStatus = $deployResult.properties.runningStatus
 
             Write-Success "Azure deployment completed!"
-            Write-Info "Revision: $revisionName"
-            Write-Info "Status: $provisioningState / $runningStatus"
-            Write-Host "🌐 Application URL: https://$appUrl" -ForegroundColor Cyan
+            Write-Info "Revision: $($revisionName)"
+            Write-Info "Status: $($provisioningState) / $($runningStatus)"
+            Write-Host "APPLICATION URL: https://$($appUrl)" -ForegroundColor Cyan
 
             # Test health endpoint
             Write-Info "Testing application health..."
             Start-Sleep -Seconds 5
             try {
-                $healthResponse = Invoke-RestMethod -Uri "https://$appUrl/api/health" -TimeoutSec 10
+                $healthResponse = Invoke-RestMethod -Uri "https://$($appUrl)/api/health" -TimeoutSec 10
                 if ($healthResponse.status -eq 'ok') {
                     Write-Success "Application is healthy and responding"
                     Write-Info "Uptime: $([math]::Round($healthResponse.uptime, 2)) seconds"
@@ -196,14 +196,13 @@ try {
     $duration = $endTime - $startTime
 
     Write-Host "`n🎉 Deployment Pipeline Completed Successfully!" -ForegroundColor Green
-    Write-Host "⏱️ Total Time: $($duration.ToString('mm\:ss'))" -ForegroundColor Gray
-    Write-Host "📊 Summary:" -ForegroundColor Yellow
-    if (-not $SkipFrontend) { Write-Host "  ✅ Frontend built and assets cleaned" }
-    if (-not $SkipDocker) { Write-Host "  ✅ Docker image updated" }
-    if (-not $SkipDeploy) { Write-Host "  ✅ Azure deployment successful" }
+    Write-Host "TOTAL TIME: $($duration.ToString('mm\:ss'))" -ForegroundColor Gray
+    Write-Host "SUMMARY:" -ForegroundColor Yellow
+    if (-not $SkipFrontend) { Write-Host "  [OK] Frontend built and assets cleaned" }
+    if (-not $SkipDocker) { Write-Host "  [OK] Docker image updated" }
+    if (-not $SkipDeploy) { Write-Host "  [OK] Azure deployment successful" }
 }
 catch {
-    Write-Error "Deployment failed: $_"
-    Write-Host "`nDeployment failed at step: $($Error[0].ScriptStackTrace)" -ForegroundColor DarkRed
+    Write-Host "Deployment failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
