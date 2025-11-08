@@ -270,6 +270,15 @@ router.post('/monitor/subscribe', requireAuth, async (req, res) => {
     const success = await streamMonitor.subscribeToUser(req.user.userId);
 
     if (success) {
+      // Broadcast EventSub status change to user's clients
+      const io = req.app.get('io');
+      io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+        connected: true,
+        monitoring: true,
+        lastConnected: new Date().toISOString(),
+        subscriptionsEnabled: true
+      });
+
       res.json({
         message: 'Successfully subscribed to stream monitoring',
         userId: req.user.userId
@@ -291,6 +300,15 @@ router.post('/monitor/unsubscribe', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
     await streamMonitor.unsubscribeFromUser(req.user.userId);
+
+    // Broadcast EventSub status change to user's clients
+    const io = req.app.get('io');
+    io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+      connected: false,
+      monitoring: false,
+      lastConnected: new Date().toISOString(),
+      subscriptionsEnabled: false
+    });
 
     res.json({
       message: 'Successfully unsubscribed from stream monitoring',
@@ -743,7 +761,7 @@ router.get('/eventsub-status', requireAuth, async (req, res) => {
     const notificationSettings = await database.getUserNotificationSettings(req.user.userId);
     const discordWebhook = await database.getUserDiscordWebhook(req.user.userId);
 
-    res.json({
+    const statusData = {
       userId: req.user.userId,
       username: req.user.username,
       connectionStatus: connectionStatus || {
@@ -755,7 +773,20 @@ router.get('/eventsub-status', requireAuth, async (req, res) => {
       discordWebhook: !!discordWebhook, // Don't expose the actual webhook URL
       subscriptionsEnabled: !!(notificationSettings && discordWebhook),
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Also broadcast current status to all connected clients for this user
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+        connected: connectionStatus?.connected || false,
+        monitoring: streamMonitor.isUserSubscribed(req.user.userId),
+        lastConnected: connectionStatus?.lastConnected,
+        subscriptionsEnabled: !!(notificationSettings && discordWebhook)
+      });
+    }
+
+    res.json(statusData);
   } catch (error) {
     console.error('❌ Error getting EventSub status:', error);
     res.status(500).json({ error: error?.message || 'Failed to get EventSub status' });

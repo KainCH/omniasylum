@@ -859,29 +859,45 @@ async function startServer() {
       // Handle stream events
       streamMonitor.on('streamOnline', async (data) => {
         console.log(`🔴 ${data.username} went LIVE! "${data.streamTitle}"`);
-        io.to(`user:${data.userId}`).emit('streamOnline', data);
+        io.to(`user:${data.userId}`).emit('streamOnline', {
+          ...data,
+          timestamp: new Date().toISOString()
+        });
+
+        // Broadcast EventSub status change
+        io.to(`user:${data.userId}`).emit('eventSubStatusChanged', {
+          connected: true,
+          monitoring: true,
+          lastConnected: new Date().toISOString(),
+          subscriptionsEnabled: true,
+          lastStreamStart: new Date().toISOString(),
+          streamStatus: 'live'  // Current stream status
+        });
       });
 
       streamMonitor.on('streamOffline', async (data) => {
         console.log(`⚫ ${data.username} went OFFLINE`);
 
-        try {
-          // Automatically deactivate user when stream goes offline
-          await database.updateUserStatus(data.userId, false);
-          console.log(`🔄 Auto-deactivated ${data.username} after stream ended`);
+        // Keep monitoring active - DO NOT auto-deactivate user
+        // Only update the stream status in real-time UI
+        console.log(`� User ${data.username} remains active - monitoring continues`);
 
-          // Notify admin dashboard of user status change
-          io.emit('userStatusChanged', {
-            userId: data.userId,
-            username: data.username,
-            isActive: false,
-            reason: 'Stream ended'
-          });
-        } catch (error) {
-          console.error(`❌ Failed to auto-deactivate ${data.username}:`, error);
-        }
+        // Broadcast offline status but keep monitoring active
+        io.to(`user:${data.userId}`).emit('streamOffline', {
+          ...data,
+          timestamp: new Date().toISOString(),
+          monitoringActive: true  // Monitoring stays active
+        });
 
-        io.to(`user:${data.userId}`).emit('streamOffline', data);
+        // Broadcast EventSub status change (monitoring still active)
+        io.to(`user:${data.userId}`).emit('eventSubStatusChanged', {
+          connected: true,
+          monitoring: true,  // Keep monitoring active
+          lastConnected: new Date().toISOString(),
+          subscriptionsEnabled: true,
+          lastStreamEnd: new Date().toISOString(),
+          streamStatus: 'offline'  // Current stream status
+        });
       });
 
       // Handle channel point reward redemptions

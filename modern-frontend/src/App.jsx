@@ -87,7 +87,11 @@ function App() {
   const [eventSubStatus, setEventSubStatus] = useState({
     connected: false,
     monitoring: false,
-    lastConnected: null
+    lastConnected: null,
+    subscriptionsEnabled: false,
+    lastStreamStart: null,
+    lastStreamEnd: null,
+    streamStatus: 'offline'  // Real-time stream status from EventSub
   })
   const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
 
@@ -342,15 +346,53 @@ function App() {
 
     newSocket.on('streamOnline', (data) => {
       console.log('🔴 Stream ONLINE event received:', data)
-      setStreamStatus('live')
-      // Could add notification or UI indicator here
+
+      // Update EventSub status with real-time stream status
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        streamStatus: 'live',
+        lastStreamStart: new Date().toISOString()
+      }))
+
       console.log(`📺 ${data?.username || 'Unknown user'} went LIVE! "${data?.streamTitle || 'Untitled stream'}"`)
     })
 
     newSocket.on('streamOffline', (data) => {
       console.log('⚫ Stream OFFLINE event received:', data)
-      setStreamStatus('offline')
-      console.log(`📺 ${data?.username || 'Unknown user'} went offline`)
+
+      // Update EventSub status with real-time stream status
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        streamStatus: 'offline',
+        lastStreamEnd: new Date().toISOString()
+      }))
+
+      // Note: Monitoring stays active unless user manually stops it
+      console.log(`📺 ${data?.username || 'Unknown user'} went offline - monitoring continues`)
+    })
+
+    // Real-time EventSub status updates
+    newSocket.on('eventSubStatusChanged', (data) => {
+      console.log('🔄 EventSub status changed:', data)
+      setEventSubStatus(prevStatus => ({
+        ...prevStatus,
+        connected: data.connected || false,
+        monitoring: data.monitoring || false,
+        lastConnected: data.lastConnected || prevStatus.lastConnected,
+        subscriptionsEnabled: data.subscriptionsEnabled || false,
+        lastStreamStart: data.lastStreamStart || prevStatus.lastStreamStart,
+        lastStreamEnd: data.lastStreamEnd || prevStatus.lastStreamEnd,
+        streamStatus: data.streamStatus || prevStatus.streamStatus  // Real-time stream status
+      }))
+    })
+
+    // Request initial EventSub status
+    newSocket.on('connect', () => {
+      console.log('🔌 Connected to server, requesting EventSub status...')
+      // Trigger EventSub status check which will broadcast current status
+      fetch('/api/stream/eventsub-status', {
+        headers: getAuthHeaders()
+      }).catch(err => console.warn('❌ Failed to fetch EventSub status on connect:', err))
     })
 
     newSocket.on('error', (error) => {
@@ -842,7 +884,7 @@ function App() {
             </div>
           </div>
 
-          {/* Stream Status */}
+          {/* Stream Status - Real-time from EventSub */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -853,18 +895,18 @@ function App() {
               width: '12px',
               height: '12px',
               borderRadius: '50%',
-              backgroundColor: counters.streamStarted ? '#28a745' : '#6c757d'
+              backgroundColor: eventSubStatus.streamStatus === 'live' ? '#28a745' : '#6c757d'
             }}></div>
             <p style={{ margin: 0, color: '#ccc' }}>
               Status: <strong style={{
-                color: counters.streamStarted ? '#28a745' : '#9146ff'
+                color: eventSubStatus.streamStatus === 'live' ? '#28a745' : '#9146ff'
               }}>
-                {counters.streamStarted ? '🔴 Live' : '⚫ Offline'}
+                {eventSubStatus.streamStatus === 'live' ? '� Live' : '⚫ Offline'}
               </strong>
             </p>
           </div>
 
-          {/* Status Messages */}
+          {/* Status Messages - Real-time Updates */}
           {!eventSubStatus.monitoring ? (
             <div style={{
               background: 'rgba(220, 53, 69, 0.1)',
@@ -878,7 +920,7 @@ function App() {
                 <small>Click "Start Monitoring" to detect when you go live on Twitch</small>
               </p>
             </div>
-          ) : counters.streamStarted ? (
+          ) : eventSubStatus.streamStatus === 'live' ? (
             <div style={{
               background: 'rgba(40, 167, 69, 0.1)',
               border: '1px solid rgba(40, 167, 69, 0.3)',
@@ -887,11 +929,11 @@ function App() {
               color: '#28a745'
             }}>
               <p style={{ margin: 0, fontSize: '14px' }}>
-                🎬 <strong>Stream automatically detected!</strong><br/>
-                <small>Counter tracking started when you went live on Twitch</small>
+                � <strong>LIVE on Twitch!</strong><br/>
+                <small>Stream detected at {eventSubStatus.lastStreamStart ? new Date(eventSubStatus.lastStreamStart).toLocaleTimeString() : 'recently'} • Monitoring continues</small>
               </p>
             </div>
-          ) : (
+          ) : eventSubStatus.connected ? (
             <div style={{
               background: 'rgba(108, 117, 125, 0.1)',
               border: '1px solid rgba(108, 117, 125, 0.3)',
@@ -900,8 +942,21 @@ function App() {
               color: '#6c757d'
             }}>
               <p style={{ margin: 0, fontSize: '14px' }}>
-                📡 <strong>Monitoring active - waiting for stream...</strong><br/>
-                <small>Counters will activate automatically when you go live</small>
+                📡 <strong>Monitoring active - stream offline</strong><br/>
+                <small>EventSub connected • Will update when you go live • Click "Stop" to end monitoring</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⚠️ <strong>Connection issues detected</strong><br/>
+                <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
               </p>
             </div>
           )}

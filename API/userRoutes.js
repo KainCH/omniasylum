@@ -6,7 +6,7 @@ const { requireAuth } = require('./authMiddleware');
  * Create a consistent Discord embed format
  */
 function createDiscordEmbed(title, description, user, options = {}) {
-  return {
+  const payload = {
     username: 'OmniForge',
     avatar_url: options?.botAvatar || user?.profileImageUrl,
     embeds: [{
@@ -28,6 +28,16 @@ function createDiscordEmbed(title, description, user, options = {}) {
       ...(options?.image && { image: { url: options.image } })
     }]
   };
+
+  // Add button components if provided
+  if (options?.buttons) {
+    payload.components = [{
+      type: 1, // Action Row
+      components: options.buttons
+    }];
+  }
+
+  return payload;
 }
 
 const router = express.Router();
@@ -382,28 +392,36 @@ async function sendDiscordNotification(user, eventType, data) {
         title = `🔴 Live Now`;
         description = `**${user.displayName}** is streaming`;
       } else if (templateStyle === 'detailed') {
-        title = `🔴 Stream Started`;
-        description = `**${user?.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data?.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user?.username}\n⏰ **Started:** ${new Date().toLocaleTimeString()}\n🎯 **Ready for action!**`;
+        title = `🎮 Stream Started`;
+        // Use stream title (data?.title) or tags when game is unknown/missing
+        const gameOrSubject = data?.game && data.game !== 'Unknown' && data.game !== ''
+          ? `🎯 **Game:** ${data.game}`
+          : `📋 **Subject:** ${data?.title || 'Live Stream'}`;
+        description = `**${user?.displayName}** is now live on Twitch!\n\n${gameOrSubject}`;
       } else {
         // Default fallback
         title = `🔴 Stream Started`;
-        description = `**${user?.displayName}** is now live on Twitch!\n\n🎮 **Game:** ${data?.game || 'Unknown'}\n📺 **Watch:** https://twitch.tv/${user?.username}`;
+        // Use stream title when game is missing
+        const gameOrSubject = data?.game && data.game !== 'Unknown' && data.game !== ''
+          ? `🎮 **Game:** ${data.game}`
+          : `📋 **Subject:** ${data?.title || 'Live Stream'}`;
+        description = `**${user?.displayName}** is now live on Twitch!\n\n${gameOrSubject}`;
       }
       color = 0x00FF00; // Green
       break;
 
     case 'stream_end':
       if (templateStyle === 'asylum_themed') {
-        title = `⚫ Escaped the Asylum`;
+        title = `🔴 Escaped the Asylum`;
         description = `**${user.displayName}** has escaped the asylum... for now.\n\nThanks for watching! 🙏`;
       } else if (templateStyle === 'minimal') {
-        title = `⚫ Stream Ended`;
+        title = `🔴 Stream Ended`;
         description = `**${user.displayName}** is offline`;
       } else {
-        title = `⚫ Stream Ended`;
+        title = `🔴 Stream Ended`;
         description = `**${user.displayName}** has ended the stream.\n\n⏱️ **Duration:** ${data.duration || 'Unknown'}\n💙 **Thanks for watching!**`;
       }
-      color = 0x808080; // Gray
+      color = 0xFF4444; // Red
       break;
 
     default:
@@ -412,9 +430,24 @@ async function sendDiscordNotification(user, eventType, data) {
       color = 0x5865F2; // Discord blurple
   }
 
+  // Create buttons for stream start notifications
+  let buttons = [];
+  if (eventType === 'stream_start') {
+    buttons = [{
+      type: 2, // Button
+      style: 5, // Link button
+      label: 'Watch Now!',
+      url: `https://twitch.tv/${user?.username}`,
+      emoji: {
+        name: '▶️'
+      }
+    }];
+  }
+
   const discordPayload = createDiscordEmbed(title, description, user, {
     color,
-    fields: data?.fields || []
+    fields: data?.fields || [],
+    buttons: buttons.length > 0 ? buttons : undefined
   });
 
   try {

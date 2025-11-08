@@ -4,6 +4,7 @@ const { RefreshingAuthProvider } = require('@twurple/auth');
 const { EventEmitter } = require('events');
 const database = require('./database');
 const keyVault = require('./keyVault');
+const { sendDiscordNotification } = require('./userRoutes');
 
 /**
  * Stream Monitor Service
@@ -509,42 +510,47 @@ class StreamMonitor extends EventEmitter {
 
       console.log(`🔴 ${user.username} went LIVE! Title: "${event.streamTitle}"`);
 
-      // Send Discord notification if webhook is configured
-      try {
-        // Simplified logic: Only check if webhook URL exists
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const webhookUrl = webhookData?.webhookUrl || '';
-        const discordWebhookConfigured = !!webhookUrl;
-
-        console.log(`🔔 Discord notification check for ${user.username}:`, {
-          discordWebhookConfigured,
-          hasWebhookUrl: !!webhookUrl
-        });
-
-        if (discordWebhookConfigured) {
-          console.log(`📤 Sending Discord live notification for ${user.username}...`);
-          await this.sendDiscordNotification({
-            webhookUrl,
-            username: user.username,
-            displayName: user.displayName,
-            profileImageUrl: user.profileImageUrl,
-            streamTitle: event.streamTitle,
-            gameName: event.categoryName,
-            streamUrl: `https://twitch.tv/${user.username}`
-          });
-          console.log(`✅ Discord live notification sent for ${user.username}`);
-        } else {
-          console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
-        }
-      } catch (error) {
-        console.error(`❌ Error sending Discord notification for ${user.username}:`, error);
-      }
-
-      // Auto-start stream session if not already started
+      // Check if stream session already started to prevent duplicate notifications
       const counters = await database.getCounters(userId);
-      if (!counters.streamStarted) {
+      const isNewStream = !counters.streamStarted;
+
+      // Send Discord notification ONLY if this is a new stream session
+      if (isNewStream) {
+        try {
+          // Check if webhook is configured
+          const webhookData = await database.getUserDiscordWebhook(userId);
+          const webhookUrl = webhookData?.webhookUrl || '';
+          const discordWebhookConfigured = !!webhookUrl;
+
+          console.log(`🔔 Discord notification check for ${user.username}:`, {
+            discordWebhookConfigured,
+            hasWebhookUrl: !!webhookUrl,
+            isNewStream: true
+          });
+
+          if (discordWebhookConfigured) {
+            console.log(`📤 Sending Discord live notification for ${user.username}...`);
+
+            // Use the template-aware Discord notification function from userRoutes
+            await sendDiscordNotification(user, 'stream_start', {
+              game: event.categoryName,
+              title: event.streamTitle,
+              username: user.username
+            });
+
+            console.log(`✅ Discord live notification sent for ${user.username}`);
+          } else {
+            console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error sending Discord notification for ${user.username}:`, error);
+        }
+
+        // Start stream session for the first time
         await database.startStream(userId);
         console.log(`🎬 Auto-started stream session for ${user.username}`);
+      } else {
+        console.log(`🔄 Stream already active for ${user.username} - notification already sent, skipping duplicate`);
       }
 
       // Emit event for real-time updates
@@ -590,23 +596,29 @@ class StreamMonitor extends EventEmitter {
 
       console.log(`⚫ ${user.username} went OFFLINE`);
 
-      // Auto-end stream session if currently started
+      // Reset duplicate detection system for next stream
+      // This ensures each new stream session gets a Discord notification
       const counters = await database.getCounters(userId);
       if (counters.streamStarted) {
         await database.endStream(userId);
-        console.log(`🎬 Auto-ended stream session for ${user.username}`);
+        console.log(`🔄 Reset duplicate detection for ${user.username} - next stream will send notification`);
       }
 
+      // Keep monitoring active - DO NOT stop EventSub monitoring
+      // User must manually stop monitoring via "Stop" button
+      console.log(`📡 Monitoring continues for ${user.username} - use Stop button to end monitoring`);
+
       // No Discord notification for stream end - only log the event
-      console.log(`� Stream session ended for ${user.username} (no Discord notification sent)`);
+      console.log(`📋 Stream offline event logged for ${user.username} (no notification sent)`);
 
       // Stream offline notifications disabled by user preference
 
-      // Emit event for real-time updates
+      // Emit event for real-time updates (monitoring stays active)
       this.emit('streamOffline', {
         userId,
         username: user.username,
-        displayName: user.displayName
+        displayName: user.displayName,
+        monitoringActive: true  // Indicate monitoring is still active
       });
 
     } catch (error) {
@@ -1269,84 +1281,8 @@ class StreamMonitor extends EventEmitter {
     }
   }
 
-  /**
-   * Send Discord notification via webhook
-   */
-  async sendDiscordNotification(data) {
-    try {
-      // Skip all stream end notifications
-      if (data.isStreamEnd) {
-        console.log(`🚫 Stream end Discord notification skipped for ${data.displayName} (disabled by user preference)`);
-        return;
-      }
-
-      let discordPayload;
-
-      // Handle stream start notifications only
-      // Stream start notification
-      discordPayload = {
-          content: `🔴 **${data.displayName}** is now live on Twitch!`,
-          embeds: [{
-            author: {
-              name: data.displayName,
-              url: data.streamUrl,
-              icon_url: data.profileImageUrl
-            },
-            title: `📺 ${data.streamTitle}`,
-            url: data.streamUrl,
-            description: `> Playing **${data.gameName}**\n\n🎮 **Ready to watch?** Click the button below to join the stream!`,
-            color: 0x9146FF, // Twitch purple
-            fields: [
-              {
-                name: '🎯 Game',
-                value: data.gameName,
-                inline: true
-              },
-              {
-                name: '👤 Streamer',
-                value: data.displayName,
-                inline: true
-              }
-            ],
-            image: {
-              url: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${data.username.toLowerCase()}-1920x1080.jpg?timestamp=${Date.now()}`
-            },
-            footer: {
-              text: 'Twitch • Live Now',
-              icon_url: 'https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png'
-            },
-            timestamp: new Date().toISOString()
-          }],
-          components: [{
-            type: 1, // Action Row
-            components: [{
-              type: 2, // Button
-              style: 5, // Link button
-              label: 'Watch Stream →',
-              url: data.streamUrl,
-              emoji: {
-                name: '▶️'
-              }
-            }]
-          }]
-        };
-
-      const response = await fetch(data.webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(discordPayload)
-      });
-
-      if (response.ok) {
-        console.log(`✅ Discord notification sent for ${data.username}`);
-      } else {
-        const errorText = await response.text();
-        console.error(`❌ Discord notification failed for ${data.username}:`, errorText);
-      }
-    } catch (error) {
-      console.error(`❌ Error sending Discord notification for ${data.username}:`, error?.message);
-    }
-  }
+  // Removed: sendDiscordNotification method
+  // Now using template-aware sendDiscordNotification from userRoutes.js
 
   /**
    * Check if a user is currently subscribed to EventSub monitoring
