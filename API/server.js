@@ -55,9 +55,10 @@ io.engine.on('connection_error', (err) => {
   console.log('❌ Socket.io error details:', err.code, err.message, err.context);
 });
 
-// Make io and twitchService available to routes
+// Make io, twitchService, and streamMonitor available to routes
 app.set('io', io);
 app.set('twitchService', twitchService);
+app.set('streamMonitor', streamMonitor);
 
 // Security headers middleware
 app.use((req, res, next) => {
@@ -175,9 +176,20 @@ app.use('/api/alerts', alertRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
-  res.json({
+  const chatStatus = {
     initialized: true,
     connectedUsers: twitchService.getConnectedUsers().length
+  };
+
+  const eventSubStatus = streamMonitor ? streamMonitor.getConnectionStatus() : {
+    totalConnections: 0,
+    users: []
+  };
+
+  res.json({
+    chat: chatStatus,
+    eventsub: eventSubStatus,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -207,10 +219,51 @@ io.on('connection', (socket) => {
 
   // Send current state to newly connected authenticated client
   if (userId) {
+    // Send counter state
     database.getCounters(userId).then(data => {
       socket.emit('counterUpdate', data);
     }).catch(error => {
       console.error('❌ Error fetching counters for new connection:', error);
+    });
+
+    // Send current stream status and features
+    database.getUser(userId).then(user => {
+      if (user) {
+        const streamStatus = user.streamStatus || 'offline';
+        const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+
+        socket.emit('streamStatusUpdate', {
+          streamStatus: streamStatus,
+          isActive: user.isActive || false
+        });
+
+        socket.emit('userFeaturesUpdate', features);
+
+        // If user is in streaming mode (prep or live), send active stream status
+        if (streamStatus === 'prepping') {
+          socket.emit('prepModeActive', {
+            userId: userId,
+            username: user.username,
+            displayName: user.displayName,
+            streamStatus: 'prepping',
+            eventListenersActive: true
+          });
+
+          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring active`);
+        } else if (streamStatus === 'live') {
+          socket.emit('streamModeActive', {
+            userId: userId,
+            username: user.username,
+            displayName: user.displayName,
+            streamStatus: 'live',
+            eventListenersActive: true
+          });
+
+          console.log(`🔴 Client connected in live mode: ${user.displayName}, EventSub monitoring active`);
+        }
+      }
+    }).catch(error => {
+      console.error('❌ Error fetching user data for new connection:', error);
     });
   }
 
@@ -290,6 +343,31 @@ io.on('connection', (socket) => {
     }).catch(error => {
       console.error('❌ Error fetching counters for overlay:', error);
     });
+  });
+
+  // Handle heartbeat/ping for any connections
+  socket.on('ping', (callback) => {
+    if (typeof callback === 'function') {
+      callback('pong');
+    }
+  });
+
+  socket.on('streamModeHeartbeat', async () => {
+    if (!userId) return;
+
+    try {
+      const user = await database.getUser(userId);
+      if (user && (user.streamStatus === 'prepping' || user.streamStatus === 'live')) {
+        socket.emit('streamModeStatus', {
+          active: true,
+          streamStatus: user.streamStatus,
+          eventListenersConnected: streamMonitor && streamMonitor.isUserSubscribed ? streamMonitor.isUserSubscribed(userId) : false,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error handling stream mode heartbeat:', error);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -820,6 +898,33 @@ async function startServer() {
             redeemedBy: data.redeemedBy
           });
         }
+      });
+
+      // Handle EventSub connection events
+      streamMonitor.on('userConnected', (data) => {
+        console.log(`🔗 EventSub connected for ${data.username}`);
+        io.to(`user:${data.userId}`).emit('eventSubConnected', {
+          status: 'connected',
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      streamMonitor.on('userDisconnected', (data) => {
+        console.log(`🔌 EventSub disconnected for ${data.username}:`, data.reason || 'Unknown reason');
+        io.to(`user:${data.userId}`).emit('eventSubDisconnected', {
+          status: 'disconnected',
+          manual: data.manual,
+          reason: data.reason,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      streamMonitor.on('authRevoked', (data) => {
+        console.log(`🔐 EventSub auth revoked for ${data.username} - user needs to re-authenticate`);
+        io.to(`user:${data.userId}`).emit('authRevoked', {
+          message: 'Your Twitch authorization has been revoked. Please re-authenticate to continue receiving stream notifications.',
+          timestamp: new Date().toISOString()
+        });
       });
 
       // Handle follow events

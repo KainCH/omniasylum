@@ -19,6 +19,9 @@ class StreamMonitor extends EventEmitter {
     this.clientSecret = null;
     this.appApiClient = null;
     this.appAuthProvider = null;
+    this.connectionHealthTimers = new Map(); // userId -> timer for keepalive monitoring
+    this.maxKeepaliveTimeout = 600; // 10 minutes max as per Twitch docs
+    this.defaultKeepaliveTimeout = 30; // 30 seconds default
   }
 
   /**
@@ -48,36 +51,87 @@ class StreamMonitor extends EventEmitter {
   }
 
   /**
-   * Set up EventSub event handlers
+   * Start connection health monitoring for a user
+   * Based on Twitch EventSub keepalive timeout recommendations
    */
-  setupEventHandlers() {
-    // Handle stream online events
-    this.listener.onStreamOnline((event) => {
-      this.handleStreamOnline(event);
-    });
+  startConnectionHealthMonitoring(userId, keepaliveTimeoutSeconds = this.defaultKeepaliveTimeout) {
+    // Clear any existing timer
+    this.stopConnectionHealthMonitoring(userId);
 
-    // Handle stream offline events
-    this.listener.onStreamOffline((event) => {
-      this.handleStreamOffline(event);
-    });
+    // Set timeout slightly longer than keepalive to account for network delays
+    const timeoutMs = (keepaliveTimeoutSeconds + 5) * 1000;
 
-    // Handle channel point redemptions
-    this.listener.onChannelRedemptionAdd((event) => {
-      this.handleRewardRedemption(event);
-    });
+    const timer = setTimeout(() => {
+      const userData = this.connectedUsers.get(userId);
+      if (userData) {
+        console.log(`⚠️  No keepalive received for ${userData.username} within ${keepaliveTimeoutSeconds}s - reconnecting`);
 
-    // Handle connection events
-    this.listener.onConnect(() => {
-      console.log('✅ EventSub WebSocket connected');
-    });
+        // Stop current connection
+        this.unsubscribeFromUser(userId);
 
-    this.listener.onDisconnect(() => {
-      console.log('⚠️  EventSub WebSocket disconnected');
-    });
+        // Attempt to reconnect
+        setTimeout(() => {
+          console.log(`🔄 Attempting to reconnect for ${userData.username} after keepalive timeout...`);
+          this.subscribeToUser(userId).catch(error => {
+            console.error(`❌ Failed to reconnect after keepalive timeout for ${userData.username}:`, error);
+          });
+        }, 5000); // 5 second delay before reconnection
+      }
+    }, timeoutMs);
 
-    this.listener.onRevoke((subscription) => {
-      console.log('⚠️  EventSub subscription revoked:', subscription.id);
-    });
+    this.connectionHealthTimers.set(userId, timer);
+    console.log(`🩺 Started connection health monitoring for user ${userId} (timeout: ${keepaliveTimeoutSeconds}s)`);
+  }
+
+  /**
+   * Stop connection health monitoring for a user
+   */
+  stopConnectionHealthMonitoring(userId) {
+    const timer = this.connectionHealthTimers.get(userId);
+    if (timer) {
+      clearTimeout(timer);
+      this.connectionHealthTimers.delete(userId);
+    }
+  }
+
+  /**
+   * Reset connection health monitoring - call this when receiving any message from Twitch
+   */
+  resetConnectionHealth(userId, keepaliveTimeoutSeconds = this.defaultKeepaliveTimeout) {
+    this.startConnectionHealthMonitoring(userId, keepaliveTimeoutSeconds);
+  }
+
+  /**
+   * Get EventSub connection status for all users
+   * Useful for debugging and monitoring
+   */
+  getConnectionStatus() {
+    const status = {
+      totalConnections: this.connectedUsers.size,
+      users: []
+    };
+
+    for (const [userId, userData] of this.connectedUsers) {
+      status.users.push({
+        userId,
+        username: userData.username,
+        twitchUserId: userData.twitchUserId,
+        hasHealthMonitoring: this.connectionHealthTimers.has(userId),
+        subscriptions: {
+          online: !!userData.onlineSubscription,
+          offline: !!userData.offlineSubscription,
+          redemptions: !!userData.redemptionSubscription,
+          follows: !!userData.followSubscription,
+          raids: !!userData.raidSubscription,
+          subscribes: !!userData.subscribeSubscription,
+          subGifts: !!userData.subGiftSubscription,
+          subMessages: !!userData.subMessageSubscription,
+          cheers: !!userData.cheerSubscription
+        }
+      });
+    }
+
+    return status;
   }
 
   /**
@@ -203,6 +257,62 @@ class StreamMonitor extends EventEmitter {
         });
       }
 
+      // Add enhanced connection lifecycle handlers
+      userListener.onConnect(() => {
+        console.log(`✅ EventSub WebSocket connected for ${user.username}`);
+        this.emit('userConnected', { userId, username: user.username });
+
+        // Start connection health monitoring with default timeout
+        // Twitch will send keepalive messages within this window
+        this.startConnectionHealthMonitoring(userId, this.defaultKeepaliveTimeout);
+      });
+
+      userListener.onDisconnect((manual, reason) => {
+        console.log(`⚠️  EventSub WebSocket disconnected for ${user.username}:`, { manual, reason });
+        this.emit('userDisconnected', { userId, username: user.username, manual, reason });
+
+        // Stop connection health monitoring
+        this.stopConnectionHealthMonitoring(userId);
+
+        // If not manually disconnected, attempt to resubscribe after a delay
+        if (!manual) {
+          console.log(`🔄 Will attempt to reconnect for ${user.username} in 30 seconds...`);
+          setTimeout(() => {
+            if (!this.connectedUsers.has(userId)) {
+              console.log(`🔄 Attempting to resubscribe for ${user.username}...`);
+              this.subscribeToUser(userId).catch(error => {
+                console.error(`❌ Failed to resubscribe for ${user.username}:`, error);
+              });
+            }
+          }, 30000); // 30 second delay before reconnection attempt
+        }
+      });
+
+      userListener.onRevoke((subscription) => {
+        console.log(`⚠️  EventSub subscription revoked for ${user.username}:`, {
+          subscriptionId: subscription.id,
+          type: subscription.type,
+          status: subscription.status
+        });
+
+        // Handle different revocation reasons
+        switch (subscription.status) {
+          case 'user_removed':
+            console.log(`👤 User ${user.username} no longer exists - removing from monitoring`);
+            this.unsubscribeFromUser(userId);
+            break;
+          case 'authorization_revoked':
+            console.log(`🔐 Authorization revoked for ${user.username} - user may need to re-authenticate`);
+            this.emit('authRevoked', { userId, username: user.username });
+            this.unsubscribeFromUser(userId);
+            break;
+          case 'version_removed':
+            console.log(`📦 EventSub version removed for ${user.username} - may need to update subscription type`);
+            // Could attempt to resubscribe with newer version
+            break;
+        }
+      });
+
       // Start the user's listener
       userListener.start();
 
@@ -242,6 +352,9 @@ class StreamMonitor extends EventEmitter {
     try {
       const userData = this.connectedUsers.get(userId);
       if (!userData) return;
+
+      // Stop connection health monitoring
+      this.stopConnectionHealthMonitoring(userId);
 
       // Stop all subscriptions
       if (userData.onlineSubscription) {
@@ -304,6 +417,9 @@ class StreamMonitor extends EventEmitter {
         return;
       }
 
+      // Reset connection health - we received a message from Twitch
+      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
+
       const user = await database.getUser(userId);
       if (!user) return;
 
@@ -365,6 +481,9 @@ class StreamMonitor extends EventEmitter {
         return;
       }
 
+      // Reset connection health - we received a message from Twitch
+      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
+
       const user = await database.getUser(userId);
       if (!user) return;
 
@@ -401,6 +520,9 @@ class StreamMonitor extends EventEmitter {
         console.log(`Reward redemption for unknown user: ${event.broadcasterName}`);
         return;
       }
+
+      // Reset connection health - we received a message from Twitch
+      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
 
       const user = await database.getUser(userId);
       if (!user) return;
@@ -1003,6 +1125,24 @@ class StreamMonitor extends EventEmitter {
     } catch (error) {
       console.error(`❌ Error sending Discord notification for ${data.username}:`, error.message);
     }
+  }
+
+  /**
+   * Check if a user is currently subscribed to EventSub monitoring
+   */
+  isUserSubscribed(userId) {
+    return this.connectedUsers.has(userId);
+  }
+
+  /**
+   * Get status of stream monitor and connected users
+   */
+  getStatus() {
+    return {
+      initialized: this.clientId !== null,
+      connectedUsers: Array.from(this.connectedUsers.keys()),
+      userCount: this.connectedUsers.size
+    };
   }
 
   /**

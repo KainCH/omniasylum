@@ -361,6 +361,21 @@ router.post('/prep', requireAuth, async (req, res) => {
       }
     }
 
+    // Start EventSub stream monitoring when entering prep mode
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        const subscribed = await streamMonitor.subscribeToUser(req.user.twitchUserId);
+        if (subscribed) {
+          console.log(`🎬 Started EventSub monitoring for ${user.displayName} (prepping mode)`);
+        } else {
+          console.warn(`⚠️ Failed to start EventSub monitoring for ${user.displayName}`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to start EventSub monitoring for ${user.displayName}:`, error);
+      }
+    }
+
     // Broadcast status change to connected clients
     const io = req.app.get('io');
     io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
@@ -491,6 +506,17 @@ router.post('/end-stream', requireAuth, async (req, res) => {
       }
     }
 
+    // Stop EventSub stream monitoring when ending stream
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        await streamMonitor.unsubscribeFromUser(req.user.twitchUserId);
+        console.log(`🎬 Stopped EventSub monitoring for ${user.displayName} (ended stream)`);
+      } catch (error) {
+        console.error(`❌ Failed to stop EventSub monitoring for ${user.displayName}:`, error);
+      }
+    }
+
     // Broadcast status change to connected clients
     const io = req.app.get('io');
     io.to(`user:${req.user.twitchUserId}`).emit('streamStatusChanged', {
@@ -560,6 +586,17 @@ router.post('/cancel-prep', requireAuth, async (req, res) => {
         console.log(`🤖 Stopped Twitch bot for ${user.displayName} (cancelled prep)`);
       } catch (error) {
         console.error(`❌ Failed to stop Twitch bot for ${user.displayName}:`, error);
+      }
+    }
+
+    // Stop EventSub stream monitoring when cancelling prep
+    const streamMonitor = req.app.get('streamMonitor');
+    if (streamMonitor) {
+      try {
+        await streamMonitor.unsubscribeFromUser(req.user.twitchUserId);
+        console.log(`🎬 Stopped EventSub monitoring for ${user.displayName} (cancelled prep)`);
+      } catch (error) {
+        console.error(`❌ Failed to stop EventSub monitoring for ${user.displayName}:`, error);
       }
     }
 

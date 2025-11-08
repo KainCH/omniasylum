@@ -135,7 +135,7 @@ function SeriesSaveManager({ isOpen, onClose }) {
       }
 
       const data = await response.json();
-      setSuccess(`Series "${series.seriesName}" loaded! Deaths: ${data.counters.deaths}, Swears: ${data.counters.swears}`);
+      setSuccess(`Series "${series.seriesName}" loaded! Deaths: ${data.counters?.deaths || 0}, Swears: ${data.counters?.swears || 0}`);
       setSelectedSeries(null);
 
       // Close modal after successful load
@@ -313,7 +313,7 @@ function SeriesSaveManager({ isOpen, onClose }) {
                       <div className="series-meta">
                         <span className="saved-date">📅 {formatDate(series.savedAt)}</span>
                         <span className="series-id" title={series.seriesId}>
-                          ID: {series.seriesId.substring(0, 20)}...
+                          ID: {series.seriesId?.substring(0, 20) || 'No ID'}...
                         </span>
                       </div>
                     </div>

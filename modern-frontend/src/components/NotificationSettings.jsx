@@ -165,8 +165,8 @@ const NotificationSettings = ({
             <NotificationTypeCard
               key={type.id}
               notificationType={type}
-              discordEnabled={settings.discordNotifications[type.id]}
-              channelEnabled={settings.channelNotifications[type.id]}
+              discordEnabled={settings?.discordNotifications?.[type.id] || false}
+              channelEnabled={settings?.channelNotifications?.[type.id] || false}
               onDiscordChange={(e) => handlers.updateDiscordNotification(type.id, e.target.checked)}
               onChannelChange={(e) => handlers.updateChannelNotification(type.id, e.target.checked)}
               disabled={saving}

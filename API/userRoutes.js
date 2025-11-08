@@ -182,18 +182,8 @@ router.put('/discord-webhook', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
     }
 
-    // Get current user
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Update user with new Discord webhook URL
-    const updatedUser = {
-      ...user,
-      discordWebhookUrl: webhookUrl || ''
-    };
-    await database.saveUser(updatedUser);
+    // Use the dedicated updateUserDiscordWebhook method (same as admin routes)
+    await database.updateUserDiscordWebhook(userId, webhookUrl || '');
 
     console.log(`✅ Discord webhook updated for ${req.user.username}`);
 

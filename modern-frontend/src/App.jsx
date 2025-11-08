@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import Counter from './components/Counter'
 import AuthPrompt from './components/AuthPrompt'
@@ -82,6 +82,9 @@ function App() {
       backgroundColor: 'rgba(0, 0, 0, 0.8)'
     }
   }) // ALWAYS start in user mode
+
+  // Refs for interval management
+  const streamingHeartbeatRef = useRef(null)
 
   // Check authentication status
   useEffect(() => {
@@ -177,15 +180,38 @@ function App() {
     }
   }, [isAuthenticated])
 
-  // Cleanup socket only when component unmounts
+  // Cleanup socket and intervals when component unmounts
   useEffect(() => {
     return () => {
       if (socket) {
         console.log('🔌 Frontend: Component unmounting, disconnecting socket')
         socket.disconnect()
       }
+      if (streamingHeartbeatRef.current) {
+        clearInterval(streamingHeartbeatRef.current)
+        streamingHeartbeatRef.current = null
+        console.log('💓 Cleaned up streaming heartbeat on unmount')
+      }
     }
   }, [])
+
+  // Helper functions for streaming heartbeat management
+  const startStreamingHeartbeat = (socket) => {
+    if (!streamingHeartbeatRef.current && socket) {
+      streamingHeartbeatRef.current = setInterval(() => {
+        socket.emit('streamModeHeartbeat')
+      }, 30000) // Send heartbeat every 30 seconds
+      console.log('💓 Started streaming heartbeat (prep/live mode)')
+    }
+  }
+
+  const stopStreamingHeartbeat = () => {
+    if (streamingHeartbeatRef.current) {
+      clearInterval(streamingHeartbeatRef.current)
+      streamingHeartbeatRef.current = null
+      console.log('💓 Stopped streaming heartbeat (went offline)')
+    }
+  }
 
   const checkAuth = async () => {
     try {
@@ -320,6 +346,42 @@ function App() {
       console.error('❌ Socket error:', error)
     })
 
+    // Handle stream mode events
+    newSocket.on('prepModeActive', (data) => {
+      console.log('🎬 Prep mode ACTIVE event received:', data)
+      setStreamStatus('prepping')
+      startStreamingHeartbeat(newSocket)
+    })
+
+    newSocket.on('streamModeActive', (data) => {
+      console.log('🔴 Live mode ACTIVE event received:', data)
+      setStreamStatus('live')
+      startStreamingHeartbeat(newSocket)
+    })
+
+    newSocket.on('streamModeStatus', (data) => {
+      console.log('💓 Stream mode status received:', data)
+      if (!data.active || !data.eventListenersConnected) {
+        console.warn('⚠️ Stream connection issues detected:', data)
+      }
+    })
+
+    newSocket.on('streamStatusChanged', (data) => {
+      console.log('🔄 Stream status changed:', data)
+      const newStatus = data.streamStatus
+      setStreamStatus(newStatus)
+
+      // Start heartbeat when entering prep or live mode
+      if ((newStatus === 'prepping' || newStatus === 'live') && !streamingHeartbeatRef.current) {
+        startStreamingHeartbeat(newSocket)
+      }
+
+      // Stop heartbeat only when going offline
+      if (newStatus === 'offline' && streamingHeartbeatRef.current) {
+        stopStreamingHeartbeat()
+      }
+    })
+
     setSocket(newSocket)
   }
 
@@ -444,9 +506,9 @@ function App() {
 
   const exportData = () => {
     const data = {
-      deaths: counters.deaths,
-      swears: counters.swears,
-      total: counters.deaths + counters.swears,
+      deaths: counters?.deaths || 0,
+      swears: counters?.swears || 0,
+      total: (counters?.deaths || 0) + (counters?.swears || 0),
       timestamp: new Date().toLocaleString()
     }
 
@@ -1308,7 +1370,7 @@ function App() {
                     color: overlaySettings.theme.textColor,
                     fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
-                  }}>{counters.deaths}</span>
+                  }}>{counters?.deaths || 0}</span>
                 </div>
               )}
 
@@ -1331,11 +1393,11 @@ function App() {
                     color: overlaySettings.theme.textColor,
                     fontSize: sizeStyles.counterFontSize,
                     fontWeight: 'bold'
-                  }}>{counters.swears}</span>
+                  }}>{counters?.swears || 0}</span>
                 </div>
               )}
 
-              {overlaySettings.counters.bits && counters.bits > 0 && (
+              {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
                 <div style={{
                   background: 'rgba(145, 70, 255, 0.2)',
                   padding: sizeStyles.itemPadding,

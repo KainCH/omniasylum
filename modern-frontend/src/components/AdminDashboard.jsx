@@ -276,9 +276,11 @@ function AdminDashboard() {
     try {
       // Get current features first
       const user = users.find(u => u.twitchUserId === userId)
-      const currentFeatures = typeof user.features === 'string'
-        ? JSON.parse(user.features)
-        : user.features || {}
+      const currentFeatures = user?.features
+        ? (typeof user.features === 'string'
+            ? JSON.parse(user.features)
+            : user.features)
+        : {}
 
       // Update the specific feature
       const updatedFeatures = {
@@ -1142,9 +1144,11 @@ function AdminDashboard() {
               </div>
             ) : (
               users.map(user => {
-                const userFeatures = typeof user.features === 'string'
-                  ? JSON.parse(user.features)
-                  : user.features || {}
+                const userFeatures = user?.features
+                  ? (typeof user.features === 'string'
+                      ? JSON.parse(user.features)
+                      : user.features)
+                  : {}
 
                 return (
                 <div key={user.twitchUserId || user.userId || Math.random()} className="user-card">
