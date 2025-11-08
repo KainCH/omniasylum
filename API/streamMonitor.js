@@ -24,6 +24,15 @@ class StreamMonitor extends EventEmitter {
     this.maxKeepaliveTimeout = 600; // 10 minutes max as per Twitch docs
     this.defaultKeepaliveTimeout = 30; // 30 seconds default
     this.pendingNotifications = new Map(); // userId -> pending notification data
+    this.io = null; // Socket.io instance for real-time notifications
+  }
+
+  /**
+   * Set the Socket.io instance for real-time notifications
+   */
+  setSocketIo(io) {
+    this.io = io;
+    console.log('✅ Socket.io instance set in StreamMonitor');
   }
 
   /**
@@ -200,13 +209,24 @@ class StreamMonitor extends EventEmitter {
         }
       );
 
-      // Add user with token and intents for EventSub
+      // Add user with token and scopes for EventSub (reduces subscription costs to 0)
+      // These scopes make our subscriptions cost-free since the user has authorized them
       const { userId: twitchUserId } = await userAuthProvider.addUserForToken({
         accessToken: user.accessToken,
         refreshToken: user.refreshToken,
         expiresIn: 0,
-        obtainmentTimestamp: 0
-      }, []);  // No specific intents needed for EventSub subscriptions
+        obtainmentTimestamp: 0,
+        scope: [
+          'user:read:email',
+          'chat:read',
+          'chat:edit',
+          'channel:read:subscriptions',    // For subscribe, sub gift, sub message events
+          'channel:read:redemptions',      // For channel point redemptions
+          'moderator:read:followers',      // For follow events
+          'bits:read',                     // For cheer events
+          'clips:edit'
+        ]
+      }, []);
 
       // Handle token refresh
       userAuthProvider.onRefresh(async (userId, newTokenData) => {
@@ -241,6 +261,13 @@ class StreamMonitor extends EventEmitter {
 
       // Subscribe to channel update events (title/category changes)
       const channelUpdateSubscription = userListener.onChannelUpdate(userId, (event) => {
+        console.log(`🔄 CHANNEL UPDATE EVENT received for ${user.username}:`, {
+          broadcasterUserId: event.broadcasterUserId,
+          broadcasterUserName: event.broadcasterUserName,
+          streamTitle: event.streamTitle,
+          categoryName: event.categoryName,
+          timestamp: new Date().toISOString()
+        });
         this.handleChannelUpdate(event, userId);
       });
 
@@ -392,6 +419,18 @@ class StreamMonitor extends EventEmitter {
         console.log(`   💡 To enable: Configure Discord webhook AND enable notification settings`);
       }
 
+      // Create initial pending notification for Discord (will be completed when stream goes live)
+      if (discordWebhookConfigured) {
+        this.storePendingNotification(userId, {
+          type: 'monitoring_ready',
+          user: user,
+          timestamp: Date.now(),
+          hasChannelInfo: false,
+          hasStreamInfo: false
+        });
+        console.log(`📋 Created pending notification for ${user.username} - ready for stream events`);
+      }
+
       // Check current stream status
       await this.checkCurrentStreamStatus(userId, userId, userApiClient);
 
@@ -448,6 +487,28 @@ class StreamMonitor extends EventEmitter {
       }
 
       this.connectedUsers.delete(userId);
+
+      // Clear any pending Discord notifications for this user
+      if (this.pendingNotifications.has(userId)) {
+        console.log(`🧹 Clearing pending Discord notification for user ${userId}`);
+        this.pendingNotifications.delete(userId);
+      }
+
+      // Reset Discord notification status to proper state
+      const user = await database.getUser(userId);
+      if (user) {
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const hasWebhook = !!(webhookData?.webhookUrl && webhookData?.enabled);
+
+        // Emit status reset - webhook configured but monitoring stopped
+        if (hasWebhook) {
+          this.emitDiscordNotificationStatus(userId, 'Ready', {
+            monitoringStopped: true,
+            message: 'Monitoring stopped - restart to enable notifications'
+          });
+        }
+      }
+
       console.log(`🎬 Stopped monitoring streams for user ${userId}`);
     } catch (error) {
       console.error(`Failed to unsubscribe from stream events for user ${userId}:`, error);
@@ -527,17 +588,77 @@ class StreamMonitor extends EventEmitter {
         await database.startStream(userId);
         console.log(`🎬 Auto-started stream session for ${user.username}`);
 
-        // Store pending Discord notification - will be sent when channel.update arrives
-        // This ensures we have the correct title/category information
-        this.storePendingNotification(userId, {
-          type: 'stream_start',
-          user: user,
-          streamId: event.id,
-          startedAt: event.startedAt,
-          timestamp: Date.now()
-        });
+        // Get current stream info from API to send complete notification immediately
+        let streamInfo = null;
+        try {
+          const userData = this.connectedUsers.get(userId);
+          if (userData?.userApiClient) {
+            const streams = await userData.userApiClient.streams.getStreamByUserId(userId);
+            if (streams) {
+              streamInfo = {
+                id: streams.id,
+                title: streams.title || 'Untitled Stream',
+                category: streams.gameName || 'Unknown Category',
+                categoryId: streams.gameId,
+                language: streams.language || 'en',
+                viewerCount: streams.viewers || 0,
+                thumbnailUrl: streams.getThumbnailUrl(320, 180),
+                tags: streams.tags || [],
+                isMature: streams.isMature || false,
+                startedAt: event.startedAt || streams.startDate
+              };
+              console.log(`📊 Retrieved current stream info for ${user.username}:`, {
+                title: streamInfo.title,
+                category: streamInfo.category,
+                viewers: streamInfo.viewerCount
+              });
+            }
+          }
+        } catch (apiError) {
+          console.warn(`⚠️ Could not fetch current stream data for ${user.username}:`, apiError.message);
+        }
 
-        console.log(`📋 Stream online detected for ${user.username} - awaiting channel.update for Discord notification`);
+        // Update or create notification and send immediately
+        const pendingNotification = this.pendingNotifications.get(userId);
+        if (pendingNotification && (pendingNotification.type === 'monitoring_ready' || pendingNotification.type === 'stream_start')) {
+          // Complete the notification with all available data
+          pendingNotification.streamInfo = {
+            streamId: event.id,
+            startedAt: event.startedAt,
+            broadcasterUserId: event.broadcasterId,
+            broadcasterUserName: event.broadcasterName,
+            broadcasterUserLogin: event.broadcasterLogin,
+            ...streamInfo
+          };
+          pendingNotification.hasStreamInfo = true;
+          pendingNotification.hasChannelInfo = !!streamInfo; // We have channel info from API
+          pendingNotification.streamStartedAt = Date.now();
+
+          // Send notification immediately with all available data
+          await this.sendPendingDiscordNotification(userId, pendingNotification);
+        } else {
+          console.log(`⚠️ No pending notification found for ${user.username} - creating and sending immediate notification`);
+          // Create and send notification immediately
+          const notificationData = {
+            type: 'stream_start',
+            user: user,
+            streamInfo: {
+              streamId: event.id,
+              startedAt: event.startedAt,
+              broadcasterUserId: event.broadcasterId,
+              broadcasterUserName: event.broadcasterName,
+              broadcasterUserLogin: event.broadcasterLogin,
+              ...streamInfo
+            },
+            hasStreamInfo: true,
+            hasChannelInfo: !!streamInfo,
+            streamStartedAt: Date.now(),
+            timestamp: Date.now()
+          };
+
+          // Send notification immediately
+          await this.sendPendingDiscordNotification(userId, notificationData);
+        }
       } else {
         console.log(`🔄 Stream already active for ${user.username} - notification already sent, skipping duplicate`);
       }
@@ -620,19 +741,142 @@ class StreamMonitor extends EventEmitter {
   storePendingNotification(userId, notificationData) {
     this.pendingNotifications.set(userId, notificationData);
 
+    console.log(`📋 Created pending Discord notification for user ${userId}`);
+
+    // Emit pending status to frontend
+    this.emitDiscordNotificationStatus(userId, 'Pending', {
+      waitingFor: ['channel', 'stream'],
+      createdAt: new Date().toISOString()
+    });
+
     // Set a timeout to clean up stale notifications (5 minutes)
     setTimeout(() => {
       if (this.pendingNotifications.has(userId)) {
         console.warn(`⚠️ Cleaning up stale notification for user ${userId}`);
         this.pendingNotifications.delete(userId);
+
+        // Emit timeout status to frontend
+        this.emitDiscordNotificationStatus(userId, 'Failed', {
+          error: 'Notification timeout - no stream data received within 5 minutes'
+        });
       }
     }, 5 * 60 * 1000); // 5 minutes
+  }
+
+  /**
+   * Emit Discord notification status to frontend
+   */
+  emitDiscordNotificationStatus(userId, status, data = {}) {
+    if (this.io) {
+      this.io.to(`user:${userId}`).emit(`discordNotification${status}`, {
+        userId,
+        timestamp: new Date().toISOString(),
+        ...data
+      });
+    }
+  }
+
+  /**
+   * Send Discord notification using complete pending notification data
+   */
+  async sendPendingDiscordNotification(userId, pendingNotification) {
+    try {
+      // Check if webhook is configured
+      const webhookData = await database.getUserDiscordWebhook(userId);
+      const webhookUrl = webhookData?.webhookUrl || '';
+      const discordWebhookConfigured = !!webhookUrl;
+
+      console.log(`🔔 Processing complete pending Discord notification for ${pendingNotification.user.username}:`, {
+        discordWebhookConfigured,
+        hasWebhookUrl: !!webhookUrl,
+        hasChannelInfo: pendingNotification.hasChannelInfo,
+        hasStreamInfo: pendingNotification.hasStreamInfo,
+        pendingFor: Date.now() - pendingNotification.timestamp + 'ms'
+      });
+
+      // Check if we have the minimum required data (stream info with title/category)
+      const streamInfo = pendingNotification.streamInfo;
+      const channelInfo = pendingNotification.channelInfo;
+
+      const hasRequiredData = discordWebhookConfigured && streamInfo && (
+        // Either we have separate channel info, or stream info includes title/category
+        (channelInfo && channelInfo.title && channelInfo.category) ||
+        (streamInfo.title && streamInfo.category)
+      );
+
+      if (hasRequiredData) {
+        console.log(`📤 Sending Discord live notification for ${pendingNotification.user.username}...`);
+
+        try {
+          // Use channel info if available, otherwise fall back to stream info
+          const title = channelInfo?.title || streamInfo.title || 'Untitled Stream';
+          const category = channelInfo?.category || streamInfo.category || 'Unknown Category';
+
+          // Send Discord notification with available data
+          await sendDiscordNotification(pendingNotification.user, 'stream_start', {
+            game: category,
+            title: title,
+            username: pendingNotification.user.username,
+            streamId: streamInfo.streamId,
+            startedAt: streamInfo.startedAt
+          });
+
+          console.log(`✅ Discord live notification sent for ${pendingNotification.user.username}`);
+
+          // Emit success status to frontend
+          this.emitDiscordNotificationStatus(userId, 'Sent', {
+            streamId: pendingNotification.streamInfo.streamId,
+            sentAt: new Date().toISOString()
+          });
+
+          // Clear the pending notification
+          this.pendingNotifications.delete(userId);
+        } catch (notificationError) {
+          console.error(`❌ Discord notification send failed for ${pendingNotification.user.username}:`, notificationError);
+
+          // Emit failure status to frontend
+          this.emitDiscordNotificationStatus(userId, 'Failed', {
+            error: notificationError.message || 'Failed to send notification'
+          });
+        }
+      } else {
+        if (!discordWebhookConfigured) {
+          console.log(`⚠️ Discord notification skipped for ${pendingNotification.user.username}: no webhook configured`);
+        } else if (!hasRequiredData) {
+          console.log(`⚠️ Discord notification not ready for ${pendingNotification.user.username}: missing data (channel: ${pendingNotification.hasChannelInfo}, stream: ${pendingNotification.hasStreamInfo})`);
+
+          // Emit pending status to frontend
+          const waitingFor = [];
+          if (!pendingNotification.hasChannelInfo) waitingFor.push('channel');
+          if (!pendingNotification.hasStreamInfo) waitingFor.push('stream');
+
+          this.emitDiscordNotificationStatus(userId, 'Pending', {
+            waitingFor,
+            streamId: pendingNotification.streamInfo?.streamId
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error sending pending Discord notification for ${pendingNotification.user.username}:`, error);
+
+      // Emit failure status to frontend
+      this.emitDiscordNotificationStatus(userId, 'Failed', {
+        error: error.message || 'Unknown error'
+      });
+    }
   }
 
   /**
    * Handle channel update events (title/category changes during stream)
    */
   async handleChannelUpdate(event, userId) {
+    console.log(`🔄 Processing channel update for userId: ${userId}`, {
+      eventBroadcasterUserId: event.broadcasterUserId,
+      eventBroadcasterUserName: event.broadcasterUserName,
+      streamTitle: event.streamTitle,
+      categoryName: event.categoryName
+    });
+
     try {
       // Find user ID if not provided
       if (!userId) {
@@ -659,42 +903,9 @@ class StreamMonitor extends EventEmitter {
       console.log(`   Title: "${event.streamTitle}"`);
       console.log(`   Category: "${event.categoryName}"`);
 
-      // Check for pending Discord notification (from recent stream.online event)
-      const pendingNotification = this.pendingNotifications.get(userId);
-      if (pendingNotification && pendingNotification.type === 'stream_start') {
-        try {
-          // Check if webhook is configured
-          const webhookData = await database.getUserDiscordWebhook(userId);
-          const webhookUrl = webhookData?.webhookUrl || '';
-          const discordWebhookConfigured = !!webhookUrl;
-
-          console.log(`🔔 Processing pending Discord notification for ${user.username}:`, {
-            discordWebhookConfigured,
-            hasWebhookUrl: !!webhookUrl,
-            pendingFor: Date.now() - pendingNotification.timestamp + 'ms'
-          });
-
-          if (discordWebhookConfigured) {
-            console.log(`📤 Sending Discord live notification for ${user.username}...`);
-
-            // Send Discord notification with channel.update data
-            await sendDiscordNotification(user, 'stream_start', {
-              game: event.categoryName,
-              title: event.streamTitle,
-              username: user.username
-            });
-
-            console.log(`✅ Discord live notification sent for ${user.username}`);
-          } else {
-            console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
-          }
-
-          // Clear the pending notification
-          this.pendingNotifications.delete(userId);
-        } catch (error) {
-          console.error(`❌ Error sending pending Discord notification for ${user.username}:`, error);
-        }
-      }
+      // Channel update is now optional since we get stream info via API
+      // This is only for live updates during stream (e.g., title/category changes)
+      console.log(`� Channel update processed - this is a live stream update for ${user.username}`);
 
       // Check if user is currently streaming before processing update
       const counters = await database.getCounters(userId);
@@ -1438,6 +1649,56 @@ class StreamMonitor extends EventEmitter {
       return true;
     } catch (error) {
       console.error(`❌ Error resetting stream state for ${userId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Check subscription costs and clean up expensive subscriptions
+   * This helps debug and resolve subscription limit issues
+   */
+  async checkAndCleanupSubscriptions() {
+    try {
+      console.log('🔍 Checking EventSub subscription costs...');
+
+      for (const [userId, userData] of this.connectedUsers) {
+        try {
+          const userApiClient = userData.userApiClient;
+          if (!userApiClient) continue;
+
+          // Get all subscriptions for this user
+          const subscriptions = await userApiClient.eventSub.getSubscriptions();
+
+          console.log(`📊 User ${userData.username} subscriptions:`, {
+            total: subscriptions.data.length,
+            totalCost: subscriptions.totalCost,
+            maxTotalCost: subscriptions.maxTotalCost
+          });
+
+          // Log each subscription with its cost
+          for (const sub of subscriptions.data) {
+            console.log(`  - ${sub.type} (v${sub.version}): cost=${sub.cost}, status=${sub.status}`);
+
+            // If subscription has cost > 0, it means the user lacks proper authorization
+            if (sub.cost > 0) {
+              console.log(`    ⚠️ Costly subscription detected! User needs to re-authenticate with proper scopes`);
+            }
+          }
+
+          // If total cost is too high, suggest cleanup
+          if (subscriptions.totalCost > subscriptions.maxTotalCost * 0.8) {
+            console.log(`⚠️ High subscription cost for ${userData.username}: ${subscriptions.totalCost}/${subscriptions.maxTotalCost}`);
+            console.log(`   💡 User should re-authenticate to get cost-free subscriptions with proper OAuth scopes`);
+          }
+
+        } catch (error) {
+          console.error(`Error checking subscriptions for ${userData.username}:`, error.message);
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error during subscription cleanup:', error);
       return false;
     }
   }

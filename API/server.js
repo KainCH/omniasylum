@@ -854,6 +854,8 @@ async function startServer() {
     // Initialize Stream Monitor (but don't auto-subscribe to users)
     const streamMonitorInitialized = await streamMonitor.initialize();
     if (streamMonitorInitialized) {
+      // Pass Socket.io instance for real-time notification status updates
+      streamMonitor.setSocketIo(io);
       console.log('✅ Stream Monitor ready - users can start monitoring manually');
 
       // Handle stream events

@@ -263,4 +263,32 @@ router.post('/clean-discord-webhook', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Check EventSub subscription costs
+ * GET /api/debug/subscription-costs
+ */
+router.get('/subscription-costs', requireAuth, async (req, res) => {
+  try {
+    const streamMonitor = require('./streamMonitor');
+
+    console.log(`🔍 DEBUG: Checking EventSub subscription costs for ${req.user.username}`);
+
+    const result = await streamMonitor.checkAndCleanupSubscriptions();
+
+    res.json({
+      success: true,
+      message: 'Subscription cost check completed',
+      checkResult: result,
+      info: 'Check server logs for detailed subscription cost information'
+    });
+
+  } catch (error) {
+    console.error('❌ Subscription cost check failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

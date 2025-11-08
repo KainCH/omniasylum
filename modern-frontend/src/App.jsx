@@ -95,6 +95,17 @@ function App() {
   })
   const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
 
+  // Discord notification status tracking
+  const [discordNotificationStatus, setDiscordNotificationStatus] = useState({
+    status: 'not_configured', // not_configured, ready, pending, sent, error
+    hasWebhook: false,
+    pendingChannelInfo: false,
+    pendingStreamInfo: false,
+    lastNotificationSent: null,
+    currentStreamId: null,
+    setupSteps: []
+  })
+
   // Refs for interval management
   const streamingHeartbeatRef = useRef(null)
 
@@ -260,6 +271,9 @@ function App() {
         // Check EventSub monitoring status
         checkEventSubStatus()
 
+        // Check Discord notification status
+        checkDiscordNotificationStatus()
+
         // Also decode token to get user info if we haven't already
         if (!username) {
           try {
@@ -384,6 +398,73 @@ function App() {
         lastStreamEnd: data.lastStreamEnd || prevStatus.lastStreamEnd,
         streamStatus: data.streamStatus || prevStatus.streamStatus  // Real-time stream status
       }))
+
+      // Update Discord notification status when monitoring changes
+      if (data.monitoring !== undefined) {
+        checkDiscordNotificationStatus()
+      }
+    })
+
+    // Handle Discord notification status updates
+    newSocket.on('discordNotificationPending', (data) => {
+      console.log('📋 Discord notification pending:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'pending',
+        pendingChannelInfo: data.waitingFor?.includes('channel'),
+        pendingStreamInfo: data.waitingFor?.includes('stream'),
+        currentStreamId: data.streamId
+      }))
+    })
+
+    newSocket.on('discordNotificationSent', (data) => {
+      console.log('✅ Discord notification sent:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'sent',
+        lastNotificationSent: data.sentAt || new Date().toISOString(),
+        currentStreamId: data.streamId,
+        pendingChannelInfo: false,
+        pendingStreamInfo: false,
+        setupSteps: []
+      }))
+    })
+
+    newSocket.on('discordNotificationFailed', (data) => {
+      console.log('❌ Discord notification failed:', data)
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'error',
+        setupSteps: [`❌ Notification failed: ${data.error || 'Unknown error'}`]
+      }))
+    })
+
+    newSocket.on('discordNotificationReady', (data) => {
+      console.log('🎯 Discord notification ready:', data)
+
+      // Handle different ready states
+      if (data.monitoringStopped) {
+        // Monitoring was stopped, reset to ready state
+        setDiscordNotificationStatus(prevStatus => ({
+          ...prevStatus,
+          status: 'ready',
+          pendingChannelInfo: false,
+          pendingStreamInfo: false,
+          hasChannelInfo: false,
+          channelInfo: null,
+          setupSteps: []
+        }))
+      } else if (data.hasChannelInfo) {
+        // Channel info received, ready to stream
+        setDiscordNotificationStatus(prevStatus => ({
+          ...prevStatus,
+          status: 'channel_ready',
+          hasChannelInfo: data.hasChannelInfo,
+          channelInfo: data.channelInfo,
+          pendingChannelInfo: false,
+          pendingStreamInfo: data.waitingFor?.includes('stream')
+        }))
+      }
     })
 
     // Request initial EventSub status
@@ -594,6 +675,15 @@ function App() {
           lastConnected: null
         })
 
+        // Clear pending Discord notifications and reset status
+        setDiscordNotificationStatus(prev => ({
+          ...prev,
+          status: prev.hasWebhook ? 'ready' : 'not_configured',
+          pendingChannelInfo: false,
+          pendingStreamInfo: false,
+          lastNotificationSent: null
+        }))
+
         alert('⏹️ Stream monitoring stopped.')
       } else {
         const error = await response.json()
@@ -626,6 +716,84 @@ function App() {
       }
     } catch (error) {
       console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
+  const checkDiscordNotificationStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+
+      // Check if Discord webhook is configured
+      const webhookResponse = await fetch('/api/user/discord-webhook', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      let hasWebhook = false
+      if (webhookResponse.ok) {
+        const webhookData = await webhookResponse.json()
+        hasWebhook = !!(webhookData.webhookUrl && webhookData.enabled)
+      }
+
+      // Check current stream status
+      const countersResponse = await fetch('/api/counters', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const isStreamActive = countersResponse.ok && (await countersResponse.json()).streamStarted
+
+      // Determine notification status and setup steps
+      let status = 'not_configured'
+      let setupSteps = []
+
+      if (!hasWebhook) {
+        status = 'not_configured'
+        setupSteps = [
+          '1. Click "Discord Settings" below',
+          '2. Add your Discord webhook URL',
+          '3. Start monitoring to receive notifications'
+        ]
+      } else if (!eventSubStatus.monitoring) {
+        status = 'ready'
+        setupSteps = [
+          '1. ✅ Discord webhook configured',
+          '2. Click "Start Monitoring" to enable notifications',
+          '3. Go live on Twitch to test'
+        ]
+      } else if (isStreamActive) {
+        status = 'sent'
+        setupSteps = []
+      } else {
+        status = 'ready'
+        setupSteps = [
+          '1. ✅ Discord webhook configured',
+          '2. ✅ Monitoring active',
+          '3. Go live on Twitch to trigger notification'
+        ]
+      }
+
+      setDiscordNotificationStatus({
+        status,
+        hasWebhook: !!hasWebhook,
+        pendingChannelInfo: false,
+        pendingStreamInfo: false,
+        lastNotificationSent: null,
+        currentStreamId: null,
+        setupSteps
+      })
+
+    } catch (error) {
+      console.error('❌ Error checking Discord notification status:', error)
+      setDiscordNotificationStatus(prev => ({
+        ...prev,
+        status: 'error',
+        setupSteps: ['❌ Error checking configuration - please refresh']
+      }))
     }
   }
 
@@ -958,6 +1126,234 @@ function App() {
                 ⚠️ <strong>Connection issues detected</strong><br/>
                 <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
               </p>
+            </div>
+          )}
+        </div>
+
+        {/* Discord Notification Status */}
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          padding: '15px',
+          marginTop: '15px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h4 style={{ marginBottom: '15px', color: '#fff', fontSize: '16px' }}>📢 Discord Notifications</h4>
+
+          {/* Discord Notification Status Indicator */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            marginBottom: '15px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor:
+                  discordNotificationStatus.status === 'sent' ? '#28a745' :
+                  discordNotificationStatus.status === 'pending' ? '#ffc107' :
+                  discordNotificationStatus.status === 'channel_ready' ? '#6f42c1' :
+                  discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '#17a2b8' : '#fd7e14') :
+                  discordNotificationStatus.status === 'error' ? '#dc3545' : '#6c757d'
+              }}></div>
+              <p style={{ margin: 0, color: '#ccc' }}>
+                Status: <strong style={{
+                  color:
+                    discordNotificationStatus.status === 'sent' ? '#28a745' :
+                    discordNotificationStatus.status === 'pending' ? '#ffc107' :
+                    discordNotificationStatus.status === 'channel_ready' ? '#6f42c1' :
+                    discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '#17a2b8' : '#fd7e14') :
+                    discordNotificationStatus.status === 'error' ? '#dc3545' : '#6c757d'
+                }}>
+                  {discordNotificationStatus.status === 'sent' ? '✅ Notification Sent' :
+                   discordNotificationStatus.status === 'pending' ? '⏳ Waiting for Stream Data' :
+                   discordNotificationStatus.status === 'channel_ready' ? '🎬 Ready to Stream' :
+                   discordNotificationStatus.status === 'ready' ? (eventSubStatus.monitoring ? '🎯 Ready' : '▶️ Start Monitoring') :
+                   discordNotificationStatus.status === 'error' ? '❌ Error' : '⚙️ Not Configured'}
+                </strong>
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowDiscordSettings(true)}
+              style={{
+                background: '#5865F2',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              ⚙️ Discord Settings
+            </button>
+          </div>
+
+          {/* Real-time Status Messages */}
+          {discordNotificationStatus.status === 'sent' ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🎉 <strong>Discord notification sent!</strong><br/>
+                <small>
+                  {discordNotificationStatus.lastNotificationSent ?
+                    `Sent at ${new Date(discordNotificationStatus.lastNotificationSent).toLocaleTimeString()}` :
+                    'Notification delivered to your Discord server'
+                  } • No duplicate notifications will be sent while stream is active
+                </small>
+              </p>
+            </div>
+          ) : discordNotificationStatus.status === 'pending' ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⏳ <strong>Waiting for complete stream information...</strong><br/>
+                <small>
+                  {discordNotificationStatus.pendingChannelInfo && discordNotificationStatus.pendingStreamInfo ?
+                    'Waiting for stream title, category, and stream status' :
+                    discordNotificationStatus.pendingChannelInfo ?
+                    'Waiting for stream title and category information' :
+                    'Waiting for stream to go live'
+                  }
+                </small>
+              </p>
+              <div style={{
+                marginTop: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}>
+                <strong>💡 Action Required:</strong><br/>
+                Please update your channel settings in OBS or Twitch:
+                <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>
+                  <li>Change your stream title or category</li>
+                  <li>Or simply click "Done" if no changes needed</li>
+                </ul>
+                <small style={{ fontStyle: 'italic', opacity: 0.8 }}>
+                  This triggers the channel update event needed for notifications
+                </small>
+              </div>
+            </div>
+          ) : discordNotificationStatus.status === 'channel_ready' ? (
+            <div style={{
+              background: 'rgba(111, 66, 193, 0.1)',
+              border: '1px solid rgba(111, 66, 193, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6f42c1'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🎬 <strong>Channel information received - Ready to stream!</strong><br/>
+                <small>
+                  {discordNotificationStatus.channelInfo ?
+                    `Title: "${discordNotificationStatus.channelInfo.title}" • Category: "${discordNotificationStatus.channelInfo.category}"` :
+                    'Channel settings updated successfully'
+                  }
+                </small>
+              </p>
+              <div style={{
+                marginTop: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}>
+                <strong>🚀 Ready for Action:</strong><br/>
+                Start streaming in OBS to automatically trigger your Discord notification!
+                <br/><small style={{ fontStyle: 'italic', opacity: 0.8 }}>
+                  Notification will be sent as soon as your stream goes live
+                </small>
+              </div>
+            </div>
+          ) : discordNotificationStatus.status === 'ready' ? (
+            eventSubStatus.monitoring ? (
+              <div style={{
+                background: 'rgba(23, 162, 184, 0.1)',
+                border: '1px solid rgba(23, 162, 184, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                color: '#17a2b8'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  🎯 <strong>Ready for notifications!</strong><br/>
+                  <small>Discord webhook configured and monitoring active • Go live to test</small>
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                background: 'rgba(253, 126, 20, 0.1)',
+                border: '1px solid rgba(253, 126, 20, 0.3)',
+                borderRadius: '8px',
+                padding: '12px',
+                color: '#fd7e14'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  ▶️ <strong>Start monitoring to enable notifications</strong><br/>
+                  <small>Discord webhook is configured but EventSub monitoring is not active</small>
+                </p>
+                <div style={{
+                  marginTop: '8px',
+                  padding: '8px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '4px',
+                  fontSize: '13px'
+                }}>
+                  <strong>👆 Action Required:</strong><br/>
+                  Click "Start Monitoring" in the EventSub section above to begin automatic stream detection
+                </div>
+              </div>
+            )
+          ) : discordNotificationStatus.status === 'error' ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ❌ <strong>Notification failed</strong><br/>
+                <small>Check Discord webhook settings and try again</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <div>
+                <p style={{ margin: '0 0 10px 0', fontSize: '14px' }}>
+                  ⚙️ <strong>Setup required</strong>
+                </p>
+                {discordNotificationStatus.setupSteps.length > 0 && (
+                  <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                    {discordNotificationStatus.setupSteps.map((step, index) => (
+                      <div key={index} style={{ marginBottom: '2px' }}>
+                        {step}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

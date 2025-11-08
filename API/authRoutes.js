@@ -29,11 +29,14 @@ router.get('/twitch', async (req, res) => {
 
     // Scopes needed for the app
     const scopes = [
-      'user:read:email',        // Read user email
-      'chat:read',              // Read chat messages
-      'chat:edit',              // Send chat messages
-      'channel:read:subscriptions', // Read subscriptions (optional)
-      'clips:edit'              // Create clips (optional)
+      'user:read:email',              // Read user email
+      'chat:read',                    // Read chat messages
+      'chat:edit',                    // Send chat messages
+      'channel:read:subscriptions',   // Read subscriptions (EventSub cost reduction)
+      'channel:read:redemptions',     // Read channel point redemptions (EventSub cost reduction)
+      'moderator:read:followers',     // Read followers (EventSub cost reduction)
+      'bits:read',                    // Read bits/cheers (EventSub cost reduction)
+      'clips:edit'                    // Create clips (optional)
     ];
 
     const authUrl = `https://id.twitch.tv/oauth2/authorize?` +
