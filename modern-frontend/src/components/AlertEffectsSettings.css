@@ -244,42 +244,57 @@
 }
 
 /* Action Buttons */
-.settings-actions {
+.alert-effects-settings .settings-actions {
   display: flex;
   gap: 15px;
   justify-content: center;
   padding-top: 10px;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
-.reset-button,
-.close-button {
-  padding: 12px 30px;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
+.alert-effects-settings .settings-actions .reset-button,
+.alert-effects-settings .settings-actions .close-button {
+  padding: 12px 20px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 16px !important;
+  font-weight: bold !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  min-width: 180px;
+  width: auto !important;
+  text-align: center;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-decoration: none !important;
+  outline: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
-.reset-button {
-  background: #555;
-  color: #fff;
+.alert-effects-settings .settings-actions .reset-button {
+  background: #555 !important;
+  color: #fff !important;
 }
 
-.reset-button:hover {
-  background: #666;
-  transform: translateY(-2px);
+.alert-effects-settings .settings-actions .reset-button:hover {
+  background: #666 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
-.close-button {
-  background: #9146ff;
-  color: #fff;
+.alert-effects-settings .settings-actions .close-button {
+  background: #9146ff !important;
+  color: #fff !important;
 }
 
-.close-button:hover {
-  background: #a560ff;
-  transform: translateY(-2px);
+.alert-effects-settings .settings-actions .close-button:hover {
+  background: #a560ff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 8px rgba(145, 70, 255, 0.4) !important;
 }
 
 /* Responsive */
@@ -303,12 +318,12 @@
     align-self: flex-end;
   }
 
-  .settings-actions {
+  .alert-effects-settings .settings-actions {
     flex-direction: column;
   }
 
-  .reset-button,
-  .close-button {
-    width: 100%;
+  .alert-effects-settings .settings-actions .reset-button,
+  .alert-effects-settings .settings-actions .close-button {
+    width: 100% !important;
   }
 }
