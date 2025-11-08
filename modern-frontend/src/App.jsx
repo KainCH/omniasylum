@@ -901,7 +901,7 @@ function App() {
               Status: <strong style={{
                 color: eventSubStatus.streamStatus === 'live' ? '#28a745' : '#9146ff'
               }}>
-                {eventSubStatus.streamStatus === 'live' ? '� Live' : '⚫ Offline'}
+                {eventSubStatus.streamStatus === 'live' ? '💎 Live' : '⚫ Offline'}
               </strong>
             </p>
           </div>
@@ -929,7 +929,7 @@ function App() {
               color: '#28a745'
             }}>
               <p style={{ margin: 0, fontSize: '14px' }}>
-                � <strong>LIVE on Twitch!</strong><br/>
+                💎 <strong>LIVE on Twitch!</strong><br/>
                 <small>Stream detected at {eventSubStatus.lastStreamStart ? new Date(eventSubStatus.lastStreamStart).toLocaleTimeString() : 'recently'} • Monitoring continues</small>
               </p>
             </div>
@@ -1092,7 +1092,7 @@ function App() {
               <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>📖 How to Use</h2>
 
               <div style={{ color: '#fff', lineHeight: '1.8' }}>
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>� OBS Setup (Browser Source)</h3>
+                <h3 style={{ color: '#fff', marginTop: '20px' }}>� OBS ??? Setup (Browser Source)</h3>
                 <div style={{ background: 'rgba(145, 70, 255, 0.2)', padding: '15px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #9146ff' }}>
                   <p style={{ marginBottom: '10px' }}><strong>1. Add Browser Source to OBS</strong></p>
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Right-click in Sources → Add → Browser</p>
@@ -1641,3 +1641,5 @@ function App() {
 }
 
 export default App
+
+

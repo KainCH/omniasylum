@@ -716,6 +716,41 @@ router.get('/streams', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
+ * Reset stream state for a user (clear duplicate notification flag)
+ * POST /api/admin/streams/:userId/reset
+ */
+router.post('/streams/:userId/reset', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const streamMonitor = require('./streamMonitor');
+
+    // Verify user exists
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Reset the stream state
+    const success = await streamMonitor.resetStreamState(userId);
+
+    if (success) {
+      console.log(`🔧 Admin ${req.user.username} reset stream state for ${user.username}`);
+      res.json({
+        message: `Stream state reset successfully for ${user.displayName}`,
+        userId: userId,
+        resetBy: req.user.username,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to reset stream state' });
+    }
+  } catch (error) {
+    console.error('Error resetting stream state:', error);
+    res.status(500).json({ error: error?.message || 'Failed to reset stream state' });
+  }
+});
+
+/**
  * Available features configuration
  * GET /api/admin/features
  */

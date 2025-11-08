@@ -23,6 +23,7 @@ class StreamMonitor extends EventEmitter {
     this.connectionHealthTimers = new Map(); // userId -> timer for keepalive monitoring
     this.maxKeepaliveTimeout = 600; // 10 minutes max as per Twitch docs
     this.defaultKeepaliveTimeout = 30; // 30 seconds default
+    this.pendingNotifications = new Map(); // userId -> pending notification data
   }
 
   /**
@@ -238,6 +239,11 @@ class StreamMonitor extends EventEmitter {
         this.handleStreamOffline(event, userId);
       });
 
+      // Subscribe to channel update events (title/category changes)
+      const channelUpdateSubscription = userListener.onChannelUpdate(userId, (event) => {
+        this.handleChannelUpdate(event, userId);
+      });
+
       // Get user notification settings to determine which events to subscribe to
       console.log(`🔍 Checking notification settings for ${user.username}...`);
 
@@ -349,6 +355,7 @@ class StreamMonitor extends EventEmitter {
       const subscriptions = {
         online: !!onlineSubscription,
         offline: !!offlineSubscription,
+        channelUpdate: !!channelUpdateSubscription,
         channelPoints: !!redemptionSubscription,
         follows: !!followSubscription,
         raids: !!raidSubscription,
@@ -365,6 +372,7 @@ class StreamMonitor extends EventEmitter {
         userListener,
         onlineSubscription,
         offlineSubscription,
+        channelUpdateSubscription,
         redemptionSubscription,
         followSubscription,
         raidSubscription,
@@ -508,59 +516,39 @@ class StreamMonitor extends EventEmitter {
       const user = await database.getUser(userId);
       if (!user) return;
 
-      console.log(`🔴 ${user.username} went LIVE! Title: "${event.streamTitle}"`);
+      console.log(`🔴 ${user.username} went LIVE! (Stream ID: ${event.id})`);
 
       // Check if stream session already started to prevent duplicate notifications
       const counters = await database.getCounters(userId);
       const isNewStream = !counters.streamStarted;
 
-      // Send Discord notification ONLY if this is a new stream session
       if (isNewStream) {
-        try {
-          // Check if webhook is configured
-          const webhookData = await database.getUserDiscordWebhook(userId);
-          const webhookUrl = webhookData?.webhookUrl || '';
-          const discordWebhookConfigured = !!webhookUrl;
-
-          console.log(`🔔 Discord notification check for ${user.username}:`, {
-            discordWebhookConfigured,
-            hasWebhookUrl: !!webhookUrl,
-            isNewStream: true
-          });
-
-          if (discordWebhookConfigured) {
-            console.log(`📤 Sending Discord live notification for ${user.username}...`);
-
-            // Use the template-aware Discord notification function from userRoutes
-            await sendDiscordNotification(user, 'stream_start', {
-              game: event.categoryName,
-              title: event.streamTitle,
-              username: user.username
-            });
-
-            console.log(`✅ Discord live notification sent for ${user.username}`);
-          } else {
-            console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
-          }
-        } catch (error) {
-          console.error(`❌ Error sending Discord notification for ${user.username}:`, error);
-        }
-
-        // Start stream session for the first time
+        // Start stream session immediately when we detect stream.online
         await database.startStream(userId);
         console.log(`🎬 Auto-started stream session for ${user.username}`);
+
+        // Store pending Discord notification - will be sent when channel.update arrives
+        // This ensures we have the correct title/category information
+        this.storePendingNotification(userId, {
+          type: 'stream_start',
+          user: user,
+          streamId: event.id,
+          startedAt: event.startedAt,
+          timestamp: Date.now()
+        });
+
+        console.log(`📋 Stream online detected for ${user.username} - awaiting channel.update for Discord notification`);
       } else {
         console.log(`🔄 Stream already active for ${user.username} - notification already sent, skipping duplicate`);
       }
 
-      // Emit event for real-time updates
+      // Emit basic event for real-time updates (detailed info will come from channel.update)
       this.emit('streamOnline', {
         userId,
         username: user.username,
         displayName: user.displayName,
-        streamTitle: event.streamTitle,
-        gameName: event.categoryName,
-        startedAt: event.startDate
+        streamId: event.id,
+        startedAt: event.startedAt
       });
 
     } catch (error) {
@@ -623,6 +611,114 @@ class StreamMonitor extends EventEmitter {
 
     } catch (error) {
       console.error('Error handling stream offline event:', error);
+    }
+  }
+
+  /**
+   * Store pending notification to be sent when channel.update arrives
+   */
+  storePendingNotification(userId, notificationData) {
+    this.pendingNotifications.set(userId, notificationData);
+
+    // Set a timeout to clean up stale notifications (5 minutes)
+    setTimeout(() => {
+      if (this.pendingNotifications.has(userId)) {
+        console.warn(`⚠️ Cleaning up stale notification for user ${userId}`);
+        this.pendingNotifications.delete(userId);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+  }
+
+  /**
+   * Handle channel update events (title/category changes during stream)
+   */
+  async handleChannelUpdate(event, userId) {
+    try {
+      // Find user ID if not provided
+      if (!userId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === event.broadcasterUserId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Channel update for unknown user: ${event.broadcasterUserName}`);
+        return;
+      }
+
+      // Reset connection health - we received a message from Twitch
+      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      console.log(`📝 ${user.username} updated stream info:`);
+      console.log(`   Title: "${event.streamTitle}"`);
+      console.log(`   Category: "${event.categoryName}"`);
+
+      // Check for pending Discord notification (from recent stream.online event)
+      const pendingNotification = this.pendingNotifications.get(userId);
+      if (pendingNotification && pendingNotification.type === 'stream_start') {
+        try {
+          // Check if webhook is configured
+          const webhookData = await database.getUserDiscordWebhook(userId);
+          const webhookUrl = webhookData?.webhookUrl || '';
+          const discordWebhookConfigured = !!webhookUrl;
+
+          console.log(`🔔 Processing pending Discord notification for ${user.username}:`, {
+            discordWebhookConfigured,
+            hasWebhookUrl: !!webhookUrl,
+            pendingFor: Date.now() - pendingNotification.timestamp + 'ms'
+          });
+
+          if (discordWebhookConfigured) {
+            console.log(`📤 Sending Discord live notification for ${user.username}...`);
+
+            // Send Discord notification with channel.update data
+            await sendDiscordNotification(user, 'stream_start', {
+              game: event.categoryName,
+              title: event.streamTitle,
+              username: user.username
+            });
+
+            console.log(`✅ Discord live notification sent for ${user.username}`);
+          } else {
+            console.log(`⚠️ Discord notification skipped for ${user.username}: hasWebhook=${!!webhookUrl}`);
+          }
+
+          // Clear the pending notification
+          this.pendingNotifications.delete(userId);
+        } catch (error) {
+          console.error(`❌ Error sending pending Discord notification for ${user.username}:`, error);
+        }
+      }
+
+      // Check if user is currently streaming before processing update
+      const counters = await database.getCounters(userId);
+      if (!counters.streamStarted) {
+        console.log(`📋 Channel update ignored - ${user.username} is not currently streaming`);
+        return;
+      }
+
+      // Emit event for real-time updates (frontend can display title/category changes)
+      this.emit('channelUpdate', {
+        userId,
+        username: user.username,
+        displayName: user.displayName,
+        title: event.streamTitle,
+        category: event.categoryName,
+        categoryId: event.categoryId,
+        language: event.language,
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`✅ Channel update processed for ${user.username}`);
+
+    } catch (error) {
+      console.error('Error handling channel update event:', error);
     }
   }
 
@@ -1324,6 +1420,26 @@ class StreamMonitor extends EventEmitter {
       hasValidToken: !!userData.apiClient,
       userId: userId
     };
+  }
+
+  /**
+   * Manual reset for stream state - clear streamStarted flag
+   * Use this when duplicate detection is stuck
+   */
+  async resetStreamState(userId) {
+    try {
+      const database = require('./database');
+      console.log(`🔄 Manual reset of stream state for ${userId}`);
+
+      // Force reset streamStarted to false
+      await database.endStream(userId);
+
+      console.log(`✅ Stream state reset for ${userId} - fresh notifications enabled`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error resetting stream state for ${userId}:`, error);
+      return false;
+    }
   }
 
   /**

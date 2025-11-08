@@ -487,6 +487,7 @@ MIT - See LICENSE file in project root
 - [ ] Add analytics dashboard
 - [ ] Support custom chat commands
 - [ ] Add webhook integrations
+- [ ] **Discord Template System** - Add customizable notification templates (asylum-themed, minimal, detailed, etc.) to allow users to personalize their Discord notification styles
 
 ---
 

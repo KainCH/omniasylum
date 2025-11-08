@@ -13,15 +13,12 @@ function createDiscordEmbed(title, description, user, options = {}) {
       title: title,
       description: description,
       color: options.color || 0x5865F2, // Discord blurple
+      ...(options?.url && { url: options.url }),
       thumbnail: {
         url: user?.profileImageUrl
       },
       footer: {
-        text: `OmniForge Stream Tools • Today at ${new Date().toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        })}`
+        text: 'OmniForge Stream Tools'
       },
       timestamp: new Date().toISOString(),
       ...(options?.fields && { fields: options.fields }),
@@ -29,11 +26,16 @@ function createDiscordEmbed(title, description, user, options = {}) {
     }]
   };
 
-  // Add button components if provided
+  // Add button components if provided - wrap in Action Row
   if (options?.buttons) {
     payload.components = [{
       type: 1, // Action Row
-      components: options.buttons
+      components: options.buttons.map(button => ({
+        type: 2, // Button component type
+        style: button.style || 5, // Default to link style
+        label: button.label,
+        url: button.url // For link buttons
+      }))
     }];
   }
 
@@ -308,9 +310,8 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
 async function sendDiscordNotification(user, eventType, data) {
   if (!user?.discordWebhookUrl) return;
 
-  // Parse Discord settings (if available)
+  // Parse Discord notification settings
   let discordSettings = {
-    templateStyle: user?.templateStyle || 'asylum_themed', // Use user's preferred template style
     enabledNotifications: {
       death_milestone: true,
       swear_milestone: true,
@@ -327,9 +328,7 @@ async function sendDiscordNotification(user, eventType, data) {
       const parsedSettings = JSON.parse(user?.discordSettings);
       discordSettings = {
         ...discordSettings,
-        ...parsedSettings,
-        // Always use the user's templateStyle from the database field
-        templateStyle: user?.templateStyle || discordSettings.templateStyle
+        ...parsedSettings
       };
     } catch (error) {
       console.log('⚠️ Failed to parse Discord settings, using defaults');
@@ -344,83 +343,55 @@ async function sendDiscordNotification(user, eventType, data) {
 
   let title, description, color;
 
-  // Generate content based on template style
-  const templateStyle = discordSettings.templateStyle;
-
+  // Generate notification content
   switch (eventType) {
     case 'death_milestone':
-      if (templateStyle === 'asylum_themed') {
-        title = `💀 Death Milestone Reached!`;
-        description = `**${user.displayName}** just reached **${data.count} deaths**!\n\nThe asylum claims another victim... 🔥`;
-      } else if (templateStyle === 'minimal') {
-        title = `💀 Death Counter`;
-        description = `**${user.displayName}** • ${data.count} deaths`;
-      } else if (templateStyle === 'detailed') {
-        title = `💀 Death Milestone: ${data.count}`;
-        description = `**${user.displayName}** has reached ${data.count} deaths!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}\n🎮 **Stream Stats:** Updated live\n⏰ **Time:** ${new Date().toLocaleTimeString()}`;
-      } else {
-        // Default fallback
-        title = `💀 Death Milestone: ${data.count}`;
-        description = `**${user.displayName}** has reached ${data.count} deaths!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
-      }
+      // Standard death milestone notification
+      title = `💀 Death Milestone: ${data.count}`;
+      description = `**${user.displayName}** has reached ${data.count} deaths!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
       color = 0xFF4444; // Red
       break;
 
     case 'swear_milestone':
-      if (templateStyle === 'asylum_themed') {
-        title = `🤬 Profanity Counter Update`;
-        description = `**${user.displayName}** has sworn **${data.count} times**!\n\nThe madness is spreading... 😈`;
-      } else if (templateStyle === 'minimal') {
-        title = `🤬 Swear Counter`;
-        description = `**${user.displayName}** • ${data.count} swears`;
-      } else if (templateStyle === 'detailed') {
-        title = `🤬 Swear Milestone: ${data.count}`;
-        description = `**${user.displayName}** has reached ${data.count} swears!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}\n📈 **Milestone:** New threshold reached\n⏰ **Time:** ${new Date().toLocaleTimeString()}`;
-      } else {
-        // Default fallback
-        title = `🤬 Swear Milestone: ${data.count}`;
-        description = `**${user.displayName}** has reached ${data.count} swears!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
-      }
+      // Standard swear milestone notification
+      title = `🤬 Swear Milestone: ${data.count}`;
+      description = `**${user.displayName}** has reached ${data.count} swears!\n\n📊 **Progress:** ${data.previousMilestone || 0} → ${data.count}`;
       color = 0xFF8800; // Orange
       break;
 
     case 'stream_start':
-      if (templateStyle === 'asylum_themed') {
-        title = `🔴 The Asylum Opens`;
-        description = `**${user.displayName}** is now live!\n\nThe asylum doors are open... Enter if you dare! 👻`;
-      } else if (templateStyle === 'minimal') {
-        title = `🔴 Live Now`;
-        description = `**${user.displayName}** is streaming`;
-      } else if (templateStyle === 'detailed') {
-        title = `🎮 Stream Started`;
-        // Use stream title (data?.title) or tags when game is unknown/missing
-        const gameOrSubject = data?.game && data.game !== 'Unknown' && data.game !== ''
-          ? `🎯 **Game:** ${data.game}`
-          : `📋 **Subject:** ${data?.title || 'Live Stream'}`;
-        description = `**${user?.displayName}** is now live on Twitch!\n\n${gameOrSubject}`;
-      } else {
-        // Default fallback
-        title = `🔴 Stream Started`;
-        // Use stream title when game is missing
-        const gameOrSubject = data?.game && data.game !== 'Unknown' && data.game !== ''
-          ? `🎮 **Game:** ${data.game}`
-          : `📋 **Subject:** ${data?.title || 'Live Stream'}`;
-        description = `**${user?.displayName}** is now live on Twitch!\n\n${gameOrSubject}`;
-      }
+      // Clean format - no description, just title and fields with prominent button
+      title = `🔴 ${user.displayName} is now live on Twitch!`;
+
+      // No description - let the title speak for itself
+      description = null;
+
+      // Add Game field only (streamer name is already in the title)
+      const fields = [];
+
+      // Add Game field - always show even if unknown
+      const gameValue = data?.game && data.game !== '' ? data.game : 'Unknown Game';
+      fields.push({
+        name: '🎯 Game',
+        value: gameValue,
+        inline: true
+      });
+
+      // Store fields and button data for embed creation
+      data.fields = fields;
+      data.showWatchButton = true; // Flag to show the prominent watch button
+
+      // Add stream thumbnail image (2x size for optimal loading)
+      // Twitch stream thumbnail URL template: https://static-cdn.jtvnw.net/previews-ttv/live_user_{login}-{width}x{height}.jpg
+      data.image = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg`;
+
       color = 0x00FF00; // Green
       break;
 
     case 'stream_end':
-      if (templateStyle === 'asylum_themed') {
-        title = `🔴 Escaped the Asylum`;
-        description = `**${user.displayName}** has escaped the asylum... for now.\n\nThanks for watching! 🙏`;
-      } else if (templateStyle === 'minimal') {
-        title = `🔴 Stream Ended`;
-        description = `**${user.displayName}** is offline`;
-      } else {
-        title = `🔴 Stream Ended`;
-        description = `**${user.displayName}** has ended the stream.\n\n⏱️ **Duration:** ${data.duration || 'Unknown'}\n💙 **Thanks for watching!**`;
-      }
+      // Standard stream end notification
+      title = `🔴 Stream Ended`;
+      description = `**${user.displayName}** has ended the stream.\n\n⏱️ **Duration:** ${data.duration || 'Unknown'}\n💙 **Thanks for watching!**`;
       color = 0xFF4444; // Red
       break;
 
@@ -430,28 +401,27 @@ async function sendDiscordNotification(user, eventType, data) {
       color = 0x5865F2; // Discord blurple
   }
 
-  // Create buttons for stream start notifications
-  let buttons = [];
-  if (eventType === 'stream_start') {
-    buttons = [{
-      type: 2, // Button
-      style: 5, // Link button
-      label: 'Watch Now!',
-      url: `https://twitch.tv/${user?.username}`,
-      emoji: {
-        name: '▶️'
-      }
-    }];
-  }
-
   const discordPayload = createDiscordEmbed(title, description, user, {
     color,
     fields: data?.fields || [],
-    buttons: buttons.length > 0 ? buttons : undefined
+    image: data?.image,
+    url: eventType === 'stream_start' ? `https://twitch.tv/${user?.username}` : undefined,
+    ...(data?.showWatchButton && {
+      buttons: [{
+        style: 5, // Link button (external URL)
+        label: '🎮 **READY TO WATCH? CLICK HERE!**',
+        url: `https://twitch.tv/${user?.username}`
+      }]
+    })
   });
 
   try {
-    await fetch(user?.discordWebhookUrl, {
+    // Add with_components=true for interactive components
+    const webhookUrl = data?.showWatchButton && user?.discordWebhookUrl
+      ? `${user.discordWebhookUrl}?with_components=true`
+      : user?.discordWebhookUrl;
+
+    await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
