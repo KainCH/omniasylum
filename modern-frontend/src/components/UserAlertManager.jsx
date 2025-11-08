@@ -326,7 +326,7 @@ function UserAlertManager({ onClose }) {
                       className="alert-select"
                     >
                       <option value="">No Alert (Disabled)</option>
-                      
+
                       {/* Default Alert Templates */}
                       <optgroup label="🎭 Default Alert Templates">
                         {alerts.filter(a => a?.isDefault && a?.isEnabled !== false).map(alert => (
@@ -335,7 +335,7 @@ function UserAlertManager({ onClose }) {
                           </option>
                         ))}
                       </optgroup>
-                      
+
                       {/* Custom Alerts */}
                       {alerts.filter(a => !a?.isDefault && a?.isEnabled !== false).length > 0 && (
                         <optgroup label="✨ Custom Alerts">

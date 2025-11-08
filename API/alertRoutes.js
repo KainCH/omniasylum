@@ -21,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(req.user.userId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
@@ -333,7 +333,7 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(targetUserId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
