@@ -399,10 +399,8 @@ function App() {
         streamStatus: data.streamStatus || prevStatus.streamStatus  // Real-time stream status
       }))
 
-      // Update Discord notification status when monitoring changes
-      if (data.monitoring !== undefined) {
-        checkDiscordNotificationStatus()
-      }
+      // Discord notification status is now handled by real-time Socket.io events
+      // No need to override with static API calls
     })
 
     // Handle Discord notification status updates
@@ -1243,10 +1241,10 @@ function App() {
                 Please update your channel settings in OBS or Twitch:
                 <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>
                   <li>Change your stream title or category</li>
-                  <li>Or simply click "Done" if no changes needed</li>
+                  <li>Click "Done" to save the changes</li>
                 </ul>
                 <small style={{ fontStyle: 'italic', opacity: 0.8 }}>
-                  This triggers the channel update event needed for notifications
+                  You must make actual changes - this triggers the channel update event needed for notifications
                 </small>
               </div>
             </div>
