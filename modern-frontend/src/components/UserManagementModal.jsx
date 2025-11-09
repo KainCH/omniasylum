@@ -205,7 +205,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           : {}
         const updatedFeatures = { ...originalFeatures, ...(formState?.features || {}) }
 
-        await userAPI.updateFeatures(user?.twitchUserId, { features: updatedFeatures })
+        await userAPI.updateFeatures(user?.twitchUserId, updatedFeatures)
 
         showMessage('Features updated successfully!', 'success')
         if (onUpdate) onUpdate()
