@@ -81,7 +81,7 @@
     {
       "label": "Fullstack Deploy",
       "type": "shell",
-      "command": "powershell.exe -ExecutionPolicy Bypass -File '.\\deploy-with-cleanup.ps1'",
+      "command": ".\\deploy-with-cleanup.ps1",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -95,7 +95,7 @@
     {
       "label": "Backend Deploy",
       "type": "shell",
-      "command": "powershell.exe -ExecutionPolicy Bypass -File '.\\deploy-with-cleanup.ps1' -SkipFrontend",
+      "command": ".\\deploy-with-cleanup.ps1 -SkipFrontend",
       "options": {
         "cwd": "${workspaceFolder}"
       },

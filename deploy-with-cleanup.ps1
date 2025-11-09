@@ -79,16 +79,9 @@ function Show-RecoveryOptions {
     Write-Host "=" * 50 -ForegroundColor Green
 }
 
-function Write-Step {
-    param([string]$Message)
-    Write-Host "[STEP] $Message" -ForegroundColor Yellow
-}
-
 try {
     Write-Host 'STARTING Enhanced OmniAsylum Deployment Pipeline...' -ForegroundColor Green
     Write-Host "DEPLOYMENT TIME: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
-
-    $startTime = Get-Date
 
     if (-not $SkipFrontend) {
         Write-Step 'Step 1: Building React Frontend...'
@@ -265,43 +258,40 @@ try {
                 --output json 2>&1
 
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Azure deployment failed with exit code $LASTEXITCODE"
-                Write-Error "Deploy output: $deployOutput"
+                Write-Host "`n❌ Azure CLI command failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+                Write-Host "Raw output:" -ForegroundColor Yellow
+                Write-Host $deployOutput -ForegroundColor White
                 throw 'Azure Container Apps deployment failed'
             }
 
-            $deployResult = $deployOutput | ConvertFrom-Json
-
-            if ($deployResult) {
-                $revisionName = $deployResult.properties.latestRevisionName
-                $appUrl = $deployResult.properties.configuration.ingress.fqdn
-                $provisioningState = $deployResult.properties.provisioningState
-                $runningStatus = $deployResult.properties.runningStatus
-
-                Write-Success "Azure deployment completed!"
-                Write-Info "Revision: $($revisionName)"
-                Write-Info "Status: $($provisioningState) / $($runningStatus)"
-                Write-Host "APPLICATION URL: https://$($appUrl)" -ForegroundColor Cyan
-
-                # Test health endpoint
-                Write-Info "Testing application health..."
-                Start-Sleep -Seconds 5
-                try {
-                    $healthResponse = Invoke-RestMethod -Uri "https://$($appUrl)/api/health" -TimeoutSec 10
-                    if ($healthResponse.status -eq 'ok') {
-                        Write-Success "Application is healthy and responding"
-                        Write-Info "Uptime: $([math]::Round($healthResponse.uptime, 2)) seconds"
-                    } else {
-                        Write-Warning "Health check returned unexpected status: $($healthResponse.status)"
-                        Write-Info "Application may still be starting up..."
-                    }
-                }
-                catch {
-                    Write-Warning "Health check failed: $($_.Exception.Message)"
-                    Write-Info "This may be normal if the application is still starting up"
-                }
+            # Simple text-based success check - no JSON parsing
+            if ($deployOutput -match '"provisioningState":\s*"Succeeded"' -and $deployOutput -match '"runningStatus":\s*"Running"') {
+                Write-Success "Azure deployment completed successfully!"
+                Write-Info "Status: Succeeded / Running"
+                Write-Host "APPLICATION URL: https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io" -ForegroundColor Cyan
             } else {
-                throw 'Azure deployment returned no result'
+                Write-Host "`n❌ Azure deployment may have failed" -ForegroundColor Red
+                Write-Host "Raw Azure CLI output:" -ForegroundColor Yellow
+                Write-Host $deployOutput -ForegroundColor White
+                throw 'Azure deployment failed or status unclear'
+            }
+
+            # Test health endpoint regardless of JSON parsing success
+            Write-Info "Testing application health..."
+            Start-Sleep -Seconds 5
+            try {
+                $healthResponse = Invoke-RestMethod -Uri "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health" -TimeoutSec 10
+                if ($healthResponse.status -eq 'ok') {
+                    Write-Success "Application is healthy and responding"
+                    Write-Info "Uptime: $([math]::Round($healthResponse.uptime, 2)) seconds"
+                } else {
+                    Write-Warning "Health check returned unexpected status: $($healthResponse.status)"
+                    Write-Info "Application may still be starting up..."
+                }
+            }
+            catch {
+                Write-Warning "Health check failed: $($_.Exception.Message)"
+                Write-Info "This may be normal if the application is still starting up"
             }
         }
         catch {
@@ -340,11 +330,7 @@ try {
         Write-Info 'Skipping Azure deployment'
     }
 
-    $endTime = Get-Date
-    $duration = $endTime - $startTime
-
     Write-Host "`n🎉 Deployment Pipeline Completed Successfully!" -ForegroundColor Green
-    Write-Host "TOTAL TIME: $($duration.ToString('mm\:ss'))" -ForegroundColor Gray
     Write-Host "SUMMARY:" -ForegroundColor Yellow
     if (-not $SkipFrontend) { Write-Host "  [OK] Frontend built and assets cleaned" }
     if (-not $SkipDocker) { Write-Host "  [OK] Docker image updated" }
