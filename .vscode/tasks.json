@@ -45,55 +45,6 @@
       }
     },
     {
-      "label": "Ensure Test Data",
-      "type": "shell",
-      "command": "if (!(Test-Path 'data')) { New-Item -ItemType Directory -Path 'data' }; if (!(Test-Path 'data/users.json')) { '[]' | Out-File -FilePath 'data/users.json' -Encoding utf8 }; if (!(Test-Path 'data/counters.json')) { '[]' | Out-File -FilePath 'data/counters.json' -Encoding utf8 }",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "silent"
-      }
-    },
-    {
-      "label": "Build Docker Image",
-      "type": "shell",
-      "command": "docker build -t omniforgestream-api:latest .",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Run Docker Container",
-      "type": "shell",
-      "command": "docker run -p 3000:3000 --env-file .env --name omniforgestream-api-test omniforgestream-api:latest",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Stop Docker Container",
-      "type": "shell",
-      "command": "docker stop omniforgestream-api-test; docker rm omniforgestream-api-test",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
       "label": "Deploy to Azure",
       "type": "shell",
       "command": "az deployment group create --resource-group ${input:resourceGroup} --template-file deploy/main.bicep --parameters baseName=${input:baseName}",
@@ -128,121 +79,7 @@
       }
     },
     {
-      "label": "Test OAuth Flow",
-      "type": "shell",
-      "command": "Start-Process 'http://localhost:3000/auth/twitch'",
-      "problemMatcher": [],
-      "dependsOn": [
-        "Start API Server"
-      ],
-      "presentation": {
-        "reveal": "silent"
-      }
-    },
-    {
-      "label": "Build Frontend",
-      "type": "shell",
-      "command": "npm run build",
-      "options": {
-        "cwd": "${workspaceFolder}/modern-frontend"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Clean API Frontend Assets",
-      "type": "shell",
-      "command": "if (Test-Path '${workspaceFolder}/API/frontend/assets') { Write-Host 'Cleaning old frontend assets...'; Remove-Item -Path '${workspaceFolder}/API/frontend/assets/*' -Recurse -Force; Write-Host 'Frontend assets cleaned.' } else { Write-Host 'No assets folder to clean.' }",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Copy Frontend to API",
-      "type": "shell",
-      "command": "Copy-Item -Path '${workspaceFolder}/modern-frontend/dist/*' -Destination '${workspaceFolder}/API/frontend' -Recurse -Force",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "dependsOn": [
-        "Clean API Frontend Assets"
-      ]
-    },
-    {
-      "label": "Clean and Copy Frontend to API",
-      "type": "shell",
-      "command": "Write-Host 'Starting frontend deployment...'; if (Test-Path '${workspaceFolder}/API/frontend/assets') { Write-Host 'Cleaning old assets...'; Remove-Item -Path '${workspaceFolder}/API/frontend/assets/*' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'Old assets cleaned.' } else { Write-Host 'No old assets to clean.' }; Write-Host 'Copying new frontend files...'; Copy-Item -Path '${workspaceFolder}/modern-frontend/dist/*' -Destination '${workspaceFolder}/API/frontend' -Recurse -Force; Write-Host 'Frontend deployment completed successfully!'",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Build and Push Docker Image",
-      "type": "shell",
-      "command": "docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . && docker push omniforgeacr.azurecr.io/omniforgestream-api:latest",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Deploy to Azure Container Apps",
-      "type": "shell",
-      "command": "az containerapp update --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --image omniforgeacr.azurecr.io/omniforgestream-api:latest --revision-suffix $(Get-Date -Format 'MMddHHmm')",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "API Deploy: Docker & Azure (Skip Frontend)",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "Build and Push Docker Image",
-        "Deploy to Azure Container Apps"
-      ],
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "showReuseMessage": false
-      }
-    },
-    {
-      "label": "Full Deploy: Build, Docker & Azure",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "Build Frontend",
-        "Clean and Copy Frontend to API",
-        "Build and Push Docker Image",
-        "Deploy to Azure Container Apps"
-      ],
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "showReuseMessage": false
-      }
-    },
-    {
-      "label": "Enhanced Full Deploy: Clean Build & Deploy",
+      "label": "Fullstack Deploy",
       "type": "shell",
       "command": "powershell.exe -ExecutionPolicy Bypass -File '.\\deploy-with-cleanup.ps1'",
       "options": {
@@ -256,7 +93,7 @@
       }
     },
     {
-      "label": "Backend Only Deploy: Skip Frontend",
+      "label": "Backend Deploy",
       "type": "shell",
       "command": "powershell.exe -ExecutionPolicy Bypass -File '.\\deploy-with-cleanup.ps1' -SkipFrontend",
       "options": {

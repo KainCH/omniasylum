@@ -442,11 +442,18 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                   <h4>Notification Types</h4>
                   <div className="notification-grid">
                     <NotificationTypeCard
-                      title="Twitch Chat Notifications"
-                      description="Send notifications to Twitch chat"
-                      enabled={notificationSettings?.enableChannelNotifications || false}
-                      onChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
-                      icon="�"
+                      notificationType={{
+                        id: 'channelNotifications',
+                        title: 'Twitch Chat Notifications',
+                        description: 'Send notifications to Twitch chat',
+                        icon: '💬',
+                        supportsChannel: true,
+                        supportsDiscord: false
+                      }}
+                      discordEnabled={false}
+                      channelEnabled={notificationSettings?.enableChannelNotifications || false}
+                      onDiscordChange={() => {}}
+                      onChannelChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
                       disabled={isLoading}
                     />
                   </div>

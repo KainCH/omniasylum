@@ -135,6 +135,25 @@
   color: #666;
 }
 
+/* Dark theme overrides for modal contexts */
+.user-management-modal .notification-type-card {
+  background: #2a2a3e;
+  border: 1px solid rgba(145, 70, 255, 0.3);
+}
+
+.user-management-modal .notification-type-card:hover {
+  border-color: #9146ff;
+  box-shadow: 0 2px 8px rgba(145, 70, 255, 0.2);
+}
+
+.user-management-modal .notification-info h5 {
+  color: #ffffff;
+}
+
+.user-management-modal .notification-info p {
+  color: #b0b0b0;
+}
+
 .notification-controls {
   display: flex;
   gap: 16px;
