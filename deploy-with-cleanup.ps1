@@ -52,6 +52,33 @@ function Write-Info {
     Write-Host "[INFO] $Message" -ForegroundColor Cyan
 }
 
+function Show-RecoveryOptions {
+    param([string]$FailureType)
+
+    Write-Host "`n🛟 DEPLOYMENT RECOVERY ASSISTANT" -ForegroundColor Green
+    Write-Host "=" * 50 -ForegroundColor Green
+
+    if ($FailureType -eq "Docker") {
+        Write-Host "📋 Quick Docker Diagnostics:" -ForegroundColor Yellow
+        Write-Host "   docker --version" -ForegroundColor White
+        Write-Host "   docker system df" -ForegroundColor White
+        Write-Host "   docker system prune -f  # (if low disk space)" -ForegroundColor White
+    }
+    elseif ($FailureType -eq "Azure") {
+        Write-Host "📋 Quick Azure Diagnostics:" -ForegroundColor Yellow
+        Write-Host "   az account show" -ForegroundColor White
+        Write-Host "   az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --query '{state:properties.provisioningState,status:properties.runningStatus}'" -ForegroundColor White
+        Write-Host "   az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 20" -ForegroundColor White
+    }
+
+    Write-Host "`n🔄 Retry Options:" -ForegroundColor Cyan
+    Write-Host "   • Backend Deploy: run_task('Backend Deploy')" -ForegroundColor White
+    Write-Host "   • Fullstack Deploy: run_task('Fullstack Deploy')" -ForegroundColor White
+    Write-Host "   • Manual script: .\deploy-with-cleanup.ps1" -ForegroundColor White
+
+    Write-Host "=" * 50 -ForegroundColor Green
+}
+
 function Write-Step {
     param([string]$Message)
     Write-Host "[STEP] $Message" -ForegroundColor Yellow
@@ -149,27 +176,72 @@ try {
         Push-Location 'API'
         try {
             Write-Info 'Building Docker image (this may take a few minutes)...'
+
+            # Check if Docker is running first
+            try {
+                $dockerVersion = docker version --format json 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Docker daemon not running: $dockerVersion"
+                }
+            }
+            catch {
+                throw "Docker is not available or not running. Please start Docker Desktop and try again."
+            }
+
             $buildOutput = docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . 2>&1
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Docker build failed with exit code $LASTEXITCODE"
-                Write-Error "Build output: $buildOutput"
-                throw 'Docker build failed'
+                Write-Host "`n❌ DOCKER BUILD FAILED" -ForegroundColor Red
+                Write-Host "Exit Code: $LASTEXITCODE" -ForegroundColor Red
+                Write-Host "`n📋 BUILD OUTPUT:" -ForegroundColor Yellow
+                Write-Host ($buildOutput | Out-String) -ForegroundColor White
+                throw "Docker build failed with exit code $LASTEXITCODE"
             }
             Write-Success 'Docker image built successfully'
 
             Write-Info 'Pushing Docker image to Azure Container Registry...'
             $pushOutput = docker push omniforgeacr.azurecr.io/omniforgestream-api:latest 2>&1
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Docker push failed with exit code $LASTEXITCODE"
-                Write-Error "Push output: $pushOutput"
-                throw 'Docker push failed'
+                Write-Host "`n❌ DOCKER PUSH FAILED" -ForegroundColor Red
+                Write-Host "Exit Code: $LASTEXITCODE" -ForegroundColor Red
+                Write-Host "`n📋 PUSH OUTPUT:" -ForegroundColor Yellow
+                Write-Host ($pushOutput | Out-String) -ForegroundColor White
+                throw "Docker push failed with exit code $LASTEXITCODE"
             }
             Write-Success 'Docker image pushed successfully to Azure Container Registry'
             Write-Success 'Docker operations completed successfully'
         }
         catch {
-            Write-Error "Docker operations failed in directory: $(Get-Location)"
-            throw "Docker operations failed: $_"
+            Write-Host "`n�️  QUICK RECOVERY OPTIONS:" -ForegroundColor Cyan
+            Write-Host "   1. Check Docker Desktop is running" -ForegroundColor White
+            Write-Host "   2. Clear Docker cache: docker system prune -f" -ForegroundColor White
+            Write-Host "   3. Check available disk space" -ForegroundColor White
+            Write-Host "   4. Retry deployment" -ForegroundColor White
+
+            # Show basic diagnostics
+            Write-Host "`n📊 SYSTEM CHECK:" -ForegroundColor Yellow
+            try {
+                $dockerInfo = docker system df 2>$null
+                if ($dockerInfo) {
+                    Write-Host "   Docker Status: ✅ Running" -ForegroundColor Green
+                } else {
+                    Write-Host "   Docker Status: ❌ Not Running" -ForegroundColor Red
+                }
+            } catch {
+                Write-Host "   Docker Status: ❌ Not Available" -ForegroundColor Red
+            }
+
+            try {
+                $diskInfo = Get-PSDrive C | Select-Object Used, Free
+                $freeGB = [math]::Round($diskInfo.Free / 1GB, 2)
+                Write-Host "   Free Disk Space: $freeGB GB" -ForegroundColor White
+                if ($freeGB -lt 5) {
+                    Write-Host "   ⚠️  WARNING: Low disk space detected" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "   ⚠️  Could not check disk space" -ForegroundColor Yellow
+            }
+
+            throw $_
         }
         finally {
             Pop-Location
@@ -184,41 +256,85 @@ try {
         $revision = Get-Date -Format 'MMddHHmm'
         Write-Info "Creating revision: $($revision)"
 
-        $deployResult = az containerapp update `
-            --name omniforgestream-api-prod `
-            --resource-group Streamer-Tools-RG `
-            --image omniforgeacr.azurecr.io/omniforgestream-api:latest `
-            --revision-suffix $revision `
-            --output json | ConvertFrom-Json
+        try {
+            $deployOutput = az containerapp update `
+                --name omniforgestream-api-prod `
+                --resource-group Streamer-Tools-RG `
+                --image omniforgeacr.azurecr.io/omniforgestream-api:latest `
+                --revision-suffix $revision `
+                --output json 2>&1
 
-        if ($deployResult) {
-            $revisionName = $deployResult.properties.latestRevisionName
-            $appUrl = $deployResult.properties.configuration.ingress.fqdn
-            $provisioningState = $deployResult.properties.provisioningState
-            $runningStatus = $deployResult.properties.runningStatus
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Azure deployment failed with exit code $LASTEXITCODE"
+                Write-Error "Deploy output: $deployOutput"
+                throw 'Azure Container Apps deployment failed'
+            }
 
-            Write-Success "Azure deployment completed!"
-            Write-Info "Revision: $($revisionName)"
-            Write-Info "Status: $($provisioningState) / $($runningStatus)"
-            Write-Host "APPLICATION URL: https://$($appUrl)" -ForegroundColor Cyan
+            $deployResult = $deployOutput | ConvertFrom-Json
 
-            # Test health endpoint
-            Write-Info "Testing application health..."
-            Start-Sleep -Seconds 5
-            try {
-                $healthResponse = Invoke-RestMethod -Uri "https://$($appUrl)/api/health" -TimeoutSec 10
-                if ($healthResponse.status -eq 'ok') {
-                    Write-Success "Application is healthy and responding"
-                    Write-Info "Uptime: $([math]::Round($healthResponse.uptime, 2)) seconds"
-                } else {
-                    Write-Error "Health check returned unexpected status: $($healthResponse.status)"
+            if ($deployResult) {
+                $revisionName = $deployResult.properties.latestRevisionName
+                $appUrl = $deployResult.properties.configuration.ingress.fqdn
+                $provisioningState = $deployResult.properties.provisioningState
+                $runningStatus = $deployResult.properties.runningStatus
+
+                Write-Success "Azure deployment completed!"
+                Write-Info "Revision: $($revisionName)"
+                Write-Info "Status: $($provisioningState) / $($runningStatus)"
+                Write-Host "APPLICATION URL: https://$($appUrl)" -ForegroundColor Cyan
+
+                # Test health endpoint
+                Write-Info "Testing application health..."
+                Start-Sleep -Seconds 5
+                try {
+                    $healthResponse = Invoke-RestMethod -Uri "https://$($appUrl)/api/health" -TimeoutSec 10
+                    if ($healthResponse.status -eq 'ok') {
+                        Write-Success "Application is healthy and responding"
+                        Write-Info "Uptime: $([math]::Round($healthResponse.uptime, 2)) seconds"
+                    } else {
+                        Write-Warning "Health check returned unexpected status: $($healthResponse.status)"
+                        Write-Info "Application may still be starting up..."
+                    }
                 }
+                catch {
+                    Write-Warning "Health check failed: $($_.Exception.Message)"
+                    Write-Info "This may be normal if the application is still starting up"
+                }
+            } else {
+                throw 'Azure deployment returned no result'
             }
-            catch {
-                Write-Error "Health check failed: $($_.Exception.Message)"
-            }
-        } else {
-            throw 'Azure deployment returned no result'
+        }
+        catch {
+            Write-Host "`n🚨 DEPLOYMENT FAILURE - Azure Container Apps" -ForegroundColor Red
+            Write-Host "=" * 60 -ForegroundColor Red
+            Write-Host "❌ ERROR TYPE: Azure Deployment Failure" -ForegroundColor Red
+            Write-Host "`n🔍 DIAGNOSIS:" -ForegroundColor Yellow
+            Write-Host "   • Failed to deploy to Azure Container Apps" -ForegroundColor White
+            Write-Host "   • This could be due to:" -ForegroundColor White
+            Write-Host "     - Azure CLI authentication expired" -ForegroundColor Gray
+            Write-Host "     - Resource permissions issues" -ForegroundColor Gray
+            Write-Host "     - Container image not found in ACR" -ForegroundColor Gray
+            Write-Host "     - Azure service issues" -ForegroundColor Gray
+
+            Write-Host "`n🛠️  RECOVERY OPTIONS:" -ForegroundColor Cyan
+            Write-Host "   1. Check Azure login: az account show" -ForegroundColor White
+            Write-Host "   2. Re-authenticate: az login" -ForegroundColor White
+            Write-Host "   3. Verify image in ACR: az acr repository show --name omniforgeacr --image omniforgestream-api:latest" -ForegroundColor White
+            Write-Host "   4. Check Container App status: az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG" -ForegroundColor White
+            Write-Host "   5. View deployment logs: az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 50" -ForegroundColor White
+
+            Write-Host "`n🔄 ROLLBACK OPTION:" -ForegroundColor Magenta
+            Write-Host "   • If previous deployment was working, you can rollback:" -ForegroundColor White
+            Write-Host "   • az containerapp revision list --name omniforgestream-api-prod --resource-group Streamer-Tools-RG" -ForegroundColor White
+            Write-Host "   • az containerapp revision activate --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --revision [PREVIOUS_REVISION]" -ForegroundColor White
+
+            Write-Host "`n💡 NEXT STEPS:" -ForegroundColor Green
+            Write-Host "   • Check Azure service health: https://status.azure.com" -ForegroundColor White
+            Write-Host "   • Verify resource group and subscription access" -ForegroundColor White
+            Write-Host "   • If Docker built successfully, try Backend Deploy again" -ForegroundColor White
+            Write-Host "=" * 60 -ForegroundColor Red
+
+            throw "Azure deployment failed: $_"
         }
     } else {
         Write-Info 'Skipping Azure deployment'

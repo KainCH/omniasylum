@@ -233,6 +233,49 @@ curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azu
 // Expected: {"status":"ok","timestamp":"..."}
 ```
 
+#### **🚨 Deployment Failure Handling**
+
+The enhanced deployment script now provides comprehensive error handling and recovery options:
+
+**Failure Detection & Diagnosis:**
+- Automatic error categorization (Docker vs Azure failures)
+- Detailed failure reasons and troubleshooting steps
+- System diagnostics (disk space, Docker status, Azure auth)
+- Recovery suggestions specific to the failure type
+
+**Available Recovery Tasks:**
+
+```javascript
+// Deployment diagnostics - check system health
+run_task(workspaceFolder, "Deployment Diagnostics")
+
+// View rollback options
+run_task(workspaceFolder, "Rollback Deployment")
+
+// Retry after fixing issues
+run_task(workspaceFolder, "Backend Deploy")      // Backend-only retry
+run_task(workspaceFolder, "Fullstack Deploy")    // Full retry
+```
+
+**Common Failure Scenarios:**
+
+1. **Docker Build Failures:**
+   - Check Docker is running: `docker --version`
+   - Clear cache: `docker system prune -f`
+   - Verify Dockerfile syntax in API/ directory
+   - Check disk space
+
+2. **Azure Deployment Failures:**
+   - Re-authenticate: `az login`
+   - Check ACR access: `az acr login --name omniforgeacr`
+   - Verify Container App status
+   - Review Azure service health
+
+3. **Rollback Procedure:**
+   - Use "Rollback Deployment" task to see recent revisions
+   - Activate previous working revision if needed
+   - Test application health after rollback
+
 **Manual monitoring commands (only if tasks fail):**
 ```powershell
 # Check deployment status
@@ -364,13 +407,19 @@ az containerapp revision activate --name omniforgestream-api-prod --resource-gro
 
 ### VS Code Tasks Integration
 
-The workspace includes pre-configured tasks for deployment:
+The workspace includes pre-configured tasks for deployment and troubleshooting:
 
-- **Build Docker Image**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Build Docker Image`
-- **Deploy to Azure**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deploy to Azure`
+**Deployment Tasks:**
+- **Fullstack Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Fullstack Deploy`
+- **Backend Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Backend Deploy`
+
+**Troubleshooting Tasks:**
+- **Deployment Diagnostics**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deployment Diagnostics`
+- **Rollback Deployment**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Rollback Deployment`
 - **View Azure Logs**: `Ctrl+Shift+P` → `Tasks: Run Task` → `View Azure Logs`
 
-### Security Considerations
+**Authentication Tasks:**
+- **Azure Login**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Azure Login`### Security Considerations
 
 - **No secrets in code**: All credentials via Key Vault
 - **Managed Identity**: No connection strings or passwords
