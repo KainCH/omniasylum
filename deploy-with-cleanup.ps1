@@ -111,9 +111,31 @@ try {
     if (-not $SkipDocker) {
         Write-Step 'Step 3: Building and pushing Docker image...'
 
+        # Verify Azure CLI authentication first
+        Write-Info 'Verifying Azure CLI authentication...'
+        try {
+            $azAccount = az account show 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Not logged into Azure CLI. Attempting login..."
+                az login --scope https://management.azure.com//.default
+                if ($LASTEXITCODE -ne 0) {
+                    throw 'Azure CLI login failed'
+                }
+                Write-Success 'Successfully logged into Azure CLI'
+            } else {
+                $accountInfo = $azAccount | ConvertFrom-Json
+                Write-Success "Already logged into Azure CLI as: $($accountInfo.user.name)"
+            }
+        }
+        catch {
+            throw "Azure CLI authentication failed: $_"
+        }
+
         # Ensure we're authenticated with Azure Container Registry
         Write-Info 'Verifying Azure Container Registry authentication...'
         try {
+            # Always perform ACR login to ensure fresh credentials
+            Write-Info 'Performing ACR login...'
             $acrLoginResult = az acr login --name omniforgeacr 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-Error "ACR login failed: $($acrLoginResult)"
@@ -126,17 +148,27 @@ try {
         }
         Push-Location 'API'
         try {
-            Write-Info 'Building Docker image...'
-            docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest .
-            if ($LASTEXITCODE -ne 0) { throw 'Docker build failed' }
+            Write-Info 'Building Docker image (this may take a few minutes)...'
+            $buildOutput = docker build -t omniforgeacr.azurecr.io/omniforgestream-api:latest . 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Docker build failed with exit code $LASTEXITCODE"
+                Write-Error "Build output: $buildOutput"
+                throw 'Docker build failed'
+            }
+            Write-Success 'Docker image built successfully'
 
             Write-Info 'Pushing Docker image to Azure Container Registry...'
-            docker push omniforgeacr.azurecr.io/omniforgestream-api:latest
-            if ($LASTEXITCODE -ne 0) { throw 'Docker push failed' }
-
-            Write-Success 'Docker image built and pushed successfully'
+            $pushOutput = docker push omniforgeacr.azurecr.io/omniforgestream-api:latest 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Docker push failed with exit code $LASTEXITCODE"
+                Write-Error "Push output: $pushOutput"
+                throw 'Docker push failed'
+            }
+            Write-Success 'Docker image pushed successfully to Azure Container Registry'
+            Write-Success 'Docker operations completed successfully'
         }
         catch {
+            Write-Error "Docker operations failed in directory: $(Get-Location)"
             throw "Docker operations failed: $_"
         }
         finally {
