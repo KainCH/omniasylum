@@ -210,13 +210,30 @@ class StreamMonitor extends EventEmitter {
         }
       );
 
+      // Calculate proper token expiry information
+      const tokenExpiryDate = new Date(user.tokenExpiry);
+      const currentTime = Date.now();
+      const expiresInSeconds = Math.max(0, Math.floor((tokenExpiryDate.getTime() - currentTime) / 1000));
+      const obtainmentTimestamp = Math.floor((tokenExpiryDate.getTime() - (4 * 60 * 60 * 1000)) / 1000); // Assume 4-hour token life
+
+      console.log(`🔐 Setting up EventSub auth for ${user.username}:`, {
+        tokenExpiry: user.tokenExpiry,
+        expiresInSeconds,
+        isExpired: expiresInSeconds <= 0
+      });
+
+      // If token is already expired, log warning but let RefreshingAuthProvider handle refresh
+      if (expiresInSeconds <= 0) {
+        console.log(`⚠️  Token for ${user.username} appears expired, RefreshingAuthProvider will attempt refresh`);
+      }
+
       // Add user with token and scopes for EventSub (reduces subscription costs to 0)
       // These scopes make our subscriptions cost-free since the user has authorized them
       const { userId: twitchUserId } = await userAuthProvider.addUserForToken({
         accessToken: user.accessToken,
         refreshToken: user.refreshToken,
-        expiresIn: 0,
-        obtainmentTimestamp: 0,
+        expiresIn: expiresInSeconds,
+        obtainmentTimestamp: obtainmentTimestamp,
         scope: [
           'user:read:email',
           'chat:read',
@@ -738,6 +755,14 @@ class StreamMonitor extends EventEmitter {
       if (counters.streamStarted) {
         await database.endStream(userId);
         console.log(`🔄 Reset duplicate detection for ${user.username} - next stream will send notification`);
+
+        // Reset Discord notification status to ready for next stream
+        this.emitDiscordNotificationStatus(userId, 'Reset', {
+          message: 'Stream ended - ready for next stream notification',
+          reason: 'Stream went offline',
+          nextAction: 'Will send notification when you go live again'
+        });
+        console.log(`🔔 Discord notification status reset for ${user.username} - ready for next stream`);
       }
 
       // Keep monitoring active - DO NOT stop EventSub monitoring

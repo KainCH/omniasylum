@@ -4,10 +4,12 @@ import Counter from './components/Counter'
 import AuthPrompt from './components/AuthPrompt'
 import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
+import DebugDashboard from './components/DebugDashboard'
 import UserAlertManager from './components/UserAlertManager'
 import AlertEffectsSettings from './components/AlertEffectsSettings'
 import SeriesSaveManager from './components/SeriesSaveManager'
 import DiscordWebhookSettings from './components/DiscordWebhookSettings'
+import { userAPI } from './utils/apiHelpers'
 import './App.css'
 
 function App() {
@@ -465,13 +467,36 @@ function App() {
       }
     })
 
+    newSocket.on('discordNotificationReset', (data) => {
+      console.log('🔄 Discord notification reset:', data)
+
+      // Reset Discord notification status to ready for next stream
+      setDiscordNotificationStatus(prevStatus => ({
+        ...prevStatus,
+        status: 'ready',
+        pendingChannelInfo: false,
+        pendingStreamInfo: false,
+        hasChannelInfo: false,
+        channelInfo: null,
+        lastNotification: data,
+        resetReason: data.reason || 'Stream ended'
+      }))
+    })
+
     // Request initial EventSub status
     newSocket.on('connect', () => {
       console.log('🔌 Connected to server, requesting EventSub status...')
       // Trigger EventSub status check which will broadcast current status
-      fetch('/api/stream/eventsub-status', {
-        headers: getAuthHeaders()
-      }).catch(err => console.warn('❌ Failed to fetch EventSub status on connect:', err))
+      const token = localStorage.getItem('authToken')
+      if (token) {
+        fetch('/api/stream/eventsub-status', {
+          credentials: 'include',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }).catch(err => console.warn('❌ Failed to fetch EventSub status on connect:', err))
+      }
     })
 
     newSocket.on('error', (error) => {
@@ -850,9 +875,15 @@ function App() {
   // Check if user is admin (super admin riress)
   const isAdmin = userRole === 'admin' && username.toLowerCase() === 'riress'
 
-  // FORCE admin users to user mode if viewMode isn't explicitly set to admin
-  if (isAdmin && viewMode !== 'admin' && viewMode !== 'user') {
+  // FORCE admin users to user mode if viewMode isn't explicitly set to admin or debug
+  if (isAdmin && !['admin', 'user', 'debug'].includes(viewMode)) {
     console.log('🔧 FORCING admin to user mode in render')
+    setViewMode('user')
+  }
+
+  // Force non-admin users out of debug mode
+  if (!isAdmin && viewMode === 'debug') {
+    console.log('🔧 FORCING non-admin out of debug mode')
     setViewMode('user')
   }
 
@@ -875,9 +906,27 @@ function App() {
     willShowUserPortal: !(isAdmin && viewMode === 'admin')
   })
 
-  // Show admin dashboard ONLY if explicitly in admin mode
-  if (isAdmin && viewMode === 'admin') {
-    console.log('🛠️ RENDERING ADMIN DASHBOARD - viewMode is admin')
+  // Show debug dashboard if in debug mode (admin only)
+  if (isAdmin && viewMode === 'debug') {
+    console.log('🔧 RENDERING DEBUG DASHBOARD - viewMode is debug')
+
+    // Ensure user data is loaded before rendering debug dashboard
+    if (!userId || !username || !userRole) {
+      console.log('⏳ Waiting for user data to load before rendering debug dashboard...')
+      return (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          background: '#1a1a1a',
+          color: 'white'
+        }}>
+          <div>Loading debug dashboard...</div>
+        </div>
+      )
+    }
+
     return (
       <div>
         <div style={{
@@ -887,8 +936,25 @@ function App() {
           zIndex: 1000,
           background: 'rgba(0,0,0,0.8)',
           padding: '10px',
-          borderRadius: '8px'
+          borderRadius: '8px',
+          display: 'flex',
+          gap: '8px'
         }}>
+          <button
+            onClick={() => setViewMode('admin')}
+            style={{
+              background: '#dc3545',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+            title="Go to admin dashboard"
+          >
+            🛠️ Admin
+          </button>
           <button
             onClick={() => setViewMode('user')}
             style={{
@@ -905,7 +971,59 @@ function App() {
             🎬 Back to My Stream
           </button>
         </div>
-        <AdminDashboard />
+        <DebugDashboard user={{ twitchUserId: userId, username: username, displayName: username, role: userRole }} />
+      </div>
+    )
+  }
+
+  // Show admin dashboard ONLY if explicitly in admin mode
+  if (isAdmin && viewMode === 'admin') {
+    console.log('🛠️ RENDERING ADMIN DASHBOARD - viewMode is admin')
+    return (
+      <div>
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          right: '10px',
+          zIndex: 1000,
+          background: 'rgba(0,0,0,0.8)',
+          padding: '10px',
+          borderRadius: '8px',
+          display: 'flex',
+          gap: '8px'
+        }}>
+          <button
+            onClick={() => setViewMode('debug')}
+            style={{
+              background: '#f59e0b',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+            title="Go to debug dashboard"
+          >
+            🔧 Debug
+          </button>
+          <button
+            onClick={() => setViewMode('user')}
+            style={{
+              background: '#28a745',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+            title="Return to your stream dashboard"
+          >
+            🎬 Back to My Stream
+          </button>
+        </div>
+        <AdminDashboard onNavigateToDebug={() => setViewMode('debug')} />
       </div>
     )
   }
@@ -952,6 +1070,7 @@ function App() {
                 🛠️ Admin Panel
               </button>
             )}
+
             <button
               onClick={logout}
               style={{
@@ -1289,8 +1408,17 @@ function App() {
                 color: '#17a2b8'
               }}>
                 <p style={{ margin: 0, fontSize: '14px' }}>
-                  🎯 <strong>Ready for notifications!</strong><br/>
-                  <small>Discord webhook configured and monitoring active • Go live to test</small>
+                  {discordNotificationStatus.resetReason ? (
+                    <>
+                      🔄 <strong>Ready for next stream notification!</strong><br/>
+                      <small>Previous stream ended • Notification system reset • Go live to send notification</small>
+                    </>
+                  ) : (
+                    <>
+                      🎯 <strong>Ready for notifications!</strong><br/>
+                      <small>Discord webhook configured and monitoring active • Go live to test</small>
+                    </>
+                  )}
                 </p>
               </div>
             ) : (

@@ -15,12 +15,14 @@ const defaultFeatures = {
   chatCommands: true,
   channelPoints: false,
   autoClip: false,
-  streamOverlay: false,
-  discordWebhook: false,
-  templateStyle: 'asylum_themed',
   customCommands: false,
   analytics: false,
-  webhooks: false
+  webhooks: false,
+  bitsIntegration: false,
+  streamOverlay: false,
+  alertAnimations: false,
+  streamAlerts: true,
+  discordNotifications: true
 }
 
 // Professional feature configuration
@@ -74,6 +76,26 @@ const getFeatureConfig = (featureKey) => {
       icon: '🔗',
       title: 'Webhooks',
       description: 'Connect with external services and tools through custom webhooks'
+    },
+    bitsIntegration: {
+      icon: '💎',
+      title: 'Bits Integration',
+      description: 'Enable Twitch Bits/Cheers integration for interactive stream features'
+    },
+    alertAnimations: {
+      icon: '✨',
+      title: 'Alert Animations',
+      description: 'Add visual effects and animations to stream alerts and notifications'
+    },
+    streamAlerts: {
+      icon: '🚨',
+      title: 'Stream Alerts',
+      description: 'Display customizable alerts for follows, subs, raids, and other Twitch events'
+    },
+    discordNotifications: {
+      icon: '🔔',
+      title: 'Discord Notifications',
+      description: 'Send automated milestone and event notifications to your Discord server'
     }
   }
 
