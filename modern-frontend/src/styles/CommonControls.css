@@ -135,23 +135,61 @@
   color: #666;
 }
 
-/* Dark theme overrides for modal contexts */
-.user-management-modal .notification-type-card {
-  background: #2a2a3e;
-  border: 1px solid rgba(145, 70, 255, 0.3);
+/* Dark theme overrides for modal contexts - Force dark styling */
+.user-management-modal .notification-type-card,
+.user-management-modal-overlay .notification-type-card,
+.modal-body .notification-type-card {
+  background: #1a1a2e !important;
+  border: 1px solid rgba(145, 70, 255, 0.4) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
-.user-management-modal .notification-type-card:hover {
-  border-color: #9146ff;
-  box-shadow: 0 2px 8px rgba(145, 70, 255, 0.2);
+.user-management-modal .notification-type-card:hover,
+.user-management-modal-overlay .notification-type-card:hover,
+.modal-body .notification-type-card:hover {
+  border-color: #9146ff !important;
+  box-shadow: 0 4px 16px rgba(145, 70, 255, 0.4) !important;
+  background: #16213e !important;
 }
 
-.user-management-modal .notification-info h5 {
-  color: #ffffff;
+.user-management-modal .notification-info h5,
+.user-management-modal-overlay .notification-info h5,
+.modal-body .notification-info h5 {
+  color: #ffffff !important;
+  font-weight: 600 !important;
 }
 
-.user-management-modal .notification-info p {
-  color: #b0b0b0;
+.user-management-modal .notification-info p,
+.user-management-modal-overlay .notification-info p,
+.modal-body .notification-info p {
+  color: #e2e8f0 !important;
+}
+
+.user-management-modal .notification-header,
+.user-management-modal-overlay .notification-header,
+.modal-body .notification-header {
+  color: #ffffff !important;
+}
+
+.user-management-modal .notification-icon,
+.user-management-modal-overlay .notification-icon,
+.modal-body .notification-icon {
+  color: #9146ff !important;
+  font-size: 24px !important;
+}
+
+.user-management-modal .notification-controls,
+.user-management-modal-overlay .notification-controls,
+.modal-body .notification-controls {
+  color: #ffffff !important;
+}
+
+/* Override any remaining light theme elements in dark modal */
+.user-management-modal * {
+  --notification-card-bg: #1a1a2e !important;
+  --notification-text-color: #ffffff !important;
+  --notification-description-color: #e2e8f0 !important;
 }
 
 .notification-controls {

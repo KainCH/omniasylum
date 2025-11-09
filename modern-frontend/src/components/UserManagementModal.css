@@ -1079,3 +1079,29 @@ input:disabled+.slider {
   font-size: 16px;
   font-weight: 600;
 }
+
+/* Force Dark Theme for All Notification Components */
+.user-management-modal .notification-type-card {
+  background: #1a1a2e !important;
+  border: 1px solid rgba(145, 70, 255, 0.4) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+.user-management-modal .notification-type-card:hover {
+  background: #16213e !important;
+  border-color: #9146ff !important;
+  box-shadow: 0 4px 16px rgba(145, 70, 255, 0.5) !important;
+}
+
+.user-management-modal .notification-type-card h5 {
+  color: #ffffff !important;
+}
+
+.user-management-modal .notification-type-card p {
+  color: #e2e8f0 !important;
+}
+
+.user-management-modal .notification-icon {
+  color: #9146ff !important;
+}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import './UserManagementModal.css'
+import '../styles/CommonControls.css'
 import { ToggleSwitch, ActionButton, FormSection, InputGroup, StatusBadge, NotificationTypeCard } from './ui/CommonControls'
 import { useUserData, useNotificationSettings, useFormState, useToast, useLoading } from '../hooks'
 import {

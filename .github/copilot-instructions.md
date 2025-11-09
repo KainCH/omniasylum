@@ -167,7 +167,7 @@ This application is deployed using Azure Container Apps with a complete infrastr
 Choose the appropriate VS Code task based on the type of changes:
 
 #### **1. Frontend AND Backend Changes**
-**Task:** `Full Deploy: Build, Docker & Azure`
+**Task:** `Fullstack Deploy`
 
 **When to use:**
 - Modified React components in `modern-frontend/`
@@ -182,13 +182,13 @@ Choose the appropriate VS Code task based on the type of changes:
 3. Builds and pushes Docker image
 4. Deploys to Azure Container Apps
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
+```javascript
+// Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "Fullstack Deploy")
 ```
 
 #### **2. Backend-Only Changes**
-**Task:** `API Deploy: Docker & Azure (Skip Frontend)`
+**Task:** `Backend Deploy`
 
 **When to use:**
 - Modified Node.js server files in `API/`
@@ -202,16 +202,16 @@ run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
 2. Deploys to Azure Container Apps
 3. Skips frontend build (faster deployment)
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "API Deploy: Docker & Azure (Skip Frontend)")
+```javascript
+// Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "Backend Deploy")
 ```
 
 #### **⚠️ CRITICAL: Task Selection Rules**
 
-- **If ANY frontend files changed** → Use `Full Deploy`
-- **If ONLY backend files changed** → Use `API Deploy (Skip Frontend)`
-- **When in doubt** → Use `Full Deploy` (safer but slower)
+- **If ANY frontend files changed** → Use `Fullstack Deploy`
+- **If ONLY backend files changed** → Use `Backend Deploy`
+- **When in doubt** → Use `Fullstack Deploy` (safer but slower)
 - **NEVER mix manual commands with tasks**
 
 #### **3. Deployment Verification (Required After Every Task)**
