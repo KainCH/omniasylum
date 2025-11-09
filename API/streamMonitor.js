@@ -1013,13 +1013,19 @@ class StreamMonitor extends EventEmitter {
       console.log(`📤 Sending Discord live notification for ${notificationData.user.username}...`);
 
       try {
+        // Get user object with Discord webhook URL
+        const user = await database.getUser(userId);
+        const webhookData = await database.getUserDiscordWebhook(userId);
+        const userWithWebhook = {
+          ...user,
+          discordWebhookUrl: webhookData?.webhookUrl
+        };
+
         // Send Discord notification via existing function
-        await sendDiscordNotification(userId, {
-          type: 'streamOnline',
-          username: notificationData.user.username,
-          displayName: notificationData.user.displayName,
+        await sendDiscordNotification(userWithWebhook, 'stream_start', {
           title: title,
           category: category,
+          game: category, // Add game alias for compatibility
           streamId: streamInfo?.streamId || 'unknown',
           startedAt: streamInfo?.startedAt || new Date().toISOString(),
           thumbnailUrl: streamInfo?.thumbnailUrl || null,

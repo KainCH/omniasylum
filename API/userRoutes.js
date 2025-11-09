@@ -429,12 +429,27 @@ async function sendDiscordNotification(user, eventType, data) {
       ? `${user.discordWebhookUrl}?with_components=true`
       : user?.discordWebhookUrl;
 
-    await fetch(webhookUrl, {
+    console.log(`📤 Sending Discord webhook to: ${webhookUrl.substring(0, 50)}...`);
+    console.log(`📦 Discord payload:`, JSON.stringify(discordPayload, null, 2));
+
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
     });
-    console.log(`✅ Discord notification sent: ${eventType} for ${user?.username}`);
+
+    console.log(`📡 Discord webhook response - Status: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Discord webhook failed with ${response.status}: ${errorText}`);
+      throw new Error(`Discord webhook failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const responseBody = await response.text();
+    console.log(`✅ Discord notification sent successfully: ${eventType} for ${user?.username}`);
+    console.log(`📝 Discord response body:`, responseBody);
+
   } catch (error) {
     console.error(`❌ Discord notification failed: ${eventType} for ${user?.username}:`, error);
     throw error; // Re-throw to ensure proper error handling upstream
