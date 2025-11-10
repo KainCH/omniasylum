@@ -5,6 +5,36 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Dark mode color variables */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f0f23;
+  --bg-modal: #1a1a2e;
+  --bg-card: rgba(26, 26, 46, 0.95);
+  --bg-input: #2a2a3e;
+  --bg-hover: #323246;
+
+  --text-primary: #ffffff;
+  --text-secondary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-placeholder: #64748b;
+
+  --border-primary: rgba(145, 70, 255, 0.3);
+  --border-secondary: rgba(75, 85, 99, 0.3);
+  --border-hover: rgba(145, 70, 255, 0.5);
+
+  --accent-primary: #9146ff;
+  --accent-secondary: #b794f6;
+  --success: #22c55e;
+  --error: #ef4444;
+  --warning: #f59e0b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
 html {
   font-size: 16px;
   scroll-behavior: smooth;
@@ -16,8 +46,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #1a0f0a, #2d1b12);
-  color: #d4af37;
+  background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-primary));
+  color: var(--text-secondary);
   min-height: 100vh;
   overflow-x: hidden;
 }

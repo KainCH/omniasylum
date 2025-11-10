@@ -1,0 +1,436 @@
+/* Debug Dashboard Styles */
+.debug-dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  color: #fff;
+  background: #1a1a1a;
+  border-radius: 8px;
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(145, 70, 255, 0.3);
+}
+
+.debug-header h3 {
+  margin: 0;
+  color: #9146ff;
+  font-size: 24px;
+}
+
+.debug-header p {
+  margin: 4px 0 0 0;
+  color: #ccc;
+  font-size: 14px;
+}
+
+.debug-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.auto-refresh-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.auto-refresh-control input[type="checkbox"] {
+  accent-color: #9146ff;
+}
+
+/* Debug Sections */
+.debug-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.debug-section h4 {
+  margin: 0 0 16px 0;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* System Health Grid */
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.health-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.health-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.health-icon {
+  font-size: 16px;
+}
+
+.health-name {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: #fff;
+}
+
+.health-message {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.health-data {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.health-stat {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.stat-key {
+  color: #ccc;
+}
+
+.stat-value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.system-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.stat-item {
+  color: #ccc;
+}
+
+.stat-item strong {
+  color: #fff;
+}
+
+/* Diagnostics Checks */
+.checks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.check-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.check-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.check-icon {
+  font-size: 18px;
+}
+
+.check-header h5 {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.check-message {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.check-details {
+  margin-top: 8px;
+}
+
+.check-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #9146ff;
+  margin-bottom: 8px;
+}
+
+.check-details pre {
+  font-size: 11px;
+  color: #aaa;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* Recommendations */
+.recommendations {
+  background: rgba(145, 70, 255, 0.1);
+  border: 1px solid rgba(145, 70, 255, 0.3);
+  border-radius: 6px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.recommendations h5 {
+  margin: 0 0 12px 0;
+  color: #9146ff;
+  font-size: 14px;
+}
+
+.recommendations ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.recommendations li {
+  color: #fff;
+  font-size: 13px;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+/* Test Actions */
+.test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.test-button {
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  border-radius: 6px !important;
+  background: #9146ff !important;
+  color: white !important;
+  border: none !important;
+}
+
+.test-button:hover:not(:disabled) {
+  background: #7c3aed !important;
+}
+
+.test-button.warning {
+  background: #f59e0b !important;
+}
+
+.test-button.warning:hover:not(:disabled) {
+  background: #d97706 !important;
+}
+
+/* Test Results */
+.test-results {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.test-results h5 {
+  margin: 0 0 12px 0;
+  color: #fff;
+  font-size: 14px;
+}
+
+.test-result {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.test-result:last-child {
+  margin-bottom: 0;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.result-status {
+  font-size: 16px;
+}
+
+.result-status.success {
+  color: #28a745;
+}
+
+.result-status.error {
+  color: #dc3545;
+}
+
+.result-name {
+  font-weight: 600;
+  color: #fff;
+  text-transform: capitalize;
+}
+
+.result-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.result-message {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.result-details {
+  margin-top: 8px;
+}
+
+.result-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #9146ff;
+  margin-bottom: 8px;
+}
+
+.result-details pre {
+  font-size: 11px;
+  color: #aaa;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Raw Data */
+.raw-data {
+  margin-top: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.raw-data summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: #9146ff;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.raw-data pre {
+  font-size: 11px;
+  color: #aaa;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .debug-dashboard {
+    padding: 16px;
+  }
+
+  .debug-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .debug-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .health-grid,
+  .checks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .test-actions {
+    flex-direction: column;
+  }
+
+  .test-button {
+    width: 100%;
+  }
+
+  .system-stats {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Dark theme overrides for better visibility */
+.debug-dashboard * {
+  color: inherit;
+}
+
+.debug-dashboard input,
+.debug-dashboard select,
+.debug-dashboard button {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard input:focus,
+.debug-dashboard select:focus {
+  border-color: #9146ff !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(145, 70, 255, 0.2) !important;
+}

@@ -366,13 +366,21 @@ async function sendDiscordNotification(user, eventType, data) {
       // No description - let the title speak for itself
       description = null;
 
-      // Add Game field only (streamer name is already in the title)
+      // Add fields for stream title and category
       const fields = [];
 
-      // Add Game field - always show even if unknown
-      const gameValue = data?.game && data.game !== '' ? data.game : 'Unknown Game';
+      // Add Stream Title field - show actual title or placeholder
+      const streamTitle = data?.title && data.title !== '' ? data.title : 'Stream Title Not Set';
       fields.push({
-        name: '🎯 Game',
+        name: '📺 Title',
+        value: streamTitle,
+        inline: false
+      });
+
+      // Add Streaming Category field - always show even if unknown
+      const gameValue = data?.game && data.game !== '' ? data.game : 'Unknown Category';
+      fields.push({
+        name: '� Streaming',
         value: gameValue,
         inline: true
       });
@@ -381,9 +389,15 @@ async function sendDiscordNotification(user, eventType, data) {
       data.fields = fields;
       data.showWatchButton = true; // Flag to show the prominent watch button
 
-      // Add stream thumbnail image (2x size for optimal loading)
-      // Twitch stream thumbnail URL template: https://static-cdn.jtvnw.net/previews-ttv/live_user_{login}-{width}x{height}.jpg
-      data.image = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg`;
+      // Use live thumbnail from Twitch API if available, otherwise generate one with timestamp
+      if (data?.thumbnailUrl) {
+        // Use the actual thumbnail URL from the Twitch API (already includes timestamp)
+        data.image = data.thumbnailUrl;
+      } else {
+        // Fallback: Generate thumbnail URL with cache-busting timestamp
+        const timestamp = Date.now();
+        data.image = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg?t=${timestamp}`;
+      }
 
       color = 0x00FF00; // Green
       break;
@@ -421,14 +435,30 @@ async function sendDiscordNotification(user, eventType, data) {
       ? `${user.discordWebhookUrl}?with_components=true`
       : user?.discordWebhookUrl;
 
-    await fetch(webhookUrl, {
+    console.log(`📤 Sending Discord webhook to: ${webhookUrl.substring(0, 50)}...`);
+    console.log(`📦 Discord payload:`, JSON.stringify(discordPayload, null, 2));
+
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordPayload)
     });
-    console.log(`✅ Discord notification sent: ${eventType} (${templateStyle}) for ${user?.username}`);
+
+    console.log(`📡 Discord webhook response - Status: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Discord webhook failed with ${response.status}: ${errorText}`);
+      throw new Error(`Discord webhook failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const responseBody = await response.text();
+    console.log(`✅ Discord notification sent successfully: ${eventType} for ${user?.username}`);
+    console.log(`📝 Discord response body:`, responseBody);
+
   } catch (error) {
     console.error(`❌ Discord notification failed: ${eventType} for ${user?.username}:`, error);
+    throw error; // Re-throw to ensure proper error handling upstream
   }
 }
 

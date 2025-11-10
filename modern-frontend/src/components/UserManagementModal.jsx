@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import './UserManagementModal.css'
+import '../styles/CommonControls.css'
 import { ToggleSwitch, ActionButton, FormSection, InputGroup, StatusBadge, NotificationTypeCard } from './ui/CommonControls'
 import { useUserData, useNotificationSettings, useFormState, useToast, useLoading } from '../hooks'
 import {
@@ -14,12 +15,14 @@ const defaultFeatures = {
   chatCommands: true,
   channelPoints: false,
   autoClip: false,
-  streamOverlay: false,
-  discordWebhook: false,
-  templateStyle: 'asylum_themed',
   customCommands: false,
   analytics: false,
-  webhooks: false
+  webhooks: false,
+  bitsIntegration: false,
+  streamOverlay: false,
+  alertAnimations: false,
+  streamAlerts: true,
+  discordNotifications: true
 }
 
 // Professional feature configuration
@@ -73,6 +76,26 @@ const getFeatureConfig = (featureKey) => {
       icon: '🔗',
       title: 'Webhooks',
       description: 'Connect with external services and tools through custom webhooks'
+    },
+    bitsIntegration: {
+      icon: '💎',
+      title: 'Bits Integration',
+      description: 'Enable Twitch Bits/Cheers integration for interactive stream features'
+    },
+    alertAnimations: {
+      icon: '✨',
+      title: 'Alert Animations',
+      description: 'Add visual effects and animations to stream alerts and notifications'
+    },
+    streamAlerts: {
+      icon: '🚨',
+      title: 'Stream Alerts',
+      description: 'Display customizable alerts for follows, subs, raids, and other Twitch events'
+    },
+    discordNotifications: {
+      icon: '🔔',
+      title: 'Discord Notifications',
+      description: 'Send automated milestone and event notifications to your Discord server'
     }
   }
 
@@ -205,7 +228,7 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
           : {}
         const updatedFeatures = { ...originalFeatures, ...(formState?.features || {}) }
 
-        await userAPI.updateFeatures(user?.twitchUserId, { features: updatedFeatures })
+        await userAPI.updateFeatures(user?.twitchUserId, updatedFeatures)
 
         showMessage('Features updated successfully!', 'success')
         if (onUpdate) onUpdate()
@@ -442,11 +465,18 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
                   <h4>Notification Types</h4>
                   <div className="notification-grid">
                     <NotificationTypeCard
-                      title="Twitch Chat Notifications"
-                      description="Send notifications to Twitch chat"
-                      enabled={notificationSettings?.enableChannelNotifications || false}
-                      onChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
-                      icon="�"
+                      notificationType={{
+                        id: 'channelNotifications',
+                        title: 'Twitch Chat Notifications',
+                        description: 'Send notifications to Twitch chat',
+                        icon: '💬',
+                        supportsChannel: true,
+                        supportsDiscord: false
+                      }}
+                      discordEnabled={false}
+                      channelEnabled={notificationSettings?.enableChannelNotifications || false}
+                      onDiscordChange={() => {}}
+                      onChannelChange={(enabled) => updateNotificationSetting('enableChannelNotifications', enabled)}
                       disabled={isLoading}
                     />
                   </div>

@@ -377,6 +377,59 @@ export class WebSocketManager {
 // Export error class for handling in components
 export { APIError };
 
+// Debug API functions
+export const debugAPI = {
+  // Get comprehensive Discord diagnostics for a user
+  getDiscordDiagnostics: async (userId) => {
+    const endpoint = userId ? `/api/debug/discord-diagnostics/${userId}` : '/api/debug/discord-diagnostics';
+    return await apiRequest(endpoint);
+  },
+
+  // Test Discord webhook
+  testDiscordWebhook: async (userId) => {
+    const endpoint = userId ? `/api/debug/test-discord-webhook/${userId}` : '/api/debug/test-discord-webhook';
+    return await apiRequest(endpoint, {
+      method: 'POST'
+    });
+  },
+
+  // Get system health overview
+  getSystemHealth: async () => {
+    return await apiRequest('/api/debug/system-health');
+  },
+
+  // Clean Discord webhook data
+  cleanDiscordWebhook: async () => {
+    return await apiRequest('/api/debug/clean-discord-webhook', {
+      method: 'POST'
+    });
+  },
+
+  // Test webhook save functionality
+  testWebhookSave: async () => {
+    return await apiRequest('/api/debug/test-webhook-save', {
+      method: 'POST'
+    });
+  },
+
+  // Test webhook read functionality
+  testWebhookRead: async () => {
+    return await apiRequest('/api/debug/test-webhook-read');
+  },
+
+  // Clean up user data
+  cleanupUserData: async () => {
+    return await apiRequest('/api/debug/cleanup-user-data', {
+      method: 'POST'
+    });
+  },
+
+  // Check subscription costs
+  checkSubscriptionCosts: async () => {
+    return await apiRequest('/api/debug/subscription-costs');
+  }
+};
+
 // Utility functions for common operations
 export const utils = {
   // Format error messages for display

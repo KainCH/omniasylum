@@ -32,6 +32,11 @@ const io = socketIo(server, {
   transports: ['websocket', 'polling'],
   allowEIO3: true,
   path: '/socket.io/',
+  // Keepalive settings for stable connections
+  pingTimeout: 60000,        // 60 seconds before considering connection dead
+  pingInterval: 6000,        // 6 seconds between ping packets
+  upgradeTimeout: 30000,     // 30 seconds for transport upgrade
+  maxHttpBufferSize: 1e6,    // 1MB buffer size
   // Add security headers to Socket.IO responses
   allowRequest: (req, callback) => {
     // Socket.IO middleware - headers already set by Express middleware
@@ -340,6 +345,11 @@ io.on('connection', (socket) => {
     console.log(`🎨 Overlay joining room for user: ${targetUserId}`);
     socket.join(`user:${targetUserId}`);
 
+    // Log room membership for debugging
+    const roomName = `user:${targetUserId}`;
+    const roomSize = io.sockets.adapter.rooms.get(roomName)?.size || 0;
+    console.log(`👥 Room '${roomName}' now has ${roomSize} clients`);
+
     // Send current counter state to overlay
     database.getCounters(targetUserId).then(data => {
       socket.emit('counterUpdate', data);
@@ -347,6 +357,28 @@ io.on('connection', (socket) => {
     }).catch(error => {
       console.error('❌ Error fetching counters for overlay:', error);
     });
+  });
+
+  // Handle stream status requests from overlay
+  socket.on('getStreamStatus', async (targetUserId) => {
+    try {
+      console.log(`📡 Getting stream status for user: ${targetUserId}`);
+      const user = await database.getUser(targetUserId);
+      const streamStatus = user ? user.streamStatus || 'offline' : 'offline';
+
+      socket.emit('streamStatus', {
+        userId: targetUserId,
+        streamStatus: streamStatus
+      });
+
+      console.log(`📊 Sent stream status to overlay: ${streamStatus}`);
+    } catch (error) {
+      console.error('❌ Error fetching stream status for overlay:', error);
+      socket.emit('streamStatus', {
+        userId: targetUserId,
+        streamStatus: 'offline'
+      });
+    }
   });
 
   // Handle heartbeat/ping for any connections

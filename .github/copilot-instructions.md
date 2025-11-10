@@ -167,7 +167,7 @@ This application is deployed using Azure Container Apps with a complete infrastr
 Choose the appropriate VS Code task based on the type of changes:
 
 #### **1. Frontend AND Backend Changes**
-**Task:** `Full Deploy: Build, Docker & Azure`
+**Task:** `Fullstack Deploy`
 
 **When to use:**
 - Modified React components in `modern-frontend/`
@@ -182,13 +182,13 @@ Choose the appropriate VS Code task based on the type of changes:
 3. Builds and pushes Docker image
 4. Deploys to Azure Container Apps
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
+```javascript
+// Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "Fullstack Deploy")
 ```
 
 #### **2. Backend-Only Changes**
-**Task:** `API Deploy: Docker & Azure (Skip Frontend)`
+**Task:** `Backend Deploy`
 
 **When to use:**
 - Modified Node.js server files in `API/`
@@ -202,16 +202,16 @@ run_task(workspaceFolder, "Full Deploy: Build, Docker & Azure")
 2. Deploys to Azure Container Apps
 3. Skips frontend build (faster deployment)
 
-```powershell
-# Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "API Deploy: Docker & Azure (Skip Frontend)")
+```javascript
+// Use VS Code Command Palette or run via task
+run_task(workspaceFolder, "Backend Deploy")
 ```
 
 #### **⚠️ CRITICAL: Task Selection Rules**
 
-- **If ANY frontend files changed** → Use `Full Deploy`
-- **If ONLY backend files changed** → Use `API Deploy (Skip Frontend)`
-- **When in doubt** → Use `Full Deploy` (safer but slower)
+- **If ANY frontend files changed** → Use `Fullstack Deploy`
+- **If ONLY backend files changed** → Use `Backend Deploy`
+- **When in doubt** → Use `Fullstack Deploy` (safer but slower)
 - **NEVER mix manual commands with tasks**
 
 #### **3. Deployment Verification (Required After Every Task)**
@@ -232,6 +232,49 @@ terminal_last_command() // Verify actual execution
 curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
 // Expected: {"status":"ok","timestamp":"..."}
 ```
+
+#### **🚨 Deployment Failure Handling**
+
+The enhanced deployment script now provides comprehensive error handling and recovery options:
+
+**Failure Detection & Diagnosis:**
+- Automatic error categorization (Docker vs Azure failures)
+- Detailed failure reasons and troubleshooting steps
+- System diagnostics (disk space, Docker status, Azure auth)
+- Recovery suggestions specific to the failure type
+
+**Available Recovery Tasks:**
+
+```javascript
+// Deployment diagnostics - check system health
+run_task(workspaceFolder, "Deployment Diagnostics")
+
+// View rollback options
+run_task(workspaceFolder, "Rollback Deployment")
+
+// Retry after fixing issues
+run_task(workspaceFolder, "Backend Deploy")      // Backend-only retry
+run_task(workspaceFolder, "Fullstack Deploy")    // Full retry
+```
+
+**Common Failure Scenarios:**
+
+1. **Docker Build Failures:**
+   - Check Docker is running: `docker --version`
+   - Clear cache: `docker system prune -f`
+   - Verify Dockerfile syntax in API/ directory
+   - Check disk space
+
+2. **Azure Deployment Failures:**
+   - Re-authenticate: `az login`
+   - Check ACR access: `az acr login --name omniforgeacr`
+   - Verify Container App status
+   - Review Azure service health
+
+3. **Rollback Procedure:**
+   - Use "Rollback Deployment" task to see recent revisions
+   - Activate previous working revision if needed
+   - Test application health after rollback
 
 **Manual monitoring commands (only if tasks fail):**
 ```powershell
@@ -364,13 +407,19 @@ az containerapp revision activate --name omniforgestream-api-prod --resource-gro
 
 ### VS Code Tasks Integration
 
-The workspace includes pre-configured tasks for deployment:
+The workspace includes pre-configured tasks for deployment and troubleshooting:
 
-- **Build Docker Image**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Build Docker Image`
-- **Deploy to Azure**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deploy to Azure`
+**Deployment Tasks:**
+- **Fullstack Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Fullstack Deploy`
+- **Backend Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Backend Deploy`
+
+**Troubleshooting Tasks:**
+- **Deployment Diagnostics**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deployment Diagnostics`
+- **Rollback Deployment**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Rollback Deployment`
 - **View Azure Logs**: `Ctrl+Shift+P` → `Tasks: Run Task` → `View Azure Logs`
 
-### Security Considerations
+**Authentication Tasks:**
+- **Azure Login**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Azure Login`### Security Considerations
 
 - **No secrets in code**: All credentials via Key Vault
 - **Managed Identity**: No connection strings or passwords

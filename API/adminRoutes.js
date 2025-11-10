@@ -155,7 +155,14 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
   try {
     const { features } = req.body;
 
+    console.log('🔍 Feature update request for user:', req.params.userId);
+    console.log('🔍 Received features:', JSON.stringify(features, null, 2));
+    console.log('🔍 Features type:', typeof features);
+    console.log('🔍 Features is object:', typeof features === 'object');
+    console.log('🔍 Features is truthy:', !!features);
+
     if (!features || typeof features !== 'object') {
+      console.log('❌ Feature validation failed - invalid object');
       return res.status(400).json({ error: 'Invalid features object' });
     }
 

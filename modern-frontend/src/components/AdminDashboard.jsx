@@ -8,7 +8,7 @@ import { useUserData, useLoading, useToast } from '../hooks'
 import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
 import './AdminDashboard.css'
 
-function AdminDashboard() {
+function AdminDashboard({ onNavigateToDebug }) {
   const [users, setUsers] = useState([])
   const [stats, setStats] = useState({})
   const [features, setFeatures] = useState([])
@@ -882,6 +882,13 @@ function AdminDashboard() {
               <p>Welcome, Administrator! Manage users and system settings.</p>
             </div>
             <div className="admin-header-actions">
+              <ActionButton
+                variant="warning"
+                onClick={onNavigateToDebug}
+                title="Open debugging dashboard for troubleshooting"
+              >
+                🔧 Debug Dashboard
+              </ActionButton>
               <ActionButton
                 variant="secondary"
                 onClick={handleLogout}
