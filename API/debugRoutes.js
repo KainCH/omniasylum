@@ -849,4 +849,56 @@ function generateRecommendations(checks) {
   return recommendations;
 }
 
+/**
+ * Test stream status change events (manual trigger) - NO AUTH for testing
+ * POST /api/debug/test-stream-status/:userId/:status
+ */
+router.post('/test-stream-status/:userId/:status', async (req, res) => {
+  try {
+    const { userId, status } = req.params;
+
+    if (!['offline', 'live'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be "offline" or "live"' });
+    }
+
+    console.log(`🧪 DEBUG: Manual stream status test - Setting user ${userId} to ${status}`);    // Update database status
+    await database.updateStreamStatus(userId, status);
+
+    // Get io instance and emit event
+    const io = req.app.get('io');
+    if (io) {
+      const roomName = `user:${userId}`;
+      console.log(`🧪 DEBUG: Manual emit streamStatusChanged to room ${roomName} with status: ${status}`);
+
+      // Check room membership
+      const room = io.sockets.adapter.rooms.get(roomName);
+      const clientCount = room ? room.size : 0;
+      console.log(`🧪 DEBUG: Room ${roomName} has ${clientCount} clients`);
+
+      // Emit the event
+      io.to(roomName).emit('streamStatusChanged', {
+        userId,
+        status,
+        timestamp: new Date().toISOString(),
+        source: 'manual-debug'
+      });
+
+      console.log(`✅ DEBUG: Manual streamStatusChanged event emitted successfully`);
+
+      res.json({
+        success: true,
+        message: `Stream status manually set to ${status}`,
+        roomClients: clientCount,
+        userId
+      });
+    } else {
+      console.error('❌ DEBUG: Socket.io instance not found');
+      res.status(500).json({ error: 'Socket.io not available' });
+    }
+  } catch (error) {
+    console.error('❌ DEBUG: Manual stream status test failed:', error);
+    res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
 module.exports = router;

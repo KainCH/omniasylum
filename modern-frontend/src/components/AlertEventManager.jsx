@@ -60,7 +60,7 @@ function AlertEventManager({ userId, username, onClose }) {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       // Fetch user's alerts
       const alertsRes = await fetch(`/api/alerts/user/${userId}`, {
@@ -95,7 +95,7 @@ function AlertEventManager({ userId, username, onClose }) {
   const saveEventMappings = async () => {
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       const res = await fetch('/api/alerts/event-mappings', {
         method: 'PUT',
@@ -126,7 +126,7 @@ function AlertEventManager({ userId, username, onClose }) {
 
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
 
       const res = await fetch('/api/alerts/event-mappings/reset', {
         method: 'POST',
@@ -251,7 +251,7 @@ function AlertEventManager({ userId, username, onClose }) {
                   className="alert-select"
                 >
                   <option value="">No Alert (Disabled)</option>
-                  
+
                   {/* Default Alert Templates */}
                   <optgroup label="🎭 Default Alert Templates">
                     {alerts.filter(a => a.isDefault && a.enabled !== false).map(alert => (
@@ -260,7 +260,7 @@ function AlertEventManager({ userId, username, onClose }) {
                       </option>
                     ))}
                   </optgroup>
-                  
+
                   {/* Custom Alerts */}
                   {alerts.filter(a => !a.isDefault && a.enabled !== false).length > 0 && (
                     <optgroup label="✨ Custom Alerts">

@@ -649,6 +649,22 @@ class StreamMonitor extends EventEmitter {
           console.log(`🎬 Stream session already active for ${user.username} - sending immediate notification`);
         }
 
+        // Update stream status to 'live' for overlay display
+        await database.updateStreamStatus(userId, 'live');
+        console.log(`🔴 Updated stream status to 'live' for ${user.username}`);
+
+        // Emit stream status change to connected clients
+        if (this.io) {
+          console.log(`🎯 Emitting streamStatusChanged to room 'user:${userId}' - status: 'live'`);
+          this.io.to(`user:${userId}`).emit('streamStatusChanged', {
+            userId,
+            username: user.username,
+            streamStatus: 'live',
+            timestamp: new Date().toISOString()
+          });
+          console.log(`📡 StreamStatusChanged event emitted for live stream`);
+        }
+
         // Get current stream info from API
         let streamInfo = null;
         try {
@@ -664,7 +680,7 @@ class StreamMonitor extends EventEmitter {
                 categoryId: streams.gameId,
                 language: streams.language || 'en',
                 viewerCount: streams.viewers || 0,
-                thumbnailUrl: streams.getThumbnailUrl(320, 180),
+                thumbnailUrl: streams.getThumbnailUrl(640, 360) + `?t=${Date.now()}`, // Add timestamp for fresh image
                 tags: streams.tags || [],
                 isMature: streams.isMature || false,
                 startedAt: event.startedAt || streams.startDate,
@@ -690,7 +706,8 @@ class StreamMonitor extends EventEmitter {
             broadcasterUserLogin: event.broadcasterLogin,
             title: 'Live Stream', // Fallback title
             category: 'Unknown Category', // Fallback category
-            viewerCount: 0
+            viewerCount: 0,
+            thumbnailUrl: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg?t=${Date.now()}` // Fallback with fresh timestamp
           };
         }
 
@@ -755,6 +772,22 @@ class StreamMonitor extends EventEmitter {
       if (counters.streamStarted) {
         await database.endStream(userId);
         console.log(`🔄 Reset duplicate detection for ${user.username} - next stream will send notification`);
+
+        // Update stream status to 'offline' for overlay display
+        await database.updateStreamStatus(userId, 'offline');
+        console.log(`⚫ Updated stream status to 'offline' for ${user.username}`);
+
+        // Emit stream status change to connected clients
+        if (this.io) {
+          console.log(`🎯 Emitting streamStatusChanged to room 'user:${userId}' - status: 'offline'`);
+          this.io.to(`user:${userId}`).emit('streamStatusChanged', {
+            userId,
+            username: user.username,
+            streamStatus: 'offline',
+            timestamp: new Date().toISOString()
+          });
+          console.log(`📡 StreamStatusChanged event emitted for offline stream`);
+        }
 
         // Reset Discord notification status to ready for next stream
         this.emitDiscordNotificationStatus(userId, 'Reset', {

@@ -389,9 +389,15 @@ async function sendDiscordNotification(user, eventType, data) {
       data.fields = fields;
       data.showWatchButton = true; // Flag to show the prominent watch button
 
-      // Add stream thumbnail image (2x size for optimal loading)
-      // Twitch stream thumbnail URL template: https://static-cdn.jtvnw.net/previews-ttv/live_user_{login}-{width}x{height}.jpg
-      data.image = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg`;
+      // Use live thumbnail from Twitch API if available, otherwise generate one with timestamp
+      if (data?.thumbnailUrl) {
+        // Use the actual thumbnail URL from the Twitch API (already includes timestamp)
+        data.image = data.thumbnailUrl;
+      } else {
+        // Fallback: Generate thumbnail URL with cache-busting timestamp
+        const timestamp = Date.now();
+        data.image = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${user.username.toLowerCase()}-640x360.jpg?t=${timestamp}`;
+      }
 
       color = 0x00FF00; // Green
       break;

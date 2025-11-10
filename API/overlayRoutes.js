@@ -22,49 +22,8 @@ router.get('/:userId', async (req, res) => {
       return res.status(403).send('Stream overlay not enabled for this user');
     }
 
-    // Check stream status
+    // Get current stream status for initial state
     const streamStatus = user.streamStatus || 'offline';
-
-    // Show different messages based on stream status
-    if (streamStatus === 'offline') {
-      return res.status(200).send(`
-        <!DOCTYPE html>
-        <html><head><title>Stream Offline</title></head>
-        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
-          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #d4af37; text-align: center;">
-            <h3 style="color: #d4af37; margin-top: 0;">🎬 Stream Offline</h3>
-            <p>Overlay will activate when you start prepping.</p>
-            <p><small>Use "Start Prepping" button in admin dashboard</small></p>
-          </div>
-        </body></html>
-      `);
-    } else if (streamStatus === 'prepping') {
-      return res.status(200).send(`
-        <!DOCTYPE html>
-        <html><head><title>Getting Ready</title></head>
-        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
-          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #ffa500; text-align: center;">
-            <h3 style="color: #ffa500; margin-top: 0;">🎭 Getting Ready</h3>
-            <p>Stream prep in progress...</p>
-            <p><small>Overlay will show counters when you go live</small></p>
-          </div>
-        </body></html>
-      `);
-    } else if (streamStatus === 'ending') {
-      return res.status(200).send(`
-        <!DOCTYPE html>
-        <html><head><title>Stream Ending</title></head>
-        <body style="background: transparent; color: white; font-family: Arial; padding: 20px;">
-          <div style="background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #ff6b6b; text-align: center;">
-            <h3 style="color: #ff6b6b; margin-top: 0;">🏁 Stream Ending</h3>
-            <p>Thanks for watching!</p>
-            <p><small>Stream concluded</small></p>
-          </div>
-        </body></html>
-      `);
-    }
-
-    // If status is 'live', show the full overlay with counters
 
     // Get user's overlay settings (for customization, not enabling/disabling)
     const overlaySettings = await database.getUserOverlaySettings(req.params.userId);
@@ -272,10 +231,87 @@ router.get('/:userId', async (req, res) => {
             opacity: 0;
             transform: translateX(-50%) translateY(-100px) scale(0.5);
         }
+
+        /* Stream Status Messages */
+        .status-message {
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid;
+            text-align: center;
+            color: white;
+            font-family: Arial;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            display: none;
+            transition: all 0.3s ease;
+        }
+
+        .status-message.show {
+            display: block;
+            opacity: 1;
+        }
+
+        .status-offline {
+            border-color: #d4af37;
+        }
+
+        .status-offline h3 {
+            color: #d4af37;
+            margin-top: 0;
+        }
+
+        .status-prepping {
+            border-color: #ffa500;
+        }
+
+        .status-prepping h3 {
+            color: #ffa500;
+            margin-top: 0;
+        }
+
+        .status-ending {
+            border-color: #ff6b6b;
+        }
+
+        .status-ending h3 {
+            color: #ff6b6b;
+            margin-top: 0;
+        }
+
+        .counters-container {
+            display: ${streamStatus === 'live' ? 'flex' : 'none'};
+            flex-direction: column;
+            gap: 15px;
+            position: fixed;
+            ${overlaySettings.position.includes('top') ? 'top: 20px;' : 'bottom: 20px;'}
+            ${overlaySettings.position.includes('right') ? 'right: 20px;' : 'left: 20px;'}
+        }
     </style>
 </head>
 <body>
-    <div class="counter-overlay">
+    <!-- Status Messages for different stream states -->
+    <div class="status-message status-offline ${streamStatus === 'offline' ? 'show' : ''}" id="status-offline">
+        <h3>🎬 Stream Offline</h3>
+        <p>Overlay will activate when you start prepping.</p>
+        <p><small>Use "Start Prepping" button in admin dashboard</small></p>
+    </div>
+
+    <div class="status-message status-prepping ${streamStatus === 'prepping' ? 'show' : ''}" id="status-prepping">
+        <h3>🎭 Getting Ready</h3>
+        <p>Stream prep in progress...</p>
+        <p><small>Overlay will show counters when you go live</small></p>
+    </div>
+
+    <div class="status-message status-ending ${streamStatus === 'ending' ? 'show' : ''}" id="status-ending">
+        <h3>🏁 Stream Ending</h3>
+        <p>Thanks for watching!</p>
+        <p><small>Stream concluded</small></p>
+    </div>
+
+    <!-- Counters Container - only visible when live -->
+    <div class="counters-container" id="counters-container">
         ${overlaySettings.counters.deaths ? `
         <div class="counter-item" id="deaths-counter">
             <div class="counter-icon">💀</div>
@@ -378,6 +414,60 @@ router.get('/:userId', async (req, res) => {
 
         // Join user's room for real-time updates
         socket.emit('joinRoom', userId);
+
+        // Helper function to switch overlay content smoothly
+        function switchOverlayContent(status) {
+            console.log('🔄 Switching overlay to status:', status);
+
+            // Hide all status messages with fade-out
+            const statusElements = ['status-offline', 'status-prepping', 'status-ending'];
+            statusElements.forEach(id => {
+                const element = document.getElementById(id);
+                if (element.classList.contains('show')) {
+                    element.style.opacity = '0';
+                    setTimeout(() => element.classList.remove('show'), 200);
+                }
+            });
+
+            const countersContainer = document.getElementById('counters-container');
+
+            // Show appropriate content with fade-in after delay
+            setTimeout(() => {
+                switch(status) {
+                    case 'offline':
+                        const offlineEl = document.getElementById('status-offline');
+                        offlineEl.classList.add('show');
+                        offlineEl.style.opacity = '1';
+                        countersContainer.style.display = 'none';
+                        break;
+                    case 'prepping':
+                        const preppingEl = document.getElementById('status-prepping');
+                        preppingEl.classList.add('show');
+                        preppingEl.style.opacity = '1';
+                        countersContainer.style.display = 'none';
+                        break;
+                    case 'ending':
+                        const endingEl = document.getElementById('status-ending');
+                        endingEl.classList.add('show');
+                        endingEl.style.opacity = '1';
+                        countersContainer.style.display = 'none';
+                        break;
+                    case 'live':
+                        countersContainer.style.display = 'flex';
+                        countersContainer.style.opacity = '1';
+                        break;
+                    default:
+                        const defaultEl = document.getElementById('status-offline');
+                        defaultEl.classList.add('show');
+                        defaultEl.style.opacity = '1';
+                        countersContainer.style.display = 'none';
+                }
+
+                // Trigger OBS browser source refresh
+                document.body.style.transform = 'translateZ(0)';
+                setTimeout(() => document.body.style.transform = 'none', 100);
+            }, 250);
+        }
 
         // Update counter display
         function updateCounter(type, value, change = null) {
@@ -815,6 +905,14 @@ router.get('/:userId', async (req, res) => {
             }
         });
 
+        // Listen for stream status changes (live/offline/prepping)
+        socket.on('streamStatusChanged', (data) => {
+            if (data.userId === userId) {
+                console.log('🔄 Stream status changed to:', data.streamStatus);
+                switchOverlayContent(data.streamStatus);
+            }
+        });
+
         // Listen for stream events
         socket.on('streamStarted', (data) => {
             if (data.userId === userId) {
@@ -896,10 +994,42 @@ router.get('/:userId', async (req, res) => {
             }
         });
 
-        // Keep connection alive
+        // Initialize overlay with current stream status
+        socket.on('connect', () => {
+            console.log('🔌 Connected to server, initializing overlay...');
+            console.log('🔌 Socket connected - Transport:', socket.io.engine.transport.name);
+            // Request current stream status to show correct initial state
+            socket.emit('getStreamStatus', userId);
+        });
+
+        // Monitor connection status
+        socket.on('disconnect', (reason) => {
+            console.log('❌ Socket disconnected:', reason);
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('❌ Connection error:', error);
+        });
+
+        socket.on('reconnect', (attemptNumber) => {
+            console.log('🔄 Reconnected on attempt:', attemptNumber);
+        });
+
+        // Handle initial stream status response
+        socket.on('streamStatus', (data) => {
+            if (data.userId === userId) {
+                console.log('📊 Initial stream status:', data.streamStatus);
+                switchOverlayContent(data.streamStatus || 'offline');
+            }
+        });
+
+        // Keep connection alive with frequent pings
         setInterval(() => {
-            socket.emit('ping');
-        }, 30000);
+            if (socket.connected) {
+                socket.emit('ping');
+                console.log('📡 Overlay keepalive ping sent');
+            }
+        }, 6000); // 6 seconds to match server ping interval
     </script>
 </body>
 </html>
