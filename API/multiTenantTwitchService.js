@@ -429,6 +429,43 @@ class MultiTenantTwitchService extends EventEmitter {
   }
 
   /**
+   * Check if a specific user's bot is connected
+   */
+  isUserConnected(userId) {
+    return this.clients.has(userId);
+  }
+
+  /**
+   * Get bot status for a specific user
+   */
+  getUserBotStatus(userId) {
+    const isConnected = this.clients.has(userId);
+    const client = this.clients.get(userId);
+
+    return {
+      connected: isConnected,
+      userId: userId,
+      chatConnected: client?.chatClient?.isConnected || false,
+      lastConnected: isConnected ? new Date().toISOString() : null
+    };
+  }
+
+  /**
+   * Get status for all connected bots
+   */
+  getAllBotsStatus() {
+    const statuses = {};
+    for (const [userId, client] of this.clients.entries()) {
+      statuses[userId] = {
+        connected: true,
+        chatConnected: client?.chatClient?.isConnected || false,
+        lastConnected: new Date().toISOString()
+      };
+    }
+    return statuses;
+  }
+
+  /**
    * Disconnect all users
    */
   async disconnectAll() {

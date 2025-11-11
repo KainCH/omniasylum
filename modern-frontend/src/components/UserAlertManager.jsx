@@ -6,6 +6,8 @@ function UserAlertManager({ onClose }) {
   const [eventMappings, setEventMappings] = useState({})
   const [defaultMappings, setDefaultMappings] = useState({})
   const [availableEvents, setAvailableEvents] = useState([])
+  const [availableAlertTypes, setAvailableAlertTypes] = useState([])
+  const [disableOption, setDisableOption] = useState('none')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('mappings') // 'mappings' or 'create'
@@ -55,12 +57,12 @@ function UserAlertManager({ onClose }) {
       variables: ['[User]', '[Months]', '[Streak]', '[Message]', '[Tier]'],
       example: '[User] resubbed for [Months] months!'
     },
-    'channel.cheer': {
-      name: 'Cheer/Bits',
+    'channel.bits.use': {
+      name: 'Bits Usage',
       icon: '💎',
-      description: 'Bits/cheers from viewers',
+      description: 'Bits usage including cheers, power-ups, and combos',
       variables: ['[User]', '[Bits]', '[Message]'],
-      example: '[User] cheered [Bits] bits!'
+      example: '[User] used [Bits] bits!'
     },
     'channel.raid': {
       name: 'Raid',
@@ -95,6 +97,8 @@ function UserAlertManager({ onClose }) {
       setEventMappings(mappingsData?.mappings || {})
       setDefaultMappings(mappingsData?.defaultMappings || {})
       setAvailableEvents(mappingsData?.availableEvents || [])
+      setAvailableAlertTypes(mappingsData?.availableAlertTypes || [])
+      setDisableOption(mappingsData?.disableOption || 'none')
 
     } catch (error) {
       console.error('Error fetching alert data:', error)
@@ -207,6 +211,13 @@ function UserAlertManager({ onClose }) {
 
   const testAlert = (eventType) => {
     const alertId = eventMappings[eventType]
+
+    // Check if alerts are disabled for this event
+    if (!alertId || alertId === disableOption) {
+      window.alert('🚫 Alerts are disabled for this event')
+      return
+    }
+
     const alert = alerts.find(a => a?.id === alertId)
 
     if (!alert) {
@@ -220,7 +231,7 @@ function UserAlertManager({ onClose }) {
       'channel.subscribe': { subscriber: 'TestUser', tier: '1000' },
       'channel.subscription.gift': { gifter: 'TestUser', amount: 5, tier: '1000' },
       'channel.subscription.message': { subscriber: 'TestUser', months: 12, streakMonths: 6, message: 'Love this stream!', tier: '1000' },
-      'channel.cheer': { cheerer: 'TestUser', bits: 100, message: 'Great content!' },
+      'channel.bits.use': { user: 'TestUser', bits: 100, message: 'Great content!', eventType: 'cheer' },
       'channel.raid': { raider: 'TestUser', viewers: 50 }
     }
 
@@ -238,7 +249,7 @@ function UserAlertManager({ onClose }) {
     if (!text || !data) return text
 
     let processed = text
-    processed = processed.replace(/\[User\]/g, data.follower || data.subscriber || data.gifter || data.cheerer || data.raider || 'TestUser')
+    processed = processed.replace(/\[User\]/g, data.follower || data.subscriber || data.gifter || data.cheerer || data.user || data.raider || 'TestUser')
     processed = processed.replace(/\[Tier\]/g, data.tier === '1000' ? 'Tier 1' : data.tier === '2000' ? 'Tier 2' : data.tier === '3000' ? 'Tier 3' : 'Prime')
     processed = processed.replace(/\[Amount\]/g, data.amount || '')
     processed = processed.replace(/\[Months\]/g, data.months || '')
@@ -321,12 +332,12 @@ function UserAlertManager({ onClose }) {
                     <select
                       id={`event-${eventType}`}
                       name={`event-${eventType}`}
-                      value={currentAlertId || ''}
+                      value={currentAlertId || disableOption}
                       onChange={(e) => handleMappingChange(eventType, e.target.value)}
                       className="alert-select"
                     >
-                      <option value="">No Alert (Disabled)</option>
-                      
+                      <option value={disableOption}>🚫 Disabled (No Alert)</option>
+
                       {/* Default Alert Templates */}
                       <optgroup label="🎭 Default Alert Templates">
                         {alerts.filter(a => a?.isDefault && a?.isEnabled !== false).map(alert => (
@@ -335,7 +346,7 @@ function UserAlertManager({ onClose }) {
                           </option>
                         ))}
                       </optgroup>
-                      
+
                       {/* Custom Alerts */}
                       {alerts.filter(a => !a?.isDefault && a?.isEnabled !== false).length > 0 && (
                         <optgroup label="✨ Custom Alerts">

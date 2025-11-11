@@ -16,7 +16,10 @@ const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
 const userRoutes = require('./userRoutes');
 const debugRoutes = require('./debugRoutes');
+const logsRoutes = require('./logsRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
+const { mainLogger, apiLogger } = require('./logger');
+const { requestLogger, errorLogger, performanceLogger } = require('./loggingMiddleware');
 
 // Initialize Express app
 const app = express();
@@ -92,6 +95,10 @@ app.use(cors({
 app.use(express.json({ type: 'application/json' }));
 app.use(cookieParser());
 
+// Add logging middleware
+app.use(requestLogger);
+app.use(performanceLogger(1000)); // Log requests taking > 1 second
+
 // Add cache-control headers to all API responses
 app.use('/api', (req, res, next) => {
   // API responses should not be cached
@@ -144,6 +151,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// DEBUG: Test PUT route directly in server.js
+app.put('/api/test-put-direct', (req, res) => {
+  console.log('🚀 DIRECT PUT ROUTE HIT in server.js');
+  res.json({
+    message: 'Direct PUT route works!',
+    method: req.method,
+    url: req.url
+  });
+});
+
 // Frontend routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
@@ -178,7 +195,9 @@ app.use('/api/rewards', channelPointRoutes);
 
 // Alert management routes (requires authentication)
 const alertRoutes = require('./alertRoutes');
+console.log('🔧 SERVER: Mounting alertRoutes on /api/alerts');
 app.use('/api/alerts', alertRoutes);
+console.log('🔧 SERVER: alertRoutes mounted successfully');
 
 // Template management routes (requires authentication)
 const templateRoutes = require('./templateRoutes');
@@ -194,6 +213,9 @@ app.use('/api/chat-commands', chatCommandRoutes);
 
 // Debug routes (requires authentication)
 app.use('/api/debug', debugRoutes);
+
+// Logging routes (requires authentication)
+app.use('/api/logs', logsRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
@@ -851,73 +873,51 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
   }
 });
 
-// Auto-start Twitch bots for users with chatCommands feature
-async function autoStartTwitchBots() {
-  try {
-    console.log('🤖 Starting Twitch bots for users with chatCommands feature...');
 
-    // Get all users from database
-    const users = await database.getAllUsers();
-    let botsStarted = 0;
-    let botsSkipped = 0;
 
-    for (const user of users) {
-      try {
-        // Parse features (could be string or object)
-        const features = typeof user.features === 'string'
-          ? JSON.parse(user.features)
-          : user.features || {};
+// Add error handling middleware (must be after all routes)
+app.use(errorLogger);
 
-        // Check if user has chatCommands feature enabled
-        if (features.chatCommands) {
-          // Check if user has required auth tokens
-          if (user.accessToken && user.refreshToken) {
-            console.log(`🤖 Starting Twitch bot for ${user.username}...`);
-            const success = await twitchService.connectUser(user.twitchUserId);
+// Global error handler
+app.use((err, req, res, next) => {
+  apiLogger.error('Unhandled application error', {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method
+  });
 
-            if (success) {
-              botsStarted++;
-              console.log(`✅ Twitch bot started for ${user.username}`);
-            } else {
-              console.log(`❌ Failed to start Twitch bot for ${user.username}`);
-            }
-          } else {
-            console.log(`⚠️  Skipping ${user.username} - missing auth tokens`);
-            botsSkipped++;
-          }
-        } else {
-          // Skip users without chatCommands feature
-          botsSkipped++;
-        }
-      } catch (userError) {
-        console.error(`❌ Error processing user ${user.username}:`, userError);
-        botsSkipped++;
-      }
-    }
-
-    console.log(`🤖 Twitch bots startup complete: ${botsStarted} started, ${botsSkipped} skipped`);
-
-  } catch (error) {
-    console.error('❌ Error auto-starting Twitch bots:', error);
-  }
-}
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   try {
+    mainLogger.info('🚀 Starting OmniAsylum Stream Counter server...', {
+      nodeVersion: process.version,
+      environment: process.env.NODE_ENV || 'development',
+      logLevel: process.env.LOG_LEVEL || 'INFO'
+    });
+
     // Initialize Key Vault
+    mainLogger.info('🔑 Initializing Key Vault...');
     await keyVault.initialize();
+    mainLogger.info('✅ Key Vault initialized successfully');
 
     // Initialize database
+    mainLogger.info('💾 Initializing database...');
     await database.initialize();
+    mainLogger.info('✅ Database initialized successfully');
 
     // Initialize Twitch service
+    mainLogger.info('🎯 Initializing Twitch service...');
     await twitchService.initialize();
-
-    // Auto-connect Twitch bots for users with chatCommands feature enabled
-    await autoStartTwitchBots();
+    mainLogger.info('✅ Twitch service initialized successfully');
 
     // Initialize Stream Monitor (but don't auto-subscribe to users)
     const streamMonitorInitialized = await streamMonitor.initialize();
@@ -1219,10 +1219,50 @@ async function startServer() {
           console.error('Error handling cheer event:', error);
         }
       });
+
+      // Handle bits use events (new channel.bits.use EventSub)
+      streamMonitor.on('newBitsUse', async ({ userId, username, user, bits, message, eventType, isAnonymous, timestamp, alert }) => {
+        try {
+          console.log(`💎 Bits Use: ${user} used ${bits} bits (${eventType}) in ${username}'s channel`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newBitsUse', {
+            userId,
+            username,
+            user,
+            bits,
+            message,
+            eventType, // 'cheer', 'power-up', 'combo', etc.
+            isAnonymous,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'bits',
+              userId,
+              username: user,
+              data: { user, bits, message, eventType, isAnonymous },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling bits use event:', error);
+        }
+      });
     }
 
     // Start HTTP server
     server.listen(PORT, () => {
+      mainLogger.info('🌐 HTTP server started successfully', {
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development'
+      });
+
       console.log('');
       console.log('╔════════════════════════════════════════════════════════╗');
       console.log('║        🎮 OmniAsylum API Server Started 🎮           ║');
@@ -1238,8 +1278,15 @@ async function startServer() {
       console.log(`║  WebSocket:     ws://localhost:${PORT}`.padEnd(56) + '║');
       console.log('╚════════════════════════════════════════════════════════╝');
       console.log('');
+
+      mainLogger.info('🎉 Server startup completed successfully', {
+        port: PORT,
+        apiEndpoint: `http://localhost:${PORT}/api/health`,
+        loggingEndpoint: `http://localhost:${PORT}/api/logs/status`
+      });
     });
   } catch (error) {
+    mainLogger.error('💥 Failed to start server', { error: error.message, stack: error.stack });
     console.error('❌ Failed to start server:', error);
     process.exit(1);
   }

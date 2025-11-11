@@ -1122,4 +1122,140 @@ router.post('/test-all-notifications/:userId', async (req, res) => {
   }
 });
 
+/**
+ * Get Azure Log Analytics KQL queries for investigation
+ * GET /api/debug/kql-queries
+ */
+router.get('/kql-queries', (req, res) => {
+  try {
+    const queries = {
+      "API Request Analysis": {
+        "description": "Monitor all HTTP requests with response codes and timing",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "HTTP" or Message contains "API"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Error Monitoring": {
+        "description": "Track application errors and exceptions",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where SeverityLevel >= 3  // Warning and above
+| project TimeGenerated, Message, SeverityLevel, Properties
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Twitch Events": {
+        "description": "Monitor EventSub webhooks and bot connections",
+        "query": `AppTraces
+| where TimeGenerated > ago(2h)
+| where Message contains "EventSub" or Message contains "Twitch" or Message contains "🔗" or Message contains "🎯"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Authentication Flow": {
+        "description": "Track user logins and token operations",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "auth" or Message contains "login" or Message contains "token" or Message contains "🔐"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Real-time Monitoring": {
+        "description": "Live application activity (last 5 minutes)",
+        "query": `AppTraces
+| where TimeGenerated > ago(5m)
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc`
+      },
+
+      "Structured Logs": {
+        "description": "Query structured logs from the new logging system",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "[API]" or Message contains "[AUTH]" or Message contains "[TWITCH]" or Message contains "[DATABASE]"
+| project TimeGenerated, Message, SeverityLevel, Properties
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "HTTP Request Logs": {
+        "description": "Track all HTTP requests with detailed timing",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "HTTP" and (Message contains "GET" or Message contains "POST" or Message contains "PUT" or Message contains "DELETE")
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Slow Requests": {
+        "description": "Find requests taking longer than 1 second",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "⏱️" and Message contains "Slow request"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Performance Analysis": {
+        "description": "Database and service performance metrics",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "ms" or Message contains "performance" or Message contains "⏱️"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Discord Notifications": {
+        "description": "Track Discord webhook notifications and events",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "Discord" or Message contains "webhook" or Message contains "🔔"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Counter Operations": {
+        "description": "Monitor counter updates and milestone events",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "counter" or Message contains "death" or Message contains "swear" or Message contains "milestone"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      }
+    };
+
+    res.json({
+      success: true,
+      message: "Azure Log Analytics KQL queries for investigation",
+      workspace: "Use these queries in your Azure Log Analytics workspace",
+      usage: "Copy queries into Log Analytics workspace query editor",
+      queries: queries,
+      tips: [
+        "Adjust time ranges by changing 'ago(1h)' to 'ago(2h)', 'ago(30m)', etc.",
+        "Use 'limit 200' for more results or 'limit 20' for fewer",
+        "Add '| where Message contains \"your-search-term\"' for specific filtering",
+        "SeverityLevel: 0=Verbose, 1=Information, 2=Warning, 3=Error, 4=Critical"
+      ]
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to get KQL queries:', error);
+    res.status(500).json({ error: 'Failed to get KQL queries', details: error.message });
+  }
+});
+
 module.exports = router;

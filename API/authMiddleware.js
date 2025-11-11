@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const database = require('./database');
 const keyVault = require('./keyVault');
+const { authLogger } = require('./logger');
 
 // JWT secret from Key Vault
 let JWT_SECRET = null;
@@ -91,23 +92,30 @@ async function attemptJwtRefresh(req, res, next, expiredToken) {
  */
 async function requireAuth(req, res, next) {
   try {
-    console.log('🔐 requireAuth - Headers received:', Object.keys(req.headers));
-    console.log('🔐 requireAuth - Authorization header:', req.headers.authorization ? 'EXISTS' : 'MISSING');
+    authLogger.debug('Processing authentication request', {
+      method: req.method,
+      url: req.url,
+      hasAuthHeader: !!req.headers.authorization
+    });
 
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('🔐 requireAuth - FAILED: No Bearer token found');
+      authLogger.warn('Authentication failed - no Bearer token', {
+        method: req.method,
+        url: req.url,
+        hasHeader: !!authHeader
+      });
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const token = authHeader.substring(7);
-    console.log('🔐 requireAuth - Token extracted:', token ? 'EXISTS' : 'MISSING');
+    authLogger.debug('Bearer token extracted for verification');
 
     try {
       const jwtSecret = await getJwtSecret();
       const decoded = jwt.verify(token, jwtSecret);
-      console.log('🔐 requireAuth - Token decoded successfully:', decoded.username);
+      authLogger.auth('token-verify', decoded.userId, true, { username: decoded.username });
 
       // Get user from database to ensure they still exist and get latest data
       const user = await database.getUser(decoded.userId);

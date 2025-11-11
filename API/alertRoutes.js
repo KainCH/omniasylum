@@ -4,6 +4,20 @@ const { requireAuth, requireAdmin } = require('./authMiddleware');
 
 const router = express.Router();
 
+// Debug route to verify alertRoutes are loaded
+router.get('/debug/status', (req, res) => {
+  res.json({ message: 'alertRoutes loaded successfully', timestamp: new Date().toISOString() });
+});
+
+// Test PUT route to debug routing issue
+router.put('/debug/test-put', requireAuth, (req, res) => {
+  res.json({ message: 'PUT route works', userId: req.user.userId, timestamp: new Date().toISOString() });
+});
+
+console.log('🔧 AlertRoutes: Loading alert routes...');
+console.log('🔧 AlertRoutes: PUT /event-mappings route being registered');
+console.log('🔧 AlertRoutes: Test PUT /debug/test-put route being registered');
+
 /**
  * Get all alerts for current user (includes defaults + custom)
  * GET /api/alerts
@@ -115,6 +129,80 @@ router.post('/', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error creating alert:', error);
     res.status(500).json({ error: 'Failed to create alert' });
+  }
+});
+
+/**
+ * Update event-to-alert mappings for current user
+ * PUT /api/alerts/event-mappings
+ * NOTE: This MUST come before /:alertId route to avoid conflicts!
+ */
+router.put('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    console.log('🔍 Event mappings update request for user:', req.user.userId);
+
+    // Handle both formats: { mappings: {...} } and direct mappings object
+    let mappings;
+    if (req.body.mappings) {
+      mappings = req.body.mappings;
+    } else {
+      mappings = req.body;
+    }
+
+    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) {
+      return res.status(400).json({
+        error: 'Invalid mappings format',
+        received: mappings,
+        type: typeof mappings
+      });
+    }
+
+    // Validate that all event types are valid
+    const validEvents = database.getAllAvailableEvents();
+
+    for (const eventType of Object.keys(mappings)) {
+      if (!validEvents.includes(eventType)) {
+        console.log(`❌ Invalid event type found: ${eventType}`);
+        console.log(`❌ Valid events are: ${validEvents.join(', ')}`);
+        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
+      }
+    }
+
+    // Validate that all alert types exist for this user (including defaults and "none")
+    const userAlerts = await database.getUserAlerts(req.user.userId);
+    const defaultTemplates = database.getDefaultAlertTemplates();
+
+    const validAlertTypes = [
+      'none',
+      ...defaultTemplates.map(template => template.type),
+      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
+    ];
+
+    for (const alertType of Object.values(mappings)) {
+      if (alertType && !validAlertTypes.includes(alertType)) {
+        return res.status(400).json({
+          error: `No alert found with type: ${alertType}. Use "none" to disable alerts for an event.`,
+          availableTypes: validAlertTypes,
+          disableOption: 'none'
+        });
+      }
+    }
+
+    await database.saveEventMappings(req.user.userId, mappings);
+
+    res.json({
+      message: 'Event mappings updated successfully',
+      mappings: mappings
+    });
+  } catch (error) {
+    console.error('Error updating event mappings:', error);
+    res.status(500).json({ error: 'Failed to update event mappings' });
   }
 });
 
@@ -394,11 +482,15 @@ router.get('/event-mappings', requireAuth, async (req, res) => {
 
     const mappings = await database.getEventMappings(req.user.userId);
     const defaultMappings = database.getDefaultEventMappings();
+    const availableEvents = database.getAllAvailableEvents();
+    const availableAlertTypes = database.getAvailableAlertTypes();
 
     res.json({
       mappings: mappings,
       defaultMappings: defaultMappings,
-      availableEvents: Object.keys(defaultMappings)
+      availableEvents: availableEvents,
+      availableAlertTypes: availableAlertTypes,
+      disableOption: 'none' // Indicates which value disables alerts
     });
   } catch (error) {
     console.error('Error getting event mappings:', error);
@@ -406,87 +498,8 @@ router.get('/event-mappings', requireAuth, async (req, res) => {
   }
 });
 
-/**
- * Update event-to-alert mappings for current user
- * PUT /api/alerts/event-mappings
- */
-router.put('/event-mappings', requireAuth, async (req, res) => {
-  try {
-    // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
-    if (!hasAlerts) {
-      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
-    }
 
-    console.log('🔍 Event mappings update request for user:', req.params.userId || req.user.userId);
-    console.log('🔍 Raw request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔍 Request body keys:', Object.keys(req.body));
 
-    // Handle both formats: { mappings: {...} } and direct mappings object
-    let mappings;
-    if (req.body.mappings) {
-      // New format: { mappings: { ... } }
-      mappings = req.body.mappings;
-      console.log('🔍 Using nested mappings format');
-    } else {
-      // Legacy format: direct mappings in body
-      mappings = req.body;
-      console.log('🔍 Using direct mappings format');
-    }
-
-    console.log('🔍 Processed mappings:', JSON.stringify(mappings, null, 2));
-
-    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) {
-      console.log('❌ Invalid mappings format');
-      return res.status(400).json({
-        error: 'Invalid mappings format',
-        received: mappings,
-        type: typeof mappings
-      });
-    }
-
-    // Validate that all event types are valid
-    const validEvents = Object.keys(database.getDefaultEventMappings());
-    for (const eventType of Object.keys(mappings)) {
-      if (!validEvents.includes(eventType)) {
-        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
-      }
-    }
-
-    // Validate that all alert types exist for this user (including defaults)
-    const userAlerts = await database.getUserAlerts(req.user.userId);
-    const defaultTemplates = database.getDefaultAlertTemplates();
-
-    // Combine user alerts and default templates to get all valid alert types
-    const validAlertTypes = [
-      ...defaultTemplates.map(template => template.type),
-      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
-    ];
-
-    console.log('🔍 Validating alert types:', Object.values(mappings));
-    console.log('🔍 Valid alert types available:', validAlertTypes);
-
-    for (const alertType of Object.values(mappings)) {
-      if (alertType && !validAlertTypes.includes(alertType)) {
-        console.log(`❌ Alert type "${alertType}" not found in valid types:`, validAlertTypes);
-        return res.status(400).json({
-          error: `No alert found with type: ${alertType}`,
-          availableTypes: validAlertTypes
-        });
-      }
-    }
-
-    await database.saveEventMappings(req.user.userId, mappings);
-
-    res.json({
-      message: 'Event mappings updated successfully',
-      mappings: mappings
-    });
-  } catch (error) {
-    console.error('Error updating event mappings:', error);
-    res.status(500).json({ error: 'Failed to update event mappings' });
-  }
-});
 
 /**
  * Reset event mappings to defaults
@@ -524,8 +537,9 @@ router.get('/debug/validation', requireAuth, async (req, res) => {
     const defaultMappings = database.getDefaultEventMappings();
     const userMappings = await database.getEventMappings(req.user.userId);
 
-    // Get all valid alert types
+    // Get all valid alert types (including "none" for disabling)
     const validAlertTypes = [
+      'none',  // Special value to disable alerts
       ...defaultTemplates.map(template => template.type),
       ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
     ];

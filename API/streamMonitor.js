@@ -396,11 +396,13 @@ class StreamMonitor extends EventEmitter {
         });
       }
 
-      // Subscribe to cheer/bits events (if user wants notifications)
-      let cheerSubscription = null;
+      // Subscribe to bits use events (if user wants notifications)
+      let bitsUseSubscription = null;
       if (shouldSubscribeToAlerts) {
-        console.log(`💎 Subscribing to cheer/bits events for ${user.username}`);
-        cheerSubscription = userListener.onChannelCheer(userId, (event) => {
+        console.log(`💎 Subscribing to bits use events for ${user.username}`);
+        // TODO: Update to onChannelBitsUse when Twurple library supports it
+        // For now, use onChannelCheer which will be converted by handleCheerEvent
+        bitsUseSubscription = userListener.onChannelCheer(userId, (event) => {
           this.handleCheerEvent(event, userId);
         });
       }
@@ -1912,11 +1914,11 @@ class StreamMonitor extends EventEmitter {
   /**
    * Handle cheer/bits events
    */
-  async handleCheerEvent(event, userId) {
+  async handleBitsUseEvent(event, userId) {
     try {
       if (!userId) {
         for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterId) {
+          if (sub.twitchUserId === event.broadcaster_user_id || sub.twitchUserId === event.broadcasterId) {
             userId = uid;
             break;
           }
@@ -1924,7 +1926,7 @@ class StreamMonitor extends EventEmitter {
       }
 
       if (!userId) {
-        console.log(`Cheer event for unknown user: ${event.broadcasterName}`);
+        console.log(`Bits use event for unknown user: ${event.broadcaster_user_name || event.broadcasterName}`);
         return;
       }
 
@@ -1944,34 +1946,56 @@ class StreamMonitor extends EventEmitter {
 
         shouldNotify = discordWebhookEnabled || enableChannelNotifications;
       } catch (error) {
-        console.warn(`⚠️ Could not load notification settings for cheer event (${user.username}):`, error.message);
+        console.warn(`⚠️ Could not load notification settings for bits use event (${user.username}):`, error.message);
       }
 
       if (!shouldNotify) {
-        console.log(`📢 Cheer notifications disabled for ${user.username} - skipping`);
+        console.log(`📢 Bits use notifications disabled for ${user.username} - skipping`);
         return;
       }
 
-      console.log(`💎 Bits: ${event.userName || 'Anonymous'} cheered ${event.bits} bits to ${user.username}`);
+      // Extract bits count and message from the new format
+      const bits = event.bits;
+      const username = event.user_name || event.userName || 'Anonymous';
+      const messageText = event.message?.text || event.message || '';
+      const eventType = event.type || 'cheer'; // 'cheer', 'power-up', 'combo', etc.
+
+      console.log(`💎 Bits Use: ${username} used ${bits} bits (${eventType}) in ${user.username}'s channel`);
 
       // Get alert configuration for this event type
-      const alert = await database.getAlertForEvent(userId, 'channel.cheer');
+      const alert = await database.getAlertForEvent(userId, 'channel.bits.use');
 
-      // Emit cheer event with alert data
-      this.emit('newCheer', {
+      // Emit bits use event with alert data
+      this.emit('newBitsUse', {
         userId,
         username: user.username,
-        cheerer: event.userName || 'Anonymous',
-        bits: event.bits,
-        message: event.message,
-        isAnonymous: event.isAnonymous,
+        user: username,
+        bits: bits,
+        message: messageText,
+        eventType: eventType, // cheer, power-up, combo, etc.
+        isAnonymous: event.is_anonymous || event.isAnonymous || false,
         timestamp: new Date().toISOString(),
         alert: alert
       });
 
     } catch (error) {
-      console.error('Error handling cheer event:', error);
+      console.error('Error handling bits use event:', error);
     }
+  }
+
+  // Legacy method for backward compatibility
+  async handleCheerEvent(event, userId) {
+    // Convert old cheer event format to new bits use format for compatibility
+    const bitsUseEvent = {
+      bits: event.bits,
+      user_name: event.userName,
+      broadcaster_user_id: event.broadcasterId,
+      broadcaster_user_name: event.broadcasterName,
+      message: { text: event.message },
+      type: 'cheer',
+      is_anonymous: event.isAnonymous
+    };
+    return this.handleBitsUseEvent(bitsUseEvent, userId);
   }
 
   // Removed: sendDiscordNotification method

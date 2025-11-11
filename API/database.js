@@ -1609,6 +1609,33 @@ class Database {
   // ==================== EVENT-TO-ALERT MAPPING ====================
 
   /**
+   * Get all available EventSub events (both enabled and disabled)
+   */
+  getAllAvailableEvents() {
+    return [
+      'channel.follow',
+      'channel.subscribe',
+      'channel.subscription.gift',
+      'channel.subscription.message',
+      'channel.bits.use'
+    ];
+  }
+
+  /**
+   * Get available alert types (including "none" for disabling)
+   */
+  getAvailableAlertTypes() {
+    return [
+      'none',        // Special value to disable alerts
+      'follow',
+      'subscription',
+      'giftsub',
+      'resub',
+      'bits'
+    ];
+  }
+
+  /**
    * Get default event-to-alert mappings for EventSub events
    */
   getDefaultEventMappings() {
@@ -1617,7 +1644,7 @@ class Database {
       'channel.subscribe': 'subscription',
       'channel.subscription.gift': 'giftsub',
       'channel.subscription.message': 'resub',
-      'channel.cheer': 'bits'
+      'channel.bits.use': 'bits'
     };
   }
 
@@ -1705,6 +1732,12 @@ class Database {
 
     if (!alertType) {
       console.log(`No alert mapping for event type: ${eventType}`);
+      return null;
+    }
+
+    // Check if alerts are disabled for this event
+    if (alertType === 'none') {
+      console.log(`Alerts disabled for event type: ${eventType}`);
       return null;
     }
 

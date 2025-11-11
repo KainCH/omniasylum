@@ -97,6 +97,18 @@ function App() {
   })
   const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
 
+  // Twitch bot connection state
+  const [twitchBotStatus, setTwitchBotStatus] = useState({
+    connected: false,
+    userId: '',
+    username: '',
+    eligible: false,
+    chatCommandsEnabled: false,
+    hasTokens: false,
+    reason: 'Not connected',
+    lastUpdated: null
+  })
+
   // Discord notification status tracking
   const [discordNotificationStatus, setDiscordNotificationStatus] = useState({
     status: 'not_configured', // not_configured, ready, pending, sent, error
@@ -272,6 +284,7 @@ function App() {
 
         // Check EventSub monitoring status
         checkEventSubStatus()
+        checkTwitchBotStatus()
 
         // Check Discord notification status
         checkDiscordNotificationStatus()
@@ -403,6 +416,21 @@ function App() {
 
       // Discord notification status is now handled by real-time Socket.io events
       // No need to override with static API calls
+    })
+
+    // Real-time Twitch bot status updates
+    newSocket.on('twitchBotStatusChanged', (data) => {
+      console.log('🤖 Twitch bot status changed:', data)
+      setTwitchBotStatus({
+        connected: data.connected || false,
+        userId: data.userId || '',
+        username: data.username || '',
+        eligible: data.eligible || false,
+        chatCommandsEnabled: data.chatCommandsEnabled || false,
+        hasTokens: data.hasTokens || false,
+        reason: data.reason || (data.connected ? 'Connected' : 'Not connected'),
+        lastUpdated: data.lastUpdated || new Date().toISOString()
+      })
     })
 
     // Handle Discord notification status updates
@@ -722,7 +750,7 @@ function App() {
   const checkEventSubStatus = async () => {
     try {
       const token = localStorage.getItem('authToken')
-      const response = await fetch('/api/stream/eventsub-status', {
+      const response = await fetch('/api/stream/monitor/status', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -732,13 +760,55 @@ function App() {
       if (response.ok) {
         const status = await response.json()
         setEventSubStatus({
-          connected: status.connectionStatus?.connected || false,
-          monitoring: status.connectionStatus?.connected || false,
-          lastConnected: status.connectionStatus?.lastConnected || null
+          connected: status.connected || false,
+          monitoring: status.currentUserMonitored || false,
+          lastConnected: status.lastConnected || null
         })
+
+        // Update bot status if included
+        if (status.twitchBot) {
+          setTwitchBotStatus({
+            connected: status.twitchBot.connected || false,
+            userId: status.twitchBot.userId || '',
+            username: username,
+            eligible: status.twitchBot.eligible || false,
+            chatCommandsEnabled: status.twitchBot.chatCommandsEnabled || false,
+            hasTokens: status.twitchBot.hasTokens || false,
+            reason: status.twitchBot.reason || 'Not connected',
+            lastUpdated: status.twitchBot.lastConnected || null
+          })
+        }
       }
     } catch (error) {
       console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
+  const checkTwitchBotStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/bot/status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const status = await response.json()
+        setTwitchBotStatus({
+          connected: status.bot?.connected || false,
+          userId: status.userId || '',
+          username: status.username || username,
+          eligible: status.bot?.eligible || false,
+          chatCommandsEnabled: status.bot?.chatCommandsEnabled || false,
+          hasTokens: status.bot?.hasTokens || false,
+          reason: status.bot?.reason || 'Not connected',
+          lastUpdated: status.bot?.lastConnected || status.timestamp
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error checking Twitch bot status:', error)
     }
   }
 
@@ -1242,6 +1312,135 @@ function App() {
               <p style={{ margin: 0, fontSize: '14px' }}>
                 ⚠️ <strong>Connection issues detected</strong><br/>
                 <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Twitch Bot Status */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.3)',
+          padding: '20px',
+          borderRadius: '12px',
+          marginTop: '20px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🤖 Twitch Chat Bot</h3>
+
+          {/* Bot Connection Status */}
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  backgroundColor: twitchBotStatus.connected ? '#28a745' : '#dc3545'
+                }}></div>
+                <p style={{ margin: 0, color: '#ccc' }}>
+                  Bot Status: <strong style={{
+                    color: twitchBotStatus.connected ? '#28a745' : '#dc3545'
+                  }}>
+                    {twitchBotStatus.connected ? '🟢 Connected' : '🔴 Disconnected'}
+                  </strong>
+                </p>
+              </div>
+
+              {eventSubStatus.monitoring && (
+                <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                  {twitchBotStatus.connected ? 'Auto-started with monitoring' : 'Not eligible for auto-start'}
+                </div>
+              )}
+            </div>
+
+            {/* Bot Eligibility Status */}
+            <div style={{ marginBottom: '10px' }}>
+              <p style={{ margin: 0, color: '#ccc', fontSize: '14px' }}>
+                Eligibility: <strong style={{
+                  color: twitchBotStatus.eligible ? '#28a745' : '#ffc107'
+                }}>
+                  {twitchBotStatus.eligible ? '✅ Ready' : '⚠️ ' + twitchBotStatus.reason}
+                </strong>
+              </p>
+
+              {!twitchBotStatus.eligible && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#6c757d',
+                  marginTop: '5px',
+                  display: 'flex',
+                  gap: '15px'
+                }}>
+                  <span>Chat Commands: {twitchBotStatus.chatCommandsEnabled ? '✅' : '❌'}</span>
+                  <span>Auth Tokens: {twitchBotStatus.hasTokens ? '✅' : '❌'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bot Status Messages */}
+          {!twitchBotStatus.eligible ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⚠️ <strong>Bot not eligible for auto-start</strong><br/>
+                <small>{twitchBotStatus.reason}</small>
+                {!twitchBotStatus.chatCommandsEnabled && (
+                  <><br/><small>Enable "Chat Commands" feature in settings to use the bot</small></>
+                )}
+                {!twitchBotStatus.hasTokens && (
+                  <><br/><small>Re-authenticate with Twitch to refresh your tokens</small></>
+                )}
+              </p>
+            </div>
+          ) : twitchBotStatus.connected ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🤖 <strong>Bot active in your chat!</strong><br/>
+                <small>Listening for commands • Connected as @{twitchBotStatus.username || username} • Auto-manages with monitoring</small>
+              </p>
+            </div>
+          ) : eventSubStatus.monitoring ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🔴 <strong>Bot failed to connect</strong><br/>
+                <small>Monitoring started but bot connection failed • Check your Twitch authentication</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                📱 <strong>Bot ready for monitoring</strong><br/>
+                <small>Will auto-connect when you start stream monitoring • Eligible for chat commands</small>
               </p>
             </div>
           )}

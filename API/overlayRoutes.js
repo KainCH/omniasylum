@@ -1074,6 +1074,39 @@ router.get('/:userId', async (req, res) => {
             }
         });
 
+        // Listen for bits use events (new channel.bits.use EventSub)
+        socket.on('newBitsUse', (data) => {
+            if (data.userId === userId) {
+                console.log('💎 Bits used:', data.user, 'used', data.bits, 'bits via', data.eventType);
+
+                // Play notification audio
+                notificationAudio.playNotification('bits', {
+                    cheerer: data.user,
+                    bits: data.bits,
+                    isAnonymous: data.isAnonymous,
+                    eventType: data.eventType
+                });
+
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'bits',
+                        username: data.user,
+                        data: {
+                            bits: data.bits,
+                            message: data.message,
+                            isAnonymous: data.isAnonymous,
+                            eventType: data.eventType
+                        },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple bits animation
+                    triggerBitsAnimation(data.bits, data.eventType);
+                }
+            }
+        });
+
         // Listen for milestone achievements
         socket.on('milestoneReached', (data) => {
             if (data.userId === userId) {
