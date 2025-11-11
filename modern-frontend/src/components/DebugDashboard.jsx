@@ -13,7 +13,6 @@ function DebugDashboard({ user }) {
   const [debugData, setDebugData] = useState(null)
   const [systemHealth, setSystemHealth] = useState(null)
   const [testResults, setTestResults] = useState({})
-  const [loggingInfo, setLoggingInfo] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [refreshInterval, setRefreshInterval] = useState(null)
 
@@ -24,7 +23,6 @@ function DebugDashboard({ user }) {
     if (user) {
       loadDebugData()
       loadSystemHealth()
-      loadLoggingInfo()
     }
   }, [user])
 
@@ -33,7 +31,6 @@ function DebugDashboard({ user }) {
       const interval = setInterval(() => {
         loadDebugData()
         loadSystemHealth()
-        loadLoggingInfo()
       }, 10000) // Refresh every 10 seconds
       setRefreshInterval(interval)
     } else {
@@ -71,18 +68,6 @@ function DebugDashboard({ user }) {
       setSystemHealth(response)
     } catch (error) {
       console.error('Failed to load system health:', error)
-    }
-  }
-
-  const loadLoggingInfo = async () => {
-    try {
-      const [info, insights] = await Promise.all([
-        debugAPI.getLoggingInfo(),
-        debugAPI.getLoggingInsights()
-      ])
-      setLoggingInfo({ info, insights })
-    } catch (error) {
-      console.error('Failed to load logging info:', error)
     }
   }
 
@@ -300,58 +285,6 @@ function DebugDashboard({ user }) {
               </ul>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Logging Information */}
-      {loggingInfo && (
-        <div className="debug-section">
-          <div className="section-header">
-            <h4>📊 Application Logging</h4>
-            <StatusBadge status="success">Azure Log Analytics</StatusBadge>
-          </div>
-
-          <div className="logging-info">
-            <div className="info-card">
-              <h5>📍 Log Location</h5>
-              <p>{loggingInfo.info.message}</p>
-              <div className="log-details">
-                <strong>Service:</strong> {loggingInfo.insights.service}<br/>
-                <strong>Format:</strong> {loggingInfo.insights.logFormat}
-              </div>
-            </div>
-
-            <div className="info-card">
-              <h5>🔍 KQL Query Example</h5>
-              <pre className="kusto-query">
-                {loggingInfo.info.instructions.exampleQuery}
-              </pre>
-              <ActionButton
-                onClick={() => window.open(loggingInfo.info.azurePortalUrl, '_blank')}
-                size="small"
-              >
-                🚀 Open Azure Portal
-              </ActionButton>
-            </div>
-
-            <div className="info-card">
-              <h5>📝 Log Categories</h5>
-              <ul className="category-list">
-                {loggingInfo.insights.categories.map((category, index) => (
-                  <li key={index}>{category}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="info-card">
-              <h5>💡 Query Tips</h5>
-              <ul className="tips-list">
-                {loggingInfo.insights.queryTips.map((tip, index) => (
-                  <li key={index}><code>{tip}</code></li>
-                ))}
-              </ul>
-            </div>
-          </div>
         </div>
       )}
 

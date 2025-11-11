@@ -427,16 +427,6 @@ export const debugAPI = {
   // Check subscription costs
   checkSubscriptionCosts: async () => {
     return await apiRequest('/api/debug/subscription-costs');
-  },
-
-  // Get logging information
-  getLoggingInfo: async () => {
-    return await apiRequest('/api/logs/info');
-  },
-
-  // Get logging insights
-  getLoggingInsights: async () => {
-    return await apiRequest('/api/logs/insights');
   }
 };
 
