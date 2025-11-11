@@ -1617,8 +1617,7 @@ class Database {
       'channel.subscribe': 'subscription',
       'channel.subscription.gift': 'giftsub',
       'channel.subscription.message': 'resub',
-      'channel.cheer': 'bits',
-      'channel.bits.use': 'bits'  // NEW bits event type
+      'channel.cheer': 'bits'
     };
   }
 
