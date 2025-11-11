@@ -183,6 +183,33 @@ class StreamMonitor extends EventEmitter {
   }
 
   /**
+   * Check if a specific user is connected to EventSub monitoring
+   * @param {string} userId - The user ID to check
+   * @returns {boolean} - True if user has active EventSub connection
+   */
+  isUserConnected(userId) {
+    const userData = this.connectedUsers.get(userId);
+    if (!userData) {
+      return false;
+    }
+
+    // Check if at least one subscription is active
+    const hasActiveSubscriptions = !!(
+      userData.onlineSubscription ||
+      userData.offlineSubscription ||
+      userData.redemptionSubscription ||
+      userData.followSubscription ||
+      userData.raidSubscription ||
+      userData.subscribeSubscription ||
+      userData.subGiftSubscription ||
+      userData.subMessageSubscription ||
+      userData.cheerSubscription
+    );
+
+    return hasActiveSubscriptions;
+  }
+
+  /**
    * Subscribe to stream events for a user
    * Creates a user-specific EventSub WebSocket listener (required for user auth)
    */

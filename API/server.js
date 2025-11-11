@@ -180,6 +180,18 @@ app.use('/api/rewards', channelPointRoutes);
 const alertRoutes = require('./alertRoutes');
 app.use('/api/alerts', alertRoutes);
 
+// Template management routes (requires authentication)
+const templateRoutes = require('./templateRoutes');
+app.use('/api/templates', templateRoutes);
+
+// Custom counter management routes (requires authentication)
+const customCounterRoutes = require('./customCounterRoutes');
+app.use('/api/custom-counters', customCounterRoutes);
+
+// Chat command management routes (requires authentication)
+const chatCommandRoutes = require('./chatCommandRoutes');
+app.use('/api/chat-commands', chatCommandRoutes);
+
 // Debug routes (requires authentication)
 app.use('/api/debug', debugRoutes);
 
@@ -238,28 +250,52 @@ io.on('connection', (socket) => {
     // Send current stream status and features
     database.getUser(userId).then(user => {
       if (user) {
-        const streamStatus = user.streamStatus || 'offline';
+        const dbStreamStatus = user.streamStatus || 'offline';
         const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
 
+        // Cross-check stream status with EventSub connection
+        const streamMonitor = app.get('streamMonitor');
+        const eventSubConnected = streamMonitor ? streamMonitor.isUserConnected(userId) : false;
+
+        // Only trust "live" status if EventSub is actively monitoring
+        let actualStreamStatus = dbStreamStatus;
+        if (dbStreamStatus === 'live' && !eventSubConnected) {
+          actualStreamStatus = 'offline';
+          console.log(`⚠️ Stream status in DB is 'live' but EventSub not connected for ${user.username} - reporting as offline`);
+
+          // Update DB to reflect actual status
+          database.updateStreamStatus(userId, 'offline').catch(error => {
+            console.error('❌ Failed to update stream status to offline:', error);
+          });
+        }
+
         socket.emit('streamStatusUpdate', {
-          streamStatus: streamStatus,
+          streamStatus: actualStreamStatus,
           isActive: user.isActive || false
         });
 
         socket.emit('userFeaturesUpdate', features);
 
+        // Send EventSub connection status
+        socket.emit('eventSubStatusChanged', {
+          connected: eventSubConnected,
+          monitoring: eventSubConnected,
+          lastConnected: eventSubConnected ? new Date().toISOString() : null,
+          subscriptionsEnabled: true
+        });
+
         // If user is in streaming mode (prep or live), send active stream status
-        if (streamStatus === 'prepping') {
+        if (actualStreamStatus === 'prepping') {
           socket.emit('prepModeActive', {
             userId: userId,
             username: user.username,
             displayName: user.displayName,
             streamStatus: 'prepping',
-            eventListenersActive: true
+            eventListenersActive: eventSubConnected
           });
 
-          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring active`);
-        } else if (streamStatus === 'live') {
+          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring: ${eventSubConnected}`);
+        } else if (actualStreamStatus === 'live' && eventSubConnected) {
           socket.emit('streamModeActive', {
             userId: userId,
             username: user.username,

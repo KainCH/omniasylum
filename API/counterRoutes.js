@@ -20,15 +20,18 @@ async function checkMilestones(userId, counterType, previousValue, newValue, req
     let notificationSettings = {
       milestoneThresholds: {
         deaths: [10, 25, 50, 100, 250, 500, 1000],
-        swears: [25, 50, 100, 200, 500, 1000]
+        swears: [25, 50, 100, 200, 500, 1000],
+        screams: [10, 25, 50, 100, 200, 500, 1000]
       },
       discordNotifications: {
         death_milestone: true,
-        swear_milestone: true
+        swear_milestone: true,
+        scream_milestone: true
       },
       channelNotifications: {
         death_milestone: true,
-        swear_milestone: true
+        swear_milestone: true,
+        scream_milestone: true
       }
     };
 
@@ -42,7 +45,9 @@ async function checkMilestones(userId, counterType, previousValue, newValue, req
     }
 
     // Determine event type
-    const eventType = counterType === 'deaths' ? 'death_milestone' : 'swear_milestone';
+    const eventType = counterType === 'deaths' ? 'death_milestone' :
+                     counterType === 'swears' ? 'swear_milestone' :
+                     counterType === 'screams' ? 'scream_milestone' : null;
 
     // Check if any notification type is enabled
     const discordEnabled = user.discordWebhookUrl && notificationSettings.discordNotifications && notificationSettings.discordNotifications[eventType];
@@ -56,7 +61,11 @@ async function checkMilestones(userId, counterType, previousValue, newValue, req
     // Get the relevant thresholds
     const thresholds = counterType === 'deaths'
       ? notificationSettings.milestoneThresholds.deaths
-      : notificationSettings.milestoneThresholds.swears;
+      : counterType === 'swears'
+      ? notificationSettings.milestoneThresholds.swears
+      : counterType === 'screams'
+      ? notificationSettings.milestoneThresholds.screams
+      : null;
 
     if (!thresholds || !Array.isArray(thresholds)) {
       return;
@@ -106,13 +115,26 @@ async function checkMilestones(userId, counterType, previousValue, newValue, req
       if (channelEnabled) {
         const twitchService = req.app.get('twitchService');
         if (twitchService) {
-          const emoji = counterType === 'deaths' ? '💀' : '🤬';
-          const counterName = counterType === 'deaths' ? 'deaths' : 'swears';
+        const emoji = counterType === 'deaths' ? '💀' : counterType === 'swears' ? '🤬' : '😱';
+        const counterName = counterType === 'deaths' ? 'deaths' : counterType === 'swears' ? 'swears' : 'screams';
           const chatMessage = `${emoji} MILESTONE REACHED! ${milestone} ${counterName}! Current count: ${newValue} ${emoji}`;
 
           await twitchService.sendMessage(userId, chatMessage);
           console.log(`💬 Sent milestone message to ${user.username}'s chat: ${chatMessage}`);
         }
+      }
+
+      // Emit milestone reached event to overlay for audio notifications
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${userId}`).emit('milestoneReached', {
+          userId,
+          counterType,
+          milestone,
+          newValue,
+          previousMilestone,
+          timestamp: new Date().toISOString()
+        });
       }
     }
   } catch (error) {
@@ -213,6 +235,47 @@ router.post('/swears/decrement', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error decrementing swears:', error);
     res.status(500).json({ error: 'Failed to decrement swears' });
+  }
+});
+
+/**
+ * Increment scream counter
+ * POST /api/counters/screams/increment
+ */
+router.post('/screams/increment', requireAuth, async (req, res) => {
+  try {
+    // Get current count before incrementing
+    const currentData = await database.getCounters(req.user.userId);
+    const previousScreams = currentData.screams || 0;
+
+    const data = await database.incrementScreams(req.user.userId);
+    const newScreams = data.screams;
+
+    // Check for milestones and send notifications
+    await checkMilestones(req.user.userId, 'screams', previousScreams, newScreams, req);
+
+    // Emit WebSocket event to user's room
+    req.app.get('io').to(`user:${req.user.userId}`).emit('counterUpdate', data);
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error incrementing screams:', error);
+    res.status(500).json({ error: 'Failed to increment screams' });
+  }
+});
+
+/**
+ * Decrement scream counter
+ * POST /api/counters/screams/decrement
+ */
+router.post('/screams/decrement', requireAuth, async (req, res) => {
+  try {
+    const data = await database.decrementScreams(req.user.userId);
+    req.app.get('io').to(`user:${req.user.userId}`).emit('counterUpdate', data);
+    res.json(data);
+  } catch (error) {
+    console.error('Error decrementing screams:', error);
+    res.status(500).json({ error: 'Failed to decrement screams' });
   }
 });
 

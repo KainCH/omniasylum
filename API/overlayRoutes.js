@@ -330,6 +330,15 @@ router.get('/:userId', async (req, res) => {
             </div>
         </div>` : ''}
 
+        ${overlaySettings.counters.screams ? `
+        <div class="counter-item" id="screams-counter">
+            <div class="counter-icon">😱</div>
+            <div class="counter-info">
+                <div class="counter-label">Screams</div>
+                <div class="counter-value" id="screams-value">${counters.screams || 0}</div>
+            </div>
+        </div>` : ''}
+
         ${overlaySettings.counters.bits ? `
         <div class="counter-item" id="bits-counter">
             <div class="counter-icon">💎</div>
@@ -358,6 +367,109 @@ router.get('/:userId', async (req, res) => {
         const userId = '${req.params.userId}';
         const overlaySettings = ${JSON.stringify(overlaySettings)};
         const socket = io();
+
+        // Notification Audio Manager for Twitch Events
+        class NotificationAudioManager {
+            constructor() {
+                this.audioCache = {};
+                this.desktopAudioContext = null;
+                this.volume = 0.7;
+                this.notificationSounds = {
+                    follow: 'heartMonitor.wav',
+                    subscription: 'hypeTrain.wav',
+                    resub: 'typewriter.wav',
+                    giftsub: 'pillRattle.mp3',
+                    bits: 'electroshock.wav',
+                    milestone: 'alarm.wav'
+                };
+                this.init();
+            }
+
+            async init() {
+                // Try to setup Web Audio Context for desktop audio
+                try {
+                    this.desktopAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    console.log('🔊 Desktop Audio Context initialized');
+                } catch (error) {
+                    console.warn('⚠️ Desktop Audio Context not available:', error);
+                }
+
+                // Preload notification sounds
+                this.preloadNotificationSounds();
+            }
+
+            preloadNotificationSounds() {
+                Object.entries(this.notificationSounds).forEach(([eventType, soundFile]) => {
+                    const audio = new Audio('/sounds/' + soundFile);
+                    audio.preload = 'auto';
+                    audio.volume = this.volume;
+                    this.audioCache[eventType] = audio;
+
+                    audio.addEventListener('canplaythrough', () => {
+                        console.log('🔊 Notification sound loaded:', eventType, soundFile);
+                    }, { once: true });
+
+                    audio.addEventListener('error', (e) => {
+                        console.warn('⚠️ Failed to load notification sound:', eventType, soundFile, e);
+                    });
+                });
+            }
+
+            async playNotification(eventType, data = {}) {
+                if (!this.notificationSounds[eventType]) {
+                    console.warn('⚠️ No sound configured for event type:', eventType);
+                    return;
+                }
+
+                try {
+                    // Play stream audio (for OBS capture)
+                    await this.playStreamAudio(eventType, data);
+
+                    // Try to play desktop audio (may fail due to autoplay policy)
+                    this.playDesktopAudio(eventType, data);
+                } catch (error) {
+                    console.warn('⚠️ Notification audio failed:', error);
+                }
+            }
+
+            async playStreamAudio(eventType, data) {
+                const audio = this.audioCache[eventType];
+                if (audio) {
+                    // Clone audio to allow overlapping sounds
+                    const audioClone = audio.cloneNode();
+                    audioClone.volume = this.volume;
+
+                    const playPromise = audioClone.play();
+                    if (playPromise) {
+                        playPromise.then(() => {
+                            console.log('🔊 Stream notification audio played:', eventType);
+                        }).catch(error => {
+                            console.warn('⚠️ Stream audio autoplay prevented:', eventType, error);
+                        });
+                    }
+                }
+            }
+
+            playDesktopAudio(eventType, data) {
+                // Future: Web Audio API implementation for desktop routing
+                // Currently falls back to stream audio only
+                if (this.desktopAudioContext && this.desktopAudioContext.state === 'suspended') {
+                    this.desktopAudioContext.resume().then(() => {
+                        console.log('🔊 Desktop Audio Context resumed');
+                    });
+                }
+            }
+
+            setVolume(volume) {
+                this.volume = Math.max(0, Math.min(1, volume));
+                Object.values(this.audioCache).forEach(audio => {
+                    audio.volume = this.volume;
+                });
+            }
+        }
+
+        // Initialize notification audio manager
+        const notificationAudio = new NotificationAudioManager();
 
         // Helper function to get size-based styles
         function getSizeStyles(size) {
@@ -762,12 +874,15 @@ router.get('/:userId', async (req, res) => {
         socket.on('counterUpdate', (data) => {
             console.log('📊 Overlay received counterUpdate:', data);
 
-            // Backend sends counters directly as {deaths: X, swears: Y, bits: Z}
+            // Backend sends counters directly as {deaths: X, swears: Y, screams: Z, bits: W}
             if (overlaySettings.counters.deaths) {
                 updateCounter('deaths', data.deaths || 0);
             }
             if (overlaySettings.counters.swears) {
                 updateCounter('swears', data.swears || 0);
+            }
+            if (overlaySettings.counters.screams) {
+                updateCounter('screams', data.screams || 0);
             }
             if (overlaySettings.counters.bits) {
                 updateCounter('bits', data.bits || 0);
@@ -793,10 +908,10 @@ router.get('/:userId', async (req, res) => {
             }
         });
 
-        // Listen for subscriber events
+        // Listen for subscriber events (LEGACY - keeping for compatibility)
         socket.on('newSubscriber', (data) => {
             if (data.userId === userId) {
-                celebrateSubscriber(data.username, 'sub');
+                celebrateSubscriber(data.subscriber || data.username, 'sub');
             }
         });
 
@@ -815,7 +930,25 @@ router.get('/:userId', async (req, res) => {
         // Listen for follow events
         socket.on('newFollower', (data) => {
             if (data.userId === userId) {
-                showCustomAlert('follow', data);
+                console.log('👥 New follower received:', data.follower);
+
+                // Play notification audio
+                notificationAudio.playNotification('follow', {
+                    follower: data.follower
+                });
+
+                if (data.alertConfig) {
+                    displayCustomAlert({
+                        type: 'follow',
+                        username: data.follower,
+                        data: { follower: data.follower },
+                        alertConfig: data.alertConfig,
+                        timestamp: data.timestamp
+                    });
+                } else {
+                    // Fallback to simple alert
+                    showCustomAlert('follow', data);
+                }
             }
         });
 
@@ -836,6 +969,15 @@ router.get('/:userId', async (req, res) => {
         // Listen for new subscription events
         socket.on('newSubscription', (data) => {
             if (data.userId === userId) {
+                console.log('⭐ New subscription received:', data.subscriber, 'Tier', data.tier);
+
+                // Play notification audio
+                notificationAudio.playNotification('subscription', {
+                    subscriber: data.subscriber,
+                    tier: data.tier,
+                    isGift: data.isGift
+                });
+
                 if (data.alertConfig) {
                     displayCustomAlert({
                         type: 'subscription',
@@ -854,6 +996,15 @@ router.get('/:userId', async (req, res) => {
         // Listen for gift sub events
         socket.on('newGiftSub', (data) => {
             if (data.userId === userId) {
+                console.log('🎁 Gift sub received:', data.gifter, 'gifted', data.amount, 'subs');
+
+                // Play notification audio
+                notificationAudio.playNotification('giftsub', {
+                    gifter: data.gifter,
+                    amount: data.amount,
+                    tier: data.tier
+                });
+
                 if (data.alertConfig) {
                     displayCustomAlert({
                         type: 'giftsub',
@@ -872,6 +1023,15 @@ router.get('/:userId', async (req, res) => {
         // Listen for resub events
         socket.on('newResub', (data) => {
             if (data.userId === userId) {
+                console.log('🔄 Resub received:', data.subscriber, data.months, 'months');
+
+                // Play notification audio
+                notificationAudio.playNotification('resub', {
+                    subscriber: data.subscriber,
+                    months: data.months,
+                    tier: data.tier
+                });
+
                 if (data.alertConfig) {
                     displayCustomAlert({
                         type: 'resub',
@@ -890,6 +1050,15 @@ router.get('/:userId', async (req, res) => {
         // Listen for cheer/bits events
         socket.on('newCheer', (data) => {
             if (data.userId === userId) {
+                console.log('💎 Bits received:', data.cheerer, 'cheered', data.bits, 'bits');
+
+                // Play notification audio
+                notificationAudio.playNotification('bits', {
+                    cheerer: data.cheerer,
+                    bits: data.bits,
+                    isAnonymous: data.isAnonymous
+                });
+
                 if (data.alertConfig) {
                     displayCustomAlert({
                         type: 'bits',
@@ -901,6 +1070,36 @@ router.get('/:userId', async (req, res) => {
                 } else {
                     // Fallback to simple bits animation
                     triggerBitsAnimation(data.bits);
+                }
+            }
+        });
+
+        // Listen for milestone achievements
+        socket.on('milestoneReached', (data) => {
+            if (data.userId === userId) {
+                console.log('🎯 Milestone reached:', data.counterType, data.milestone);
+
+                // Play milestone notification audio
+                notificationAudio.playNotification('milestone', {
+                    counterType: data.counterType,
+                    milestone: data.milestone,
+                    newValue: data.newValue
+                });
+
+                // Show milestone alert
+                const alert = document.getElementById('alert-popup');
+                if (alert) {
+                    const emoji = data.counterType === 'deaths' ? '💀' : '🤬';
+                    const counterName = data.counterType === 'deaths' ? 'Deaths' : 'Swears';
+                    alert.innerHTML = emoji + ' MILESTONE! ' + data.milestone + ' ' + counterName + ' Reached! ' + emoji;
+                    alert.classList.add('show');
+
+                    setTimeout(() => {
+                        alert.classList.add('hide');
+                        setTimeout(() => {
+                            alert.classList.remove('show', 'hide');
+                        }, 500);
+                    }, 4000);
                 }
             }
         });

@@ -901,4 +901,225 @@ router.post('/test-stream-status/:userId/:status', async (req, res) => {
   }
 });
 
+/**
+ * Test notification system (no auth required for debugging)
+ * POST /api/debug/test-notification/:userId/:eventType
+ */
+router.post('/test-notification/:userId/:eventType', async (req, res) => {
+  try {
+    const { userId, eventType } = req.params;
+    const io = req.app.get('io');
+
+    if (!io) {
+      return res.status(500).json({ error: 'WebSocket not available' });
+    }
+
+    console.log(`🧪 DEBUG: Testing ${eventType} notification for user ${userId}`);
+
+    // Get user info for more realistic test data
+    let username = 'TestUser';
+    try {
+      const user = await database.getUser(userId);
+      if (user) {
+        username = user.username || user.displayName || 'TestUser';
+      }
+    } catch (error) {
+      console.warn('Could not get user info, using default test data');
+    }
+
+    const testData = {
+      follow: {
+        userId: userId,
+        username: username,
+        follower: 'DebugFollower',
+        timestamp: new Date().toISOString()
+      },
+      subscription: {
+        userId: userId,
+        username: username,
+        subscriber: 'DebugSubscriber',
+        tier: 1,
+        isGift: false,
+        timestamp: new Date().toISOString()
+      },
+      resub: {
+        userId: userId,
+        username: username,
+        subscriber: 'DebugResubscriber',
+        tier: 1,
+        months: 12,
+        streakMonths: 6,
+        message: 'Debug resub message!',
+        timestamp: new Date().toISOString()
+      },
+      giftsub: {
+        userId: userId,
+        username: username,
+        gifter: 'DebugGifter',
+        amount: 5,
+        tier: 1,
+        timestamp: new Date().toISOString()
+      },
+      bits: {
+        userId: userId,
+        username: username,
+        cheerer: 'DebugCheerer',
+        bits: 500,
+        message: 'Debug cheer! cheer500',
+        isAnonymous: false,
+        timestamp: new Date().toISOString()
+      },
+      milestone: {
+        userId: userId,
+        counterType: 'deaths',
+        milestone: 100,
+        newValue: 100,
+        previousMilestone: 50,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    const data = testData[eventType];
+    if (!data) {
+      return res.status(400).json({
+        error: 'Invalid event type',
+        validTypes: Object.keys(testData)
+      });
+    }
+
+    // Map event type to WebSocket event name
+    const eventName = eventType === 'subscription' ? 'newSubscription' :
+                     eventType === 'resub' ? 'newResub' :
+                     eventType === 'giftsub' ? 'newGiftSub' :
+                     eventType === 'bits' ? 'newCheer' :
+                     eventType === 'milestone' ? 'milestoneReached' :
+                     `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
+
+    // Check room membership
+    const roomName = `user:${userId}`;
+    const room = io.sockets.adapter.rooms.get(roomName);
+    const clientCount = room ? room.size : 0;
+
+    console.log(`🧪 DEBUG: Emitting ${eventName} to room ${roomName} (${clientCount} clients)`);
+    console.log(`🧪 DEBUG: Event data:`, data);
+
+    // Emit the test event
+    io.to(roomName).emit(eventName, data);
+
+    res.json({
+      success: true,
+      message: `Debug ${eventType} notification sent`,
+      eventName: eventName,
+      roomClients: clientCount,
+      data: data
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Test notification failed:', error);
+    res.status(500).json({ error: 'Test notification failed', details: error.message });
+  }
+});
+
+/**
+ * Get current user info for debugging (requires auth)
+ * GET /api/debug/user-info
+ */
+router.get('/user-info', requireAuth, async (req, res) => {
+  try {
+    const user = await database.getUser(req.user.userId);
+
+    res.json({
+      success: true,
+      userInfo: {
+        userId: req.user.userId,
+        username: req.user.username,
+        displayName: req.user.displayName,
+        role: req.user.role,
+        dbUser: {
+          twitchUserId: user?.twitchUserId,
+          username: user?.username,
+          displayName: user?.displayName,
+          isActive: user?.isActive,
+          streamStatus: user?.streamStatus,
+          features: user?.features ? JSON.parse(user.features) : null
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to get user info:', error);
+    res.status(500).json({ error: 'Failed to get user info', details: error.message });
+  }
+});
+
+/**
+ * Serve debug notifications HTML page
+ * GET /api/debug/notifications
+ */
+router.get('/notifications', (req, res) => {
+  try {
+    res.sendFile('debug-notifications.html', { root: './frontend' });
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to serve debug page:', error);
+    res.status(500).json({ error: 'Failed to load debug page' });
+  }
+});
+
+/**
+ * Test all notifications at once
+ * POST /api/debug/test-all-notifications/:userId
+ */
+router.post('/test-all-notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const io = req.app.get('io');
+
+    if (!io) {
+      return res.status(500).json({ error: 'WebSocket not available' });
+    }
+
+    console.log(`🧪 DEBUG: Testing ALL notifications for user ${userId}`);
+
+    const eventTypes = ['follow', 'subscription', 'resub', 'giftsub', 'bits', 'milestone'];
+    const results = [];
+
+    // Delay between notifications to prevent spam
+    for (let i = 0; i < eventTypes.length; i++) {
+      const eventType = eventTypes[i];
+
+      // Wait 2 seconds between each notification
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      try {
+        // Trigger the individual notification
+        const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/debug/test-notification/${userId}/${eventType}`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          results.push({ eventType, success: true, result });
+          console.log(`✅ DEBUG: ${eventType} notification sent`);
+        } else {
+          results.push({ eventType, success: false, error: 'HTTP error' });
+        }
+      } catch (error) {
+        results.push({ eventType, success: false, error: error.message });
+        console.error(`❌ DEBUG: ${eventType} notification failed:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `All debug notifications sent to user ${userId}`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Test all notifications failed:', error);
+    res.status(500).json({ error: 'Test all notifications failed', details: error.message });
+  }
+});
+
 module.exports = router;

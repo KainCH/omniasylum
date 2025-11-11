@@ -153,18 +153,73 @@ router.get('/users/:userId', requireAuth, requireRole('manager'), async (req, re
  */
 router.put('/users/:userId/features', requireAuth, requirePermission('manage_user_features'), async (req, res) => {
   try {
-    const { features } = req.body;
-
     console.log('🔍 Feature update request for user:', req.params.userId);
-    console.log('🔍 Received features:', JSON.stringify(features, null, 2));
+    console.log('🔍 Raw request body:', JSON.stringify(req.body, null, 2));
+    console.log('🔍 Request body keys:', Object.keys(req.body));
+
+    // Handle both formats: { features: {...} } and direct features object
+    let features;
+    if (req.body.features) {
+      // New format: { features: { ... } }
+      features = req.body.features;
+      console.log('🔍 Using nested features format');
+    } else {
+      // Legacy format: direct features in body
+      features = req.body;
+      console.log('🔍 Using direct features format');
+    }
+
+    console.log('🔍 Processed features:', JSON.stringify(features, null, 2));
     console.log('🔍 Features type:', typeof features);
     console.log('🔍 Features is object:', typeof features === 'object');
     console.log('🔍 Features is truthy:', !!features);
+    console.log('🔍 Features is array:', Array.isArray(features));
 
-    if (!features || typeof features !== 'object') {
+    // Validate features object
+    if (!features || typeof features !== 'object' || Array.isArray(features)) {
       console.log('❌ Feature validation failed - invalid object');
-      return res.status(400).json({ error: 'Invalid features object' });
+      console.log('❌ Full request details:', {
+        userId: req.params.userId,
+        bodyKeys: Object.keys(req.body),
+        bodyType: typeof req.body,
+        featuresType: typeof features,
+        isArray: Array.isArray(features)
+      });
+      return res.status(400).json({
+        error: 'Invalid features object',
+        details: {
+          received: features,
+          expected: 'object',
+          type: typeof features
+        }
+      });
     }
+
+    // Additional validation: ensure it looks like a features object
+    const validFeatureKeys = [
+      'chatCommands', 'channelPoints', 'autoClip', 'customCommands', 'analytics',
+      'webhooks', 'bitsIntegration', 'streamOverlay', 'alertAnimations',
+      'discordNotifications', 'discordWebhook', 'templateStyle', 'streamAlerts'
+    ];
+
+    const receivedKeys = Object.keys(features);
+    const hasValidKeys = receivedKeys.some(key => validFeatureKeys.includes(key));
+
+    if (!hasValidKeys) {
+      console.log('❌ No valid feature keys found in request');
+      console.log('❌ Received keys:', receivedKeys);
+      console.log('❌ Valid keys:', validFeatureKeys);
+      return res.status(400).json({
+        error: 'Invalid features object - no recognized feature keys',
+        details: {
+          receivedKeys,
+          validKeys: validFeatureKeys
+        }
+      });
+    }
+
+    console.log('✅ Features validation passed');
+    console.log('✅ Valid feature keys found:', receivedKeys.filter(key => validFeatureKeys.includes(key)));
 
     // Check if streamOverlay feature is being enabled
     const user = await database.getUser(req.params.userId);
@@ -195,7 +250,7 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
         overlaySettings = {
           enabled: true,
           position: 'top-right',
-          counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+          counters: { deaths: true, swears: true, screams: true, bits: false, channelPoints: false },
           theme: {
             backgroundColor: 'rgba(0,0,0,0.8)',
             borderColor: '#9146ff',
@@ -315,6 +370,7 @@ router.put('/users/:userId/overlay-settings', requireAuth, requirePermission('ma
       counters: {
         deaths: counters?.deaths === true,
         swears: counters?.swears === true,
+        screams: counters?.screams === true,
         bits: counters?.bits === true
       },
       theme: {
@@ -704,6 +760,7 @@ router.get('/streams', requireAuth, requireAdmin, async (req, res) => {
           sessionBits: counters.bits || 0,
           sessionDeaths: counters.deaths || 0,
           sessionSwears: counters.swears || 0,
+          sessionScreams: counters.screams || 0,
           streamSettings: await database.getStreamSettings(user.twitchUserId)
         });
       } catch (error) {
@@ -1318,6 +1375,142 @@ router.delete('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, r
   } catch (error) {
     console.error('❌ Error deleting unknown users:', error);
     res.status(500).json({ error: 'Failed to delete unknown users' });
+  }
+});
+
+/**
+ * Test notification system
+ * POST /api/admin/test-notifications
+ */
+router.post('/test-notifications', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { eventType } = req.body;
+    const io = req.app.get('io');
+
+    if (!io) {
+      return res.status(500).json({ error: 'WebSocket not available' });
+    }
+
+    const testData = {
+      follow: {
+        userId: req.user.userId,
+        username: req.user.username,
+        follower: 'TestFollower',
+        timestamp: new Date().toISOString()
+      },
+      subscription: {
+        userId: req.user.userId,
+        username: req.user.username,
+        subscriber: 'TestSubscriber',
+        tier: 1,
+        isGift: false,
+        timestamp: new Date().toISOString()
+      },
+      resub: {
+        userId: req.user.userId,
+        username: req.user.username,
+        subscriber: 'TestResubscriber',
+        tier: 1,
+        months: 12,
+        streakMonths: 6,
+        message: 'Love this stream!',
+        timestamp: new Date().toISOString()
+      },
+      giftsub: {
+        userId: req.user.userId,
+        username: req.user.username,
+        gifter: 'TestGifter',
+        amount: 5,
+        tier: 1,
+        timestamp: new Date().toISOString()
+      },
+      bits: {
+        userId: req.user.userId,
+        username: req.user.username,
+        cheerer: 'TestCheerer',
+        bits: 500,
+        message: 'Great stream! cheer500',
+        isAnonymous: false,
+        timestamp: new Date().toISOString()
+      },
+      milestone: {
+        userId: req.user.userId,
+        counterType: 'deaths',
+        milestone: 100,
+        newValue: 100,
+        previousMilestone: 50,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    const data = testData[eventType];
+    if (!data) {
+      return res.status(400).json({ error: 'Invalid event type. Use: follow, subscription, resub, giftsub, bits, milestone' });
+    }
+
+    // Emit the test event
+    const eventName = eventType === 'subscription' ? 'newSubscription' :
+                     eventType === 'resub' ? 'newResub' :
+                     eventType === 'giftsub' ? 'newGiftSub' :
+                     eventType === 'bits' ? 'newCheer' :
+                     eventType === 'milestone' ? 'milestoneReached' :
+                     `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
+
+    io.to(`user:${req.user.userId}`).emit(eventName, data);
+
+    console.log(`🧪 Admin ${req.user.username} triggered test ${eventType} notification`);
+    res.json({
+      message: `Test ${eventType} notification sent`,
+      eventName,
+      data
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending test notification:', error);
+    res.status(500).json({ error: 'Failed to send test notification' });
+  }
+});
+
+/**
+ * Force reset stream status to offline (debug endpoint)
+ * POST /api/admin/users/:userId/force-offline
+ */
+router.post('/users/:userId/force-offline', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    // Update stream status to offline
+    await database.updateStreamStatus(userId, 'offline');
+
+    // End any active stream session
+    await database.endStream(userId);
+
+    // Get user for notification
+    const user = await database.getUser(userId);
+
+    // Emit stream status change to connected clients
+    const io = req.app.get('io');
+    if (io && user) {
+      io.to(`user:${userId}`).emit('streamStatusChanged', {
+        userId,
+        username: user.username,
+        streamStatus: 'offline',
+        timestamp: new Date().toISOString(),
+        forced: true
+      });
+    }
+
+    console.log(`🔧 Admin forced stream status to offline for user ${userId} (${user?.username})`);
+
+    res.json({
+      success: true,
+      message: `Stream status forced to offline for ${user?.username || userId}`,
+      streamStatus: 'offline',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error forcing stream offline:', error);
+    res.status(500).json({ error: 'Failed to force stream offline' });
   }
 });
 

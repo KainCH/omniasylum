@@ -21,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(req.user.userId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
@@ -333,7 +333,7 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(targetUserId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
@@ -418,10 +418,31 @@ router.put('/event-mappings', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
-    const { mappings } = req.body;
+    console.log('🔍 Event mappings update request for user:', req.params.userId || req.user.userId);
+    console.log('🔍 Raw request body:', JSON.stringify(req.body, null, 2));
+    console.log('🔍 Request body keys:', Object.keys(req.body));
 
-    if (!mappings || typeof mappings !== 'object') {
-      return res.status(400).json({ error: 'Invalid mappings format' });
+    // Handle both formats: { mappings: {...} } and direct mappings object
+    let mappings;
+    if (req.body.mappings) {
+      // New format: { mappings: { ... } }
+      mappings = req.body.mappings;
+      console.log('🔍 Using nested mappings format');
+    } else {
+      // Legacy format: direct mappings in body
+      mappings = req.body;
+      console.log('🔍 Using direct mappings format');
+    }
+
+    console.log('🔍 Processed mappings:', JSON.stringify(mappings, null, 2));
+
+    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) {
+      console.log('❌ Invalid mappings format');
+      return res.status(400).json({
+        error: 'Invalid mappings format',
+        received: mappings,
+        type: typeof mappings
+      });
     }
 
     // Validate that all event types are valid
@@ -432,13 +453,26 @@ router.put('/event-mappings', requireAuth, async (req, res) => {
       }
     }
 
-    // Validate that all alert types exist for this user
+    // Validate that all alert types exist for this user (including defaults)
     const userAlerts = await database.getUserAlerts(req.user.userId);
-    const validAlertTypes = userAlerts.map(alert => alert.type);
+    const defaultTemplates = database.getDefaultAlertTemplates();
+
+    // Combine user alerts and default templates to get all valid alert types
+    const validAlertTypes = [
+      ...defaultTemplates.map(template => template.type),
+      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
+    ];
+
+    console.log('🔍 Validating alert types:', Object.values(mappings));
+    console.log('🔍 Valid alert types available:', validAlertTypes);
 
     for (const alertType of Object.values(mappings)) {
       if (alertType && !validAlertTypes.includes(alertType)) {
-        return res.status(400).json({ error: `No alert found with type: ${alertType}` });
+        console.log(`❌ Alert type "${alertType}" not found in valid types:`, validAlertTypes);
+        return res.status(400).json({
+          error: `No alert found with type: ${alertType}`,
+          availableTypes: validAlertTypes
+        });
       }
     }
 
@@ -476,6 +510,45 @@ router.post('/event-mappings/reset', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error resetting event mappings:', error);
     res.status(500).json({ error: 'Failed to reset event mappings' });
+  }
+});
+
+/**
+ * Debug endpoint - Get validation info for troubleshooting
+ * GET /api/alerts/debug/validation
+ */
+router.get('/debug/validation', requireAuth, async (req, res) => {
+  try {
+    const userAlerts = await database.getUserAlerts(req.user.userId);
+    const defaultTemplates = database.getDefaultAlertTemplates();
+    const defaultMappings = database.getDefaultEventMappings();
+    const userMappings = await database.getEventMappings(req.user.userId);
+
+    // Get all valid alert types
+    const validAlertTypes = [
+      ...defaultTemplates.map(template => template.type),
+      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
+    ];
+
+    res.json({
+      debug: {
+        userId: req.user.userId,
+        defaultAlertTypes: defaultTemplates.map(t => t.type),
+        userCustomAlertTypes: userAlerts.filter(a => !a.isDefault).map(a => a.type),
+        validAlertTypes: validAlertTypes,
+        defaultEventTypes: Object.keys(defaultMappings),
+        defaultMappings: defaultMappings,
+        userMappings: userMappings,
+        mappingValidation: Object.entries(userMappings || defaultMappings).map(([event, alertType]) => ({
+          event,
+          alertType,
+          isValid: validAlertTypes.includes(alertType)
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error);
+    res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
   }
 });
 

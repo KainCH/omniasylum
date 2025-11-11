@@ -143,7 +143,10 @@ class Database {
       bitsIntegration: false,
       streamOverlay: false,
       alertAnimations: false,
-      discordNotifications: true
+      discordNotifications: true,
+      discordWebhook: false,
+      templateStyle: 'asylum_themed',
+      streamAlerts: true
     };
 
     // Default overlay settings for new users
@@ -238,6 +241,7 @@ class Database {
         return {
           deaths: entity.deaths || 0,
           swears: entity.swears || 0,
+          screams: entity.screams || 0,
           bits: entity.bits || 0,
           lastUpdated: entity.lastUpdated,
           streamStarted: entity.streamStarted || null
@@ -247,6 +251,7 @@ class Database {
           return {
             deaths: 0,
             swears: 0,
+            screams: 0,
             bits: 0,
             lastUpdated: new Date().toISOString(),
             streamStarted: null
@@ -259,6 +264,7 @@ class Database {
       return counters[twitchUserId] || {
         deaths: 0,
         swears: 0,
+        screams: 0,
         bits: 0,
         lastUpdated: new Date().toISOString(),
         streamStarted: null
@@ -301,7 +307,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 1, swears: 0 }
+      change: { deaths: 1, swears: 0, screams: 0 }
     };
   }
 
@@ -316,7 +322,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: change, swears: 0 }
+      change: { deaths: change, swears: 0, screams: 0 }
     };
   }
 
@@ -330,7 +336,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 1 }
+      change: { deaths: 0, swears: 1, screams: 0 }
     };
   }
 
@@ -345,7 +351,36 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: change }
+      change: { deaths: 0, swears: change, screams: 0 }
+    };
+  }
+
+  /**
+   * Increment scream counter
+   */
+  async incrementScreams(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const newCounters = { ...oldCounters, screams: oldCounters.screams + 1 };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, screams: 1 }
+    };
+  }
+
+  /**
+   * Decrement scream counter
+   */
+  async decrementScreams(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const change = oldCounters.screams > 0 ? -1 : 0;
+    const newCounters = { ...oldCounters, screams: Math.max(0, oldCounters.screams - 1) };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, screams: change }
     };
   }
 
@@ -357,13 +392,14 @@ class Database {
     const saved = await this.saveCounters(twitchUserId, {
       deaths: 0,
       swears: 0,
+      screams: 0,
       bits: oldCounters.bits, // Keep bits counter
       streamStarted: oldCounters.streamStarted
     });
 
     return {
       ...saved,
-      change: { deaths: -oldCounters.deaths, swears: -oldCounters.swears, bits: 0 }
+      change: { deaths: -oldCounters.deaths, swears: -oldCounters.swears, screams: -oldCounters.screams, bits: 0 }
     };
   }
 
@@ -380,7 +416,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 0, bits: amount }
+      change: { deaths: 0, swears: 0, screams: 0, bits: amount }
     };
   }
 
@@ -399,7 +435,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 0, bits: -oldCounters.bits }
+      change: { deaths: 0, swears: 0, screams: 0, bits: -oldCounters.bits }
     };
   }
 
@@ -955,6 +991,7 @@ class Database {
           counters: {
             deaths: true,
             swears: true,
+            screams: true,
             bits: false
           },
           theme: {
@@ -980,6 +1017,7 @@ class Database {
         counters: {
           deaths: true,
           swears: true,
+          screams: true,
           bits: false
         },
         theme: {
@@ -1679,6 +1717,411 @@ class Database {
     }
 
     return alert || null;
+  }
+
+  // ==================== TEMPLATE MANAGEMENT ====================
+
+  /**
+   * Get available template definitions
+   */
+  getAvailableTemplates() {
+    return {
+      asylum_themed: {
+        name: 'Asylum Themed',
+        description: 'Dark horror-themed template with blood effects and creepy animations',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#8B0000',
+            secondary: '#DC143C',
+            background: '#1a0000',
+            text: '#FFFFFF',
+            accent: '#FF6B6B'
+          },
+          fonts: {
+            primary: 'Creepster, cursive',
+            secondary: 'Arial, sans-serif'
+          },
+          animations: {
+            bloodDrip: true,
+            screenshake: true,
+            fadeEffects: true,
+            particleEffects: true
+          },
+          sounds: {
+            death: 'scream.mp3',
+            swear: 'bleep.mp3',
+            milestone: 'creepy_bell.mp3'
+          }
+        }
+      },
+      modern_minimal: {
+        name: 'Modern Minimal',
+        description: 'Clean, modern design with smooth animations',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#6366f1',
+            secondary: '#8b5cf6',
+            background: '#ffffff',
+            text: '#1f2937',
+            accent: '#3b82f6'
+          },
+          fonts: {
+            primary: 'Inter, sans-serif',
+            secondary: 'SF Pro Display, sans-serif'
+          },
+          animations: {
+            slideIn: true,
+            fadeEffects: true,
+            bounceOnUpdate: true,
+            glassmorphism: true
+          },
+          sounds: {
+            death: 'notification.mp3',
+            swear: 'pop.mp3',
+            milestone: 'achievement.mp3'
+          }
+        }
+      },
+      streamer_pro: {
+        name: 'Streamer Pro',
+        description: 'Professional streaming template with customizable colors',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#9146ff',
+            secondary: '#772ce8',
+            background: 'rgba(0, 0, 0, 0.8)',
+            text: '#ffffff',
+            accent: '#00f5ff'
+          },
+          fonts: {
+            primary: 'Roboto, sans-serif',
+            secondary: 'Open Sans, sans-serif'
+          },
+          animations: {
+            slideIn: true,
+            typewriter: true,
+            neonGlow: true,
+            particleTrails: true
+          },
+          sounds: {
+            death: 'game_over.mp3',
+            swear: 'censored.mp3',
+            milestone: 'level_up.mp3'
+          }
+        }
+      }
+    };
+  }
+
+  /**
+   * Get user's template configuration
+   */
+  async getUserTemplate(twitchUserId) {
+    try {
+      const user = await this.getUser(twitchUserId);
+      if (!user) return null;
+
+      const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+      const templateStyle = features.templateStyle || 'asylum_themed';
+
+      // Check if user has a custom template
+      const customTemplate = await this.getUserCustomTemplate(twitchUserId);
+      if (customTemplate && templateStyle === 'custom') {
+        return {
+          type: 'custom',
+          name: customTemplate.name,
+          config: customTemplate.config,
+          templateStyle: 'custom'
+        };
+      }
+
+      // Return built-in template
+      const availableTemplates = this.getAvailableTemplates();
+      const template = availableTemplates[templateStyle];
+
+      if (!template) {
+        console.log(`⚠️ Template ${templateStyle} not found, falling back to asylum_themed`);
+        return availableTemplates.asylum_themed;
+      }
+
+      return {
+        ...template,
+        templateStyle
+      };
+    } catch (error) {
+      console.error('❌ Error getting user template:', error);
+      return this.getAvailableTemplates().asylum_themed;
+    }
+  }
+
+  /**
+   * Get user's custom template (if any)
+   */
+  async getUserCustomTemplate(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'customTemplate');
+        return JSON.parse(entity.templateConfig);
+      } else {
+        const customTemplatesFile = path.join(this.dataDir, 'customTemplates.json');
+        if (!fs.existsSync(customTemplatesFile)) {
+          return null;
+        }
+        const templates = JSON.parse(fs.readFileSync(customTemplatesFile, 'utf8'));
+        return templates[twitchUserId] || null;
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting custom template:', error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Save user's custom template
+   */
+  async saveUserCustomTemplate(twitchUserId, templateData) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'customTemplate',
+          templateConfig: JSON.stringify(templateData),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const customTemplatesFile = path.join(this.dataDir, 'customTemplates.json');
+        let templates = {};
+
+        if (fs.existsSync(customTemplatesFile)) {
+          templates = JSON.parse(fs.readFileSync(customTemplatesFile, 'utf8'));
+        }
+
+        templates[twitchUserId] = {
+          ...templateData,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(customTemplatesFile, JSON.stringify(templates, null, 2));
+      }
+
+      console.log(`✅ Custom template saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving custom template:', error);
+      throw error;
+    }
+  }
+
+  // ==================== CUSTOM COUNTERS MANAGEMENT ====================
+
+  /**
+   * Get user's custom counters
+   */
+  async getUserCustomCounters(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'customCounters');
+        return JSON.parse(entity.countersConfig);
+      } else {
+        const customCountersFile = path.join(this.dataDir, 'customCounters.json');
+        if (!fs.existsSync(customCountersFile)) {
+          return {};
+        }
+        const counters = JSON.parse(fs.readFileSync(customCountersFile, 'utf8'));
+        return counters[twitchUserId] || {};
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting custom counters:', error);
+      }
+      return {};
+    }
+  }
+
+  /**
+   * Save user's custom counters configuration
+   */
+  async saveUserCustomCounters(twitchUserId, countersConfig) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'customCounters',
+          countersConfig: JSON.stringify(countersConfig),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const customCountersFile = path.join(this.dataDir, 'customCounters.json');
+        let counters = {};
+
+        if (fs.existsSync(customCountersFile)) {
+          counters = JSON.parse(fs.readFileSync(customCountersFile, 'utf8'));
+        }
+
+        counters[twitchUserId] = {
+          ...countersConfig,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(customCountersFile, JSON.stringify(counters, null, 2));
+      }
+
+      console.log(`✅ Custom counters saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving custom counters:', error);
+      throw error;
+    }
+  }
+
+  // ==================== CUSTOM CHAT COMMANDS ====================
+
+  /**
+   * Get user's custom chat commands
+   */
+  async getUserChatCommands(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'chatCommands');
+        return JSON.parse(entity.commandsConfig);
+      } else {
+        const chatCommandsFile = path.join(this.dataDir, 'chatCommands.json');
+        if (!fs.existsSync(chatCommandsFile)) {
+          return this.getDefaultChatCommands();
+        }
+        const commands = JSON.parse(fs.readFileSync(chatCommandsFile, 'utf8'));
+        return commands[twitchUserId] || this.getDefaultChatCommands();
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting chat commands:', error);
+      }
+      return this.getDefaultChatCommands();
+    }
+  }
+
+  /**
+   * Get default chat commands
+   */
+  getDefaultChatCommands() {
+    return {
+      // Public commands
+      '!deaths': {
+        response: 'Current death count: {{deaths}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!swears': {
+        response: 'Current swear count: {{swears}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!screams': {
+        response: 'Current scream count: {{screams}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!stats': {
+        response: 'Deaths: {{deaths}}, Swears: {{swears}}, Screams: {{screams}}, Bits: {{bits}}',
+        permission: 'everyone',
+        cooldown: 10,
+        enabled: true
+      },
+
+      // Moderator commands
+      '!death+': {
+        action: 'increment',
+        counter: 'deaths',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!death-': {
+        action: 'decrement',
+        counter: 'deaths',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!swear+': {
+        action: 'increment',
+        counter: 'swears',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!swear-': {
+        action: 'decrement',
+        counter: 'swears',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!scream+': {
+        action: 'increment',
+        counter: 'screams',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!scream-': {
+        action: 'decrement',
+        counter: 'screams',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!resetcounters': {
+        action: 'reset',
+        permission: 'moderator',
+        cooldown: 30,
+        enabled: true
+      }
+    };
+  }
+
+  /**
+   * Save user's custom chat commands
+   */
+  async saveUserChatCommands(twitchUserId, commandsConfig) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'chatCommands',
+          commandsConfig: JSON.stringify(commandsConfig),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const chatCommandsFile = path.join(this.dataDir, 'chatCommands.json');
+        let commands = {};
+
+        if (fs.existsSync(chatCommandsFile)) {
+          commands = JSON.parse(fs.readFileSync(chatCommandsFile, 'utf8'));
+        }
+
+        commands[twitchUserId] = {
+          ...commandsConfig,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(chatCommandsFile, JSON.stringify(commands, null, 2));
+      }
+
+      console.log(`✅ Chat commands saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving chat commands:', error);
+      throw error;
+    }
   }
 }
 
