@@ -5,6 +5,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
+const logger = require('./simpleLogger');
 const database = require('./database');
 const keyVault = require('./keyVault');
 const twitchService = require('./multiTenantTwitchService');
@@ -91,6 +92,29 @@ app.use(cors({
 }));
 app.use(express.json({ type: 'application/json' }));
 app.use(cookieParser());
+
+// Add simple API request logging
+app.use('/api', (req, res, next) => {
+  const startTime = Date.now();
+
+  // Log the request
+  logger.apiRequest(req.method, req.path, req.user?.userId, {
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+
+  // Capture response details
+  const originalSend = res.send;
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    logger.apiResponse(req.method, req.path, res.statusCode, duration, {
+      userId: req.user?.userId
+    });
+    return originalSend.call(this, data);
+  };
+
+  next();
+});
 
 // Add cache-control headers to all API responses
 app.use('/api', (req, res, next) => {
@@ -194,6 +218,10 @@ app.use('/api/chat-commands', chatCommandRoutes);
 
 // Debug routes (requires authentication)
 app.use('/api/debug', debugRoutes);
+
+// Logs routes (requires authentication)
+const logsRoutes = require('./logsRoutes');
+app.use('/api/logs', logsRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
