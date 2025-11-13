@@ -535,7 +535,7 @@ twitchService.on('resetCounters', async ({ userId, username }) => {
 twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaster, isMod }) => {
   try {
     let helpMessage = '';
-    
+
     if (isBroadcaster) {
       // Broadcaster gets full command access info
       helpMessage = '� Broadcaster Commands: !startstream !endstream !resetcounters !resetbits !deleteseries <name> | Mod Commands: !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Public: !stats !bits !streamstats !discord !help';
@@ -545,7 +545,7 @@ twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaste
       const user = await database.getUser(userId);
       const broadcasterName = user ? user.displayName : 'the broadcaster';
       const modHelpMessage = `🔧 Chat Commands (Mods Only): !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Use these in ${broadcasterName}'s Twitch chat to manage counters and series saves during stream.`;
-      
+
       const success = await twitchService.sendWhisper(userId, username, modHelpMessage);
       if (success) {
         console.log(`📱 Mod help sent via whisper to ${username}`);

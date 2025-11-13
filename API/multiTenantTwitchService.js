@@ -170,7 +170,7 @@ class MultiTenantTwitchService extends EventEmitter {
       if (!this.hasBroadcasterPermission(msg)) {
         return; // Silently ignore unauthorized commands
       }
-      
+
       if (text === '!startstream') {
         this.emit('startStream', { userId, username });
       } else if (text === '!endstream') {
