@@ -278,44 +278,63 @@ router.post('/monitor/subscribe', requireAuth, async (req, res) => {
     const success = await streamMonitor.subscribeToUser(req.user.userId);
 
     if (success) {
-      // Start Twitch bot when stream monitoring begins
-      let botStatus = { connected: false, error: null };
-      try {
-        // Check if user has chatCommands feature enabled
-        const user = await database.getUser(req.user.userId);
-        const features = typeof user.features === 'string'
-          ? JSON.parse(user.features)
-          : user.features || {};
+        // Start Twitch bot when stream monitoring begins
+        let botStatus = {
+          connected: false,
+          error: null,
+          eligible: false,
+          chatCommandsEnabled: false,
+          hasTokens: false,
+          reason: 'Not connected'
+        };
 
-        if (features.chatCommands && user.accessToken && user.refreshToken) {
-          twitchLogger.info(`Starting Twitch bot for monitoring subscription`, {
-            userId: req.user.userId,
-            username: req.user.username
-          });
-          const botConnected = await twitchService.connectUser(req.user.userId);
-          botStatus.connected = botConnected;
+        try {
+          // Check if user has chatCommands feature enabled
+          const user = await database.getUser(req.user.userId);
+          const features = typeof user.features === 'string'
+            ? JSON.parse(user.features)
+            : user.features || {};
 
-          if (botConnected) {
-            twitchLogger.info(`Twitch bot connected successfully`, {
+          // Set bot eligibility status
+          botStatus.chatCommandsEnabled = !!features.chatCommands;
+          botStatus.hasTokens = !!(user.accessToken && user.refreshToken);
+          botStatus.eligible = botStatus.chatCommandsEnabled && botStatus.hasTokens;
+
+          if (botStatus.eligible) {
+            twitchLogger.info(`Starting Twitch bot for monitoring subscription`, {
               userId: req.user.userId,
               username: req.user.username
             });
+            const botConnected = await twitchService.connectUser(req.user.userId);
+            botStatus.connected = botConnected;
+
+            if (botConnected) {
+              twitchLogger.info(`Twitch bot connected successfully`, {
+                userId: req.user.userId,
+                username: req.user.username
+              });
+              botStatus.reason = 'Connected';
+            } else {
+              twitchLogger.warn(`Failed to connect Twitch bot`, {
+                userId: req.user.userId,
+                username: req.user.username
+              });
+              botStatus.error = 'Failed to connect bot';
+              botStatus.reason = 'Connection failed';
+            }
           } else {
-            twitchLogger.warn(`Failed to connect Twitch bot`, {
-              userId: req.user.userId,
-              username: req.user.username
-            });
-            botStatus.error = 'Failed to connect bot';
+            if (!botStatus.chatCommandsEnabled) {
+              botStatus.reason = 'Chat commands feature disabled';
+            } else if (!botStatus.hasTokens) {
+              botStatus.reason = 'Missing authentication tokens';
+            }
+            console.log(`ℹ️ Twitch bot not started for ${req.user.username} - ${botStatus.reason}`);
           }
-        } else {
-          console.log(`ℹ️ Twitch bot not started for ${req.user.username} - chatCommands disabled or missing tokens`);
-        }
-      } catch (botError) {
-        console.error(`❌ Error starting Twitch bot for ${req.user.username}:`, botError);
-        botStatus.error = botError.message;
-      }
-
-      // Broadcast EventSub and bot status change to user's clients
+        } catch (botError) {
+          console.error(`❌ Error starting Twitch bot for ${req.user.username}:`, botError);
+          botStatus.error = botError.message;
+          botStatus.reason = botError.message;
+        }      // Broadcast EventSub and bot status change to user's clients
       const io = req.app.get('io');
       io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
         connected: true,
@@ -439,12 +458,87 @@ router.post('/monitor/reconnect', requireAuth, async (req, res) => {
 router.post('/monitor/start', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
+    const twitchService = require('./multiTenantTwitchService');
 
     console.log(`🎬 Starting EventSub monitoring for user ${req.user.username}`);
 
     const success = await streamMonitor.subscribeToUser(req.user.userId);
 
     if (success) {
+      // Start Twitch bot when stream monitoring begins
+      let botStatus = {
+        connected: false,
+        error: null,
+        eligible: false,
+        chatCommandsEnabled: false,
+        hasTokens: false,
+        reason: 'Not connected'
+      };
+
+      try {
+        // Check if user has chatCommands feature enabled
+        const user = await database.getUser(req.user.userId);
+        const features = typeof user.features === 'string'
+          ? JSON.parse(user.features)
+          : user.features || {};
+
+        // Set bot eligibility status
+        botStatus.chatCommandsEnabled = !!features.chatCommands;
+        botStatus.hasTokens = !!(user.accessToken && user.refreshToken);
+        botStatus.eligible = botStatus.chatCommandsEnabled && botStatus.hasTokens;
+
+        if (botStatus.eligible) {
+          twitchLogger.info(`Starting Twitch bot for monitoring start`, {
+            userId: req.user.userId,
+            username: req.user.username
+          });
+          const botConnected = await twitchService.connectUser(req.user.userId);
+          botStatus.connected = botConnected;
+
+          if (botConnected) {
+            twitchLogger.info(`Twitch bot connected successfully on monitoring start`, {
+              userId: req.user.userId,
+              username: req.user.username
+            });
+            botStatus.reason = 'Connected';
+          } else {
+            twitchLogger.warn(`Failed to connect Twitch bot on monitoring start`, {
+              userId: req.user.userId,
+              username: req.user.username
+            });
+            botStatus.error = 'Failed to connect bot';
+            botStatus.reason = 'Connection failed';
+          }
+        } else {
+          if (!botStatus.chatCommandsEnabled) {
+            botStatus.reason = 'Chat commands feature disabled';
+          } else if (!botStatus.hasTokens) {
+            botStatus.reason = 'Missing authentication tokens';
+          }
+          console.log(`ℹ️ Twitch bot not started for ${req.user.username} - ${botStatus.reason}`);
+        }
+      } catch (botError) {
+        console.error(`❌ Error starting Twitch bot for ${req.user.username}:`, botError);
+        botStatus.error = botError.message;
+        botStatus.reason = botError.message;
+      }
+
+      // Broadcast EventSub and bot status change to user's clients
+      const io = req.app.get('io');
+      io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+        connected: true,
+        monitoring: true,
+        lastConnected: new Date().toISOString(),
+        subscriptionsEnabled: true
+      });
+
+      io.to(`user:${req.user.userId}`).emit('twitchBotStatusChanged', {
+        userId: req.user.userId,
+        username: req.user.username,
+        ...botStatus,
+        lastUpdated: new Date().toISOString()
+      });
+
       res.json({
         message: 'EventSub monitoring started successfully',
         userId: req.user.userId,
@@ -476,10 +570,50 @@ router.post('/monitor/start', requireAuth, async (req, res) => {
 router.post('/monitor/stop', requireAuth, async (req, res) => {
   try {
     const streamMonitor = require('./streamMonitor');
+    const twitchService = require('./multiTenantTwitchService');
 
     console.log(`⏹️ Stopping EventSub monitoring for user ${req.user.username}`);
 
     await streamMonitor.unsubscribeFromUser(req.user.userId);
+
+    // Disconnect Twitch bot when monitoring stops
+    try {
+      twitchLogger.info(`Stopping Twitch bot for monitoring stop`, {
+        userId: req.user.userId,
+        username: req.user.username
+      });
+      await twitchService.disconnectUser(req.user.userId);
+      twitchLogger.info(`Twitch bot disconnected successfully on monitoring stop`, {
+        userId: req.user.userId,
+        username: req.user.username
+      });
+    } catch (botError) {
+      twitchLogger.error(`Error stopping Twitch bot`, {
+        userId: req.user.userId,
+        username: req.user.username,
+        error: botError?.message
+      });
+    }
+
+    // Broadcast EventSub and bot status change to user's clients
+    const io = req.app.get('io');
+    io.to(`user:${req.user.userId}`).emit('eventSubStatusChanged', {
+      connected: false,
+      monitoring: false,
+      lastConnected: null,
+      subscriptionsEnabled: false
+    });
+
+    io.to(`user:${req.user.userId}`).emit('twitchBotStatusChanged', {
+      userId: req.user.userId,
+      username: req.user.username,
+      connected: false,
+      eligible: false,
+      chatCommandsEnabled: false,
+      hasTokens: false,
+      reason: 'Monitoring stopped',
+      lastUpdated: new Date().toISOString()
+    });
 
     res.json({
       message: 'EventSub monitoring stopped successfully',
