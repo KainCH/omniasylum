@@ -238,12 +238,37 @@
   line-height: 1.4;
 }
 
+/* Test Groups */
+.test-group {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.test-group h5 {
+  margin: 0 0 12px 0;
+  color: #9146ff;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-group h5::before {
+  content: '▸';
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 /* Test Actions */
 .test-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 
 .test-button {
@@ -433,4 +458,202 @@
   border-color: #9146ff !important;
   outline: none !important;
   box-shadow: 0 0 0 2px rgba(145, 70, 255, 0.2) !important;
+}
+
+/* CommonControls Dark Mode Overrides */
+.debug-dashboard .notification-type-card {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .notification-type-card h5,
+.debug-dashboard .notification-type-card p {
+  color: #fff !important;
+}
+
+.debug-dashboard .template-option {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .template-option h5,
+.debug-dashboard .template-option p {
+  color: #fff !important;
+}
+
+.debug-dashboard .template-option.selected {
+  background: rgba(145, 70, 255, 0.2) !important;
+  border-color: #9146ff !important;
+}
+
+.debug-dashboard .milestone-input {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .milestone-input input {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .milestone-input label {
+  color: #fff !important;
+}
+
+.debug-dashboard .milestone-input small {
+  color: #ccc !important;
+}
+
+.debug-dashboard .btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .btn:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.debug-dashboard .btn-primary {
+  background: #9146ff !important;
+  border-color: #9146ff !important;
+}
+
+.debug-dashboard .btn-primary:hover {
+  background: #7c3aed !important;
+  border-color: #7c3aed !important;
+}
+
+.debug-dashboard .btn-secondary {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.debug-dashboard .btn-danger {
+  background: #dc3545 !important;
+  border-color: #dc3545 !important;
+}
+
+.debug-dashboard .btn-success {
+  background: #28a745 !important;
+  border-color: #28a745 !important;
+}
+
+.debug-dashboard .form-section {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .section-header h4 {
+  color: #fff !important;
+}
+
+.debug-dashboard .section-header p {
+  color: #ccc !important;
+}
+
+.debug-dashboard .status-badge {
+  color: #fff !important;
+}
+
+.debug-dashboard .status-success {
+  background: rgba(40, 167, 69, 0.2) !important;
+  border-color: #28a745 !important;
+}
+
+.debug-dashboard .status-warning {
+  background: rgba(255, 193, 7, 0.2) !important;
+  border-color: #ffc107 !important;
+}
+
+.debug-dashboard .status-error {
+  background: rgba(220, 53, 69, 0.2) !important;
+  border-color: #dc3545 !important;
+}
+
+.debug-dashboard .status-info {
+  background: rgba(23, 162, 184, 0.2) !important;
+  border-color: #17a2b8 !important;
+}
+
+.debug-dashboard .input-group {
+  color: #fff !important;
+}
+
+.debug-dashboard .input-label {
+  color: #fff !important;
+}
+
+.debug-dashboard .error-message {
+  color: #dc3545 !important;
+}
+
+.debug-dashboard .required {
+  color: #dc3545 !important;
+}
+
+/* Toggle switch dark mode */
+.debug-dashboard .toggle-slider {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.debug-dashboard .toggle-slider::before {
+  background-color: #fff !important;
+}
+
+.debug-dashboard .toggle-switch input:checked+.toggle-slider {
+  background-color: #9146ff !important;
+}
+
+.debug-dashboard .toggle-label {
+  color: #fff !important;
+}
+
+/* Code blocks and JSON display */
+.debug-dashboard pre,
+.debug-dashboard code {
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  padding: 8px !important;
+  border-radius: 4px !important;
+  font-family: 'Courier New', monospace !important;
+  font-size: 12px !important;
+  overflow-x: auto !important;
+}
+
+/* Test result elements */
+.debug-dashboard .test-result {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+.debug-dashboard .result-header {
+  color: #fff !important;
+}
+
+.debug-dashboard .result-message {
+  color: #ccc !important;
+}
+
+.debug-dashboard .result-status.success {
+  color: #28a745 !important;
+}
+
+.debug-dashboard .result-status.error {
+  color: #dc3545 !important;
+}
+
+/* Test group headers */
+.debug-dashboard .test-group h5 {
+  color: #fff !important;
+}
+
+.debug-dashboard .test-actions {
+  color: #fff !important;
 }

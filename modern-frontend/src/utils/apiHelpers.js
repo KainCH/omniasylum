@@ -167,6 +167,19 @@ export const userAPI = {
       method: 'POST',
       body: JSON.stringify(webhookData)
     });
+  },
+
+  // Discord invite link methods
+  getDiscordInvite: async () => {
+    const timestamp = Date.now();
+    return await apiRequest(`/api/user/discord-invite?_t=${timestamp}`);
+  },
+
+  updateDiscordInvite: async (inviteData) => {
+    return await apiRequest('/api/user/discord-invite', {
+      method: 'PUT',
+      body: JSON.stringify(inviteData)
+    });
   }
 };
 
@@ -427,6 +440,41 @@ export const debugAPI = {
   // Check subscription costs
   checkSubscriptionCosts: async () => {
     return await apiRequest('/api/debug/subscription-costs');
+  },
+
+  // Test EventSub API compliance
+  testEventSubAPI: async () => {
+    return await apiRequest('/api/debug/test-eventsub-api', {
+      method: 'POST'
+    });
+  },
+
+  // Test notification system
+  testNotification: async (userId, eventType) => {
+    return await apiRequest(`/api/debug/test-notification/${userId}/${eventType}`, {
+      method: 'POST'
+    });
+  },
+
+  // Test stream status
+  testStreamStatus: async (userId, status) => {
+    return await apiRequest(`/api/debug/test-stream-status/${userId}/${status}`, {
+      method: 'POST'
+    });
+  },
+
+  // Test all notifications for a user
+  testAllNotifications: async (userId) => {
+    return await apiRequest(`/api/debug/test-all-notifications/${userId}`, {
+      method: 'POST'
+    });
+  },
+
+  // Start monitoring for a user
+  startMonitoring: async () => {
+    return await apiRequest('/api/debug/start-monitoring', {
+      method: 'POST'
+    });
   }
 };
 

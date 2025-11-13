@@ -104,6 +104,12 @@ class Database {
    * Get user by Twitch user ID
    */
   async getUser(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUser called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
     if (this.mode === 'azure') {
       try {
         const entity = await this.usersClient.getEntity('user', twitchUserId);
@@ -185,6 +191,7 @@ class Database {
       features: JSON.stringify(userData.features || (existingUser?.features ? JSON.parse(existingUser.features) : defaultFeatures)),
       overlaySettings: JSON.stringify(userData.overlaySettings || (existingUser?.overlaySettings ? JSON.parse(existingUser.overlaySettings) : defaultOverlaySettings)),
       discordWebhookUrl: userData.discordWebhookUrl || existingUser?.discordWebhookUrl || '',
+      discordInviteLink: userData.discordInviteLink || existingUser?.discordInviteLink || '',
       isActive: userData.isActive !== undefined ? userData.isActive : (existingUser?.isActive !== undefined ? existingUser.isActive : true),
       streamStatus: userData.streamStatus || existingUser?.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
       createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
@@ -1214,6 +1221,12 @@ class Database {
    * Get user's Discord webhook configuration
    */
   async getUserDiscordWebhook(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUserDiscordWebhook called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
     const user = await this.getUser(twitchUserId);
     if (!user) {
       return null;
@@ -1225,6 +1238,74 @@ class Database {
     };
 
     return result;
+  }
+
+  /**
+   * Get user's Discord invite link
+   */
+  async getUserDiscordInviteLink(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUserDiscordInviteLink called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    return user.discordInviteLink || '';
+  }
+
+  /**
+   * Update user's Discord invite link
+   */
+  async updateUserDiscordInviteLink(twitchUserId, inviteLink) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      throw new Error('Invalid twitchUserId provided');
+    }
+
+    // Validate Discord invite link format
+    if (inviteLink && !this.isValidDiscordInvite(inviteLink)) {
+      throw new Error('Invalid Discord invite link format');
+    }
+
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Update the user's Discord invite link
+    user.discordInviteLink = inviteLink || '';
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Replace');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      users[twitchUserId] = user;
+      fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+    }
+
+    console.log(`✅ Updated Discord invite link for user ${twitchUserId}: ${inviteLink ? 'Set' : 'Removed'}`);
+    return true;
+  }
+
+  /**
+   * Validate Discord invite link format
+   */
+  isValidDiscordInvite(inviteLink) {
+    if (!inviteLink) return false;
+
+    // Discord invite patterns
+    const patterns = [
+      /^https?:\/\/discord\.gg\/[a-zA-Z0-9]+$/,
+      /^https?:\/\/discord\.com\/invite\/[a-zA-Z0-9]+$/,
+      /^https?:\/\/discordapp\.com\/invite\/[a-zA-Z0-9]+$/
+    ];
+
+    return patterns.some(pattern => pattern.test(inviteLink));
   }
 
   /**
@@ -1271,8 +1352,8 @@ class Database {
         type: 'follow',
         name: 'New Follower',
         visualCue: 'A door creaks open slowly',
-        sound: 'distant-footsteps',
-        soundDescription: 'Distant footsteps or whisper',
+        sound: 'door-creak',
+        soundDescription: 'Heavy door creaking open',
         textPrompt: '🚪 A new patient has arrived… [User]',
         duration: 5000,
         backgroundColor: '#1a0d0d',
@@ -1665,31 +1746,36 @@ class Database {
    * Get event-to-alert mappings for a user
    */
   async getEventMappings(twitchUserId) {
+    let mappings;
+
     if (this.mode === 'azure') {
       try {
         const entity = await this.usersClient.getEntity(twitchUserId, 'event-mappings');
-        return JSON.parse(entity.mappings || '{}');
+        mappings = JSON.parse(entity.mappings || '{}');
       } catch (error) {
         if (error.statusCode === 404) {
-          return {};
+          mappings = {};
+        } else {
+          throw error;
         }
-        throw error;
       }
     } else {
       const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
 
       if (!fs.existsSync(mappingsFile)) {
-        return {};
-      }
-
-      try {
-        const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
-        return allMappings[twitchUserId] || {};
-      } catch (error) {
-        console.error('Error reading event mappings:', error);
-        return {};
+        mappings = {};
+      } else {
+        try {
+          const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+          mappings = allMappings[twitchUserId] || {};
+        } catch (error) {
+          console.error('Error reading event mappings:', error);
+          mappings = {};
+        }
       }
     }
+
+    return mappings;
   }
 
   /**
@@ -1721,6 +1807,69 @@ class Database {
       allMappings[twitchUserId] = mappings;
       fs.writeFileSync(mappingsFile, JSON.stringify(allMappings, null, 2), 'utf8');
     }
+  }
+
+  /**
+   * Migrate all users from channel.cheer to channel.bits.use
+   * This is a one-time migration function
+   */
+  async migrateAllCheerToBitsUse() {
+    console.log('🔄 Starting bulk migration from channel.cheer to channel.bits.use...');
+    let migratedCount = 0;
+
+    if (this.mode === 'azure') {
+      // Azure Table Storage migration
+      try {
+        const entities = this.usersClient.listEntities({
+          queryOptions: { filter: "PartitionKey ne ''" }
+        });
+
+        for await (const entity of entities) {
+          const mappings = JSON.parse(entity.mappings || '{}');
+          if (mappings['channel.cheer'] && !mappings['channel.bits.use']) {
+            mappings['channel.bits.use'] = mappings['channel.cheer'];
+            delete mappings['channel.cheer'];
+
+            await this.usersClient.updateEntity({
+              partitionKey: entity.partitionKey,
+              rowKey: entity.rowKey,
+              mappings: JSON.stringify(mappings)
+            });
+
+            migratedCount++;
+            console.log(`✅ Migrated user ${entity.partitionKey}`);
+          }
+        }
+      } catch (error) {
+        console.error('Error during Azure migration:', error);
+      }
+    } else {
+      // Local JSON migration
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+      if (fs.existsSync(mappingsFile)) {
+        try {
+          const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+
+          for (const [userId, mappings] of Object.entries(allMappings)) {
+            if (mappings['channel.cheer'] && !mappings['channel.bits.use']) {
+              mappings['channel.bits.use'] = mappings['channel.cheer'];
+              delete mappings['channel.cheer'];
+              migratedCount++;
+              console.log(`✅ Migrated user ${userId}`);
+            }
+          }
+
+          if (migratedCount > 0) {
+            fs.writeFileSync(mappingsFile, JSON.stringify(allMappings, null, 2), 'utf8');
+          }
+        } catch (error) {
+          console.error('Error during local migration:', error);
+        }
+      }
+    }
+
+    console.log(`🎉 Migration completed! Migrated ${migratedCount} users from channel.cheer to channel.bits.use`);
+    return migratedCount;
   }
 
   /**

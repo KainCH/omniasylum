@@ -148,7 +148,7 @@ class MultiTenantTwitchService extends EventEmitter {
     const text = message.toLowerCase().trim();
 
     // Public commands (anyone can use)
-    if (text === '!deaths' || text === '!swears' || text === '!stats' || text === '!bits' || text === '!streamstats') {
+    if (text === '!deaths' || text === '!swears' || text === '!stats' || text === '!bits' || text === '!streamstats' || text === '!discord' || text === '!help') {
       this.emit('publicCommand', { userId, channel, username, command: text });
       return;
     }
@@ -189,6 +189,12 @@ class MultiTenantTwitchService extends EventEmitter {
       // Extract series ID from command
       const seriesId = message.substring('!deleteseries '.length).trim();
       this.emit('deleteSeries', { userId, username, seriesId });
+    } else if (text.startsWith('!setdiscord ')) {
+      // Extract Discord invite link from command
+      const inviteLink = message.substring('!setdiscord '.length).trim();
+      this.emit('setDiscordInvite', { userId, username, inviteLink });
+    } else if (text === '!removediscord') {
+      this.emit('removeDiscordInvite', { userId, username });
     }
   }
 
@@ -347,7 +353,7 @@ class MultiTenantTwitchService extends EventEmitter {
       console.error(`❌ Error handling gift sub event for user ${userId}:`, error);
     }
   }  /**
-   * Send a message to a user's chat
+   * Send a message to a user's chat using chat client
    */
   async sendMessage(userId, message) {
     const client = this.clients.get(userId);
@@ -361,6 +367,40 @@ class MultiTenantTwitchService extends EventEmitter {
       }
     }
     return false;
+  }
+
+  /**
+   * Send a message to a user's chat using Twitch API
+   * This uses the Send Chat Message API endpoint
+   */
+  async sendApiMessage(userId, message) {
+    const client = this.clients.get(userId);
+    if (!client || !client.apiClient) {
+      console.error(`No API client found for user ${userId}`);
+      return false;
+    }
+
+    try {
+      // Get user information for the API call
+      const user = await client.apiClient.users.getUserByName(client.username);
+      if (!user) {
+        console.error(`Could not find user info for ${client.username}`);
+        return false;
+      }
+
+      // Use the Twitch API to send the message
+      const response = await client.apiClient.chat.sendChatMessage(user.id, {
+        message: message,
+        senderId: user.id
+      });
+
+      console.log(`✅ Sent API message to ${client.username}: ${message}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error sending API message for user ${userId}:`, error);
+      // Fallback to chat client method
+      return await this.sendMessage(userId, message);
+    }
   }
 
   /**

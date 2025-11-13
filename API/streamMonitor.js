@@ -292,17 +292,32 @@ class StreamMonitor extends EventEmitter {
         apiClient: userApiClient
       });
 
+      // Verify EventSub API compliance before proceeding
+      await this.verifyEventSubApiCompliance(userApiClient, user.username);
+
+      // Clean up any existing subscriptions to avoid rate limits
+      await this.cleanupExistingSubscriptions(userApiClient, userId, user.username);
+
       // Subscribe to stream online events (use our internal userId which is the Twitch user ID)
       console.log(`🎯 Subscribing to EventSub for user ID: ${userId} (${user.username})`);
 
-      const onlineSubscription = userListener.onStreamOnline(userId, (event) => {
-        this.handleStreamOnline(event, userId);
-      });
+      // Subscribe to stream online events with retry logic
+      const onlineSubscription = await this.createSubscriptionWithRetry(
+        () => userListener.onStreamOnline(userId, (event) => {
+          this.handleStreamOnline(event, userId);
+        }),
+        'stream online',
+        user.username
+      );
 
-      // Subscribe to stream offline events
-      const offlineSubscription = userListener.onStreamOffline(userId, (event) => {
-        this.handleStreamOffline(event, userId);
-      });
+      // Subscribe to stream offline events with retry logic
+      const offlineSubscription = await this.createSubscriptionWithRetry(
+        () => userListener.onStreamOffline(userId, (event) => {
+          this.handleStreamOffline(event, userId);
+        }),
+        'stream offline',
+        user.username
+      );
 
       // Channel update subscription removed - we now fetch channel info directly via API
       // This eliminates the dependency on EventSub channel.update events for Discord notifications
@@ -346,65 +361,93 @@ class StreamMonitor extends EventEmitter {
       const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
       if (hasChannelPoints) {
         console.log(`🏆 Subscribing to channel point redemptions for ${user.username}`);
-        redemptionSubscription = userListener.onChannelRedemptionAdd(userId, (event) => {
-          this.handleRewardRedemption(event, userId);
-        });
+        redemptionSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelRedemptionAdd(userId, (event) => {
+            this.handleRewardRedemption(event, userId);
+          }),
+          'channel point redemptions',
+          user.username
+        );
       }
 
       // Subscribe to follow events (if user wants notifications)
       let followSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`👥 Subscribing to follow events for ${user.username}`);
-        followSubscription = userListener.onChannelFollow(userId, userId, (event) => {
-          this.handleFollowEvent(event, userId);
-        });
+        followSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelFollow(userId, userId, (event) => {
+            this.handleFollowEvent(event, userId);
+          }),
+          'follow events',
+          user.username
+        );
       }
 
       // Subscribe to raid events (if user wants notifications)
       let raidSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`🚨 Subscribing to raid events for ${user.username}`);
-        raidSubscription = userListener.onChannelRaidTo(userId, (event) => {
-          this.handleRaidEvent(event, userId);
-        });
+        raidSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelRaidTo(userId, (event) => {
+            this.handleRaidEvent(event, userId);
+          }),
+          'raid events',
+          user.username
+        );
       }
 
       // Subscribe to subscription events (if user wants notifications)
       let subscribeSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`⭐ Subscribing to subscription events for ${user.username}`);
-        subscribeSubscription = userListener.onChannelSubscription(userId, (event) => {
-          this.handleSubscribeEvent(event, userId);
-        });
+        subscribeSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelSubscription(userId, (event) => {
+            this.handleSubscribeEvent(event, userId);
+          }),
+          'subscription events',
+          user.username
+        );
       }
 
       // Subscribe to subscription gift events (if user wants notifications)
       let subGiftSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`💝 Subscribing to gift subscription events for ${user.username}`);
-        subGiftSubscription = userListener.onChannelSubscriptionGift(userId, (event) => {
-          this.handleSubGiftEvent(event, userId);
-        });
+        subGiftSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelSubscriptionGift(userId, (event) => {
+            this.handleSubGiftEvent(event, userId);
+          }),
+          'gift subscription events',
+          user.username
+        );
       }
 
       // Subscribe to subscription message events (resubscriptions with messages)
       let subMessageSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`📝 Subscribing to resub message events for ${user.username}`);
-        subMessageSubscription = userListener.onChannelSubscriptionMessage(userId, (event) => {
-          this.handleSubMessageEvent(event, userId);
-        });
+        subMessageSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelSubscriptionMessage(userId, (event) => {
+            this.handleSubMessageEvent(event, userId);
+          }),
+          'resub message events',
+          user.username
+        );
       }
 
       // Subscribe to bits use events (if user wants notifications)
-      let bitsUseSubscription = null;
+      let cheerSubscription = null;
       if (shouldSubscribeToAlerts) {
         console.log(`💎 Subscribing to bits use events for ${user.username}`);
         // TODO: Update to onChannelBitsUse when Twurple library supports it
         // For now, use onChannelCheer which will be converted by handleCheerEvent
-        bitsUseSubscription = userListener.onChannelCheer(userId, (event) => {
-          this.handleCheerEvent(event, userId);
-        });
+        cheerSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelCheer(userId, (event) => {
+            this.handleCheerEvent(event, userId);
+          }),
+          'bits use events',
+          user.username
+        );
       }
 
       // Note: Connection lifecycle will be handled by Twurple internally
@@ -2060,6 +2103,161 @@ class StreamMonitor extends EventEmitter {
     } catch (error) {
       console.error(`❌ Error resetting stream state for ${userId}:`, error);
       return false;
+    }
+  }
+
+  /**
+   * Verify EventSub API compatibility by checking subscription details
+   */
+  async verifyEventSubApiCompliance(userApiClient, username) {
+    try {
+      console.log(`🔍 Verifying EventSub API compliance for ${username}...`);
+
+      // Get existing subscriptions to verify API response format
+      const subscriptions = await userApiClient.eventSub.getSubscriptions();
+
+      console.log(`📊 EventSub API Response Structure:`);
+      console.log(`  - Total subscriptions: ${subscriptions.data.length}`);
+      console.log(`  - Max total cost: ${subscriptions.maxTotalCost}`);
+      console.log(`  - Current total cost: ${subscriptions.totalCost}`);
+
+      if (subscriptions.data.length > 0) {
+        const sampleSub = subscriptions.data[0];
+        console.log(`📋 Sample subscription structure:`, {
+          id: sampleSub.id,
+          type: sampleSub.type,
+          version: sampleSub.version,
+          status: sampleSub.status,
+          cost: sampleSub.cost,
+          condition: Object.keys(sampleSub.condition || {}),
+          transport: sampleSub.transport?.method || 'unknown'
+        });
+      }
+
+      // Verify this matches Twitch API specification
+      const isCompliant = (
+        typeof subscriptions.totalCost === 'number' &&
+        typeof subscriptions.maxTotalCost === 'number' &&
+        Array.isArray(subscriptions.data)
+      );
+
+      console.log(`✅ EventSub API compliance check: ${isCompliant ? 'PASSED' : 'FAILED'}`);
+      return isCompliant;
+
+    } catch (error) {
+      console.warn(`⚠️ EventSub API compliance check failed:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Create a subscription with rate limit handling
+   */
+  async createSubscriptionWithRetry(subscriptionFunction, subscriptionName, username, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const subscription = await subscriptionFunction();
+        console.log(`✅ Created ${subscriptionName} subscription for ${username}`);
+
+        // Log subscription details to verify API compliance
+        if (subscription && typeof subscription === 'object') {
+          console.log(`📋 Subscription details:`, {
+            hasId: !!subscription.id,
+            hasType: !!subscription.type,
+            hasStatus: !!subscription.status,
+            objectType: subscription.constructor.name
+          });
+        }
+
+        return subscription;
+      } catch (error) {
+        const isRateLimit = error.message.includes('Too Many Requests') || error.message.includes('429');
+
+        if (isRateLimit) {
+          console.warn(`🚫 Rate limit hit for ${subscriptionName} subscription (attempt ${attempt}/${maxRetries})`);
+
+          if (attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+            console.log(`⏳ Waiting ${delay}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            console.error(`❌ Failed to create ${subscriptionName} subscription after ${maxRetries} attempts`);
+            return null;
+          }
+        } else {
+          console.warn(`⚠️ Failed to create ${subscriptionName} subscription for ${username}:`, error.message);
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Clean up existing EventSub subscriptions for a user to avoid rate limits
+   * This removes all existing subscriptions before creating new ones
+   */
+  async cleanupExistingSubscriptions(userApiClient, userId, username) {
+    try {
+      console.log(`🧹 Cleaning up existing EventSub subscriptions for ${username}...`);
+
+      // Get all existing subscriptions
+      const subscriptions = await userApiClient.eventSub.getSubscriptions();
+
+      console.log(`📊 Found ${subscriptions.data.length} existing subscriptions for ${username}`);
+      console.log(`📈 Total cost: ${subscriptions.totalCost}/${subscriptions.maxTotalCost}`);
+
+      if (subscriptions.data.length > 0) {
+        console.log(`🗑️ Removing ${subscriptions.data.length} existing subscriptions...`);
+
+        // Group subscriptions by type for better logging
+        const subscriptionsByType = {};
+        subscriptions.data.forEach(sub => {
+          if (!subscriptionsByType[sub.type]) {
+            subscriptionsByType[sub.type] = [];
+          }
+          subscriptionsByType[sub.type].push(sub);
+        });
+
+        // Log what we're about to delete
+        console.log(`📝 Subscription types to delete:`, Object.keys(subscriptionsByType));
+
+        // Delete all existing subscriptions
+        let deletedCount = 0;
+        let failedCount = 0;
+
+        for (const subscription of subscriptions.data) {
+          try {
+            await userApiClient.eventSub.deleteSubscription(subscription.id);
+            console.log(`  ✅ Removed: ${subscription.type} (ID: ${subscription.id})`);
+            deletedCount++;
+
+            // Small delay between deletions to avoid rate limiting on deletion
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (error) {
+            console.warn(`  ⚠️ Failed to remove ${subscription.type} (${subscription.id}): ${error.message}`);
+            failedCount++;
+          }
+        }
+
+        console.log(`📊 Cleanup results: ${deletedCount} deleted, ${failedCount} failed`);
+
+        // Wait longer for Twitch to process the deletions
+        console.log(`⏳ Waiting for Twitch to process deletions...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Verify cleanup worked
+        const remainingSubscriptions = await userApiClient.eventSub.getSubscriptions();
+        console.log(`🔍 Verification: ${remainingSubscriptions.data.length} subscriptions remaining`);
+
+        console.log(`✅ Cleanup complete for ${username}`);
+      } else {
+        console.log(`✅ No existing subscriptions found for ${username} - cleanup not needed`);
+      }
+
+    } catch (error) {
+      console.warn(`⚠️ Error during subscription cleanup for ${username}:`, error.message);
+      // Continue anyway - we'll handle rate limits in subscription creation
     }
   }
 

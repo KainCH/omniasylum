@@ -305,6 +305,53 @@ router.post('/discord-webhook/test', requireAuth, async (req, res) => {
 });
 
 /**
+ * Get Discord invite link
+ * GET /api/user/discord-invite
+ */
+router.get('/discord-invite', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const inviteLink = await database.getUserDiscordInviteLink(userId);
+
+    res.json({
+      discordInviteLink: inviteLink || '',
+      hasInvite: !!(inviteLink && inviteLink.trim())
+    });
+  } catch (error) {
+    console.error('❌ Error fetching Discord invite link:', error);
+    res.status(500).json({ error: 'Failed to fetch Discord invite link' });
+  }
+});
+
+/**
+ * Update Discord invite link
+ * PUT /api/user/discord-invite
+ */
+router.put('/discord-invite', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { discordInviteLink } = req.body;
+
+    // Update the Discord invite link
+    await database.updateUserDiscordInviteLink(userId, discordInviteLink);
+
+    console.log(`✅ Discord invite link updated for ${req.user.username}: ${discordInviteLink ? 'Set' : 'Removed'}`);
+
+    res.json({
+      message: 'Discord invite link updated successfully',
+      discordInviteLink: discordInviteLink || ''
+    });
+  } catch (error) {
+    console.error('❌ Error updating Discord invite link:', error);
+    if (error.message.includes('Invalid Discord invite link format')) {
+      res.status(400).json({ error: 'Invalid Discord invite link format. Please use a valid Discord invite URL.' });
+    } else {
+      res.status(500).json({ error: 'Failed to update Discord invite link' });
+    }
+  }
+});
+
+/**
  * Send Discord notification for stream events
  */
 async function sendDiscordNotification(user, eventType, data) {

@@ -600,6 +600,7 @@ router.post('/test-discord-webhook/:userId?', requireAuth, async (req, res) => {
     console.log(`🧪 Testing Discord webhook for user ${targetUserId}...`);
 
     const user = await database.getUser(targetUserId);
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -784,9 +785,11 @@ router.get('/system-health', requireAuth, async (req, res) => {
       const users = await database.getAllUsers();
       const usersWithDiscord = users.filter(user => {
         if (user.discordWebhookUrl) return true;
-        // Also check new webhook system
+        // Also check new webhook system (use rowKey as the userId - this is what identifies the user)
+        const userId = user.rowKey || user.twitchUserId;
+        if (!userId) return false;
         try {
-          const webhookData = database.getUserDiscordWebhook(user.twitchUserId);
+          const webhookData = database.getUserDiscordWebhook(userId);
           return webhookData?.webhookUrl;
         } catch {
           return false;
@@ -969,6 +972,24 @@ router.post('/test-notification/:userId/:eventType', async (req, res) => {
         isAnonymous: false,
         timestamp: new Date().toISOString()
       },
+      bitsuse: {
+        userId: userId,
+        username: username,
+        user: 'DebugBitsUser',
+        bits: 300,
+        message: 'Debug bits use! Power up!',
+        eventType: 'power-up',
+        isAnonymous: false,
+        timestamp: new Date().toISOString(),
+        alertConfig: {
+          enabled: true,
+          soundFile: 'pillRattle.mp3',
+          textPrompt: '[User] used [X] bits with [EventType]!',
+          backgroundColor: '#1a0d0d',
+          textColor: '#ffffff',
+          borderColor: '#d4af37'
+        }
+      },
       milestone: {
         userId: userId,
         counterType: 'deaths',
@@ -979,19 +1000,29 @@ router.post('/test-notification/:userId/:eventType', async (req, res) => {
       }
     };
 
-    const data = testData[eventType];
+    // Handle aliases for event types
+    let actualEventType = eventType;
+    if (eventType === 'cheer') {
+      actualEventType = 'bits'; // 'cheer' is an alias for 'bits'
+    }
+
+    const data = testData[actualEventType];
     if (!data) {
       return res.status(400).json({
         error: 'Invalid event type',
-        validTypes: Object.keys(testData)
+        validTypes: [...Object.keys(testData), 'cheer (alias for bits)']
       });
     }
 
     // Map event type to WebSocket event name
-    const eventName = eventType === 'subscription' ? 'newSubscription' :
+    const eventName = (eventType === 'subscription') ? 'newSubscription' :
+                     (eventType === 'resub') ? 'newResub' :
+                     (eventType === 'giftsub') ? 'newGiftSub' :
+                     (eventType === 'bits' || eventType === 'cheer') ? 'newCheer' :
                      eventType === 'resub' ? 'newResub' :
                      eventType === 'giftsub' ? 'newGiftSub' :
                      eventType === 'bits' ? 'newCheer' :
+                     eventType === 'bitsuse' ? 'newBitsUse' :
                      eventType === 'milestone' ? 'milestoneReached' :
                      `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
 
@@ -1255,6 +1286,132 @@ router.get('/kql-queries', (req, res) => {
   } catch (error) {
     console.error('❌ DEBUG: Failed to get KQL queries:', error);
     res.status(500).json({ error: 'Failed to get KQL queries', details: error.message });
+  }
+});
+
+/**
+ * Test EventSub API compliance and subscription creation
+ * POST /api/debug/test-eventsub-api
+ */
+router.post('/test-eventsub-api', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const database = require('./database');
+    const { ApiClient } = require('@twurple/api');
+    const { RefreshingAuthProvider } = require('@twurple/auth');
+    const keyVault = require('./keyVault');
+
+    console.log(`🧪 DEBUG: Testing EventSub API compliance for user ${req.user.username} (ID: ${userId})`);
+
+    // Get user credentials
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get Twitch client credentials
+    const clientId = await keyVault.getSecret('TWITCH-CLIENT-ID');
+    const clientSecret = await keyVault.getSecret('TWITCH-CLIENT-SECRET');
+
+    // Create auth provider
+    const authProvider = new RefreshingAuthProvider({
+      clientId,
+      clientSecret
+    });
+
+    // Set user token
+    const tokenExpiry = new Date(user.tokenExpiry);
+    const expiresInSeconds = Math.max(0, Math.floor((tokenExpiry.getTime() - Date.now()) / 1000));
+
+    await authProvider.addUserForToken({
+      accessToken: user.accessToken,
+      refreshToken: user.refreshToken,
+      expiresIn: expiresInSeconds,
+      obtainmentTimestamp: Date.now() - (3600000 - (expiresInSeconds * 1000)), // Approximate
+      scope: ['user:read:email', 'channel:read:subscriptions', 'moderator:read:followers']
+    }, []);
+
+    // Create API client
+    const apiClient = new ApiClient({ authProvider });
+
+    // Test 1: Check EventSub subscription endpoint availability
+    console.log('📊 Step 1: Testing EventSub GET subscriptions endpoint...');
+    const subscriptions = await apiClient.eventSub.getSubscriptions();
+
+    console.log('EventSub API Response:', {
+      totalSubscriptions: subscriptions.data.length,
+      totalCost: subscriptions.totalCost,
+      maxTotalCost: subscriptions.maxTotalCost,
+      apiResponseStructure: {
+        hasData: Array.isArray(subscriptions.data),
+        hasTotalCost: typeof subscriptions.totalCost === 'number',
+        hasMaxTotalCost: typeof subscriptions.maxTotalCost === 'number'
+      }
+    });
+
+    // Test 2: Verify subscription structure matches API spec
+    const results = {
+      apiCompliance: true,
+      subscriptionCount: subscriptions.data.length,
+      totalCost: subscriptions.totalCost,
+      maxTotalCost: subscriptions.maxTotalCost,
+      subscriptionTypes: [],
+      apiEndpointVerified: true
+    };
+
+    if (subscriptions.data.length > 0) {
+      const sampleSub = subscriptions.data[0];
+      console.log('Sample subscription structure:', {
+        id: sampleSub.id,
+        type: sampleSub.type,
+        version: sampleSub.version,
+        status: sampleSub.status,
+        cost: sampleSub.cost,
+        hasCondition: !!sampleSub.condition,
+        hasTransport: !!sampleSub.transport
+      });
+
+      results.subscriptionTypes = [...new Set(subscriptions.data.map(s => s.type))];
+    }
+
+    // Test 3: Verify we can access the correct API methods
+    console.log('🔍 Step 2: Verifying API client methods...');
+    const apiMethods = {
+      hasEventSub: !!apiClient.eventSub,
+      hasGetSubscriptions: typeof apiClient.eventSub?.getSubscriptions === 'function',
+      hasDeleteSubscription: typeof apiClient.eventSub?.deleteSubscription === 'function',
+      hasCreateSubscription: typeof apiClient.eventSub?.createSubscription === 'function'
+    };
+
+    console.log('API Methods Available:', apiMethods);
+    results.apiMethods = apiMethods;
+
+    // Compliance check
+    const isCompliant = (
+      apiMethods.hasEventSub &&
+      apiMethods.hasGetSubscriptions &&
+      apiMethods.hasDeleteSubscription &&
+      typeof results.totalCost === 'number' &&
+      typeof results.maxTotalCost === 'number'
+    );
+
+    results.apiCompliance = isCompliant;
+
+    console.log(`✅ EventSub API Compliance: ${isCompliant ? 'PASSED' : 'FAILED'}`);
+
+    res.json({
+      success: true,
+      message: `EventSub API compliance test ${isCompliant ? 'passed' : 'failed'}`,
+      results
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: EventSub API test failed:', error);
+    res.status(500).json({
+      error: 'EventSub API test failed',
+      details: error.message,
+      stack: error.stack
+    });
   }
 });
 

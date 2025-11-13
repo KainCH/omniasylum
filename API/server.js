@@ -140,6 +140,16 @@ app.use(express.static(frontendPath, {
   }
 }));
 
+// Serve sound files specifically (for overlay audio)
+app.use('/sounds', express.static(path.join(__dirname, 'frontend', 'sounds'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : '0',
+  setHeaders: (res, filePath) => {
+    // Allow audio files to be cached
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+
 // Health check endpoint (unauthenticated)
 app.get('/api/health', (req, res) => {
   res.json({
@@ -680,6 +690,56 @@ twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
   }
 });
 
+// ==================== DISCORD INVITE LINK EVENTS ====================
+
+twitchService.on('setDiscordInvite', async ({ userId, username, inviteLink }) => {
+  try {
+    // Update the Discord invite link
+    await database.updateUserDiscordInviteLink(userId, inviteLink);
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      `✅ Discord server link updated! Use !discord to share it with viewers.`
+    );
+
+    console.log(`🎮 Discord invite link set by ${username}: ${inviteLink}`);
+  } catch (error) {
+    console.error('Error handling Discord invite set:', error);
+    if (error.message.includes('Invalid Discord invite link format')) {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Invalid Discord invite link format. Please use a valid Discord invite URL.'
+      );
+    } else {
+      await twitchService.sendMessage(
+        userId,
+        '❌ Failed to set Discord invite link.'
+      );
+    }
+  }
+});
+
+twitchService.on('removeDiscordInvite', async ({ userId, username }) => {
+  try {
+    // Remove the Discord invite link
+    await database.updateUserDiscordInviteLink(userId, '');
+
+    // Send confirmation message to chat
+    await twitchService.sendMessage(
+      userId,
+      '✅ Discord server link removed.'
+    );
+
+    console.log(`🎮 Discord invite link removed by ${username}`);
+  } catch (error) {
+    console.error('Error handling Discord invite removal:', error);
+    await twitchService.sendMessage(
+      userId,
+      '❌ Failed to remove Discord invite link.'
+    );
+  }
+});
 
 // Handle bits events
 twitchService.on('bitsReceived', async ({ userId, username, channel, amount, message, timestamp, thresholds }) => {
@@ -863,6 +923,17 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       } else {
         message = `🎮 No active stream session. Use !startstream to begin!`;
       }
+    } else if (command === '!discord') {
+      // Get Discord invite link for this user
+      const discordInvite = await database.getUserDiscordInviteLink(userId);
+      if (discordInvite) {
+        message = `🎮 Join our Discord server: ${discordInvite}`;
+      } else {
+        message = `🎮 Discord server not set up yet. Moderators can use !setdiscord <invite_link> to add one!`;
+      }
+    } else if (command === '!help') {
+      // Show available chat commands
+      message = `💬 Available commands: !deaths, !swears, !stats, !bits, !streamstats, !discord, !help | Mods can also use counter adjustment commands (+/-) and series management`;
     }
 
     if (message) {

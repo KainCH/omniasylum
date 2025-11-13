@@ -480,10 +480,27 @@ router.get('/event-mappings', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
-    const mappings = await database.getEventMappings(req.user.userId);
+    let mappings = await database.getEventMappings(req.user.userId);
     const defaultMappings = database.getDefaultEventMappings();
     const availableEvents = database.getAllAvailableEvents();
     const availableAlertTypes = database.getAvailableAlertTypes();
+
+    // Auto-migration: Check if user has old channel.cheer mapping
+    if (mappings && mappings['channel.cheer']) {
+      console.log(`🔄 Auto-migrating channel.cheer to channel.bits.use for user ${req.user.userId}`);
+
+      // If user already has channel.bits.use mapping, keep it; otherwise migrate from channel.cheer
+      if (!mappings['channel.bits.use']) {
+        mappings['channel.bits.use'] = mappings['channel.cheer'];
+      }
+
+      // Remove the old channel.cheer mapping
+      delete mappings['channel.cheer'];
+
+      // Save the migrated mappings automatically
+      await database.saveEventMappings(req.user.userId, mappings);
+      console.log(`✅ Auto-migration completed for user ${req.user.userId}`);
+    }
 
     res.json({
       mappings: mappings,
@@ -563,6 +580,33 @@ router.get('/debug/validation', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error in debug endpoint:', error);
     res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
+  }
+});
+
+// Migration endpoint to move from channel.cheer to channel.bits.use
+router.post('/migrate-cheer-to-bits', requireAuth, async (req, res) => {
+  try {
+    // Only allow admin users to run bulk migration
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required for bulk migration' });
+    }
+
+    console.log(`🔄 Admin ${req.user.username} initiated bulk migration from channel.cheer to channel.bits.use`);
+
+    const migratedCount = await database.migrateAllCheerToBitsUse();
+
+    res.json({
+      message: 'Migration completed successfully',
+      migratedUsers: migratedCount,
+      description: 'All users with channel.cheer mappings have been migrated to channel.bits.use'
+    });
+
+  } catch (error) {
+    console.error('Error during migration:', error);
+    res.status(500).json({
+      error: 'Migration failed',
+      details: error.message
+    });
   }
 });
 

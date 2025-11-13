@@ -22,6 +22,9 @@ function DiscordWebhookSettings({ user }) {
     enabled: false
   })
 
+  // Discord invite link state
+  const [discordInvite, setDiscordInvite] = useState('')
+
   // Debug form state changes
   useEffect(() => {
     console.log('🔄 FORM STATE CHANGED:', {
@@ -95,6 +98,14 @@ function DiscordWebhookSettings({ user }) {
     if (activeTab === 'configuration' && user) {
       console.log('⚙️ Configuration tab opened, loading webhook configuration...')
       loadWebhookConfiguration()
+    }
+  }, [activeTab, user])
+
+  // Load Discord invite when switching to Discord invite tab
+  useEffect(() => {
+    if (activeTab === 'invite' && user) {
+      console.log('🎮 Discord invite tab opened, loading Discord invite...')
+      loadDiscordInvite()
     }
   }, [activeTab, user])
 
@@ -222,6 +233,73 @@ function DiscordWebhookSettings({ user }) {
     }
   }
 
+  // Load Discord invite link
+  const loadDiscordInvite = async () => {
+    console.log('🎮 Loading Discord invite link...')
+    try {
+      await withLoading(async () => {
+        const inviteData = await userAPI.getDiscordInvite()
+        console.log('🎮 Discord invite data received:', inviteData)
+        setDiscordInvite(inviteData?.discordInviteLink || '')
+
+        if (inviteData?.discordInviteLink) {
+          console.log('✅ Discord invite link loaded successfully')
+          showMessage('Discord invite link loaded', 'success')
+        } else {
+          console.log('ℹ️ No Discord invite link configured')
+          showMessage('No Discord invite link configured', 'info')
+        }
+      })
+    } catch (error) {
+      console.error('❌ Error loading Discord invite:', error)
+      showMessage('Failed to load Discord invite link', 'error')
+    }
+  }
+
+  // Save Discord invite link
+  const saveDiscordInvite = async () => {
+    console.log('🎮 Saving Discord invite link...')
+    try {
+      await withLoading(async () => {
+        // Validate Discord invite URL format
+        if (discordInvite && !isValidDiscordInviteUrl(discordInvite)) {
+          showMessage('Invalid Discord invite URL format. Use discord.gg/... or discord.com/invite/...', 'error')
+          return
+        }
+
+        await userAPI.updateDiscordInvite({ discordInviteLink: discordInvite })
+        console.log('✅ Discord invite link saved successfully')
+        showMessage('Discord invite link saved successfully!', 'success')
+      })
+    } catch (error) {
+      console.error('❌ Error saving Discord invite:', error)
+      showMessage('Failed to save Discord invite link', 'error')
+    }
+  }
+
+  // Remove Discord invite link
+  const removeDiscordInvite = async () => {
+    console.log('🎮 Removing Discord invite link...')
+    try {
+      await withLoading(async () => {
+        await userAPI.updateDiscordInvite({ discordInviteLink: '' })
+        setDiscordInvite('')
+        console.log('✅ Discord invite link removed successfully')
+        showMessage('Discord invite link removed successfully!', 'success')
+      })
+    } catch (error) {
+      console.error('❌ Error removing Discord invite:', error)
+      showMessage('Failed to remove Discord invite link', 'error')
+    }
+  }
+
+  // Validate Discord invite URL format
+  const isValidDiscordInviteUrl = (url) => {
+    if (!url) return true // Allow empty URLs for removal
+    const discordInviteRegex = /^https?:\/\/(discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\/)/
+    return discordInviteRegex.test(url)
+  }
+
   const saveWebhookConfiguration = async () => {
     console.log('� Save Webhook Configuration button clicked')
     console.log('📊 Form state:', formState)
@@ -308,6 +386,8 @@ function DiscordWebhookSettings({ user }) {
     }
   }
 
+
+
   return (
     <div className="discord-webhook-settings">
       <div className="settings-header">
@@ -340,6 +420,12 @@ function DiscordWebhookSettings({ user }) {
           onClick={() => setActiveTab('counters')}
         >
           🎯 Counters & Milestones
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'invite' ? 'active' : ''}`}
+          onClick={() => setActiveTab('invite')}
+        >
+          🎮 Discord Invite
         </button>
         <button
           className={`tab-button ${activeTab === 'configuration' ? 'active' : ''}`}
@@ -671,6 +757,137 @@ function DiscordWebhookSettings({ user }) {
                   📋 Customizable templates will be available in a future update!
                 </p>
               </div>
+            </FormSection>
+          </div>
+        )}
+
+        {activeTab === 'invite' && (
+          <div className="tab-content">
+            <FormSection title="🎮 Discord Server Invite" collapsible>
+              <div style={{
+                background: 'rgba(88, 101, 242, 0.1)',
+                border: '1px solid #5865f2',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '20px',
+                color: '#5865f2'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '20px' }}>💬</span>
+                  <strong>Chat Commands Available</strong>
+                </div>
+                <div style={{ fontSize: '14px', lineHeight: '1.6' }}>
+                  <p style={{ margin: '0 0 8px 0' }}>
+                    <strong>For Viewers:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!discord</code> - Get the Discord server invite link
+                  </p>
+                  <p style={{ margin: '0 0 8px 0' }}>
+                    <strong>For Viewers:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!help</code> - Show all available chat commands
+                  </p>
+                  <p style={{ margin: '0 0 8px 0' }}>
+                    <strong>For Moderators:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!setdiscord &lt;invite_url&gt;</code> - Set the invite link
+                  </p>
+                  <p style={{ margin: '0' }}>
+                    <strong>For Moderators:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!removediscord</code> - Remove the invite link
+                  </p>
+                </div>
+              </div>
+
+              <InputGroup
+                label="Discord Server Invite URL"
+                required={false}
+              >
+                <input
+                  type="url"
+                  value={discordInvite}
+                  onChange={(e) => setDiscordInvite(e.target.value)}
+                  placeholder="https://discord.gg/YOUR_INVITE_CODE"
+                  disabled={isLoading}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: '#2a2a2a',
+                    border: `2px solid ${discordInvite ? '#5865f2' : '#444'}`,
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontFamily: 'Courier New, monospace'
+                  }}
+                />
+                <small style={{
+                  color: '#888',
+                  fontSize: '0.875rem',
+                  display: 'block',
+                  marginTop: '5px'
+                }}>
+                  Supported formats: discord.gg/..., discord.com/invite/..., or discordapp.com/invite/...
+                </small>
+                {discordInvite && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '6px 10px',
+                    background: isValidDiscordInviteUrl(discordInvite) ? '#5865f21a' : '#ef44441a',
+                    border: `1px solid ${isValidDiscordInviteUrl(discordInvite) ? '#5865f2' : '#ef4444'}`,
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    color: isValidDiscordInviteUrl(discordInvite) ? '#5865f2' : '#ef4444'
+                  }}>
+                    {isValidDiscordInviteUrl(discordInvite)
+                      ? '✅ Valid Discord invite URL format'
+                      : '❌ Invalid format - please use a proper Discord invite URL'
+                    }
+                  </div>
+                )}
+              </InputGroup>
+
+              <div className="webhook-actions">
+                <ActionButton
+                  variant="primary"
+                  onClick={saveDiscordInvite}
+                  loading={isLoading}
+                  disabled={isLoading || (discordInvite && !isValidDiscordInviteUrl(discordInvite))}
+                >
+                  💾 Save Discord Invite
+                </ActionButton>
+
+                <ActionButton
+                  variant="danger"
+                  onClick={removeDiscordInvite}
+                  loading={isLoading}
+                  disabled={isLoading || !discordInvite}
+                >
+                  🗑️ Remove Invite
+                </ActionButton>
+
+                <ActionButton
+                  variant="info"
+                  onClick={loadDiscordInvite}
+                  loading={isLoading}
+                >
+                  🔄 Refresh
+                </ActionButton>
+              </div>
+
+              {discordInvite && (
+                <div style={{
+                  marginTop: '20px',
+                  padding: '16px',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid #22c55e',
+                  borderRadius: '8px',
+                  color: '#22c55e'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>🎉</span>
+                    <strong>Invite Link Active!</strong>
+                  </div>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
+                    Viewers can now use <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!discord</code> in chat to get your server invite.
+                  </p>
+                  <p style={{ margin: '0', fontSize: '12px', opacity: 0.8 }}>
+                    Current invite: <span style={{ fontFamily: 'Courier New, monospace' }}>{discordInvite}</span>
+                  </p>
+                </div>
+              )}
             </FormSection>
           </div>
         )}
