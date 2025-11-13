@@ -8,7 +8,7 @@ The OmniAsylum Stream Counter now features a comprehensive **three-tier role-bas
 
 ### 1. **Super Admin** (`super_admin`)
 - **User**: `riress` (automatically assigned)
-- **Capabilities**: 
+- **Capabilities**:
   - Full system access and control
   - Grant/revoke manager permissions to users for specific broadcasters
   - Manage all users and their settings
@@ -121,13 +121,13 @@ PUT    /api/admin/manage/:userId/status             // Enable/disable user
 
 ```javascript
 // Example endpoint protection
-app.use('/api/admin/manage/:userId', 
+app.use('/api/admin/manage/:userId',
   requireAuth,                    // Must be logged in
   requireManagerAccess,           // Must be manager for this user OR super_admin
   managerRoutes
 );
 
-app.use('/api/permissions/*', 
+app.use('/api/permissions/*',
   requireAuth,                    // Must be logged in
   requireSuperAdmin,              // Must be super_admin role
   permissionRoutes
@@ -278,6 +278,6 @@ For issues with the permission system:
 
 ---
 
-**Last Updated**: December 2024  
-**Version**: 2.0  
+**Last Updated**: December 2024
+**Version**: 2.0
 **System**: OmniAsylum Stream Counter Multi-Tenant Architecture

@@ -25,11 +25,11 @@ function PermissionManager({ userRole }) {
         const managedResponse = await fetch('/api/admin/permissions/managed-users', {
           credentials: 'include'
         })
-        
+
         if (!managedResponse.ok) {
           throw new Error('Failed to load managed users')
         }
-        
+
         const managedData = await managedResponse.json()
         setCurrentUser(managedData.currentUser)
         setManagedUsers(managedData.managedUsers)
@@ -39,7 +39,7 @@ function PermissionManager({ userRole }) {
           const allUsersResponse = await fetch('/api/admin/permissions/all-users-roles', {
             credentials: 'include'
           })
-          
+
           if (allUsersResponse.ok) {
             const allUsersData = await allUsersResponse.json()
             setUsers(allUsersData.users)
@@ -77,7 +77,7 @@ function PermissionManager({ userRole }) {
 
         const result = await response.json()
         addToast(`Manager permissions granted successfully to ${result.manager.displayName}`, 'success')
-        
+
         // Reset form and reload data
         setSelectedManager('')
         setSelectedBroadcaster('')
@@ -136,10 +136,10 @@ function PermissionManager({ userRole }) {
   }
 
   // Filter users for dropdowns
-  const potentialManagers = users.filter(user => 
+  const potentialManagers = users.filter(user =>
     user.role === 'streamer' || user.role === 'manager'
   )
-  const potentialBroadcasters = users.filter(user => 
+  const potentialBroadcasters = users.filter(user =>
     user.role === 'streamer'
   )
 
@@ -252,7 +252,7 @@ function PermissionManager({ userRole }) {
                     <p><strong>Managing {user.managedStreamers.length} streamer(s):</strong></p>
                     <div className="managed-streamers">
                       {user.managedStreamers.map(streamerId => {
-                        const streamer = users.find(u => u.userId === streamerId) || 
+                        const streamer = users.find(u => u.userId === streamerId) ||
                                        managedUsers.find(u => u.userId === streamerId)
                         return (
                           <div key={streamerId} className="managed-streamer">

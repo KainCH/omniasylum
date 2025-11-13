@@ -949,7 +949,7 @@ class Database {
   async grantManagerPermissions(managerUserId, broadcasterUserId) {
     const manager = await this.getUser(managerUserId);
     const broadcaster = await this.getUser(broadcasterUserId);
-    
+
     if (!manager) {
       throw new Error('Manager user not found');
     }
@@ -993,7 +993,7 @@ class Database {
    */
   async revokeManagerPermissions(managerUserId, broadcasterUserId) {
     const manager = await this.getUser(managerUserId);
-    
+
     if (!manager) {
       throw new Error('Manager user not found');
     }

@@ -322,7 +322,7 @@ async function requireManagerAccess(req, res, next) {
 
     // Get target user ID from params or body
     const targetUserId = req.params.userId || req.params.twitchUserId || req.body.userId || req.user.userId;
-    
+
     console.log('🔐 requireManagerAccess - Checking permissions for manager:', req.user.username, 'target:', targetUserId);
 
     // Check if user can manage the target user

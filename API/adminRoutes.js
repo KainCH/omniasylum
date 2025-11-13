@@ -1483,8 +1483,8 @@ router.post('/permissions/grant-manager', requireAuth, requireAdmin, async (req,
     const { managerUserId, broadcasterUserId } = req.body;
 
     if (!managerUserId || !broadcasterUserId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: managerUserId, broadcasterUserId' 
+      return res.status(400).json({
+        error: 'Missing required fields: managerUserId, broadcasterUserId'
       });
     }
 
@@ -1505,9 +1505,9 @@ router.post('/permissions/grant-manager', requireAuth, requireAdmin, async (req,
     });
   } catch (error) {
     console.error('❌ Error granting manager permissions:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to grant manager permissions',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1520,8 +1520,8 @@ router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req
     const { managerUserId, broadcasterUserId } = req.body;
 
     if (!managerUserId || !broadcasterUserId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: managerUserId, broadcasterUserId' 
+      return res.status(400).json({
+        error: 'Missing required fields: managerUserId, broadcasterUserId'
       });
     }
 
@@ -1542,9 +1542,9 @@ router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req
     });
   } catch (error) {
     console.error('❌ Error revoking manager permissions:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to revoke manager permissions',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1580,9 +1580,9 @@ router.get('/permissions/managed-users', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting managed users:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get managed users',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1593,7 +1593,7 @@ router.get('/permissions/managed-users', requireAuth, async (req, res) => {
 router.get('/permissions/can-manage/:targetUserId', requireAuth, async (req, res) => {
   try {
     const { targetUserId } = req.params;
-    
+
     console.log(`🔑 Checking if ${req.user.username} can manage ${targetUserId}`);
 
     const canManage = await database.canManageUser(req.user.userId, targetUserId);
@@ -1611,9 +1611,9 @@ router.get('/permissions/can-manage/:targetUserId', requireAuth, async (req, res
     });
   } catch (error) {
     console.error('❌ Error checking management permissions:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to check management permissions',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1642,9 +1642,9 @@ router.get('/permissions/all-users-roles', requireAuth, requireAdmin, async (req
     });
   } catch (error) {
     console.error('❌ Error getting all user roles:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get all user roles',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1675,9 +1675,9 @@ router.put('/manage/:userId/features', requireAuth, requireManagerAccess, async 
     });
   } catch (error) {
     console.error('❌ Error updating user features (manager):', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to update user features',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1706,9 +1706,9 @@ router.put('/manage/:userId/overlay', requireAuth, requireManagerAccess, async (
     });
   } catch (error) {
     console.error('❌ Error updating overlay settings (manager):', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to update overlay settings',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1723,7 +1723,7 @@ router.get('/manage/:userId', requireAuth, requireManagerAccess, async (req, res
     console.log(`👀 Manager ${req.user.username} viewing user details for ${userId}`);
 
     const user = await database.getUser(userId);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -1746,9 +1746,9 @@ router.get('/manage/:userId', requireAuth, requireManagerAccess, async (req, res
     });
   } catch (error) {
     console.error('❌ Error getting user details (manager):', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get user details',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1781,9 +1781,9 @@ router.put('/manage/:userId/status', requireAuth, requireManagerAccess, async (r
     });
   } catch (error) {
     console.error('❌ Error updating user status (manager):', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to update user status',
-      details: error.message 
+      details: error.message
     });
   }
 });
