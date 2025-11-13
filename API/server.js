@@ -537,18 +537,10 @@ twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaste
     let helpMessage = '';
 
     if (isBroadcaster) {
-      // Broadcaster gets full command access info via whisper for privacy
-      const broadcasterHelpMessage = '🎯 Broadcaster Commands: !startstream !endstream !resetcounters !resetbits !deleteseries <name> | Mod Commands: !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Public: !stats !bits !streamstats !discord !help';
-
-      const success = await twitchService.sendWhisper(userId, username, broadcasterHelpMessage);
-      if (success) {
-        console.log(`📱 Broadcaster help sent via whisper to ${username}`);
-        return; // Don't send public message
-      } else {
-        console.log(`❌ Failed to send broadcaster help whisper to ${username}`);
-        // Fall back to public message
-        helpMessage = '💬 Available commands: !stats, !bits, !streamstats, !discord, !help | Full command list sent via whisper.';
-      }
+      // Broadcaster doesn't need help - they have access to all commands
+      // Don't respond since they can't whisper themselves and shouldn't clutter chat
+      console.log(`🎯 Help request from broadcaster ${username} - no response needed`);
+      return;
     } else if (isMod) {
       // Mods get mod command info via whisper for privacy
       // Get broadcaster's display name for clarity
