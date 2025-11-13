@@ -101,10 +101,10 @@ function DiscordWebhookSettings({ user }) {
     }
   }, [activeTab, user])
 
-  // Load Discord invite when switching to Discord invite tab
+  // Load Discord invite when switching to configuration tab
   useEffect(() => {
-    if (activeTab === 'invite' && user) {
-      console.log('🎮 Discord invite tab opened, loading Discord invite...')
+    if (activeTab === 'configuration' && user) {
+      console.log('⚙️ Configuration tab opened, loading Discord invite...')
       loadDiscordInvite()
     }
   }, [activeTab, user])
@@ -420,12 +420,6 @@ function DiscordWebhookSettings({ user }) {
           onClick={() => setActiveTab('counters')}
         >
           🎯 Counters & Milestones
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'invite' ? 'active' : ''}`}
-          onClick={() => setActiveTab('invite')}
-        >
-          🎮 Discord Invite
         </button>
         <button
           className={`tab-button ${activeTab === 'configuration' ? 'active' : ''}`}
@@ -758,11 +752,7 @@ function DiscordWebhookSettings({ user }) {
                 </p>
               </div>
             </FormSection>
-          </div>
-        )}
 
-        {activeTab === 'invite' && (
-          <div className="tab-content">
             <FormSection title="🎮 Discord Server Invite" collapsible>
               <div style={{
                 background: 'rgba(88, 101, 242, 0.1)',

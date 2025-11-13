@@ -578,6 +578,29 @@
   border-color: #b02a37 !important;
 }
 
+/* Tab Navigation Dark Mode Overrides */
+.discord-webhook-settings .tab-navigation {
+  background: #1e1e1e !important;
+  border: 1px solid #444 !important;
+}
+
+.discord-webhook-settings .tab-button {
+  background: transparent !important;
+  color: #ccc !important;
+  border: none !important;
+}
+
+.discord-webhook-settings .tab-button:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
+}
+
+.discord-webhook-settings .tab-button.active {
+  background: rgba(100, 100, 255, 0.2) !important;
+  color: #6464ff !important;
+  font-weight: 600 !important;
+}
+
 .discord-webhook-settings .action-button.danger:hover:not(:disabled) {
   background: #c82333 !important;
   border-color: #9c1e2a !important;

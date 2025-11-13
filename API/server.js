@@ -531,6 +531,43 @@ twitchService.on('resetCounters', async ({ userId, username }) => {
   }
 });
 
+// Handle context-aware help command
+twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaster, isMod }) => {
+  try {
+    let helpMessage = '';
+    
+    if (isBroadcaster) {
+      // Broadcaster gets full command access info
+      helpMessage = '� Broadcaster Commands: !startstream !endstream !resetcounters !resetbits !deleteseries <name> | Mod Commands: !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Public: !stats !bits !streamstats !discord !help';
+    } else if (isMod) {
+      // Mods get mod command info via whisper for privacy
+      // Get broadcaster's display name for clarity
+      const user = await database.getUser(userId);
+      const broadcasterName = user ? user.displayName : 'the broadcaster';
+      const modHelpMessage = `🔧 Chat Commands (Mods Only): !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Use these in ${broadcasterName}'s Twitch chat to manage counters and series saves during stream.`;
+      
+      const success = await twitchService.sendWhisper(userId, username, modHelpMessage);
+      if (success) {
+        console.log(`📱 Mod help sent via whisper to ${username}`);
+        return; // Don't send public message
+      } else {
+        console.log(`❌ Failed to send mod help whisper to ${username}`);
+        // Fall back to public message
+        helpMessage = '💬 Available commands: !stats, !bits, !streamstats, !discord, !help | Mod commands sent via whisper.';
+      }
+    } else {
+      // Regular viewers get public commands only
+      helpMessage = '💬 Available commands: !stats, !bits, !streamstats, !discord, !help';
+    }
+
+    if (helpMessage) {
+      await twitchService.sendMessage(userId, helpMessage);
+    }
+  } catch (error) {
+    console.error('Error handling help command:', error);
+  }
+});
+
 // Handle stream management commands
 twitchService.on('startStream', async ({ userId, username }) => {
   try {
@@ -905,11 +942,7 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
     const counters = await database.getCounters(userId);
     let message = '';
 
-    if (command === '!deaths') {
-      message = `💀 Current deaths: ${counters.deaths}`;
-    } else if (command === '!swears') {
-      message = `🤬 Current swears: ${counters.swears}`;
-    } else if (command === '!bits') {
+    if (command === '!bits') {
       message = `💎 Current stream bits: ${counters.bits || 0}`;
     } else if (command === '!stats') {
       const total = counters.deaths + counters.swears;
@@ -931,9 +964,6 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       } else {
         message = `🎮 Discord server not set up yet. Moderators can use !setdiscord <invite_link> to add one!`;
       }
-    } else if (command === '!help') {
-      // Show available chat commands
-      message = `💬 Available commands: !deaths, !swears, !stats, !bits, !streamstats, !discord, !help | Mods can also use counter adjustment commands (+/-) and series management`;
     }
 
     if (message) {

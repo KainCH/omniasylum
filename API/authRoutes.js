@@ -32,6 +32,7 @@ router.get('/twitch', async (req, res) => {
       'user:read:email',              // Read user email
       'chat:read',                    // Read chat messages
       'chat:edit',                    // Send chat messages
+      'user:manage:whispers',         // Send whisper messages
       'channel:read:subscriptions',   // Read subscriptions (EventSub cost reduction)
       'channel:read:redemptions',     // Read channel point redemptions (EventSub cost reduction)
       'moderator:read:followers',     // Read followers (EventSub cost reduction)
