@@ -131,11 +131,11 @@ class Database {
     // Get existing user data to preserve webhook URL and other settings
     const existingUser = await this.getUser(userData.twitchUserId);
 
-    // Determine user role - riress is always admin
+    // Determine user role - riress is always super_admin
     let role = 'streamer';
     const safeUsername = userData.username ? userData.username.toString().toLowerCase() : '';
     if (safeUsername === 'riress') {
-      role = 'admin';
+      role = 'super_admin';
     }
 
     // Default feature flags for new users
@@ -941,6 +941,145 @@ class Database {
     }
 
     return user;
+  }
+
+  /**
+   * Grant manager permissions to a user for a specific broadcaster (super_admin only)
+   */
+  async grantManagerPermissions(managerUserId, broadcasterUserId) {
+    const manager = await this.getUser(managerUserId);
+    const broadcaster = await this.getUser(broadcasterUserId);
+    
+    if (!manager) {
+      throw new Error('Manager user not found');
+    }
+    if (!broadcaster) {
+      throw new Error('Broadcaster user not found');
+    }
+
+    // Initialize managedStreamers array if it doesn't exist
+    if (!manager.managedStreamers) {
+      manager.managedStreamers = [];
+    }
+
+    // Add broadcaster to managed streamers if not already there
+    if (!manager.managedStreamers.includes(broadcasterUserId)) {
+      manager.managedStreamers.push(broadcasterUserId);
+    }
+
+    // Update manager role if they're not already a manager
+    if (manager.role === 'streamer') {
+      manager.role = 'manager';
+    }
+
+    // Save the updated manager user
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(manager, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[managerUserId]) {
+        users[managerUserId] = manager;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('Manager user not found in local storage');
+      }
+    }
+
+    return manager;
+  }
+
+  /**
+   * Revoke manager permissions from a user for a specific broadcaster (super_admin only)
+   */
+  async revokeManagerPermissions(managerUserId, broadcasterUserId) {
+    const manager = await this.getUser(managerUserId);
+    
+    if (!manager) {
+      throw new Error('Manager user not found');
+    }
+
+    // Remove broadcaster from managed streamers
+    if (manager.managedStreamers) {
+      manager.managedStreamers = manager.managedStreamers.filter(id => id !== broadcasterUserId);
+
+      // If no more managed streamers, downgrade to regular streamer
+      if (manager.managedStreamers.length === 0) {
+        manager.role = 'streamer';
+        delete manager.managedStreamers;
+      }
+    }
+
+    // Save the updated manager user
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(manager, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[managerUserId]) {
+        users[managerUserId] = manager;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('Manager user not found in local storage');
+      }
+    }
+
+    return manager;
+  }
+
+  /**
+   * Check if a user can manage another user's settings
+   */
+  async canManageUser(managerUserId, targetUserId) {
+    // Users can always manage themselves
+    if (managerUserId === targetUserId) {
+      return true;
+    }
+
+    const manager = await this.getUser(managerUserId);
+    if (!manager) {
+      return false;
+    }
+
+    // Super admin can manage anyone
+    if (manager.role === 'super_admin') {
+      return true;
+    }
+
+    // Managers can only manage their assigned streamers
+    if (manager.role === 'manager' && manager.managedStreamers) {
+      return manager.managedStreamers.includes(targetUserId);
+    }
+
+    return false;
+  }
+
+  /**
+   * Get all users a manager can manage (includes themselves)
+   */
+  async getManagedUsers(managerUserId) {
+    const manager = await this.getUser(managerUserId);
+    if (!manager) {
+      return [];
+    }
+
+    const managedUsers = [manager]; // Always include self
+
+    // Super admin can see all users
+    if (manager.role === 'super_admin') {
+      const allUsers = await this.getAllUsers();
+      return allUsers;
+    }
+
+    // Managers can see their assigned streamers
+    if (manager.role === 'manager' && manager.managedStreamers) {
+      for (const streamerId of manager.managedStreamers) {
+        const streamer = await this.getUser(streamerId);
+        if (streamer) {
+          managedUsers.push(streamer);
+        }
+      }
+    }
+
+    return managedUsers;
   }
 
   /**

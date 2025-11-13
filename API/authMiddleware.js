@@ -237,7 +237,42 @@ async function verifySocketAuth(socket, next) {
 }
 
 /**
- * Middleware to verify user is an admin
+ * Middleware to verify user is a super admin
+ * Note: This middleware expects that requireAuth has already been applied
+ */
+async function requireSuperAdmin(req, res, next) {
+  try {
+    console.log('🔐 requireSuperAdmin - User object:', req.user ? 'EXISTS' : 'MISSING');
+
+    // Check if user is already authenticated (should be set by requireAuth middleware)
+    if (!req.user || !req.user.userId) {
+      console.log('🔐 requireSuperAdmin - FAILED: No user object from requireAuth');
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    console.log('🔐 requireSuperAdmin - Checking super admin role for user:', req.user.username);
+
+    // Check if user is super admin
+    const user = await database.getUser(req.user.userId);
+
+    if (!user || user.role !== 'super_admin') {
+      console.log('🔐 requireSuperAdmin - FAILED: User role is', user?.role, 'not super_admin');
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Super admin access required'
+      });
+    }
+
+    console.log('🔐 requireSuperAdmin - SUCCESS: Super admin access granted');
+    next();
+  } catch (error) {
+    console.error('Super admin middleware error:', error);
+    res.status(500).json({ error: 'Authorization failed' });
+  }
+}
+
+/**
+ * Middleware to verify user is an admin (backward compatibility - now checks for super_admin)
  * Note: This middleware expects that requireAuth has already been applied
  */
 async function requireAdmin(req, res, next) {
@@ -252,11 +287,11 @@ async function requireAdmin(req, res, next) {
 
     console.log('🔐 requireAdmin - Checking admin role for user:', req.user.username);
 
-    // Check if user is admin
+    // Check if user is super admin (backward compatibility)
     const user = await database.getUser(req.user.userId);
 
-    if (!user || user.role !== 'admin') {
-      console.log('🔐 requireAdmin - FAILED: User role is', user?.role, 'not admin');
+    if (!user || user.role !== 'super_admin') {
+      console.log('🔐 requireAdmin - FAILED: User role is', user?.role, 'not super_admin');
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Admin access required'
@@ -271,9 +306,91 @@ async function requireAdmin(req, res, next) {
   }
 }
 
+/**
+ * Middleware to verify user can manage the target user
+ * Checks for: super_admin, manager with permissions, or self-management
+ */
+async function requireManagerAccess(req, res, next) {
+  try {
+    console.log('🔐 requireManagerAccess - User object:', req.user ? 'EXISTS' : 'MISSING');
+
+    // Check if user is already authenticated
+    if (!req.user || !req.user.userId) {
+      console.log('🔐 requireManagerAccess - FAILED: No user object from requireAuth');
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Get target user ID from params or body
+    const targetUserId = req.params.userId || req.params.twitchUserId || req.body.userId || req.user.userId;
+    
+    console.log('🔐 requireManagerAccess - Checking permissions for manager:', req.user.username, 'target:', targetUserId);
+
+    // Check if user can manage the target user
+    const canManage = await database.canManageUser(req.user.userId, targetUserId);
+
+    if (!canManage) {
+      console.log('🔐 requireManagerAccess - FAILED: User cannot manage target user');
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Manager access required for this user'
+      });
+    }
+
+    console.log('🔐 requireManagerAccess - SUCCESS: Manager access granted');
+    req.targetUserId = targetUserId; // Add target user ID to request for convenience
+    next();
+  } catch (error) {
+    console.error('Manager access middleware error:', error);
+    res.status(500).json({ error: 'Authorization failed' });
+  }
+}
+
+/**
+ * Dynamic middleware to verify user has minimum role level
+ */
+function requireRole(minimumRole) {
+  const roleHierarchy = {
+    'streamer': 1,
+    'manager': 2,
+    'super_admin': 3
+  };
+
+  return async (req, res, next) => {
+    try {
+      console.log(`🔐 requireRole(${minimumRole}) - User object:`, req.user ? 'EXISTS' : 'MISSING');
+
+      if (!req.user || !req.user.userId) {
+        console.log(`🔐 requireRole(${minimumRole}) - FAILED: No user object from requireAuth`);
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const user = await database.getUser(req.user.userId);
+      const userRoleLevel = roleHierarchy[user?.role] || 0;
+      const requiredRoleLevel = roleHierarchy[minimumRole] || 999;
+
+      if (userRoleLevel < requiredRoleLevel) {
+        console.log(`🔐 requireRole(${minimumRole}) - FAILED: User role ${user?.role} (${userRoleLevel}) < required ${minimumRole} (${requiredRoleLevel})`);
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: `${minimumRole} access required`
+        });
+      }
+
+      console.log(`🔐 requireRole(${minimumRole}) - SUCCESS: Role access granted`);
+      next();
+    } catch (error) {
+      console.error(`Role middleware error (${minimumRole}):`, error);
+      res.status(500).json({ error: 'Authorization failed' });
+    }
+  };
+}
+
 module.exports = {
   requireAuth,
   optionalAuth,
   verifySocketAuth,
-  requireAdmin
+  requireAdmin,
+  requireSuperAdmin,
+  requireManagerAccess,
+  requireRole
 };

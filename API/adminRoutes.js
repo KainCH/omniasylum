@@ -1,7 +1,7 @@
 const express = require('express');
 const database = require('./database');
 const keyVault = require('./keyVault');
-const { requireAuth, requireAdmin } = require('./authMiddleware');
+const { requireAuth, requireAdmin, requireSuperAdmin, requireManagerAccess, requireRole } = require('./authMiddleware');
 
 const router = express.Router();
 
@@ -20,47 +20,6 @@ const rolePermissions = {
   'manager': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings', 'manage_user_features', 'manage_overlay_settings', 'view_analytics'],
   'admin': ['*'] // All permissions
 };
-
-/**
- * Middleware to require specific role or higher
- */
-function requireRole(requiredRole) {
-  return (req, res, next) => {
-    const userRole = req.user?.role || 'streamer';
-    const userRoleLevel = roleHierarchy[userRole] || 0;
-    const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
-
-    if (userRoleLevel >= requiredRoleLevel) {
-      next();
-    } else {
-      res.status(403).json({
-        error: 'Insufficient permissions',
-        required: requiredRole,
-        current: userRole
-      });
-    }
-  };
-}
-
-/**
- * Middleware to require specific permission
- */
-function requirePermission(permission) {
-  return (req, res, next) => {
-    const userRole = req.user?.role || 'streamer';
-    const userPermissions = rolePermissions[userRole] || [];
-
-    if (userPermissions.includes('*') || userPermissions.includes(permission)) {
-      next();
-    } else {
-      res.status(403).json({
-        error: 'Permission denied',
-        required: permission,
-        role: userRole
-      });
-    }
-  };
-}
 
 /**
  * Get all users
@@ -151,7 +110,7 @@ router.get('/users/:userId', requireAuth, requireRole('manager'), async (req, re
  * Update user features
  * PUT /api/admin/users/:userId/features
  */
-router.put('/users/:userId/features', requireAuth, requirePermission('manage_user_features'), async (req, res) => {
+router.put('/users/:userId/features', requireAuth, requireManagerAccess, async (req, res) => {
   try {
     console.log('🔍 Feature update request for user:', req.params.userId);
     console.log('🔍 Raw request body:', JSON.stringify(req.body, null, 2));
@@ -329,7 +288,7 @@ router.put('/users/:userId/features', requireAuth, requirePermission('manage_use
  * Get user overlay settings
  * GET /api/admin/users/:userId/overlay-settings
  */
-router.get('/users/:userId/overlay-settings', requireAuth, requirePermission('view_overlay_settings'), async (req, res) => {
+router.get('/users/:userId/overlay-settings', requireAuth, requireManagerAccess, async (req, res) => {
   try {
     const settings = await database.getUserOverlaySettings(req.params.userId);
 
@@ -351,7 +310,7 @@ router.get('/users/:userId/overlay-settings', requireAuth, requirePermission('vi
  * Update user overlay settings
  * PUT /api/admin/users/:userId/overlay-settings
  */
-router.put('/users/:userId/overlay-settings', requireAuth, requirePermission('manage_user_features'), async (req, res) => {
+router.put('/users/:userId/overlay-settings', requireAuth, requireManagerAccess, async (req, res) => {
   try {
     const { enabled, position, counters, theme, animations } = req.body;
 
@@ -1511,6 +1470,321 @@ router.post('/users/:userId/force-offline', requireAuth, requireAdmin, async (re
   } catch (error) {
     console.error('❌ Error forcing stream offline:', error);
     res.status(500).json({ error: 'Failed to force stream offline' });
+  }
+});
+
+// ==================== PERMISSION MANAGEMENT ROUTES ====================
+
+/**
+ * Grant manager permissions to a user for a specific broadcaster (super_admin only)
+ */
+router.post('/permissions/grant-manager', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { managerUserId, broadcasterUserId } = req.body;
+
+    if (!managerUserId || !broadcasterUserId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: managerUserId, broadcasterUserId' 
+      });
+    }
+
+    console.log(`🔑 Super admin ${req.user.username} granting manager permissions: ${managerUserId} -> ${broadcasterUserId}`);
+
+    const updatedManager = await database.grantManagerPermissions(managerUserId, broadcasterUserId);
+
+    res.json({
+      success: true,
+      message: 'Manager permissions granted successfully',
+      manager: {
+        userId: updatedManager.twitchUserId,
+        username: updatedManager.username,
+        displayName: updatedManager.displayName,
+        role: updatedManager.role,
+        managedStreamers: updatedManager.managedStreamers || []
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error granting manager permissions:', error);
+    res.status(500).json({ 
+      error: 'Failed to grant manager permissions',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Revoke manager permissions from a user for a specific broadcaster (super_admin only)
+ */
+router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { managerUserId, broadcasterUserId } = req.body;
+
+    if (!managerUserId || !broadcasterUserId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: managerUserId, broadcasterUserId' 
+      });
+    }
+
+    console.log(`🔑 Super admin ${req.user.username} revoking manager permissions: ${managerUserId} -> ${broadcasterUserId}`);
+
+    const updatedManager = await database.revokeManagerPermissions(managerUserId, broadcasterUserId);
+
+    res.json({
+      success: true,
+      message: 'Manager permissions revoked successfully',
+      manager: {
+        userId: updatedManager.twitchUserId,
+        username: updatedManager.username,
+        displayName: updatedManager.displayName,
+        role: updatedManager.role,
+        managedStreamers: updatedManager.managedStreamers || []
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error revoking manager permissions:', error);
+    res.status(500).json({ 
+      error: 'Failed to revoke manager permissions',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Get all users a manager can manage (includes permissions context)
+ */
+router.get('/permissions/managed-users', requireAuth, async (req, res) => {
+  try {
+    console.log(`🔑 Getting managed users for: ${req.user.username} (${req.user.userId})`);
+
+    const managedUsers = await database.getManagedUsers(req.user.userId);
+    const currentUser = await database.getUser(req.user.userId);
+
+    res.json({
+      success: true,
+      currentUser: {
+        userId: currentUser.twitchUserId,
+        username: currentUser.username,
+        displayName: currentUser.displayName,
+        role: currentUser.role,
+        managedStreamers: currentUser.managedStreamers || []
+      },
+      managedUsers: managedUsers.map(user => ({
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin,
+        managedStreamers: user.managedStreamers || []
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Error getting managed users:', error);
+    res.status(500).json({ 
+      error: 'Failed to get managed users',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Check if current user can manage a specific user
+ */
+router.get('/permissions/can-manage/:targetUserId', requireAuth, async (req, res) => {
+  try {
+    const { targetUserId } = req.params;
+    
+    console.log(`🔑 Checking if ${req.user.username} can manage ${targetUserId}`);
+
+    const canManage = await database.canManageUser(req.user.userId, targetUserId);
+    const targetUser = await database.getUser(targetUserId);
+
+    res.json({
+      success: true,
+      canManage,
+      targetUser: targetUser ? {
+        userId: targetUser.twitchUserId,
+        username: targetUser.username,
+        displayName: targetUser.displayName,
+        role: targetUser.role
+      } : null
+    });
+  } catch (error) {
+    console.error('❌ Error checking management permissions:', error);
+    res.status(500).json({ 
+      error: 'Failed to check management permissions',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Get all users with their roles (super_admin only)
+ */
+router.get('/permissions/all-users-roles', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    console.log(`🔑 Super admin ${req.user.username} requesting all user roles`);
+
+    const allUsers = await database.getAllUsers();
+
+    res.json({
+      success: true,
+      users: allUsers.map(user => ({
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin,
+        managedStreamers: user.managedStreamers || [],
+        createdAt: user.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Error getting all user roles:', error);
+    res.status(500).json({ 
+      error: 'Failed to get all user roles',
+      details: error.message 
+    });
+  }
+});
+
+// ==================== MANAGER CONFIGURATION ROUTES ====================
+
+/**
+ * Update user features (managers can update their assigned streamers)
+ */
+router.put('/manage/:userId/features', requireAuth, requireManagerAccess, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const features = req.body;
+
+    console.log(`🔧 Manager ${req.user.username} updating features for user ${userId}:`, features);
+
+    const updatedUser = await database.updateUserFeatures(userId, features);
+
+    res.json({
+      success: true,
+      message: 'User features updated successfully',
+      user: {
+        userId: updatedUser.twitchUserId,
+        username: updatedUser.username,
+        displayName: updatedUser.displayName,
+        features: typeof updatedUser.features === 'string' ? JSON.parse(updatedUser.features) : updatedUser.features
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error updating user features (manager):', error);
+    res.status(500).json({ 
+      error: 'Failed to update user features',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Update overlay settings (managers can update their assigned streamers)
+ */
+router.put('/manage/:userId/overlay', requireAuth, requireManagerAccess, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const overlaySettings = req.body;
+
+    console.log(`🎨 Manager ${req.user.username} updating overlay settings for user ${userId}:`, overlaySettings);
+
+    const updatedUser = await database.updateUserOverlaySettings(userId, overlaySettings);
+
+    res.json({
+      success: true,
+      message: 'Overlay settings updated successfully',
+      user: {
+        userId: updatedUser.twitchUserId,
+        username: updatedUser.username,
+        displayName: updatedUser.displayName,
+        overlaySettings: typeof updatedUser.overlaySettings === 'string' ? JSON.parse(updatedUser.overlaySettings) : updatedUser.overlaySettings
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error updating overlay settings (manager):', error);
+    res.status(500).json({ 
+      error: 'Failed to update overlay settings',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Get user details (managers can view their assigned streamers)
+ */
+router.get('/manage/:userId', requireAuth, requireManagerAccess, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    console.log(`👀 Manager ${req.user.username} viewing user details for ${userId}`);
+
+    const user = await database.getUser(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        userId: user.twitchUserId,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
+        overlaySettings: typeof user.overlaySettings === 'string' ? JSON.parse(user.overlaySettings) : user.overlaySettings,
+        streamStatus: user.streamStatus,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error getting user details (manager):', error);
+    res.status(500).json({ 
+      error: 'Failed to get user details',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Update user status (managers can activate/deactivate their assigned streamers)
+ */
+router.put('/manage/:userId/status', requireAuth, requireManagerAccess, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'isActive must be a boolean value' });
+    }
+
+    console.log(`🔄 Manager ${req.user.username} ${isActive ? 'activating' : 'deactivating'} user ${userId}`);
+
+    const updatedUser = await database.updateUserStatus(userId, isActive);
+
+    res.json({
+      success: true,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+      user: {
+        userId: updatedUser.twitchUserId,
+        username: updatedUser.username,
+        displayName: updatedUser.displayName,
+        isActive: updatedUser.isActive
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error updating user status (manager):', error);
+    res.status(500).json({ 
+      error: 'Failed to update user status',
+      details: error.message 
+    });
   }
 });
 

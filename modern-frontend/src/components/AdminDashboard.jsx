@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
 import UserManagementModal from './UserManagementModal'
+import PermissionManager from './PermissionManager'
 import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
 import { useUserData, useLoading, useToast } from '../hooks'
 import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
@@ -23,6 +24,7 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [showAlertsManager, setShowAlertsManager] = useState(false)
   const [showEventMappingManager, setShowEventMappingManager] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
+  const [showPermissionManager, setShowPermissionManager] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
@@ -1047,6 +1049,12 @@ function AdminDashboard({ onNavigateToDebug }) {
               >
                 ➕ Add User
               </button>
+              <button
+                onClick={() => setShowPermissionManager(true)}
+                className="btn btn-secondary"
+              >
+                🔑 Manage Permissions
+              </button>
             </div>
           </div>
 
@@ -1831,6 +1839,25 @@ function AdminDashboard({ onNavigateToDebug }) {
             }}
             onUpdate={fetchAdminData}
           />
+        )}
+
+        {/* Permission Manager Modal */}
+        {showPermissionManager && (
+          <div className="modal-overlay" onClick={() => setShowPermissionManager(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1200px', width: '90vw' }}>
+              <div className="modal-header">
+                <h2>🔑 Permission Management</h2>
+                <button
+                  onClick={() => setShowPermissionManager(false)}
+                  className="close-btn"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <PermissionManager onClose={() => setShowPermissionManager(false)} />
+            </div>
+          </div>
         )}
       </div>
     </div>
