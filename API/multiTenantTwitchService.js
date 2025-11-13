@@ -208,12 +208,6 @@ class MultiTenantTwitchService extends EventEmitter {
       // Extract series ID from command
       const seriesId = message.substring('!loadseries '.length).trim();
       this.emit('loadSeries', { userId, username, seriesId });
-    } else if (text.startsWith('!setdiscord ')) {
-      // Extract Discord invite link from command
-      const inviteLink = message.substring('!setdiscord '.length).trim();
-      this.emit('setDiscordInvite', { userId, username, inviteLink });
-    } else if (text === '!removediscord') {
-      this.emit('removeDiscordInvite', { userId, username });
     }
   }
 

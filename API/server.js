@@ -546,7 +546,7 @@ twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaste
       // Get broadcaster's display name for clarity
       const user = await database.getUser(userId);
       const broadcasterName = user ? user.displayName : 'the broadcaster';
-      const modHelpMessage = `🔧 Chat Commands (Mods Only): !death+ !death- !swear+ !swear- !saveseries <name> !loadseries <name> !listseries !setdiscord <link> !removediscord | Use these in ${broadcasterName}'s Twitch chat to manage counters and series saves during stream.`;
+      const modHelpMessage = `🔧 Chat Commands (Mods Only): !d+ !d- !s+ !s- !saveseries <name> !loadseries <name> !listseries | Use these in ${broadcasterName}'s Twitch chat to manage counters and series saves during stream.`;
 
       const success = await twitchService.sendWhisper(userId, username, modHelpMessage);
       if (success) {
@@ -726,57 +726,6 @@ twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
         '❌ Failed to delete series save.'
       );
     }
-  }
-});
-
-// ==================== DISCORD INVITE LINK EVENTS ====================
-
-twitchService.on('setDiscordInvite', async ({ userId, username, inviteLink }) => {
-  try {
-    // Update the Discord invite link
-    await database.updateUserDiscordInviteLink(userId, inviteLink);
-
-    // Send confirmation message to chat
-    await twitchService.sendMessage(
-      userId,
-      `✅ Discord server link updated! Use !discord to share it with viewers.`
-    );
-
-    console.log(`🎮 Discord invite link set by ${username}: ${inviteLink}`);
-  } catch (error) {
-    console.error('Error handling Discord invite set:', error);
-    if (error.message.includes('Invalid Discord invite link format')) {
-      await twitchService.sendMessage(
-        userId,
-        '❌ Invalid Discord invite link format. Please use a valid Discord invite URL.'
-      );
-    } else {
-      await twitchService.sendMessage(
-        userId,
-        '❌ Failed to set Discord invite link.'
-      );
-    }
-  }
-});
-
-twitchService.on('removeDiscordInvite', async ({ userId, username }) => {
-  try {
-    // Remove the Discord invite link
-    await database.updateUserDiscordInviteLink(userId, '');
-
-    // Send confirmation message to chat
-    await twitchService.sendMessage(
-      userId,
-      '✅ Discord server link removed.'
-    );
-
-    console.log(`🎮 Discord invite link removed by ${username}`);
-  } catch (error) {
-    console.error('Error handling Discord invite removal:', error);
-    await twitchService.sendMessage(
-      userId,
-      '❌ Failed to remove Discord invite link.'
-    );
   }
 });
 
@@ -964,7 +913,7 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       if (discordInvite) {
         message = `🎮 Join our Discord server: ${discordInvite}`;
       } else {
-        message = `🎮 Discord server not set up yet. Moderators can use !setdiscord <invite_link> to add one!`;
+        message = `🎮 Discord server not set up yet. Check the streamer's portal for updates!`;
       }
     }
 
