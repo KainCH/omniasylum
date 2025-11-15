@@ -370,6 +370,7 @@ function requireRole(minimumRole) {
   const roleHierarchy = {
     'streamer': 0,
     'mod': 1,
+    'moderator': 1,  // Same level as 'mod' - both moderator roles
     'admin': 2
   };
 
