@@ -282,79 +282,8 @@ router.put('/users/:userId/features', requireAuth, requireModAccess, async (req,
   }
 });
 
-/**
- * Get user overlay settings
- * GET /api/admin/users/:userId/overlay-settings
- */
-router.get('/users/:userId/overlay-settings', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const settings = await database.getUserOverlaySettings(req.params.userId);
-
-    if (!settings) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({
-      userId: req.params.userId,
-      overlaySettings: settings
-    });
-  } catch (error) {
-    console.error('❌ Error fetching user overlay settings:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch overlay settings' });
-  }
-});
-
-/**
- * Update user overlay settings
- * PUT /api/admin/users/:userId/overlay-settings
- */
-router.put('/users/:userId/overlay-settings', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const { enabled, position, counters, theme, animations } = req.body;
-
-    // Validate the settings structure
-    const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-    if (position && !validPositions.includes(position)) {
-      return res.status(400).json({
-        error: 'Invalid position. Must be one of: ' + validPositions.join(', ')
-      });
-    }
-
-    // Build the settings object with validation
-    const overlaySettings = {
-      enabled: enabled === true,
-      position: position || 'top-right',
-      counters: {
-        deaths: counters?.deaths === true,
-        swears: counters?.swears === true,
-        screams: counters?.screams === true,
-        bits: counters?.bits === true
-      },
-      theme: {
-        backgroundColor: theme?.backgroundColor || 'rgba(0, 0, 0, 0.7)',
-        borderColor: theme?.borderColor || '#d4af37',
-        textColor: theme?.textColor || 'white'
-      },
-      animations: {
-        enabled: animations?.enabled !== false, // Default true
-        showAlerts: animations?.showAlerts !== false, // Default true
-        celebrationEffects: animations?.celebrationEffects !== false // Default true
-      }
-    };
-
-    const updatedUser = await database.updateUserOverlaySettings(req.params.userId, overlaySettings);
-
-    console.log(`✅ Admin ${req.user.username} updated overlay settings for user ${req.params.userId}`);
-    res.json({
-      message: 'Overlay settings updated successfully',
-      userId: req.params.userId,
-      settings: overlaySettings
-    });
-  } catch (error) {
-    console.error('❌ Error updating overlay settings:', error);
-    res.status(500).json({ error: error.message || 'Failed to update overlay settings' });
-  }
-});
+// NOTE: Duplicate overlay routes removed - using /users/:userId/overlay instead of /overlay-settings
+// The frontend expects /users/:userId/overlay for admin operations
 
 /**
  * Update user role
@@ -1029,9 +958,12 @@ router.put('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res)
 router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
+    console.log(`🔍 GET Discord webhook request for user ${userId} by admin ${req.user.username}`);
+
     const user = await database.getUser(userId);
 
     if (!user) {
+      console.log(`❌ User ${userId} not found`);
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -1040,7 +972,8 @@ router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
 
     console.log(`✅ Admin ${req.user.username} retrieved Discord webhook for user ${userId}:`, {
       webhookUrl: user.discordWebhookUrl ? 'SET' : 'NOT_SET',
-      enabled: hasDiscordFeature
+      enabled: hasDiscordFeature,
+      actualWebhookUrl: user.discordWebhookUrl ? `${user.discordWebhookUrl.substring(0, 50)}...` : 'EMPTY'
     });
 
     res.json({
@@ -1858,6 +1791,148 @@ router.put('/manage/:userId/status', requireAuth, requireModAccess, async (req, 
       error: 'Failed to update user status',
       details: error.message
     });
+  }
+});
+
+/**
+ * Get user's series saves (admin)
+ * GET /api/admin/users/:userId/series-saves
+ */
+router.get('/users/:userId/series-saves', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const seriesSaves = await database.listSeriesSaves(userId);
+
+    console.log(`✅ Admin ${req.user.username} retrieved ${seriesSaves.length} series saves for user ${userId}`);
+
+    res.json({
+      userId: userId,
+      username: user.username,
+      displayName: user.displayName,
+      seriesSaves: seriesSaves || []
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user series saves:', error);
+    res.status(500).json({ error: 'Failed to fetch series saves' });
+  }
+});
+
+/**
+ * Save new series state for user (admin)
+ * POST /api/admin/users/:userId/series-saves
+ */
+router.post('/users/:userId/series-saves', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { seriesName, description } = req.body;
+
+    if (!seriesName || seriesName.trim() === '') {
+      return res.status(400).json({ error: 'Series name is required' });
+    }
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const saveData = await database.saveSeries(userId, seriesName.trim(), description || '');
+
+    console.log(`✅ Admin ${req.user.username} saved series "${seriesName}" for user ${userId}`);
+
+    res.status(201).json({
+      message: 'Series saved successfully',
+      seriesData: saveData
+    });
+  } catch (error) {
+    console.error('❌ Error saving series:', error);
+    res.status(500).json({ error: 'Failed to save series' });
+  }
+});
+
+/**
+ * Load series state for user (admin)
+ * POST /api/admin/users/:userId/series-saves/:seriesId/load
+ */
+router.post('/users/:userId/series-saves/:seriesId/load', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, seriesId } = req.params;
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const loadedData = await database.loadSeries(userId, seriesId);
+
+    if (!loadedData) {
+      return res.status(404).json({ error: 'Series save not found' });
+    }
+
+    console.log(`✅ Admin ${req.user.username} loaded series "${loadedData.seriesName}" for user ${userId}`);
+
+    // Emit counter update to user's WebSocket room
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${userId}`).emit('counterUpdate', {
+        userId: userId,
+        deaths: loadedData.deaths,
+        swears: loadedData.swears,
+        screams: loadedData.screams || 0,
+        bits: loadedData.bits || 0,
+        seriesLoaded: loadedData.seriesName,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      message: `Series "${loadedData.seriesName}" loaded successfully`,
+      seriesData: loadedData
+    });
+  } catch (error) {
+    console.error('❌ Error loading series:', error);
+    res.status(500).json({ error: 'Failed to load series' });
+  }
+});
+
+/**
+ * Delete series save (admin)
+ * DELETE /api/admin/users/:userId/series-saves/:seriesId
+ */
+router.delete('/users/:userId/series-saves/:seriesId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, seriesId } = req.params;
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if series save exists before attempting deletion
+    const saves = await database.listSeriesSaves(userId);
+    const seriesExists = saves.some(save => save.id === seriesId);
+
+    if (!seriesExists) {
+      return res.status(404).json({ error: 'Series save not found' });
+    }
+
+    // Delete the series save
+    await database.deleteSeries(userId, seriesId);
+
+    console.log(`✅ Admin ${req.user.username} deleted series save ${seriesId} for user ${userId}`);
+
+    res.json({
+      message: 'Series save deleted successfully',
+      seriesId: seriesId
+    });
+  } catch (error) {
+    console.error('❌ Error deleting series save:', error);
+    res.status(500).json({ error: 'Failed to delete series save' });
   }
 });
 

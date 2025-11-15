@@ -88,26 +88,10 @@ function DiscordWebhookSettings({ user }) {
     console.log('🎬 DiscordWebhookSettings component mounted/updated')
     console.log('👤 User:', user)
     if (user) {
-      console.log('📥 Loading Discord settings for user')
-      loadUserDiscordSettings()
+      console.log('📥 Loading ALL Discord data for user on modal open')
+      loadAllDiscordData()
     }
   }, [user])
-
-  // Load configuration when switching to configuration tab
-  useEffect(() => {
-    if (activeTab === 'configuration' && user) {
-      console.log('⚙️ Configuration tab opened, loading webhook configuration...')
-      loadWebhookConfiguration()
-    }
-  }, [activeTab, user])
-
-  // Load Discord invite when switching to configuration tab
-  useEffect(() => {
-    if (activeTab === 'configuration' && user) {
-      console.log('⚙️ Configuration tab opened, loading Discord invite...')
-      loadDiscordInvite()
-    }
-  }, [activeTab, user])
 
   const showMessage = (text, type) => {
     setMessage(text)
@@ -291,6 +275,119 @@ function DiscordWebhookSettings({ user }) {
     } catch (error) {
       console.error('❌ Error loading Discord settings:', error)
       showMessage('Failed to load Discord settings', 'error')
+    }
+  }
+
+  // Load ALL Discord data when modal opens (webhook, settings, invite)
+  const loadAllDiscordData = async () => {
+    console.log('📥 Starting to load ALL Discord data...')
+    const adminMode = isAdminMode()
+    console.log('🔍 Loading all data in admin mode:', adminMode)
+
+    try {
+      await withLoading(async () => {
+        // Load webhook URL and enabled status
+        try {
+          console.log('🔗 Loading webhook URL and enabled status...')
+          let webhookData
+
+          if (adminMode) {
+            // Admin viewing another user's settings - use admin API
+            console.log('👑 Using admin API to load webhook for user:', user?.userId)
+            webhookData = await notificationAPI.getWebhook(user?.userId)
+          } else {
+            // User viewing their own settings - use user API
+            console.log('👤 Using user API to load own webhook')
+            webhookData = await userAPI.getDiscordWebhook()
+          }
+
+          console.log('🔗 Webhook data received:', webhookData)
+          console.log('🔗 Extracted webhook URL:', webhookData?.webhookUrl)
+          console.log('🔗 Extracted enabled status:', webhookData?.enabled)
+          console.log('🔧 UPDATING FORM FIELDS:', {
+            webhookUrl: webhookData?.webhookUrl || '',
+            enabled: webhookData?.enabled || false,
+            rawData: webhookData
+          })
+          updateField('webhookUrl', webhookData?.webhookUrl || '')
+          updateField('enabled', webhookData?.enabled || false)
+          console.log('✅ Webhook URL loaded successfully, form updated')
+        } catch (error) {
+          console.error('❌ Error loading webhook:', error)
+          console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
+          showMessage(`Failed to load Discord webhook: ${error?.message || 'Unknown error'}`, 'error')
+        }
+
+        // Load notification settings
+        try {
+          console.log('📢 Loading notification settings...')
+          let discordData
+
+          if (adminMode) {
+            // Admin viewing another user's settings - use admin API
+            console.log('👑 Using admin API to load notification settings for user:', user?.userId)
+            discordData = await notificationAPI.getSettings(user?.userId)
+            // Admin API returns { discordSettings: {...} }, so extract the inner object
+            discordData = discordData?.discordSettings || discordData
+          } else {
+            // User viewing their own settings - use user API
+            console.log('👤 Using user API to load own notification settings')
+            discordData = await notificationAPI.getUserSettings()
+          }
+
+          console.log('📢 Notification data received:', discordData)
+
+          // Set notification settings with proper defaults
+          const settings = {
+            enableChannelNotifications: discordData?.enableChannelNotifications || false,
+            deathMilestoneEnabled: discordData?.deathMilestoneEnabled || false,
+            swearMilestoneEnabled: discordData?.swearMilestoneEnabled || false,
+            deathThresholds: discordData?.deathThresholds || '10,25,50,100,250,500,1000',
+            swearThresholds: discordData?.swearThresholds || '25,50,100,250,500,1000,2500'
+          }
+
+          console.log('📊 Final settings to apply:', settings)
+          setNotificationSettings(settings)
+          console.log('✅ Discord notification settings loaded successfully')
+        } catch (error) {
+          console.error('❌ Error loading notification settings:', error)
+          // Set default notification settings on error
+          setNotificationSettings({
+            enableChannelNotifications: false,
+            deathMilestoneEnabled: false,
+            swearMilestoneEnabled: false,
+            deathThresholds: '10,25,50,100,250,500,1000',
+            swearThresholds: '25,50,100,250,500,1000,2500'
+          })
+          showMessage(`Failed to load notification settings: ${error?.message || 'Unknown error'}`, 'error')
+        }
+
+        // Load Discord invite link
+        try {
+          console.log('🎮 Loading Discord invite link...')
+          let inviteData
+
+          if (adminMode) {
+            // Admin viewing another user's settings - use admin API
+            console.log('👑 Using admin API to load Discord invite for user:', user?.userId)
+            inviteData = await notificationAPI.getDiscordInvite(user?.userId)
+          } else {
+            // User viewing their own settings - use user API
+            console.log('👤 Using user API to load own Discord invite')
+            inviteData = await userAPI.getDiscordInvite()
+          }
+
+          console.log('🎮 Discord invite data received:', inviteData)
+          setDiscordInvite(inviteData?.discordInviteLink || '')
+          console.log('✅ Discord invite loaded successfully')
+        } catch (error) {
+          console.error('❌ Error loading Discord invite:', error)
+          showMessage(`Failed to load Discord invite: ${error?.message || 'Unknown error'}`, 'error')
+        }
+      })
+    } catch (error) {
+      console.error('❌ Error in loadAllDiscordData:', error)
+      showMessage(`Failed to load Discord data: ${error?.message || 'Unknown error'}`, 'error')
     }
   }
 
@@ -820,8 +917,8 @@ function DiscordWebhookSettings({ user }) {
                 <ActionButton
                   variant="info"
                   onClick={() => {
-                    console.log('🔄 Refresh Configuration button clicked')
-                    loadWebhookConfiguration()
+                    console.log('🔄 Refresh Configuration button clicked - loading all Discord data')
+                    loadAllDiscordData()
                   }}
                   loading={isLoading}
                 >
@@ -952,7 +1049,10 @@ function DiscordWebhookSettings({ user }) {
 
                 <ActionButton
                   variant="info"
-                  onClick={loadDiscordInvite}
+                  onClick={() => {
+                    console.log('🔄 Refresh Discord invite button clicked - loading all Discord data')
+                    loadAllDiscordData()
+                  }}
                   loading={isLoading}
                 >
                   🔄 Refresh

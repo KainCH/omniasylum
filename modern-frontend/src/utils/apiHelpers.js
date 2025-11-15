@@ -489,6 +489,93 @@ export const debugAPI = {
   }
 };
 
+// Moderator API
+export const moderatorAPI = {
+  // Streamer management of moderators
+  getMyModerators: async () => {
+    return await apiRequest('/api/moderator/my-moderators');
+  },
+
+  grantModeratorAccess: async (moderatorUserId) => {
+    return await apiRequest('/api/moderator/grant-access', {
+      method: 'POST',
+      body: JSON.stringify({ moderatorUserId })
+    });
+  },
+
+  revokeModeratorAccess: async (moderatorUserId) => {
+    return await apiRequest(`/api/moderator/revoke-access/${moderatorUserId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  searchUsers: async (query) => {
+    return await apiRequest(`/api/moderator/search-users?q=${encodeURIComponent(query)}`);
+  },
+
+  // Moderator management of streamers
+  getManagedStreamers: async () => {
+    return await apiRequest('/api/moderator/managed-streamers');
+  },
+
+  getStreamerDetails: async (streamerId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}`);
+  },
+
+  updateStreamerFeatures: async (streamerId, features) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/features`, {
+      method: 'PUT',
+      body: JSON.stringify({ features })
+    });
+  },
+
+  getStreamerOverlaySettings: async (streamerId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/overlay`);
+  },
+
+  updateStreamerOverlaySettings: async (streamerId, overlaySettings) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/overlay`, {
+      method: 'PUT',
+      body: JSON.stringify({ overlaySettings })
+    });
+  },
+
+  getStreamerDiscordWebhook: async (streamerId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/discord-webhook`);
+  },
+
+  updateStreamerDiscordWebhook: async (streamerId, webhookData) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/discord-webhook`, {
+      method: 'PUT',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  // Moderator Series Save Management
+  getStreamerSeriesSaves: async (streamerId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/series-saves`);
+  },
+
+  createStreamerSeriesSave: async (streamerId, seriesData) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/series-saves`, {
+      method: 'POST',
+      body: JSON.stringify(seriesData)
+    });
+  },
+
+  loadStreamerSeriesSave: async (streamerId, seriesId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/series-saves/${seriesId}/load`, {
+      method: 'POST'
+    });
+  },
+
+  deleteStreamerSeriesSave: async (streamerId, seriesId) => {
+    return await apiRequest(`/api/moderator/streamers/${streamerId}/series-saves/${seriesId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
 // Utility functions for common operations
 export const utils = {
   // Format error messages for display

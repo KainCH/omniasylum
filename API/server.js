@@ -237,6 +237,10 @@ app.use('/api', userRoutes); // For /api/overlay-settings
 // Admin routes (requires admin role)
 app.use('/api/admin', adminRoutes);
 
+// Moderator routes (requires authentication and moderator permissions)
+const moderatorRoutes = require('./moderatorRoutes');
+app.use('/api/moderator', moderatorRoutes);
+
 // Overlay routes (public for OBS browser sources)
 app.use('/overlay', overlayRoutes);
 
