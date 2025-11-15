@@ -27,8 +27,10 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
   const [showUserConfigurationPortal, setShowUserConfigurationPortal] = useState(false)
   const [showPermissionManager, setShowPermissionManager] = useState(false)
+  const [showDiscordModal, setShowDiscordModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [selectedConfigUser, setSelectedConfigUser] = useState(null)
+  const [selectedDiscordUser, setSelectedDiscordUser] = useState(null)
   const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -1220,6 +1222,18 @@ function AdminDashboard({ onNavigateToDebug }) {
                             >
                               ⚙️ Manage User
                             </button>
+                            {userFeatures?.discordNotifications && (
+                              <button
+                                onClick={() => {
+                                  setSelectedDiscordUser(user)
+                                  setShowDiscordModal(true)
+                                }}
+                                className="btn btn-secondary"
+                                title="Configure Discord notification settings for this user"
+                              >
+                                🔔 Discord Settings
+                              </button>
+                            )}
                             <button
                               onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
                               className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
@@ -1882,6 +1896,32 @@ function AdminDashboard({ onNavigateToDebug }) {
                   setSelectedConfigUser(null)
                 }}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Discord Notification Settings Modal */}
+        {showDiscordModal && selectedDiscordUser && (
+          <div className="modal-overlay" onClick={() => setShowDiscordModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', width: '90vw' }}>
+              <div className="modal-header">
+                <h2>🔔 Discord Notification Settings - {selectedDiscordUser.displayName || selectedDiscordUser.username}</h2>
+                <button
+                  onClick={() => {
+                    setShowDiscordModal(false)
+                    setSelectedDiscordUser(null)
+                  }}
+                  className="close-btn"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <DiscordWebhookSettings
+                  user={selectedDiscordUser}
+                />
+              </div>
             </div>
           </div>
         )}
