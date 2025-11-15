@@ -1072,6 +1072,7 @@ router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
 
     console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
 
+    const duration = Date.now() - startTime;
     res.json({
       message: 'Discord webhook updated successfully',
       webhookUrl,
@@ -1231,6 +1232,66 @@ router.post('/users/:userId/discord-webhook/test', requireAuth, requireAdmin, as
   } catch (error) {
     console.error('❌ Error testing Discord webhook:', error);
     res.status(500).json({ error: 'Failed to send test notification' });
+  }
+});
+
+/**
+ * Get user's Discord invite link (admin)
+ * GET /api/admin/users/:userId/discord-invite
+ */
+router.get('/users/:userId/discord-invite', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const inviteLink = await database.getUserDiscordInviteLink(userId);
+
+    console.log(`✅ Admin ${req.user.username} retrieved Discord invite link for user ${userId}`);
+
+    res.json({
+      discordInviteLink: inviteLink || '',
+      hasInvite: !!(inviteLink && inviteLink.trim())
+    });
+  } catch (error) {
+    console.error('❌ Error fetching Discord invite link:', error);
+    res.status(500).json({ error: 'Failed to fetch Discord invite link' });
+  }
+});
+
+/**
+ * Update user's Discord invite link (admin)
+ * PUT /api/admin/users/:userId/discord-invite
+ */
+router.put('/users/:userId/discord-invite', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { discordInviteLink } = req.body;
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update the Discord invite link
+    await database.updateUserDiscordInviteLink(userId, discordInviteLink);
+
+    console.log(`✅ Admin ${req.user.username} updated Discord invite link for user ${userId}: ${discordInviteLink ? 'Set' : 'Removed'}`);
+
+    res.json({
+      message: 'Discord invite link updated successfully',
+      discordInviteLink: discordInviteLink || ''
+    });
+  } catch (error) {
+    console.error('❌ Error updating Discord invite link:', error);
+    if (error.message.includes('Invalid Discord invite link format')) {
+      res.status(400).json({ error: 'Invalid Discord invite link format. Please use a valid Discord invite URL.' });
+    } else {
+      res.status(500).json({ error: 'Failed to update Discord invite link' });
+    }
   }
 });
 

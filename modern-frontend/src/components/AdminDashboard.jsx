@@ -1225,6 +1225,9 @@ function AdminDashboard({ onNavigateToDebug }) {
                             {userFeatures?.discordNotifications && (
                               <button
                                 onClick={() => {
+                                  console.log('🔔 Discord Settings button clicked for user:', user)
+                                  console.log('🔔 Setting selectedDiscordUser to:', user)
+                                  console.log('🔔 Setting showDiscordModal to true')
                                   setSelectedDiscordUser(user)
                                   setShowDiscordModal(true)
                                 }}
@@ -1901,13 +1904,15 @@ function AdminDashboard({ onNavigateToDebug }) {
         )}
 
         {/* Discord Notification Settings Modal */}
-        {showDiscordModal && selectedDiscordUser && (
+        {console.log('🔔 Modal render check:', { showDiscordModal, selectedDiscordUser }) ||
+         (showDiscordModal && selectedDiscordUser) && (
           <div className="modal-overlay" onClick={() => setShowDiscordModal(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', width: '90vw' }}>
               <div className="modal-header">
                 <h2>🔔 Discord Notification Settings - {selectedDiscordUser.displayName || selectedDiscordUser.username}</h2>
                 <button
                   onClick={() => {
+                    console.log('🔔 Closing Discord modal')
                     setShowDiscordModal(false)
                     setSelectedDiscordUser(null)
                   }}

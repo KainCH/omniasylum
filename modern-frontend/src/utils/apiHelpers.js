@@ -93,6 +93,17 @@ export const notificationAPI = {
     });
   },
 
+  getDiscordInvite: async (userId) => {
+    return await apiRequest(`/api/admin/users/${userId}/discord-invite`);
+  },
+
+  updateDiscordInvite: async (userId, inviteData) => {
+    return await apiRequest(`/api/admin/users/${userId}/discord-invite`, {
+      method: 'PUT',
+      body: JSON.stringify(inviteData)
+    });
+  },
+
   // User methods (for self-management)
   getUserSettings: async () => {
     return await apiRequest('/api/user/discord-settings');
