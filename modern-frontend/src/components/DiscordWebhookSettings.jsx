@@ -300,7 +300,7 @@ function DiscordWebhookSettings({ user }) {
     try {
       await withLoading(async () => {
         const inviteData = isAdminMode()
-          ? await notificationAPI.getDiscordInvite(user.userId)
+          ? await notificationAPI.getDiscordInvite(user?.userId)
           : await userAPI.getDiscordInvite()
         console.log('🎮 Discord invite data received:', inviteData)
         setDiscordInvite(inviteData?.discordInviteLink || '')
@@ -331,7 +331,7 @@ function DiscordWebhookSettings({ user }) {
         }
 
         if (isAdminMode()) {
-          await notificationAPI.updateDiscordInvite(user.userId, { discordInviteLink: discordInvite })
+          await notificationAPI.updateDiscordInvite(user?.userId, { discordInviteLink: discordInvite })
         } else {
           await userAPI.updateDiscordInvite({ discordInviteLink: discordInvite })
         }
