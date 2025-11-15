@@ -99,17 +99,27 @@ async function requireAuth(req, res, next) {
     });
 
     const authHeader = req.headers.authorization;
+    let token = null;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      authLogger.warn('Authentication failed - no Bearer token', {
+    // Try Authorization header first
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+    // Fallback to cookie if no Authorization header
+    else if (req.cookies && req.cookies.authToken) {
+      token = req.cookies.authToken;
+      authLogger.debug('Using token from cookie as fallback');
+    }
+
+    if (!token) {
+      authLogger.warn('Authentication failed - no Bearer token or cookie', {
         method: req.method,
         url: req.url,
-        hasHeader: !!authHeader
+        hasHeader: !!authHeader,
+        hasCookie: !!(req.cookies && req.cookies.authToken)
       });
       return res.status(401).json({ error: 'Authentication required' });
     }
-
-    const token = authHeader.substring(7);
     authLogger.debug('Bearer token extracted for verification');
 
     try {
@@ -237,7 +247,7 @@ async function verifySocketAuth(socket, next) {
 }
 
 /**
- * Middleware to verify user is a super admin
+ * Middleware to verify user is a system admin (same as requireAdmin but with different name for clarity)
  * Note: This middleware expects that requireAuth has already been applied
  */
 async function requireSuperAdmin(req, res, next) {
@@ -250,20 +260,20 @@ async function requireSuperAdmin(req, res, next) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    console.log('🔐 requireSuperAdmin - Checking super admin role for user:', req.user.username);
+    console.log('🔐 requireSuperAdmin - Checking admin role for user:', req.user.username);
 
-    // Check if user is super admin
+    // Check if user is admin
     const user = await database.getUser(req.user.userId);
 
-    if (!user || user.role !== 'super_admin') {
-      console.log('🔐 requireSuperAdmin - FAILED: User role is', user?.role, 'not super_admin');
+    if (!user || user.role !== 'admin') {
+      console.log('🔐 requireSuperAdmin - FAILED: User role is', user?.role, 'not admin');
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'Super admin access required'
+        message: 'Admin access required'
       });
     }
 
-    console.log('🔐 requireSuperAdmin - SUCCESS: Super admin access granted');
+    console.log('🔐 requireSuperAdmin - SUCCESS: Admin access granted');
     next();
   } catch (error) {
     console.error('Super admin middleware error:', error);
@@ -290,8 +300,16 @@ async function requireAdmin(req, res, next) {
     // Check if user is super admin (backward compatibility)
     const user = await database.getUser(req.user.userId);
 
-    if (!user || user.role !== 'super_admin') {
-      console.log('🔐 requireAdmin - FAILED: User role is', user?.role, 'not super_admin');
+    if (!user) {
+      console.log('🔐 requireAdmin - FAILED: User not found');
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Admin access required'
+      });
+    }
+
+    if (user.role !== 'admin') {
+      console.log('🔐 requireAdmin - FAILED: User role is', user?.role, 'not admin');
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Admin access required'
@@ -308,35 +326,35 @@ async function requireAdmin(req, res, next) {
 
 /**
  * Middleware to verify user can manage the target user
- * Checks for: super_admin, manager with permissions, or self-management
+ * Checks for: admin, mod with permissions, or self-management
  */
-async function requireManagerAccess(req, res, next) {
+async function requireModAccess(req, res, next) {
   try {
-    console.log('🔐 requireManagerAccess - User object:', req.user ? 'EXISTS' : 'MISSING');
+    console.log('🔐 requireModAccess - User object:', req.user ? 'EXISTS' : 'MISSING');
 
     // Check if user is already authenticated
     if (!req.user || !req.user.userId) {
-      console.log('🔐 requireManagerAccess - FAILED: No user object from requireAuth');
+      console.log('🔐 requireModAccess - FAILED: No user object from requireAuth');
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     // Get target user ID from params or body
     const targetUserId = req.params.userId || req.params.twitchUserId || req.body.userId || req.user.userId;
 
-    console.log('🔐 requireManagerAccess - Checking permissions for manager:', req.user.username, 'target:', targetUserId);
+    console.log('🔐 requireModAccess - Checking permissions for mod:', req.user.username, 'target:', targetUserId);
 
     // Check if user can manage the target user
     const canManage = await database.canManageUser(req.user.userId, targetUserId);
 
     if (!canManage) {
-      console.log('🔐 requireManagerAccess - FAILED: User cannot manage target user');
+      console.log('🔐 requireModAccess - FAILED: User cannot manage target user');
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'Manager access required for this user'
+        message: 'Mod access required for this user'
       });
     }
 
-    console.log('🔐 requireManagerAccess - SUCCESS: Manager access granted');
+    console.log('🔐 requireModAccess - SUCCESS: Mod access granted');
     req.targetUserId = targetUserId; // Add target user ID to request for convenience
     next();
   } catch (error) {
@@ -350,9 +368,9 @@ async function requireManagerAccess(req, res, next) {
  */
 function requireRole(minimumRole) {
   const roleHierarchy = {
-    'streamer': 1,
-    'manager': 2,
-    'super_admin': 3
+    'streamer': 0,
+    'mod': 1,
+    'admin': 2
   };
 
   return async (req, res, next) => {
@@ -391,6 +409,6 @@ module.exports = {
   verifySocketAuth,
   requireAdmin,
   requireSuperAdmin,
-  requireManagerAccess,
+  requireModAccess,
   requireRole
 };

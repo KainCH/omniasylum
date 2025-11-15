@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
 import UserManagementModal from './UserManagementModal'
+import UserConfigurationPortal from './UserConfigurationPortal'
 import PermissionManager from './PermissionManager'
 import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
 import { useUserData, useLoading, useToast } from '../hooks'
@@ -24,8 +25,10 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [showAlertsManager, setShowAlertsManager] = useState(false)
   const [showEventMappingManager, setShowEventMappingManager] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
+  const [showUserConfigurationPortal, setShowUserConfigurationPortal] = useState(false)
   const [showPermissionManager, setShowPermissionManager] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [selectedConfigUser, setSelectedConfigUser] = useState(null)
   const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -1855,7 +1858,30 @@ function AdminDashboard({ onNavigateToDebug }) {
                   ×
                 </button>
               </div>
-              <PermissionManager onClose={() => setShowPermissionManager(false)} />
+              <PermissionManager
+                userRole={getCurrentUserRole()}
+                onClose={() => setShowPermissionManager(false)}
+                onUserClick={(user) => {
+                  setSelectedConfigUser(user)
+                  setShowUserConfigurationPortal(true)
+                  setShowPermissionManager(false)
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* User Configuration Portal Modal */}
+        {showUserConfigurationPortal && selectedConfigUser && (
+          <div className="modal-overlay" onClick={() => setShowUserConfigurationPortal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1200px', width: '90vw' }}>
+              <UserConfigurationPortal
+                user={selectedConfigUser}
+                onClose={() => {
+                  setShowUserConfigurationPortal(false)
+                  setSelectedConfigUser(null)
+                }}
+              />
             </div>
           </div>
         )}

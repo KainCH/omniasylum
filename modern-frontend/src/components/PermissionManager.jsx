@@ -4,11 +4,11 @@ import { useLoading, useToast } from '../hooks'
 import { userAPI, APIError } from '../utils/apiHelpers'
 import './PermissionManager.css'
 
-function PermissionManager({ userRole }) {
+function PermissionManager({ userRole, onUserClick }) {
   const [users, setUsers] = useState([])
   const [managedUsers, setManagedUsers] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
-  const [selectedManager, setSelectedManager] = useState('')
+  const [selectedMod, setSelectedMod] = useState('')
   const [selectedBroadcaster, setSelectedBroadcaster] = useState('')
   const { loading, withLoading } = useLoading()
   const { addToast } = useToast()
@@ -21,9 +21,12 @@ function PermissionManager({ userRole }) {
   const loadData = async () => {
     try {
       await withLoading(async () => {
-        // Get managed users (works for both super_admin and managers)
+        // Get managed users (works for both admin and mods)
+        const token = localStorage.getItem('authToken')
         const managedResponse = await fetch('/api/admin/permissions/managed-users', {
-          credentials: 'include'
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         })
 
         if (!managedResponse.ok) {
@@ -34,10 +37,12 @@ function PermissionManager({ userRole }) {
         setCurrentUser(managedData.currentUser)
         setManagedUsers(managedData.managedUsers)
 
-        // If super admin, also get all users for permission management
-        if (userRole === 'super_admin') {
+        // If admin, also get all users for permission management
+        if (userRole === 'admin') {
           const allUsersResponse = await fetch('/api/admin/permissions/all-users-roles', {
-            credentials: 'include'
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
           })
 
           if (allUsersResponse.ok) {
@@ -52,20 +57,23 @@ function PermissionManager({ userRole }) {
     }
   }
 
-  const grantManagerPermissions = async () => {
-    if (!selectedManager || !selectedBroadcaster) {
-      addToast('Please select both a manager and a broadcaster', 'error')
+  const grantModPermissions = async () => {
+    if (!selectedMod || !selectedBroadcaster) {
+      addToast('Please select both a mod and a broadcaster', 'error')
       return
     }
 
     try {
       await withLoading(async () => {
+        const token = localStorage.getItem('authToken')
         const response = await fetch('/api/admin/permissions/grant-manager', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({
-            managerUserId: selectedManager,
+            managerUserId: selectedMod,
             broadcasterUserId: selectedBroadcaster
           })
         })
@@ -76,28 +84,31 @@ function PermissionManager({ userRole }) {
         }
 
         const result = await response.json()
-        addToast(`Manager permissions granted successfully to ${result.manager.displayName}`, 'success')
+        addToast(`Mod permissions granted successfully to ${result.mod.displayName}`, 'success')
 
         // Reset form and reload data
-        setSelectedManager('')
+        setSelectedMod('')
         setSelectedBroadcaster('')
         await loadData()
       })
     } catch (error) {
-      console.error('Error granting manager permissions:', error)
+      console.error('Error granting mod permissions:', error)
       addToast(error.message, 'error')
     }
   }
 
-  const revokeManagerPermissions = async (managerUserId, broadcasterUserId) => {
+  const revokeModPermissions = async (modUserId, broadcasterUserId) => {
     try {
       await withLoading(async () => {
+        const token = localStorage.getItem('authToken')
         const response = await fetch('/api/admin/permissions/revoke-manager', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({
-            managerUserId,
+            managerUserId: modUserId,
             broadcasterUserId
           })
         })
@@ -108,11 +119,11 @@ function PermissionManager({ userRole }) {
         }
 
         const result = await response.json()
-        addToast(`Manager permissions revoked successfully`, 'success')
+        addToast(`Mod permissions revoked successfully`, 'success')
         await loadData()
       })
     } catch (error) {
-      console.error('Error revoking manager permissions:', error)
+      console.error('Error revoking mod permissions:', error)
       addToast(error.message, 'error')
     }
   }
@@ -232,7 +243,12 @@ function PermissionManager({ userRole }) {
             </div>
           ) : (
             managedUsers.map(user => (
-              <div key={user.userId} className="user-management-card">
+              <div
+                key={user.userId}
+                className={`user-management-card ${onUserClick ? 'clickable' : ''}`}
+                onClick={onUserClick ? () => onUserClick(user) : undefined}
+                title={onUserClick ? `Click to open ${user.displayName}'s configuration portal` : ''}
+              >
                 <div className="user-card-header">
                   <div className="user-info">
                     <h4>{user.displayName}</h4>
@@ -241,9 +257,16 @@ function PermissionManager({ userRole }) {
                       {getRoleDisplayName(user.role)}
                     </StatusBadge>
                   </div>
-                  <StatusBadge variant={user.isActive ? 'success' : 'warning'}>
-                    {user.isActive ? 'Active' : 'Inactive'}
-                  </StatusBadge>
+                  <div className="user-card-actions">
+                    <StatusBadge variant={user.isActive ? 'success' : 'warning'}>
+                      {user.isActive ? 'Active' : 'Inactive'}
+                    </StatusBadge>
+                    {onUserClick && (
+                      <div className="config-hint">
+                        🔧 Click to configure
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Manager Info */}

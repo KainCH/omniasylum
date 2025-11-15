@@ -1,23 +1,21 @@
 const express = require('express');
 const database = require('./database');
 const keyVault = require('./keyVault');
-const { requireAuth, requireAdmin, requireSuperAdmin, requireManagerAccess, requireRole } = require('./authMiddleware');
+const { requireAuth, requireAdmin, requireSuperAdmin, requireModAccess, requireRole } = require('./authMiddleware');
 
 const router = express.Router();
 
 // Role hierarchy for permission checking
 const roleHierarchy = {
   'streamer': 0,
-  'moderator': 1,
-  'manager': 2,
-  'admin': 3
+  'mod': 1,
+  'admin': 2
 };
 
 // Permission mapping for each role
 const rolePermissions = {
   'streamer': ['view_own_counters', 'modify_own_counters', 'export_own_data'],
-  'moderator': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings'],
-  'manager': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings', 'manage_user_features', 'manage_overlay_settings', 'view_analytics'],
+  'mod': ['view_own_counters', 'modify_own_counters', 'export_own_data', 'manage_stream_sessions', 'view_overlay_settings', 'manage_user_features', 'manage_overlay_settings', 'view_analytics'],
   'admin': ['*'] // All permissions
 };
 
@@ -25,7 +23,7 @@ const rolePermissions = {
  * Get all users
  * GET /api/admin/users
  */
-router.get('/users', requireAuth, requireRole('manager'), async (req, res) => {
+router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
@@ -75,7 +73,7 @@ router.get('/users', requireAuth, requireRole('manager'), async (req, res) => {
  * Get specific user details
  * GET /api/admin/users/:userId
  */
-router.get('/users/:userId', requireAuth, requireRole('manager'), async (req, res) => {
+router.get('/users/:userId', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const user = await database.getUser(req.params.userId);
 
@@ -110,7 +108,7 @@ router.get('/users/:userId', requireAuth, requireRole('manager'), async (req, re
  * Update user features
  * PUT /api/admin/users/:userId/features
  */
-router.put('/users/:userId/features', requireAuth, requireManagerAccess, async (req, res) => {
+router.put('/users/:userId/features', requireAuth, requireModAccess, async (req, res) => {
   try {
     console.log('🔍 Feature update request for user:', req.params.userId);
     console.log('🔍 Raw request body:', JSON.stringify(req.body, null, 2));
@@ -288,7 +286,7 @@ router.put('/users/:userId/features', requireAuth, requireManagerAccess, async (
  * Get user overlay settings
  * GET /api/admin/users/:userId/overlay-settings
  */
-router.get('/users/:userId/overlay-settings', requireAuth, requireManagerAccess, async (req, res) => {
+router.get('/users/:userId/overlay-settings', requireAuth, requireModAccess, async (req, res) => {
   try {
     const settings = await database.getUserOverlaySettings(req.params.userId);
 
@@ -310,7 +308,7 @@ router.get('/users/:userId/overlay-settings', requireAuth, requireManagerAccess,
  * Update user overlay settings
  * PUT /api/admin/users/:userId/overlay-settings
  */
-router.put('/users/:userId/overlay-settings', requireAuth, requireManagerAccess, async (req, res) => {
+router.put('/users/:userId/overlay-settings', requireAuth, requireModAccess, async (req, res) => {
   try {
     const { enabled, position, counters, theme, animations } = req.body;
 
@@ -478,7 +476,7 @@ router.put('/users/:userId/status', requireAuth, async (req, res) => {
  * Get system statistics
  * GET /api/admin/stats
  */
-router.get('/stats', requireAuth, requireRole('manager'), async (req, res) => {
+router.get('/stats', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
@@ -868,7 +866,7 @@ router.get('/features', requireAuth, requireRole('moderator'), async (req, res) 
  * Get available roles and their permissions
  * GET /api/admin/roles
  */
-router.get('/roles', requireAuth, requireRole('manager'), async (req, res) => {
+router.get('/roles', requireAuth, requireRole('admin'), async (req, res) => {
   res.json({
     roles: [
       {
@@ -881,27 +879,18 @@ router.get('/roles', requireAuth, requireRole('manager'), async (req, res) => {
         level: roleHierarchy.streamer
       },
       {
-        id: 'moderator',
-        name: 'Moderator',
-        description: 'Can help manage stream counters and sessions during broadcasts',
-        permissions: rolePermissions.moderator,
-        color: '#f59e0b',
-        icon: '🛡️',
-        level: roleHierarchy.moderator
-      },
-      {
-        id: 'manager',
-        name: 'Manager',
-        description: 'Can manage user features, analytics, and stream settings',
-        permissions: rolePermissions.manager,
+        id: 'mod',
+        name: 'Mod',
+        description: 'Technical mod linked to specific streamers - can configure settings for assigned streamers',
+        permissions: rolePermissions.mod,
         color: '#8b5cf6',
-        icon: '👔',
-        level: roleHierarchy.manager
+        icon: '�',
+        level: roleHierarchy.mod
       },
       {
         id: 'admin',
-        name: 'Super Admin',
-        description: 'Full system access and user management',
+        name: 'Admin',
+        description: 'System administrator - can see all user profiles and manage system settings',
         permissions: rolePermissions.admin,
         color: '#ef4444',
         icon: '👑',
@@ -915,7 +904,7 @@ router.get('/roles', requireAuth, requireRole('manager'), async (req, res) => {
  * Get available permissions catalog
  * GET /api/admin/permissions
  */
-router.get('/permissions', requireAuth, requireRole('manager'), async (req, res) => {
+router.get('/permissions', requireAuth, requireRole('admin'), async (req, res) => {
   res.json({
     permissions: [
       {
@@ -1488,25 +1477,25 @@ router.post('/permissions/grant-manager', requireAuth, requireAdmin, async (req,
       });
     }
 
-    console.log(`🔑 Super admin ${req.user.username} granting manager permissions: ${managerUserId} -> ${broadcasterUserId}`);
+    console.log(`🔑 Admin ${req.user.username} granting mod permissions: ${managerUserId} -> ${broadcasterUserId}`);
 
-    const updatedManager = await database.grantManagerPermissions(managerUserId, broadcasterUserId);
+    const updatedMod = await database.grantModPermissions(managerUserId, broadcasterUserId);
 
     res.json({
       success: true,
-      message: 'Manager permissions granted successfully',
-      manager: {
-        userId: updatedManager.twitchUserId,
-        username: updatedManager.username,
-        displayName: updatedManager.displayName,
-        role: updatedManager.role,
-        managedStreamers: updatedManager.managedStreamers || []
+      message: 'Mod permissions granted successfully',
+      mod: {
+        userId: updatedMod.twitchUserId,
+        username: updatedMod.username,
+        displayName: updatedMod.displayName,
+        role: updatedMod.role,
+        managedStreamers: updatedMod.managedStreamers || []
       }
     });
   } catch (error) {
-    console.error('❌ Error granting manager permissions:', error);
+    console.error('❌ Error granting mod permissions:', error);
     res.status(500).json({
-      error: 'Failed to grant manager permissions',
+      error: 'Failed to grant mod permissions',
       details: error.message
     });
   }
@@ -1525,25 +1514,25 @@ router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req
       });
     }
 
-    console.log(`🔑 Super admin ${req.user.username} revoking manager permissions: ${managerUserId} -> ${broadcasterUserId}`);
+    console.log(`🔑 Admin ${req.user.username} revoking mod permissions: ${managerUserId} -> ${broadcasterUserId}`);
 
-    const updatedManager = await database.revokeManagerPermissions(managerUserId, broadcasterUserId);
+    const updatedMod = await database.revokeModPermissions(managerUserId, broadcasterUserId);
 
     res.json({
       success: true,
-      message: 'Manager permissions revoked successfully',
-      manager: {
-        userId: updatedManager.twitchUserId,
-        username: updatedManager.username,
-        displayName: updatedManager.displayName,
-        role: updatedManager.role,
-        managedStreamers: updatedManager.managedStreamers || []
+      message: 'Mod permissions revoked successfully',
+      mod: {
+        userId: updatedMod.twitchUserId,
+        username: updatedMod.username,
+        displayName: updatedMod.displayName,
+        role: updatedMod.role,
+        managedStreamers: updatedMod.managedStreamers || []
       }
     });
   } catch (error) {
-    console.error('❌ Error revoking manager permissions:', error);
+    console.error('❌ Error revoking mod permissions:', error);
     res.status(500).json({
-      error: 'Failed to revoke manager permissions',
+      error: 'Failed to revoke mod permissions',
       details: error.message
     });
   }
@@ -1552,7 +1541,7 @@ router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req
 /**
  * Get all users a manager can manage (includes permissions context)
  */
-router.get('/permissions/managed-users', requireAuth, async (req, res) => {
+router.get('/permissions/managed-users', requireAuth, requireRole('mod'), async (req, res) => {
   try {
     console.log(`🔑 Getting managed users for: ${req.user.username} (${req.user.userId})`);
 
@@ -1654,7 +1643,7 @@ router.get('/permissions/all-users-roles', requireAuth, requireAdmin, async (req
 /**
  * Update user features (managers can update their assigned streamers)
  */
-router.put('/manage/:userId/features', requireAuth, requireManagerAccess, async (req, res) => {
+router.put('/manage/:userId/features', requireAuth, requireModAccess, async (req, res) => {
   try {
     const { userId } = req.params;
     const features = req.body;
@@ -1685,7 +1674,7 @@ router.put('/manage/:userId/features', requireAuth, requireManagerAccess, async 
 /**
  * Update overlay settings (managers can update their assigned streamers)
  */
-router.put('/manage/:userId/overlay', requireAuth, requireManagerAccess, async (req, res) => {
+router.put('/manage/:userId/overlay', requireAuth, requireModAccess, async (req, res) => {
   try {
     const { userId } = req.params;
     const overlaySettings = req.body;
@@ -1716,7 +1705,7 @@ router.put('/manage/:userId/overlay', requireAuth, requireManagerAccess, async (
 /**
  * Get user details (managers can view their assigned streamers)
  */
-router.get('/manage/:userId', requireAuth, requireManagerAccess, async (req, res) => {
+router.get('/manage/:userId', requireAuth, requireModAccess, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -1756,7 +1745,7 @@ router.get('/manage/:userId', requireAuth, requireManagerAccess, async (req, res
 /**
  * Update user status (managers can activate/deactivate their assigned streamers)
  */
-router.put('/manage/:userId/status', requireAuth, requireManagerAccess, async (req, res) => {
+router.put('/manage/:userId/status', requireAuth, requireModAccess, async (req, res) => {
   try {
     const { userId } = req.params;
     const { isActive } = req.body;

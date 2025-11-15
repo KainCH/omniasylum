@@ -131,11 +131,11 @@ class Database {
     // Get existing user data to preserve webhook URL and other settings
     const existingUser = await this.getUser(userData.twitchUserId);
 
-    // Determine user role - riress is always super_admin
+    // Determine user role - riress is always admin
     let role = 'streamer';
     const safeUsername = userData.username ? userData.username.toString().toLowerCase() : '';
     if (safeUsername === 'riress') {
-      role = 'super_admin';
+      role = 'admin';
     }
 
     // Default feature flags for new users
@@ -944,85 +944,85 @@ class Database {
   }
 
   /**
-   * Grant manager permissions to a user for a specific broadcaster (super_admin only)
+   * Grant mod permissions to a user for a specific broadcaster (admin only)
    */
-  async grantManagerPermissions(managerUserId, broadcasterUserId) {
-    const manager = await this.getUser(managerUserId);
+  async grantModPermissions(modUserId, broadcasterUserId) {
+    const mod = await this.getUser(modUserId);
     const broadcaster = await this.getUser(broadcasterUserId);
 
-    if (!manager) {
-      throw new Error('Manager user not found');
+    if (!mod) {
+      throw new Error('Mod user not found');
     }
     if (!broadcaster) {
       throw new Error('Broadcaster user not found');
     }
 
     // Initialize managedStreamers array if it doesn't exist
-    if (!manager.managedStreamers) {
-      manager.managedStreamers = [];
+    if (!mod.managedStreamers) {
+      mod.managedStreamers = [];
     }
 
     // Add broadcaster to managed streamers if not already there
-    if (!manager.managedStreamers.includes(broadcasterUserId)) {
-      manager.managedStreamers.push(broadcasterUserId);
+    if (!mod.managedStreamers.includes(broadcasterUserId)) {
+      mod.managedStreamers.push(broadcasterUserId);
     }
 
-    // Update manager role if they're not already a manager
-    if (manager.role === 'streamer') {
-      manager.role = 'manager';
+    // Update mod role if they're not already a mod
+    if (mod.role === 'streamer') {
+      mod.role = 'mod';
     }
 
-    // Save the updated manager user
+    // Save the updated mod user
     if (this.mode === 'azure') {
-      await this.usersClient.upsertEntity(manager, 'Merge');
+      await this.usersClient.upsertEntity(mod, 'Merge');
     } else {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
-      if (users[managerUserId]) {
-        users[managerUserId] = manager;
+      if (users[modUserId]) {
+        users[modUserId] = mod;
         fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
       } else {
-        throw new Error('Manager user not found in local storage');
+        throw new Error('Mod user not found in local storage');
       }
     }
 
-    return manager;
+    return mod;
   }
 
   /**
-   * Revoke manager permissions from a user for a specific broadcaster (super_admin only)
+   * Revoke mod permissions from a user for a specific broadcaster (admin only)
    */
-  async revokeManagerPermissions(managerUserId, broadcasterUserId) {
-    const manager = await this.getUser(managerUserId);
+  async revokeModPermissions(modUserId, broadcasterUserId) {
+    const mod = await this.getUser(modUserId);
 
-    if (!manager) {
-      throw new Error('Manager user not found');
+    if (!mod) {
+      throw new Error('Mod user not found');
     }
 
     // Remove broadcaster from managed streamers
-    if (manager.managedStreamers) {
-      manager.managedStreamers = manager.managedStreamers.filter(id => id !== broadcasterUserId);
+    if (mod.managedStreamers) {
+      mod.managedStreamers = mod.managedStreamers.filter(id => id !== broadcasterUserId);
 
       // If no more managed streamers, downgrade to regular streamer
-      if (manager.managedStreamers.length === 0) {
-        manager.role = 'streamer';
-        delete manager.managedStreamers;
+      if (mod.managedStreamers.length === 0) {
+        mod.role = 'streamer';
+        delete mod.managedStreamers;
       }
     }
 
-    // Save the updated manager user
+    // Save the updated mod user
     if (this.mode === 'azure') {
-      await this.usersClient.upsertEntity(manager, 'Merge');
+      await this.usersClient.upsertEntity(mod, 'Merge');
     } else {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
-      if (users[managerUserId]) {
-        users[managerUserId] = manager;
+      if (users[modUserId]) {
+        users[modUserId] = mod;
         fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
       } else {
-        throw new Error('Manager user not found in local storage');
+        throw new Error('Mod user not found in local storage');
       }
     }
 
-    return manager;
+    return mod;
   }
 
   /**
@@ -1039,13 +1039,13 @@ class Database {
       return false;
     }
 
-    // Super admin can manage anyone
-    if (manager.role === 'super_admin') {
+    // Admin can manage anyone
+    if (manager.role === 'admin') {
       return true;
     }
 
-    // Managers can only manage their assigned streamers
-    if (manager.role === 'manager' && manager.managedStreamers) {
+    // Mods can only manage their assigned streamers
+    if (manager.role === 'mod' && manager.managedStreamers) {
       return manager.managedStreamers.includes(targetUserId);
     }
 
@@ -1063,8 +1063,8 @@ class Database {
 
     const managedUsers = [manager]; // Always include self
 
-    // Super admin can see all users
-    if (manager.role === 'super_admin') {
+    // Admin can see all users
+    if (manager.role === 'admin') {
       const allUsers = await this.getAllUsers();
       return allUsers;
     }

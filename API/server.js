@@ -47,6 +47,50 @@ const io = socketIo(server, {
   }
 });
 
+// Command throttling to prevent spam
+const commandThrottle = new Map(); // Format: "userId:command" -> timestamp
+const THROTTLE_COOLDOWN = 30000; // 30 seconds cooldown for Discord command
+const GENERAL_COOLDOWN = 5000;   // 5 seconds cooldown for other public commands
+
+// Function to check if command is throttled
+function isCommandThrottled(userId, command) {
+  const key = `${userId}:${command}`;
+  const lastUsed = commandThrottle.get(key);
+  const now = Date.now();
+
+  // Different cooldowns for different command types
+  let cooldown;
+  if (command === '!discord') {
+    cooldown = THROTTLE_COOLDOWN; // 30 seconds for Discord
+  } else if (command.includes('+') || command.includes('-')) {
+    cooldown = 2000; // 2 seconds for mod counter commands
+  } else {
+    cooldown = GENERAL_COOLDOWN; // 5 seconds for other public commands
+  }
+
+  if (lastUsed && (now - lastUsed) < cooldown) {
+    return true; // Still in cooldown
+  }
+
+  // Update the last used timestamp
+  commandThrottle.set(key, now);
+  return false; // Not throttled
+}
+
+// Clean up old throttle entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = Math.max(THROTTLE_COOLDOWN, GENERAL_COOLDOWN) + 60000; // Add 1 minute buffer
+
+  for (const [key, timestamp] of commandThrottle.entries()) {
+    if (now - timestamp > maxAge) {
+      commandThrottle.delete(key);
+    }
+  }
+
+  console.log(`🧹 Cleaned up throttle map. Current size: ${commandThrottle.size}`);
+}, 5 * 60 * 1000); // Every 5 minutes
+
 // Configure Socket.IO engine to set proper content-type
 io.engine.on('headers', (headers, req) => {
   headers['x-content-type-options'] = 'nosniff';
@@ -483,6 +527,12 @@ io.on('connection', (socket) => {
 // Twitch chat command handlers
 twitchService.on('incrementDeaths', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!d+')) {
+      console.log(`⏱️ Deaths increment throttled for ${username}`);
+      return;
+    }
+
     const data = await database.incrementDeaths(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`💀 Deaths incremented by ${username}`);
@@ -493,6 +543,12 @@ twitchService.on('incrementDeaths', async ({ userId, username }) => {
 
 twitchService.on('decrementDeaths', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!d-')) {
+      console.log(`⏱️ Deaths decrement throttled for ${username}`);
+      return;
+    }
+
     const data = await database.decrementDeaths(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`💀 Deaths decremented by ${username}`);
@@ -503,6 +559,12 @@ twitchService.on('decrementDeaths', async ({ userId, username }) => {
 
 twitchService.on('incrementSwears', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!s+')) {
+      console.log(`⏱️ Swears increment throttled for ${username}`);
+      return;
+    }
+
     const data = await database.incrementSwears(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`🤬 Swears incremented by ${username}`);
@@ -513,6 +575,12 @@ twitchService.on('incrementSwears', async ({ userId, username }) => {
 
 twitchService.on('decrementSwears', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!s-')) {
+      console.log(`⏱️ Swears decrement throttled for ${username}`);
+      return;
+    }
+
     const data = await database.decrementSwears(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`🤬 Swears decremented by ${username}`);
@@ -534,6 +602,12 @@ twitchService.on('resetCounters', async ({ userId, username }) => {
 // Handle context-aware help command
 twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaster, isMod }) => {
   try {
+    // Check if help command is throttled
+    if (isCommandThrottled(userId, '!help')) {
+      console.log(`⏱️ Help command throttled for user ${username} (${userId})`);
+      return; // Silently ignore throttled help requests
+    }
+
     let helpMessage = '';
 
     if (isBroadcaster) {
@@ -890,6 +964,12 @@ twitchService.on('giftSub', async ({ userId, gifter, recipient, channel, tier, t
 // Handle public commands (anyone can use)
 twitchService.on('publicCommand', async ({ userId, channel, username, command }) => {
   try {
+    // Check if command is throttled
+    if (isCommandThrottled(userId, command)) {
+      console.log(`⏱️ Command ${command} throttled for user ${username} (${userId})`);
+      return; // Silently ignore throttled commands
+    }
+
     const counters = await database.getCounters(userId);
     let message = '';
 
@@ -918,6 +998,7 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
     }
 
     if (message) {
+      console.log(`💬 Sending command response: ${command} -> ${username} (${userId})`);
       await twitchService.sendMessage(userId, message);
     }
   } catch (error) {

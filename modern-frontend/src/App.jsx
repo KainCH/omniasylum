@@ -376,6 +376,9 @@ function App() {
     newSocket.on('streamOnline', (data) => {
       console.log('🔴 Stream ONLINE event received:', data)
 
+      // Update main stream status to show overlay
+      setStreamStatus('live')
+
       // Update EventSub status with real-time stream status
       setEventSubStatus(prevStatus => ({
         ...prevStatus,
@@ -388,6 +391,9 @@ function App() {
 
     newSocket.on('streamOffline', (data) => {
       console.log('⚫ Stream OFFLINE event received:', data)
+
+      // Update main stream status to hide overlay
+      setStreamStatus('offline')
 
       // Update EventSub status with real-time stream status
       setEventSubStatus(prevStatus => ({
