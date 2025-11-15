@@ -1035,9 +1035,17 @@ router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Check if user has Discord notifications feature enabled
+    const hasDiscordFeature = await database.hasFeature(userId, 'discordNotifications');
+
+    console.log(`✅ Admin ${req.user.username} retrieved Discord webhook for user ${userId}:`, {
+      webhookUrl: user.discordWebhookUrl ? 'SET' : 'NOT_SET',
+      enabled: hasDiscordFeature
+    });
+
     res.json({
       webhookUrl: user.discordWebhookUrl || '',
-      enabled: user.features?.discordNotifications || false
+      enabled: hasDiscordFeature
     });
   } catch (error) {
     console.error('❌ Error fetching user Discord webhook:', error);
@@ -1055,7 +1063,12 @@ router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
 
   try {
     userId = req.params.userId;
-    const { webhookUrl } = req.body;
+    const { webhookUrl, enabled } = req.body;
+
+    console.log(`🔗 Admin ${req.user.username} updating Discord webhook for user ${userId}:`, {
+      webhookUrl: webhookUrl ? 'SET' : 'NOT_SET',
+      enabled: enabled
+    });
 
     // Validate webhook URL if provided
     if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
@@ -1068,14 +1081,24 @@ router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (r
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Update webhook URL
     await database.updateUserDiscordWebhook(userId, webhookUrl || '');
+
+    // Update Discord notifications feature flag if enabled field is provided
+    if (typeof enabled === 'boolean') {
+      const currentFeatures = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+      currentFeatures.discordNotifications = enabled;
+      await database.updateUserFeatures(userId, currentFeatures);
+      console.log(`✅ Updated discordNotifications feature to ${enabled} for user ${userId}`);
+    }
 
     console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
 
     const duration = Date.now() - startTime;
     res.json({
       message: 'Discord webhook updated successfully',
-      webhookUrl,
+      webhookUrl: webhookUrl || '',
+      enabled: typeof enabled === 'boolean' ? enabled : await database.hasFeature(userId, 'discordNotifications'),
       duration: `${duration}ms`
     });
   } catch (error) {

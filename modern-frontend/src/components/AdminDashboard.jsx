@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
+import SeriesSaveManager from './SeriesSaveManager'
 import UserManagementModal from './UserManagementModal'
 import UserConfigurationPortal from './UserConfigurationPortal'
 import PermissionManager from './PermissionManager'
@@ -28,9 +29,15 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [showUserConfigurationPortal, setShowUserConfigurationPortal] = useState(false)
   const [showPermissionManager, setShowPermissionManager] = useState(false)
   const [showDiscordModal, setShowDiscordModal] = useState(false)
+  const [showOverlayModal, setShowOverlayModal] = useState(false)
+  const [showAlertsModal, setShowAlertsModal] = useState(false)
+  const [showSeriesModal, setShowSeriesModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [selectedConfigUser, setSelectedConfigUser] = useState(null)
   const [selectedDiscordUser, setSelectedDiscordUser] = useState(null)
+  const [selectedOverlayUser, setSelectedOverlayUser] = useState(null)
+  const [selectedAlertsUser, setSelectedAlertsUser] = useState(null)
+  const [selectedSeriesUser, setSelectedSeriesUser] = useState(null)
   const [eventMappingUser, setEventMappingUser] = useState(null)
   const [rewards, setRewards] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -1237,6 +1244,43 @@ function AdminDashboard({ onNavigateToDebug }) {
                                 🔔 Discord Settings
                               </button>
                             )}
+                            {userFeatures?.streamOverlay && (
+                              <button
+                                onClick={() => {
+                                  console.log('🎨 Overlay Settings button clicked for user:', user)
+                                  setSelectedOverlayUser(user)
+                                  setShowOverlayModal(true)
+                                }}
+                                className="btn btn-secondary"
+                                title="Configure stream overlay settings for this user"
+                              >
+                                🎨 Overlay Settings
+                              </button>
+                            )}
+                            {userFeatures?.alertAnimations && (
+                              <button
+                                onClick={() => {
+                                  console.log('🎬 Alert Settings button clicked for user:', user)
+                                  setSelectedAlertsUser(user)
+                                  setShowAlertsModal(true)
+                                }}
+                                className="btn btn-secondary"
+                                title="Manage alert animations and effects for this user"
+                              >
+                                🎬 Manage Alerts
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                console.log('💾 Series Manager button clicked for user:', user)
+                                setSelectedSeriesUser(user)
+                                setShowSeriesModal(true)
+                              }}
+                              className="btn btn-secondary"
+                              title="Manage series save states for this user"
+                            >
+                              💾 Series Manager
+                            </button>
                             <button
                               onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
                               className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
@@ -1926,6 +1970,94 @@ function AdminDashboard({ onNavigateToDebug }) {
                 <DiscordWebhookSettings
                   user={selectedDiscordUser}
                 />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Overlay Settings Modal */}
+        {(showOverlayModal && selectedOverlayUser) && (
+          <div className="modal-overlay" onClick={() => setShowOverlayModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90vw' }}>
+              <div className="modal-header">
+                <h2>🎨 Stream Overlay Settings - {selectedOverlayUser.displayName || selectedOverlayUser.username}</h2>
+                <button
+                  onClick={() => {
+                    setShowOverlayModal(false)
+                    setSelectedOverlayUser(null)
+                  }}
+                  className="close-btn"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+                  <h3>🚧 Overlay Settings Admin Interface</h3>
+                  <p>Admin overlay management interface coming soon!</p>
+                  <p>Currently, users can manage their own overlay settings from their dashboard.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Alert Settings Modal */}
+        {(showAlertsModal && selectedAlertsUser) && (
+          <div className="modal-overlay" onClick={() => setShowAlertsModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1000px', width: '90vw' }}>
+              <div className="modal-header">
+                <h2>🎬 Alert Management - {selectedAlertsUser.displayName || selectedAlertsUser.username}</h2>
+                <button
+                  onClick={() => {
+                    setShowAlertsModal(false)
+                    setSelectedAlertsUser(null)
+                  }}
+                  className="close-btn"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <AlertEventManager
+                  userId={selectedAlertsUser.userId}
+                  username={selectedAlertsUser.username}
+                  onClose={() => {
+                    setShowAlertsModal(false)
+                    setSelectedAlertsUser(null)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Series Save Manager Modal */}
+        {(showSeriesModal && selectedSeriesUser) && (
+          <div className="modal-overlay" onClick={() => setShowSeriesModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90vw' }}>
+              <div className="modal-header">
+                <h2>💾 Series Save Manager - {selectedSeriesUser.displayName || selectedSeriesUser.username}</h2>
+                <button
+                  onClick={() => {
+                    setShowSeriesModal(false)
+                    setSelectedSeriesUser(null)
+                  }}
+                  className="close-btn"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+                  <h3>🚧 Admin Series Management</h3>
+                  <p>Admin access to series save states is coming soon!</p>
+                  <p>Currently, the Series Manager operates in user context only.</p>
+                  <p>Future implementation will allow admins to view and manage save states for users.</p>
+                </div>
               </div>
             </div>
           </div>

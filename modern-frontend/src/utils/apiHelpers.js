@@ -87,7 +87,7 @@ export const notificationAPI = {
   },
 
   testWebhook: async (userId, webhookData) => {
-    return await apiRequest(`/api/admin/users/${userId}/discord-test`, {
+    return await apiRequest(`/api/admin/users/${userId}/discord-webhook/test`, {
       method: 'POST',
       body: JSON.stringify(webhookData)
     });
