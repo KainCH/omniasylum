@@ -6,7 +6,7 @@ import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
 import DebugDashboard from './components/DebugDashboard'
 import UserAlertManager from './components/UserAlertManager'
-import AlertEffectsSettings from './components/AlertEffectsSettings'
+import AlertEffectsModal from './components/AlertEffectsModal'
 import SeriesSaveManager from './components/SeriesSaveManager'
 import DiscordWebhookSettings from './components/DiscordWebhookSettings'
 import OverlaySettingsModal from './components/OverlaySettingsModal'
@@ -1895,40 +1895,12 @@ function App() {
         )}
 
         {/* Alert Effects Settings Modal */}
-        {showAlertEffectsSettings && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 2000,
-              padding: '20px'
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowAlertEffectsSettings(false)
-            }}
-          >
-            <div
-              style={{
-                background: '#1a1a2e',
-                borderRadius: '12px',
-                width: '100%',
-                maxWidth: '900px',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                position: 'relative'
-              }}
-            >
-              <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
-            </div>
-          </div>
-        )}
+        <AlertEffectsModal
+          isOpen={showAlertEffectsSettings}
+          onClose={() => setShowAlertEffectsSettings(false)}
+          user={{ userId, username }}
+          isAdminMode={false}
+        />
 
         {/* Series Save Manager Modal */}
         {showSeriesSaveManager && (

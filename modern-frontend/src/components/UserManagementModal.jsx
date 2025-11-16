@@ -106,7 +106,23 @@ const getFeatureConfig = (featureKey) => {
   }
 }
 
-const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
+const UserManagementModal = ({
+  isOpen,
+  onClose,
+  users = [],
+  onRefresh,
+  onEditUser,
+  onToggleUser,
+  onToggleFeature,
+  onShowOverlay,
+  onShowAlerts,
+  onShowDiscord,
+  onShowSeries,
+  // Legacy single-user props for backward compatibility
+  user,
+  onUpdate,
+  token
+}) => {
   const { showToast } = useToast()
   const { isLoading, withLoading } = useLoading()
 
@@ -315,6 +331,181 @@ const UserManagementModal = ({ user, onClose, onUpdate, token }) => {
     updateField('overlaySettings', newSettings)
   }
 
+  // If not open, don't render
+  if (!isOpen) return null
+
+  // If we have users array, render admin list view
+  if (users && users.length >= 0 && !user) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1200px', width: '95vw' }}>
+          <div className="modal-header">
+            <h2>👥 User Management</h2>
+            <button
+              onClick={onClose}
+              className="close-btn"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+          <div className="modal-body">
+            <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', margin: 0 }}>Manage Users ({users.length})</h3>
+              <button
+                onClick={onRefresh}
+                style={{
+                  padding: '8px 16px',
+                  background: '#9146ff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Refresh
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gap: '15px' }}>
+              {users.map(user => (
+                <div key={user.userId} style={{
+                  background: '#2a2a2a',
+                  padding: '20px',
+                  borderRadius: '8px',
+                  border: '2px solid #444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <img
+                      src={user.profileImageUrl || '/default-avatar.png'}
+                      alt={user.displayName}
+                      style={{ width: '48px', height: '48px', borderRadius: '50%' }}
+                    />
+                    <div>
+                      <h4 style={{ color: '#fff', margin: '0 0 5px 0' }}>
+                        {user.displayName || user.username}
+                      </h4>
+                      <div style={{ color: '#aaa', fontSize: '12px' }}>
+                        {user.email} • {user.isActive ? '✅ Active' : '❌ Inactive'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => onEditUser(user)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#007bff',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+
+                    <button
+                      onClick={() => onToggleUser(user.userId, user.isActive)}
+                      style={{
+                        padding: '6px 12px',
+                        background: user.isActive ? '#dc3545' : '#28a745',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      {user.isActive ? '❌ Deactivate' : '✅ Activate'}
+                    </button>
+
+                    <button
+                      onClick={() => onShowOverlay(user)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#9146ff',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      🎨 Overlay
+                    </button>
+
+                    <button
+                      onClick={() => onShowAlerts(user)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#fd7e14',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      🚨 Alerts
+                    </button>
+
+                    <button
+                      onClick={() => onShowDiscord(user)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#5865f2',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      🎮 Discord
+                    </button>
+
+                    <button
+                      onClick={() => onShowSeries(user)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#6f42c1',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      💾 Series
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {users.length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px',
+                  color: '#aaa'
+                }}>
+                  <h4>No users found</h4>
+                  <p>Users will appear here once they authenticate with the system.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Single user edit mode (legacy)
   if (!user) return null
 
   return (

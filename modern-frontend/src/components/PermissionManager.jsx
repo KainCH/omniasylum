@@ -4,8 +4,18 @@ import { useLoading, useToast } from '../hooks'
 import { userAPI, APIError } from '../utils/apiHelpers'
 import './PermissionManager.css'
 
-function PermissionManager({ userRole, onUserClick }) {
-  const [users, setUsers] = useState([])
+function PermissionManager({
+  isOpen,
+  onClose,
+  users = [],
+  roles = [],
+  permissions = [],
+  onRefresh,
+  // Legacy props
+  userRole,
+  onUserClick
+}) {
+  const [internalUsers, setInternalUsers] = useState([])
   const [managedUsers, setManagedUsers] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [selectedMod, setSelectedMod] = useState('')
@@ -47,7 +57,7 @@ function PermissionManager({ userRole, onUserClick }) {
 
           if (allUsersResponse.ok) {
             const allUsersData = await allUsersResponse.json()
-            setUsers(allUsersData.users)
+            setInternalUsers(allUsersData.users)
           }
         }
       })
@@ -147,15 +157,34 @@ function PermissionManager({ userRole, onUserClick }) {
   }
 
   // Filter users for dropdowns
-  const potentialManagers = users.filter(user =>
+  // Use passed users prop if available, otherwise use internal state
+  const availableUsers = users.length > 0 ? users : internalUsers
+
+  const potentialManagers = availableUsers.filter(user =>
     user.role === 'streamer' || user.role === 'manager'
   )
-  const potentialBroadcasters = users.filter(user =>
+  const potentialBroadcasters = availableUsers.filter(user =>
     user.role === 'streamer'
   )
 
+  // If not open, don't render
+  if (!isOpen) return null
+
   return (
-    <div className="permission-manager">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1000px', width: '90vw' }}>
+        <div className="modal-header">
+          <h2>🔐 Permission Management</h2>
+          <button
+            onClick={onClose}
+            className="close-btn"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="permission-manager">
       <div className="permission-header">
         <h2>🔑 Permission Management</h2>
         <StatusBadge variant={getRoleBadgeVariant(userRole)}>
@@ -317,6 +346,9 @@ function PermissionManager({ userRole, onUserClick }) {
         >
           🔄 Refresh Data
         </ActionButton>
+      </div>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import AlertEventManager from './AlertEventManager'
+import AlertEffectsModal from './AlertEffectsModal'
 import DiscordWebhookSettings from './DiscordWebhookSettings'
 import SeriesSaveManager from './SeriesSaveManager'
 import UserManagementModal from './UserManagementModal'
