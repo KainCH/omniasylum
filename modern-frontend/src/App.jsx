@@ -2151,12 +2151,6 @@ function App() {
           </div>
         )}
 
-
-
-
-
-
-
                 {/* Size Selector */}
                 <div style={{ marginBottom: '25px' }}>
                   <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
@@ -2244,7 +2238,7 @@ function App() {
                 </div>
               </div>
 
-        )}
+        )
 
         {/* Stream Overlay - Rendered when stream is live */}
         {renderStreamOverlay()}
