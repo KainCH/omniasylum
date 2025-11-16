@@ -9,6 +9,7 @@ import UserAlertManager from './components/UserAlertManager'
 import AlertEffectsSettings from './components/AlertEffectsSettings'
 import SeriesSaveManager from './components/SeriesSaveManager'
 import DiscordWebhookSettings from './components/DiscordWebhookSettings'
+import OverlaySettingsModal from './components/OverlaySettingsModal'
 import { userAPI } from './utils/apiHelpers'
 import './App.css'
 import './components/AdminDashboard.css'
@@ -2151,95 +2152,16 @@ function App() {
           </div>
         )}
 
-                {/* Size Selector */}
-                <div style={{ marginBottom: '25px' }}>
-                  <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
-                  <select
-                    value={overlaySettings.size || 'medium'}
-                    onChange={(e) => {
-                      const newSettings = { ...overlaySettings, size: e.target.value }
-                      setOverlaySettings(newSettings)
-                      updateOverlaySettings(newSettings)
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: '6px',
-                      background: '#2a2a2a',
-                      color: '#fff',
-                      border: '1px solid #444',
-                      fontSize: '14px'
-                    }}
-                  >
-                    <option value="small">� Small</option>
-                    <option value="medium">� Medium</option>
-                    <option value="large">�️ Large</option>
-                  </select>
-                </div>
-
-              {/* Counters */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>📊 Visible Counters</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { key: 'deaths', label: '💀 Deaths' },
-                    { key: 'swears', label: '🤬 Swears' },
-                    { key: 'bits', label: '💎 Bits' },
-                    { key: 'channelPoints', label: '⭐ Channel Points' }
-                  ].map(counter => (
-                    <label key={counter.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={overlaySettings.counters[counter.key] || false}
-                        onChange={(e) => {
-                          const newSettings = {
-                            ...overlaySettings,
-                            counters: { ...overlaySettings.counters, [counter.key]: e.target.checked }
-                          }
-                          setOverlaySettings(newSettings)
-                          updateOverlaySettings(newSettings)
-                        }}
-                        style={{ width: '18px', height: '18px' }}
-                      />
-                      <span>{counter.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Animations */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>✨ Animations & Effects</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { key: 'enabled', label: 'Basic Animations' },
-                    { key: 'showAlerts', label: 'Counter Alerts' },
-                    { key: 'celebrationEffects', label: 'Celebrations' },
-                    { key: 'bounceOnUpdate', label: 'Bounce Effect' },
-                    { key: 'fadeTransitions', label: 'Fade Transitions' }
-                  ].map(animation => (
-                    <label key={animation.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={overlaySettings.animations[animation.key] || false}
-                        onChange={(e) => {
-                          const newSettings = {
-                            ...overlaySettings,
-                            animations: { ...overlaySettings.animations, [animation.key]: e.target.checked }
-                          }
-                          setOverlaySettings(newSettings)
-                          updateOverlaySettings(newSettings)
-                        }}
-                        style={{ width: '18px', height: '18px' }}
-                      />
-                      <span>{animation.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-        )
-
+        {/* Overlay Settings Modal */}
+        <OverlaySettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          user={{ userId, username }}
+          isAdminMode={false}
+          onUpdate={(newSettings) => {
+            setOverlaySettings(newSettings)
+          }}
+        />
         {/* Stream Overlay - Rendered when stream is live */}
         {renderStreamOverlay()}
       </div>
