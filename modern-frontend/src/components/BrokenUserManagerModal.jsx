@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { makeAuthenticatedJsonRequest, handleAuthError } from '../utils/authUtils';
 import './AdminDashboard.css';
 
 const BrokenUserManagerModal = ({ isOpen, onClose }) => {
@@ -15,61 +16,37 @@ const BrokenUserManagerModal = ({ isOpen, onClose }) => {
   const fetchDiagnostics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/admin/users/diagnostics', {
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setDiagnostics(data);
-      } else {
-        console.error('Failed to fetch user diagnostics');
-      }
+      const data = await makeAuthenticatedJsonRequest('/api/admin/users/diagnostics');
+      setDiagnostics(data);
     } catch (error) {
-      console.error('Error fetching user diagnostics:', error);
+      handleAuthError(error, 'fetching user diagnostics');
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteBrokenUser = async (brokenUser) => {
-    const { partitionKey, rowKey, tempDeleteId } = brokenUser;
-
-    if (!partitionKey || !rowKey) {
-      alert('Cannot delete user: missing partition or row key');
+  const deleteBrokenUser = async (user) => {
+    if (!window.confirm(`Are you sure you want to delete broken user with temp ID ${user.tempId}?`)) {
       return;
     }
 
-    const confirmMessage = `Delete broken user record?\n\nTemp ID: ${tempDeleteId}\nPartition: ${partitionKey}\nRow: ${rowKey}\n\nThis action cannot be undone.`;
-
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
-    setDeleting(prev => new Set(prev).add(tempDeleteId));
+    setDeleting(prev => new Set([...prev, user.tempId]));
 
     try {
-      const response = await fetch(`/api/admin/users/broken/${encodeURIComponent(partitionKey)}/${encodeURIComponent(rowKey)}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
+      await makeAuthenticatedJsonRequest(
+        `/api/admin/users/broken/${encodeURIComponent(user.partitionKey)}/${encodeURIComponent(user.rowKey)}`,
+        { method: 'DELETE' }
+      );
 
-      if (response.ok) {
-        console.log('✅ Broken user deleted successfully');
-        await fetchDiagnostics(); // Refresh the diagnostics
-      } else {
-        const error = await response.json();
-        console.error('Failed to delete broken user:', error);
-        alert(`Failed to delete user: ${error.error}`);
-      }
+      // Refresh diagnostics to show updated state
+      fetchDiagnostics();
     } catch (error) {
-      console.error('Error deleting broken user:', error);
-      alert('Error deleting user');
+      handleAuthError(error, 'deleting broken user');
     } finally {
       setDeleting(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(tempDeleteId);
-        return newSet;
+        const updated = new Set(prev);
+        updated.delete(user.tempId);
+        return updated;
       });
     }
   };

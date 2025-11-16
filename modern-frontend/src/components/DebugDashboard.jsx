@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import './DebugDashboard.css'
 import { ActionButton, StatusBadge } from './ui/CommonControls'
-import { userAPI, debugAPI } from '../utils/apiHelpers'
+import { userAPI } from '../utils/authUtils'
 import { useToast, useLoading } from '../hooks'
 
 function DebugDashboard({ user }) {

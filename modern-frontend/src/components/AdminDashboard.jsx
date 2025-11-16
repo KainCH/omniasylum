@@ -12,7 +12,8 @@ import PermissionManager from './PermissionManager'
 import OverlaySettingsModal from './OverlaySettingsModal'
 import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
 import { useUserData, useLoading, useToast } from '../hooks'
-import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
+import { userAPI, counterAPI, adminAPI, APIError } from '../utils/authUtils'
+import { getAuthHeaders, makeAuthenticatedJsonRequest, handleAuthError, getAuthToken } from '../utils/authUtils'
 import './AdminDashboard.css'
 
 // Helper function to get user-friendly feature names
@@ -64,7 +65,7 @@ function AdminDashboard({ onNavigateToDebug }) {
     // Initialize socket connection
     const newSocket = io({
       auth: {
-        token: localStorage.getItem('authToken')
+        token: getAuthToken()
       }
     })
 
@@ -91,7 +92,7 @@ function AdminDashboard({ onNavigateToDebug }) {
     // Initialize socket connection
     const socketConnection = io({
       auth: {
-        token: localStorage.getItem('authToken')
+        token: getAuthToken()
       }
     })
 
@@ -118,26 +119,13 @@ function AdminDashboard({ onNavigateToDebug }) {
     }
   }, [])
 
-  // Helper function to get auth headers
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken')
-    const headers = {
-      'Content-Type': 'application/json'
-    }
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    return headers
-  }
-
   const fetchAdminData = async () => {
     try {
-      const headers = getAuthHeaders()
-
-      // Fetch users
-      const usersResponse = await fetch('/api/admin/users', { headers })
+      // Fetch users using centralized auth utilities
+      const usersResponse = await fetch('/api/admin/users', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (usersResponse.ok) {
         const usersData = await usersResponse.json()
         // Backend returns { users: [...], total: ... }
@@ -149,35 +137,50 @@ function AdminDashboard({ onNavigateToDebug }) {
       }
 
       // Fetch stats
-      const statsResponse = await fetch('/api/admin/stats', { headers })
+      const statsResponse = await fetch('/api/admin/stats', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
         setStats(statsData)
       }
 
       // Fetch features
-      const featuresResponse = await fetch('/api/admin/features', { headers })
+      const featuresResponse = await fetch('/api/admin/features', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (featuresResponse.ok) {
         const featuresData = await featuresResponse.json()
         setFeatures(featuresData)
       }
 
       // Fetch roles
-      const rolesResponse = await fetch('/api/admin/roles', { headers })
+      const rolesResponse = await fetch('/api/admin/roles', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (rolesResponse.ok) {
         const rolesData = await rolesResponse.json()
         setRoles(rolesData)
       }
 
       // Fetch permissions
-      const permissionsResponse = await fetch('/api/admin/permissions', { headers })
+      const permissionsResponse = await fetch('/api/admin/permissions', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (permissionsResponse.ok) {
         const permissionsData = await permissionsResponse.json()
         setPermissions(permissionsData)
       }
 
       // Fetch streams
-      const streamsResponse = await fetch('/api/admin/streams', { headers })
+      const streamsResponse = await fetch('/api/admin/streams', {
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      })
       if (streamsResponse.ok) {
         const streamsData = await streamsResponse.json()
         setStreams(streamsData)
@@ -204,10 +207,10 @@ function AdminDashboard({ onNavigateToDebug }) {
 
   const toggleUserStatus = async (userId, currentStatus) => {
     try {
-      const headers = getAuthHeaders()
       const response = await fetch(`/api/admin/users/${userId}/toggle`, {
         method: 'PUT',
-        headers,
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ isActive: !currentStatus })
       })
 
@@ -226,10 +229,10 @@ function AdminDashboard({ onNavigateToDebug }) {
 
   const toggleFeature = async (userId, featureName, currentValue) => {
     try {
-      const headers = getAuthHeaders()
       const response = await fetch(`/api/admin/users/${userId}/features`, {
         method: 'PUT',
-        headers,
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           feature: featureName,
           enabled: !currentValue
@@ -257,7 +260,6 @@ function AdminDashboard({ onNavigateToDebug }) {
     }
 
     try {
-      const headers = getAuthHeaders()
       const userId = user.twitchUserId || user.userId
       if (!userId) {
         alert('❌ Cannot delete user: Invalid user ID')
@@ -266,7 +268,8 @@ function AdminDashboard({ onNavigateToDebug }) {
 
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
-        headers
+        headers: getAuthHeaders(),
+        credentials: 'include'
       })
 
       if (response.ok) {

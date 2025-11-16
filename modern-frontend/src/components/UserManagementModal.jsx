@@ -9,7 +9,7 @@ import {
   validateNotificationSettings,
   parseThresholdString
 } from '../utils/notificationHelpers'
-import { userAPI, notificationAPI, APIError } from '../utils/apiHelpers'
+import { userAPI, APIError } from '../utils/authUtils'
 
 // Default feature flags for new users
 const defaultFeatures = {

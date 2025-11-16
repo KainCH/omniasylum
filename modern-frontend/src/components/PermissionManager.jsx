@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ActionButton, FormSection, StatusBadge, InputGroup } from './ui/CommonControls'
 import { useLoading, useToast } from '../hooks'
-import { userAPI, APIError } from '../utils/apiHelpers'
+import { userAPI, APIError } from '../utils/authUtils'
 import './PermissionManager.css'
 
 function PermissionManager({

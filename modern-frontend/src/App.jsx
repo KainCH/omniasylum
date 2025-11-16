@@ -11,7 +11,7 @@ import OverlaySettingsModal from './components/OverlaySettingsModal'
 import InstructionsModal from './components/InstructionsModal'
 import AlertManagerModal from './components/AlertManagerModal'
 import DiscordWebhookSettingsModal from './components/DiscordWebhookSettingsModal'
-import { userAPI } from './utils/apiHelpers'
+import { userAPI } from './utils/authUtils'
 import './App.css'
 import './components/AdminDashboard.css'
 

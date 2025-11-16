@@ -7,7 +7,7 @@ import {
   validateNotificationSettings,
   parseThresholdString
 } from '../utils/notificationHelpers'
-import { userAPI, notificationAPI, APIError } from '../utils/apiHelpers'
+import { userAPI, APIError } from '../utils/authUtils'
 
 function DiscordWebhookSettings({ user }) {
   const { showToast } = useToast()
