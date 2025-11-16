@@ -436,6 +436,49 @@ export const adminAPI = {
   // Get user requests/pending approvals
   getUserRequests: async () => {
     return await makeAuthenticatedJsonRequest('/api/admin/user-requests');
+  },
+
+  // Discord webhook management (Admin)
+  getDiscordWebhook: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-webhook`);
+  },
+
+  updateDiscordWebhook: async (userId, webhookData) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-webhook`, {
+      method: 'PUT',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  testDiscordWebhook: async (userId, webhookData) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-webhook/test`, {
+      method: 'POST',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  // Discord settings management (Admin)
+  getDiscordSettings: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-settings`);
+  },
+
+  updateDiscordSettings: async (userId, settings) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  // Discord invite management (Admin)
+  getDiscordInvite: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-invite`);
+  },
+
+  updateDiscordInvite: async (userId, inviteData) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/discord-invite`, {
+      method: 'PUT',
+      body: JSON.stringify(inviteData)
+    });
   }
 };
 
@@ -580,6 +623,203 @@ export const healthAPI = {
   // Get Twitch bot status
   getTwitchStatus: async () => {
     return await makeAuthenticatedJsonRequest('/api/twitch/status');
+  }
+};
+
+// ============================================================================
+// UNIFIED API FUNCTIONS
+// ============================================================================
+
+/**
+ * Unified Discord settings lookup that works for both admin and user modes
+ * Automatically determines whether to use admin API (when looking up another user)
+ * or user API (when accessing own settings)
+ * @param {Object|null} targetUser - User object to look up settings for (null = current user)
+ * @returns {Promise<Object>} Discord settings data
+ */
+export const getDiscordSettingsUnified = async (targetUser = null) => {
+  try {
+    // Get current user context from token
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new APIError('No authentication token found', 401);
+    }
+
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentUserId = payload.userId || payload.twitchUserId;
+    const isCurrentUserAdmin = payload.role === 'admin';
+
+    // Determine if we're in admin mode (admin looking up another user's settings)
+    const targetUserId = targetUser?.twitchUserId || targetUser?.userId;
+    const isAdminMode = isCurrentUserAdmin && targetUserId && currentUserId !== targetUserId;
+
+    console.log('🔍 Unified Discord settings lookup:', {
+      currentUserId,
+      targetUserId,
+      isCurrentUserAdmin,
+      isAdminMode,
+      targetUser: targetUser ? `${targetUser.displayName} (${targetUserId})` : 'current user'
+    });
+
+    if (isAdminMode) {
+      // Admin viewing another user's settings - use admin API
+      console.log('👑 Using admin API for unified Discord settings lookup');
+      const response = await adminAPI.getDiscordSettings(targetUserId);
+      console.log('👑 Admin API raw response:', response);
+      console.log('👑 Extracting discordSettings:', response.discordSettings);
+      // Admin API returns { discordSettings: {...} }, extract the inner object
+      const extracted = response.discordSettings || response;
+      console.log('👑 Final extracted data:', extracted);
+      return extracted;
+    } else {
+      // User viewing their own settings - use user API
+      console.log('👤 Using user API for unified Discord settings lookup');
+      const result = await userAPI.getDiscordSettings();
+      console.log('👤 User API raw response:', result);
+      return result;
+    }
+  } catch (error) {
+    console.error('❌ Error in unified Discord settings lookup:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unified Discord webhook lookup that works for both admin and user modes
+ * @param {Object|null} targetUser - User object to look up webhook for (null = current user)
+ * @returns {Promise<Object>} Discord webhook data
+ */
+export const getDiscordWebhookUnified = async (targetUser = null) => {
+  try {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new APIError('No authentication token found', 401);
+    }
+
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentUserId = payload.userId || payload.twitchUserId;
+    const isCurrentUserAdmin = payload.role === 'admin';
+
+    const targetUserId = targetUser?.twitchUserId || targetUser?.userId;
+    const isAdminMode = isCurrentUserAdmin && targetUserId && currentUserId !== targetUserId;
+
+    console.log('🔍 Unified Discord webhook lookup:', {
+      currentUserId,
+      targetUserId,
+      isCurrentUserAdmin,
+      isAdminMode
+    });
+
+    if (isAdminMode) {
+      console.log('👑 Using admin API for unified Discord webhook lookup');
+      return await adminAPI.getDiscordWebhook(targetUserId);
+    } else {
+      console.log('👤 Using user API for unified Discord webhook lookup');
+      return await userAPI.getDiscordWebhook();
+    }
+  } catch (error) {
+    console.error('❌ Error in unified Discord webhook lookup:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unified Discord invite lookup that works for both admin and user modes
+ * @param {Object|null} targetUser - User object to look up invite for (null = current user)
+ * @returns {Promise<Object>} Discord invite data
+ */
+export const getDiscordInviteUnified = async (targetUser = null) => {
+  try {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new APIError('No authentication token found', 401);
+    }
+
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentUserId = payload.userId || payload.twitchUserId;
+    const isCurrentUserAdmin = payload.role === 'admin';
+
+    const targetUserId = targetUser?.twitchUserId || targetUser?.userId;
+    const isAdminMode = isCurrentUserAdmin && targetUserId && currentUserId !== targetUserId;
+
+    console.log('🔍 Unified Discord invite lookup:', {
+      currentUserId,
+      targetUserId,
+      isCurrentUserAdmin,
+      isAdminMode
+    });
+
+    if (isAdminMode) {
+      console.log('👑 Using admin API for unified Discord invite lookup');
+      return await adminAPI.getDiscordInvite(targetUserId);
+    } else {
+      console.log('👤 Using user API for unified Discord invite lookup');
+      return await userAPI.getDiscordInvite();
+    }
+  } catch (error) {
+    console.error('❌ Error in unified Discord invite lookup:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unified function to update Discord settings (webhook, notifications, invite)
+ * @param {Object|null} targetUser - User to update settings for (null = current user)
+ * @param {Object} webhookData - Webhook settings to update
+ * @param {Object} notificationSettings - Notification settings to update
+ * @param {Object} inviteData - Invite settings to update
+ * @returns {Promise<Object>} Update results
+ */
+export const updateDiscordSettingsUnified = async (targetUser = null, webhookData = null, notificationSettings = null, inviteData = null) => {
+  try {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new APIError('No authentication token found', 401);
+    }
+
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentUserId = payload.userId || payload.twitchUserId;
+    const isCurrentUserAdmin = payload.role === 'admin';
+
+    const targetUserId = targetUser?.twitchUserId || targetUser?.userId;
+    const isAdminMode = isCurrentUserAdmin && targetUserId && currentUserId !== targetUserId;
+
+    const results = {};
+
+    if (isAdminMode) {
+      console.log('👑 Using admin API for unified Discord settings update');
+
+      if (webhookData) {
+        results.webhook = await adminAPI.updateDiscordWebhook(targetUserId, webhookData);
+      }
+
+      if (notificationSettings) {
+        results.notifications = await adminAPI.updateDiscordSettings(targetUserId, notificationSettings);
+      }
+
+      if (inviteData) {
+        results.invite = await adminAPI.updateDiscordInvite(targetUserId, inviteData);
+      }
+    } else {
+      console.log('👤 Using user API for unified Discord settings update');
+
+      if (webhookData) {
+        results.webhook = await userAPI.updateDiscordWebhook(webhookData);
+      }
+
+      if (notificationSettings) {
+        results.notifications = await userAPI.updateDiscordSettings(notificationSettings);
+      }
+
+      if (inviteData) {
+        results.invite = await userAPI.updateDiscordInvite(inviteData);
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error('❌ Error in unified Discord settings update:', error);
+    throw error;
   }
 };
 

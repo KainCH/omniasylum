@@ -81,6 +81,99 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
 });
 
 /**
+ * Get user diagnostics (for debugging broken users)
+ * GET /api/admin/users/diagnostics
+ */
+router.get('/users/diagnostics', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await database.getAllUsers();
+
+    const diagnostics = {
+      totalUsers: users.length,
+      validUsers: [],
+      brokenUsers: [],
+      suspiciousUsers: []
+    };
+
+    for (const user of users) {
+      const userInfo = {
+        username: user.username || 'MISSING',
+        displayName: user.displayName || 'MISSING',
+        twitchUserId: user.twitchUserId || 'MISSING',
+        partitionKey: user.partitionKey || 'MISSING',
+        rowKey: user.rowKey || 'MISSING',
+        email: user.email ? 'EXISTS' : 'MISSING',
+        profileImageUrl: user.profileImageUrl ? 'EXISTS' : 'MISSING',
+        role: user.role || 'MISSING',
+        isActive: user.isActive,
+        allFields: Object.keys(user)
+      };
+
+      if (!user.twitchUserId) {
+        // Assign random 3-digit ID for broken users so they can be deleted
+        const randomId = Math.floor(100 + Math.random() * 900).toString();
+        userInfo.tempDeleteId = randomId;
+        userInfo.canDelete = true;
+        diagnostics.brokenUsers.push(userInfo);
+      } else if (!user.username || !user.displayName) {
+        diagnostics.suspiciousUsers.push(userInfo);
+      } else {
+        diagnostics.validUsers.push(userInfo);
+      }
+    }
+
+    res.json(diagnostics);
+  } catch (error) {
+    console.error('❌ Error getting user diagnostics:', error);
+    res.status(500).json({ error: 'Failed to get user diagnostics' });
+  }
+});
+
+/**
+ * Delete broken user by partition/row key
+ * DELETE /api/admin/users/broken/:partitionKey/:rowKey
+ */
+router.delete('/users/broken/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { partitionKey, rowKey } = req.params;
+
+    console.log(`🗑️ Admin ${req.user.username} attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+
+    // For broken users, skip the validation check since they might not be retrievable via normal methods
+    // Instead, attempt to delete directly and let the database method handle the validation
+    console.log(`🔍 Attempting direct deletion without pre-validation for broken record`);
+
+    // Delete the broken user directly from storage
+    const deleted = await database.deleteBrokenUser(partitionKey, rowKey);
+
+    if (deleted) {
+      console.log(`✅ Successfully deleted broken user: partition=${partitionKey}, row=${rowKey}`);
+      res.json({
+        message: 'Broken user deleted successfully',
+        partitionKey,
+        rowKey
+      });
+    } else {
+      console.log(`❌ Failed to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+      res.status(404).json({ error: 'User not found or could not be deleted' });
+    }
+
+  } catch (error) {
+    console.error('❌ Error deleting broken user:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode,
+      stack: error.stack
+    });
+    res.status(500).json({
+      error: 'Failed to delete broken user',
+      details: error.message
+    });
+  }
+});
+
+/**
  * Get specific user details
  * GET /api/admin/users/:userId
  */
@@ -517,95 +610,6 @@ router.delete('/users/by-keys/:partitionKey/:rowKey', requireAuth, requireAdmin,
   } catch (error) {
     console.error('❌ Error deleting user by keys:', error);
     res.status(500).json({ error: 'Failed to delete user by keys' });
-  }
-});
-
-/**
- * Get user diagnostics (for debugging broken users)
- * GET /api/admin/users/diagnostics
- */
-router.get('/users/diagnostics', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const users = await database.getAllUsers();
-
-    const diagnostics = {
-      totalUsers: users.length,
-      validUsers: [],
-      brokenUsers: [],
-      suspiciousUsers: []
-    };
-
-    for (const user of users) {
-      const userInfo = {
-        username: user.username || 'MISSING',
-        displayName: user.displayName || 'MISSING',
-        twitchUserId: user.twitchUserId || 'MISSING',
-        partitionKey: user.partitionKey || 'MISSING',
-        rowKey: user.rowKey || 'MISSING',
-        email: user.email ? 'EXISTS' : 'MISSING',
-        profileImageUrl: user.profileImageUrl ? 'EXISTS' : 'MISSING',
-        role: user.role || 'MISSING',
-        isActive: user.isActive,
-        allFields: Object.keys(user)
-      };
-
-      if (!user.twitchUserId) {
-        // Assign random 3-digit ID for broken users so they can be deleted
-        const randomId = Math.floor(100 + Math.random() * 900).toString();
-        userInfo.tempDeleteId = randomId;
-        userInfo.canDelete = true;
-        diagnostics.brokenUsers.push(userInfo);
-      } else if (!user.username || !user.displayName) {
-        diagnostics.suspiciousUsers.push(userInfo);
-      } else {
-        diagnostics.validUsers.push(userInfo);
-      }
-    }
-
-    res.json(diagnostics);
-  } catch (error) {
-    console.error('❌ Error getting user diagnostics:', error);
-    res.status(500).json({ error: 'Failed to get user diagnostics' });
-  }
-});
-
-/**
- * Delete broken user by partition/row key
- * DELETE /api/admin/users/broken/:partitionKey/:rowKey
- */
-router.delete('/users/broken/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { partitionKey, rowKey } = req.params;
-
-    console.log(`🗑️ Admin ${req.user.username} attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
-
-    // First get the user to verify it's broken (no twitchUserId)
-    const user = await database.getUser(partitionKey);
-
-    if (user && user.twitchUserId) {
-      return res.status(400).json({
-        error: 'Cannot delete valid user - user has twitchUserId'
-      });
-    }
-
-    // Delete the broken user directly from storage
-    const deleted = await database.deleteBrokenUser(partitionKey, rowKey);
-
-    if (deleted) {
-      console.log(`✅ Successfully deleted broken user: partition=${partitionKey}, row=${rowKey}`);
-      res.json({
-        message: 'Broken user deleted successfully',
-        partitionKey,
-        rowKey
-      });
-    } else {
-      console.log(`❌ Failed to delete broken user: partition=${partitionKey}, row=${rowKey}`);
-      res.status(404).json({ error: 'User not found or could not be deleted' });
-    }
-
-  } catch (error) {
-    console.error('❌ Error deleting broken user:', error);
-    res.status(500).json({ error: 'Failed to delete broken user' });
   }
 });
 
@@ -1248,7 +1252,20 @@ router.get('/users/:userId/discord-settings', requireAuth, requireAdmin, async (
 
     const settings = user.discordSettings ? JSON.parse(user.discordSettings) : defaultSettings;
 
-    res.json({ discordSettings: settings });
+    // Include webhook data in the settings response
+    const hasDiscordFeature = await database.hasFeature(userId, 'discordNotifications');
+    const webhookUrl = user.discordWebhookUrl || '';
+
+    const completeSettings = {
+      ...settings,
+      // Add webhook data to the settings response
+      webhookUrl: webhookUrl,
+      enabled: hasDiscordFeature,
+      // Add template style preference
+      templateStyle: user?.templateStyle || 'asylum_themed'
+    };
+
+    res.json({ discordSettings: completeSettings });
   } catch (error) {
     console.error('❌ Error getting Discord settings:', error);
     res.status(500).json({ error: 'Failed to get Discord settings' });

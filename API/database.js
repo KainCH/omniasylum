@@ -2647,9 +2647,25 @@ class Database {
 
       if (this.mode === 'azure') {
         // Delete from Azure Table Storage
-        await this.usersClient.deleteEntity(partitionKey, rowKey);
-        console.log('✅ Broken user deleted from Azure Table Storage');
-        return true;
+        console.log(`🔍 Attempting Azure Table Storage deletion: partition=${partitionKey}, row=${rowKey}`);
+        try {
+          await this.usersClient.deleteEntity(partitionKey, rowKey);
+          console.log('✅ Broken user deleted from Azure Table Storage');
+          return true;
+        } catch (azureError) {
+          // Handle specific Azure errors
+          if (azureError.statusCode === 404) {
+            console.log('⚠️ Entity not found in Azure Table Storage - considering it already deleted');
+            return true; // Entity doesn't exist, so deletion is "successful"
+          } else {
+            console.error('❌ Azure Table Storage deletion failed:', {
+              statusCode: azureError.statusCode,
+              message: azureError.message,
+              code: azureError.code
+            });
+            throw azureError; // Re-throw for handling in outer catch
+          }
+        }
       } else {
         // Delete from local storage
         const users = this.loadLocalUsers();
