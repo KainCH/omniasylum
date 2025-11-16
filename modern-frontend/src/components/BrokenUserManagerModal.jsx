@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { makeAuthenticatedJsonRequest, handleAuthError } from '../utils/authUtils';
+import { adminAPI, handleAuthError } from '../utils/authUtils';
 import './AdminDashboard.css';
 
 const BrokenUserManagerModal = ({ isOpen, onClose }) => {
@@ -16,7 +16,7 @@ const BrokenUserManagerModal = ({ isOpen, onClose }) => {
   const fetchDiagnostics = async () => {
     setLoading(true);
     try {
-      const data = await makeAuthenticatedJsonRequest('/api/admin/users/diagnostics');
+      const data = await adminAPI.getUserDiagnostics();
       setDiagnostics(data);
     } catch (error) {
       handleAuthError(error, 'fetching user diagnostics');
@@ -33,10 +33,7 @@ const BrokenUserManagerModal = ({ isOpen, onClose }) => {
     setDeleting(prev => new Set([...prev, user.tempId]));
 
     try {
-      await makeAuthenticatedJsonRequest(
-        `/api/admin/users/broken/${encodeURIComponent(user.partitionKey)}/${encodeURIComponent(user.rowKey)}`,
-        { method: 'DELETE' }
-      );
+      await adminAPI.deleteBrokenUser(user.partitionKey, user.rowKey);
 
       // Refresh diagnostics to show updated state
       fetchDiagnostics();

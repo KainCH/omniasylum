@@ -12,8 +12,7 @@ import PermissionManager from './PermissionManager'
 import OverlaySettingsModal from './OverlaySettingsModal'
 import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
 import { useUserData, useLoading, useToast } from '../hooks'
-import { userAPI, counterAPI, adminAPI, APIError } from '../utils/authUtils'
-import { getAuthHeaders, makeAuthenticatedJsonRequest, handleAuthError, getAuthToken } from '../utils/authUtils'
+import { userAPI, counterAPI, adminAPI, APIError, getAuthToken } from '../utils/authUtils'
 import './AdminDashboard.css'
 
 // Helper function to get user-friendly feature names
@@ -121,84 +120,78 @@ function AdminDashboard({ onNavigateToDebug }) {
 
   const fetchAdminData = async () => {
     try {
-      // Fetch users using centralized auth utilities
-      const usersResponse = await fetch('/api/admin/users', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (usersResponse.ok) {
-        const usersData = await usersResponse.json()
-        // Backend returns { users: [...], total: ... }
-        const usersList = usersData.users || usersData
-        setUsers(Array.isArray(usersList) ? usersList : [])
+      // Fetch all admin data using consolidated API methods
+      const [usersData, statsData, featuresData, rolesData, permissionsData, streamsData] = await Promise.allSettled([
+        adminAPI.getUsers(),
+        adminAPI.getStats(),
+        adminAPI.getFeatures(),
+        adminAPI.getRoles(),
+        adminAPI.getPermissions(),
+        adminAPI.getStreams()
+      ]);
+
+      // Handle users data
+      if (usersData.status === 'fulfilled') {
+        const usersList = usersData.value.users || usersData.value;
+        setUsers(Array.isArray(usersList) ? usersList : []);
       } else {
-        console.error('Failed to fetch users:', usersResponse.status)
-        setUsers([])
+        console.error('Failed to fetch users:', usersData.reason);
+        setUsers([]);
       }
 
-      // Fetch stats
-      const statsResponse = await fetch('/api/admin/stats', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json()
-        setStats(statsData)
+      // Handle stats data
+      if (statsData.status === 'fulfilled') {
+        setStats(statsData.value);
+      } else {
+        console.error('Failed to fetch stats:', statsData.reason);
+        setStats({});
       }
 
-      // Fetch features
-      const featuresResponse = await fetch('/api/admin/features', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (featuresResponse.ok) {
-        const featuresData = await featuresResponse.json()
-        setFeatures(featuresData)
+      // Handle features data
+      if (featuresData.status === 'fulfilled') {
+        setFeatures(featuresData.value);
+      } else {
+        console.error('Failed to fetch features:', featuresData.reason);
+        setFeatures([]);
       }
 
-      // Fetch roles
-      const rolesResponse = await fetch('/api/admin/roles', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (rolesResponse.ok) {
-        const rolesData = await rolesResponse.json()
-        setRoles(rolesData)
+      // Handle roles data
+      if (rolesData.status === 'fulfilled') {
+        setRoles(rolesData.value);
+      } else {
+        console.error('Failed to fetch roles:', rolesData.reason);
+        setRoles([]);
       }
 
-      // Fetch permissions
-      const permissionsResponse = await fetch('/api/admin/permissions', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (permissionsResponse.ok) {
-        const permissionsData = await permissionsResponse.json()
-        setPermissions(permissionsData)
+      // Handle permissions data
+      if (permissionsData.status === 'fulfilled') {
+        setPermissions(permissionsData.value);
+      } else {
+        console.error('Failed to fetch permissions:', permissionsData.reason);
+        setPermissions([]);
       }
 
-      // Fetch streams
-      const streamsResponse = await fetch('/api/admin/streams', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      if (streamsResponse.ok) {
-        const streamsData = await streamsResponse.json()
-        setStreams(streamsData)
+      // Handle streams data
+      if (streamsData.status === 'fulfilled') {
+        setStreams(streamsData.value);
+      } else {
+        console.error('Failed to fetch streams:', streamsData.reason);
+        setStreams([]);
       }
 
     } catch (error) {
-      console.error('❌ Error fetching admin data:', error)
+      console.error('❌ Error fetching admin data:', error);
       // Ensure state is set to safe defaults on error
-      setUsers([])
-      setStats({})
-      setFeatures([])
-      setRoles([])
-      setPermissions([])
-      setStreams([])
+      setUsers([]);
+      setStats({});
+      setFeatures([]);
+      setRoles([]);
+      setPermissions([]);
+      setStreams([]);
     } finally {
-      setRefreshing(false)
+      setRefreshing(false);
     }
-  }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -207,48 +200,23 @@ function AdminDashboard({ onNavigateToDebug }) {
 
   const toggleUserStatus = async (userId, currentStatus) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}/toggle`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({ isActive: !currentStatus })
-      })
-
-      if (response.ok) {
-        // Refresh data to show changes
-        await fetchAdminData()
-      } else {
-        const errorData = await response.json()
-        alert(`Failed to toggle user status: ${errorData.error}`)
-      }
+      await adminAPI.toggleUserStatus(userId, !currentStatus);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Error toggling user status:', error)
-      alert('Network error: Failed to toggle user status')
+      console.error('❌ Error toggling user status:', error);
+      alert(`Failed to toggle user status: ${error.message}`);
     }
   }
 
   const toggleFeature = async (userId, featureName, currentValue) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}/features`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({
-          feature: featureName,
-          enabled: !currentValue
-        })
-      })
-
-      if (response.ok) {
-        // Refresh data to show changes
-        await fetchAdminData()
-      } else {
-        const errorData = await response.json()
-        alert(`Failed to toggle feature: ${errorData.error}`)
-      }
+      await adminAPI.updateUserFeatures(userId, featureName, !currentValue);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Error toggling feature:', error)
-      alert('Network error: Failed to toggle feature')
+      console.error('❌ Error toggling feature:', error);
+      alert(`Failed to toggle feature: ${error.message}`);
     }
   }
 
@@ -266,23 +234,13 @@ function AdminDashboard({ onNavigateToDebug }) {
         return
       }
 
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        alert(`✅ User "${userName}" has been successfully deleted.`)
-        // Refresh data to show changes
-        await fetchAdminData()
-      } else {
-        const errorData = await response.json()
-        alert(`❌ Failed to delete user: ${errorData.error}`)
-      }
+      await adminAPI.deleteUser(userId);
+      alert(`✅ User "${userName}" has been successfully deleted.`);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Error deleting user:', error)
-      alert('❌ Network error: Failed to delete user')
+      console.error('❌ Error deleting user:', error);
+      alert(`❌ Failed to delete user: ${error.message}`);
     }
   }
 

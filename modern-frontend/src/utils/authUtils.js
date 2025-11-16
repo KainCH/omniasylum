@@ -251,6 +251,75 @@ export const userAPI = {
       method: 'PUT',
       body: JSON.stringify(features)
     });
+  },
+
+  // Get user settings
+  getSettings: async () => {
+    return await makeAuthenticatedJsonRequest('/api/user/settings');
+  },
+
+  // Update user settings
+  updateSettings: async (settings) => {
+    return await makeAuthenticatedJsonRequest('/api/user/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  // Get overlay settings
+  getOverlaySettings: async () => {
+    return await makeAuthenticatedJsonRequest('/api/overlay-settings');
+  },
+
+  // Update overlay settings
+  updateOverlaySettings: async (settings) => {
+    return await makeAuthenticatedJsonRequest('/api/overlay-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  // Discord webhook management
+  getDiscordWebhook: async () => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-webhook');
+  },
+
+  updateDiscordWebhook: async (webhookData) => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-webhook', {
+      method: 'PUT',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  testDiscordWebhook: async (webhookData) => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-webhook/test', {
+      method: 'POST',
+      body: JSON.stringify(webhookData)
+    });
+  },
+
+  // Discord settings
+  getDiscordSettings: async () => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-settings');
+  },
+
+  updateDiscordSettings: async (settings) => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  // Discord invite management
+  getDiscordInvite: async () => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-invite');
+  },
+
+  updateDiscordInvite: async (inviteData) => {
+    return await makeAuthenticatedJsonRequest('/api/user/discord-invite', {
+      method: 'PUT',
+      body: JSON.stringify(inviteData)
+    });
   }
 };
 
@@ -284,12 +353,17 @@ export const adminAPI = {
     return await makeAuthenticatedJsonRequest('/api/admin/users');
   },
 
-  // Get user diagnostics
+  // Get specific user by ID
+  getUser: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}`);
+  },
+
+  // Get user diagnostics (for broken user manager)
   getUserDiagnostics: async () => {
     return await makeAuthenticatedJsonRequest('/api/admin/users/diagnostics');
   },
 
-  // Delete broken user
+  // Delete broken user by partition/row key
   deleteBrokenUser: async (partitionKey, rowKey) => {
     return await makeAuthenticatedJsonRequest(
       `/api/admin/users/broken/${encodeURIComponent(partitionKey)}/${encodeURIComponent(rowKey)}`,
@@ -297,12 +371,32 @@ export const adminAPI = {
     );
   },
 
-  // Get admin stats
+  // Get admin stats/dashboard data
   getStats: async () => {
     return await makeAuthenticatedJsonRequest('/api/admin/stats');
   },
 
-  // Toggle user status
+  // Get features list
+  getFeatures: async () => {
+    return await makeAuthenticatedJsonRequest('/api/admin/features');
+  },
+
+  // Get roles list
+  getRoles: async () => {
+    return await makeAuthenticatedJsonRequest('/api/admin/roles');
+  },
+
+  // Get permissions list
+  getPermissions: async () => {
+    return await makeAuthenticatedJsonRequest('/api/admin/permissions');
+  },
+
+  // Get streams data
+  getStreams: async () => {
+    return await makeAuthenticatedJsonRequest('/api/admin/streams');
+  },
+
+  // Toggle user active status
   toggleUserStatus: async (userId, isActive) => {
     return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/toggle`, {
       method: 'PUT',
@@ -318,11 +412,174 @@ export const adminAPI = {
     });
   },
 
-  // Delete user
+  // Delete user completely
   deleteUser: async (userId) => {
     return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}`, {
       method: 'DELETE'
     });
+  },
+
+  // Approve user request
+  approveUser: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/approve`, {
+      method: 'POST'
+    });
+  },
+
+  // Reject user request
+  rejectUser: async (userId) => {
+    return await makeAuthenticatedJsonRequest(`/api/admin/users/${userId}/reject`, {
+      method: 'POST'
+    });
+  },
+
+  // Get user requests/pending approvals
+  getUserRequests: async () => {
+    return await makeAuthenticatedJsonRequest('/api/admin/user-requests');
+  }
+};
+
+// Stream API
+export const streamAPI = {
+  // Get stream status
+  getStatus: async () => {
+    return await makeAuthenticatedJsonRequest('/api/stream/status');
+  },
+
+  // Get stream statistics
+  getStats: async () => {
+    return await makeAuthenticatedJsonRequest('/api/stream/stats');
+  },
+
+  // Get stream sessions
+  getSessions: async () => {
+    return await makeAuthenticatedJsonRequest('/api/stream/sessions');
+  }
+};
+
+// Alerts API
+export const alertsAPI = {
+  // Get alert settings
+  getSettings: async () => {
+    return await makeAuthenticatedJsonRequest('/api/alerts/settings');
+  },
+
+  // Update alert settings
+  updateSettings: async (settings) => {
+    return await makeAuthenticatedJsonRequest('/api/alerts/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  // Get alert events
+  getEvents: async () => {
+    return await makeAuthenticatedJsonRequest('/api/alerts/events');
+  },
+
+  // Create alert event
+  createEvent: async (eventData) => {
+    return await makeAuthenticatedJsonRequest('/api/alerts/events', {
+      method: 'POST',
+      body: JSON.stringify(eventData)
+    });
+  },
+
+  // Update alert event
+  updateEvent: async (eventId, eventData) => {
+    return await makeAuthenticatedJsonRequest(`/api/alerts/events/${eventId}`, {
+      method: 'PUT',
+      body: JSON.stringify(eventData)
+    });
+  },
+
+  // Delete alert event
+  deleteEvent: async (eventId) => {
+    return await makeAuthenticatedJsonRequest(`/api/alerts/events/${eventId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+// Rewards API (Channel Points)
+export const rewardsAPI = {
+  // Get channel point rewards
+  getRewards: async () => {
+    return await makeAuthenticatedJsonRequest('/api/rewards');
+  },
+
+  // Create channel point reward
+  createReward: async (rewardData) => {
+    return await makeAuthenticatedJsonRequest('/api/rewards', {
+      method: 'POST',
+      body: JSON.stringify(rewardData)
+    });
+  },
+
+  // Update channel point reward
+  updateReward: async (rewardId, rewardData) => {
+    return await makeAuthenticatedJsonRequest(`/api/rewards/${rewardId}`, {
+      method: 'PUT',
+      body: JSON.stringify(rewardData)
+    });
+  },
+
+  // Delete channel point reward
+  deleteReward: async (rewardId) => {
+    return await makeAuthenticatedJsonRequest(`/api/rewards/${rewardId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+// Series Save API
+export const seriesAPI = {
+  // Get series saves
+  getSaves: async () => {
+    return await makeAuthenticatedJsonRequest('/api/series/saves');
+  },
+
+  // Create series save
+  createSave: async (saveData) => {
+    return await makeAuthenticatedJsonRequest('/api/series/saves', {
+      method: 'POST',
+      body: JSON.stringify(saveData)
+    });
+  },
+
+  // Update series save
+  updateSave: async (saveId, saveData) => {
+    return await makeAuthenticatedJsonRequest(`/api/series/saves/${saveId}`, {
+      method: 'PUT',
+      body: JSON.stringify(saveData)
+    });
+  },
+
+  // Delete series save
+  deleteSave: async (saveId) => {
+    return await makeAuthenticatedJsonRequest(`/api/series/saves/${saveId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Load series save
+  loadSave: async (saveId) => {
+    return await makeAuthenticatedJsonRequest(`/api/series/saves/${saveId}/load`, {
+      method: 'POST'
+    });
+  }
+};
+
+// Health & Status API
+export const healthAPI = {
+  // Get application health
+  getHealth: async () => {
+    return await makeAuthenticatedJsonRequest('/api/health');
+  },
+
+  // Get Twitch bot status
+  getTwitchStatus: async () => {
+    return await makeAuthenticatedJsonRequest('/api/twitch/status');
   }
 };
 
@@ -369,6 +626,11 @@ export default {
   userAPI,
   counterAPI,
   adminAPI,
+  streamAPI,
+  alertsAPI,
+  rewardsAPI,
+  seriesAPI,
+  healthAPI,
 
   // Utilities
   debounce,
