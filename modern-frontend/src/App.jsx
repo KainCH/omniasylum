@@ -63,29 +63,6 @@ function App() {
   const [showDiscordSettings, setShowDiscordSettings] = useState(false)
   const [userFeatures, setUserFeatures] = useState({})
   const [streamStatus, setStreamStatus] = useState('offline')
-  const [overlaySettings, setOverlaySettings] = useState({
-    enabled: true,
-    position: 'top-right',
-    size: 'medium',
-    counters: {
-      deaths: true,
-      swears: true,
-      bits: false,
-      channelPoints: false
-    },
-    animations: {
-      enabled: true,
-      showAlerts: true,
-      celebrationEffects: false,
-      bounceOnUpdate: true,
-      fadeTransitions: true
-    },
-    theme: {
-      borderColor: '#9146ff',
-      textColor: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)'
-    }
-  }) // ALWAYS start in user mode
 
   // EventSub monitoring state
   const [eventSubStatus, setEventSubStatus] = useState({
@@ -367,13 +344,7 @@ function App() {
       setStreamStatus(data?.streamStatus)
     })
 
-    newSocket.on('overlaySettingsUpdate', (data) => {
-      console.log('🎨 Overlay settings update received:', data)
-      const settings = typeof data?.overlaySettings === 'string'
-        ? JSON.parse(data?.overlaySettings)
-        : data?.overlaySettings
-      setOverlaySettings(settings)
-    })
+
 
     newSocket.on('streamOnline', (data) => {
       console.log('🔴 Stream ONLINE event received:', data)
@@ -624,32 +595,7 @@ function App() {
     }
   }
 
-  const updateOverlaySettings = async (settings) => {
-    const token = localStorage.getItem('authToken')
-    if (!token) return
 
-    try {
-      const response = await fetch('/api/overlay-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(settings)
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to update overlay settings')
-      }
-
-      const result = await response.json()
-      setOverlaySettings(result?.overlaySettings)
-      console.log('✅ Overlay settings updated')
-    } catch (error) {
-      console.error('❌ Failed to update overlay settings:', error)
-      alert('Failed to update overlay settings')
-    }
-  }
 
   const fetchUserSettings = async (token) => {
     try {
@@ -1115,114 +1061,9 @@ function App() {
 
   // Helper function to render stream overlay
   const renderStreamOverlay = () => {
-    if ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled) {
-      console.log('🎨 Rendering overlay:', {
-        streamStatus,
-        overlayEnabled: overlaySettings.enabled,
-        position: overlaySettings.position
-      })
-
-      const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
-
-      return (
-        <div style={{
-          position: 'fixed',
-          [overlaySettings.position?.includes('top') ? 'top' : 'bottom']: '20px',
-          [overlaySettings.position?.includes('left') ? 'left' : 'right']: '20px',
-          zIndex: 9999,
-          background: overlaySettings.theme.backgroundColor,
-          border: `3px solid ${overlaySettings.theme.borderColor}`,
-          borderRadius: '12px',
-          padding: sizeStyles.padding,
-          minWidth: sizeStyles.minWidth,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-          transition: overlaySettings.animations.fadeTransitions ? 'all 0.3s ease' : 'none',
-          animation: overlaySettings.animations.bounceOnUpdate ? 'fadeIn 0.5s ease-in-out' : 'none'
-        }}>
-          <h3 style={{
-            color: overlaySettings.theme.textColor,
-            marginBottom: '15px',
-            fontSize: sizeStyles.headingSize,
-            fontWeight: 'bold',
-            textAlign: 'center',
-            textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
-          }}>
-            🎮 Live Counter
-          </h3>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {overlaySettings.counters.deaths && (
-              <div style={{
-                background: 'rgba(220, 53, 69, 0.2)',
-                padding: sizeStyles.itemPadding,
-                borderRadius: '8px',
-                border: '2px solid #dc3545',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.fontSize,
-                  fontWeight: 'bold'
-                }}>💀 Deaths</span>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.counterFontSize,
-                  fontWeight: 'bold'
-                }}>{counters?.deaths || 0}</span>
-              </div>
-            )}
-
-            {overlaySettings.counters.swears && (
-              <div style={{
-                background: 'rgba(255, 193, 7, 0.2)',
-                padding: sizeStyles.itemPadding,
-                borderRadius: '8px',
-                border: '2px solid #ffc107',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.fontSize,
-                  fontWeight: 'bold'
-                }}>🤬 Swears</span>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.counterFontSize,
-                  fontWeight: 'bold'
-                }}>{counters?.swears || 0}</span>
-              </div>
-            )}
-
-            {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
-              <div style={{
-                background: 'rgba(145, 70, 255, 0.2)',
-                padding: sizeStyles.itemPadding,
-                borderRadius: '8px',
-                border: '2px solid #9146ff',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.fontSize,
-                  fontWeight: 'bold'
-                }}>💎 Bits</span>
-                <span style={{
-                  color: overlaySettings.theme.textColor,
-                  fontSize: sizeStyles.counterFontSize,
-                  fontWeight: 'bold'
-                }}>{counters.bits || 0}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )
-    }
+    // The overlay is now managed by the /overlay/{userId} route
+    // This function is kept for backward compatibility but doesn't render anything
+    // Users should add the overlay URL to their streaming software directly
     return null
   }
 
@@ -2158,9 +1999,6 @@ function App() {
           onClose={() => setShowSettingsModal(false)}
           user={{ userId, username }}
           isAdminMode={false}
-          onUpdate={(newSettings) => {
-            setOverlaySettings(newSettings)
-          }}
         />
         {/* Stream Overlay - Rendered when stream is live */}
         {renderStreamOverlay()}
