@@ -27,6 +27,17 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const users = await database.getAllUsers();
 
+    // Debug: Log problematic users
+    const brokenUsers = users.filter(user => !user.twitchUserId);
+    if (brokenUsers.length > 0) {
+      console.log('🔍 Found broken users without twitchUserId:', brokenUsers.map(u => ({
+        username: u.username,
+        partitionKey: u.partitionKey,
+        rowKey: u.rowKey,
+        keys: Object.keys(u)
+      })));
+    }
+
     // Don't send sensitive data and classify user status
     const sanitizedUsers = users.map(user => {
       const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
@@ -510,6 +521,156 @@ router.delete('/users/by-keys/:partitionKey/:rowKey', requireAuth, requireAdmin,
 });
 
 /**
+ * Get user diagnostics (for debugging broken users)
+ * GET /api/admin/users/diagnostics
+ */
+router.get('/users/diagnostics', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await database.getAllUsers();
+
+    const diagnostics = {
+      totalUsers: users.length,
+      validUsers: [],
+      brokenUsers: [],
+      suspiciousUsers: []
+    };
+
+    for (const user of users) {
+      const userInfo = {
+        username: user.username || 'MISSING',
+        displayName: user.displayName || 'MISSING',
+        twitchUserId: user.twitchUserId || 'MISSING',
+        partitionKey: user.partitionKey || 'MISSING',
+        rowKey: user.rowKey || 'MISSING',
+        email: user.email ? 'EXISTS' : 'MISSING',
+        profileImageUrl: user.profileImageUrl ? 'EXISTS' : 'MISSING',
+        role: user.role || 'MISSING',
+        isActive: user.isActive,
+        allFields: Object.keys(user)
+      };
+
+      if (!user.twitchUserId) {
+        // Assign random 3-digit ID for broken users so they can be deleted
+        const randomId = Math.floor(100 + Math.random() * 900).toString();
+        userInfo.tempDeleteId = randomId;
+        userInfo.canDelete = true;
+        diagnostics.brokenUsers.push(userInfo);
+      } else if (!user.username || !user.displayName) {
+        diagnostics.suspiciousUsers.push(userInfo);
+      } else {
+        diagnostics.validUsers.push(userInfo);
+      }
+    }
+
+    res.json(diagnostics);
+  } catch (error) {
+    console.error('❌ Error getting user diagnostics:', error);
+    res.status(500).json({ error: 'Failed to get user diagnostics' });
+  }
+});
+
+/**
+ * Delete broken user by partition/row key
+ * DELETE /api/admin/users/broken/:partitionKey/:rowKey
+ */
+router.delete('/users/broken/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { partitionKey, rowKey } = req.params;
+
+    console.log(`🗑️ Admin ${req.user.username} attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+
+    // First get the user to verify it's broken (no twitchUserId)
+    const user = await database.getUser(partitionKey);
+
+    if (user && user.twitchUserId) {
+      return res.status(400).json({
+        error: 'Cannot delete valid user - user has twitchUserId'
+      });
+    }
+
+    // Delete the broken user directly from storage
+    const deleted = await database.deleteBrokenUser(partitionKey, rowKey);
+
+    if (deleted) {
+      console.log(`✅ Successfully deleted broken user: partition=${partitionKey}, row=${rowKey}`);
+      res.json({
+        message: 'Broken user deleted successfully',
+        partitionKey,
+        rowKey
+      });
+    } else {
+      console.log(`❌ Failed to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+      res.status(404).json({ error: 'User not found or could not be deleted' });
+    }
+
+  } catch (error) {
+    console.error('❌ Error deleting broken user:', error);
+    res.status(500).json({ error: 'Failed to delete broken user' });
+  }
+});
+
+/**
+ * Get all user access requests
+ * GET /api/admin/user-requests
+ */
+router.get('/user-requests', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const requests = await database.getAllUserRequests();
+    res.json(requests);
+  } catch (error) {
+    console.error('❌ Error getting user requests:', error);
+    res.status(500).json({ error: 'Failed to get user requests' });
+  }
+});
+
+/**
+ * Approve user access request
+ * POST /api/admin/user-requests/:requestId/approve
+ */
+router.post('/user-requests/:requestId/approve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminNotes } = req.body;
+
+    const newUser = await database.approveUserRequest(requestId, req.user.userId);
+
+    console.log(`✅ Admin ${req.user.username} approved user request: ${requestId}`);
+
+    res.json({
+      message: 'User request approved and account created',
+      user: {
+        twitchUserId: newUser.twitchUserId,
+        username: newUser.username,
+        displayName: newUser.displayName
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error approving user request:', error);
+    res.status(500).json({ error: error.message || 'Failed to approve user request' });
+  }
+});
+
+/**
+ * Reject user access request
+ * POST /api/admin/user-requests/:requestId/reject
+ */
+router.post('/user-requests/:requestId/reject', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminNotes } = req.body;
+
+    await database.updateUserRequestStatus(requestId, 'rejected', req.user.userId, adminNotes || 'Request rejected');
+
+    console.log(`❌ Admin ${req.user.username} rejected user request: ${requestId}`);
+
+    res.json({ message: 'User request rejected' });
+  } catch (error) {
+    console.error('❌ Error rejecting user request:', error);
+    res.status(500).json({ error: error.message || 'Failed to reject user request' });
+  }
+});
+
+/**
  * Fetch Twitch user data including avatar
  */
 async function fetchTwitchUserData(username) {
@@ -634,6 +795,12 @@ router.get('/streams', requireAuth, requireAdmin, async (req, res) => {
 
     for (const user of users) {
       try {
+        // Skip users without a valid twitchUserId
+        if (!user.twitchUserId) {
+          console.log(`⚠️ Skipping user ${user.username || 'unknown'} - missing twitchUserId`);
+          continue;
+        }
+
         const counters = await database.getCounters(user.twitchUserId);
         const currentSession = await database.getCurrentStreamSession(user.twitchUserId);
 

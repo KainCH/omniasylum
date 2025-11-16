@@ -2443,6 +2443,241 @@ class Database {
       throw error;
     }
   }
+
+  /**
+   * Save user access request
+   */
+  async saveUserRequest(requestData) {
+    try {
+      const requestId = `request_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      if (this.mode === 'azure') {
+        const entity = {
+          partitionKey: 'user_request',
+          rowKey: requestId,
+          twitchUserId: requestData.twitchUserId,
+          username: requestData.username,
+          displayName: requestData.displayName,
+          email: requestData.email || '',
+          profileImageUrl: requestData.profileImageUrl || '',
+          requestedAt: new Date().toISOString(),
+          status: 'pending', // pending, approved, rejected
+          adminNotes: '',
+          processedBy: '',
+          processedAt: ''
+        };
+
+        await this.usersClient.createEntity(entity);
+        console.log('✅ User request saved:', requestId);
+        return { requestId, ...entity };
+      } else {
+        // Local file storage
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        let requests = {};
+
+        if (fs.existsSync(requestsFile)) {
+          requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+        }
+
+        const entity = {
+          requestId,
+          twitchUserId: requestData.twitchUserId,
+          username: requestData.username,
+          displayName: requestData.displayName,
+          email: requestData.email || '',
+          profileImageUrl: requestData.profileImageUrl || '',
+          requestedAt: new Date().toISOString(),
+          status: 'pending',
+          adminNotes: '',
+          processedBy: '',
+          processedAt: ''
+        };
+
+        requests[requestId] = entity;
+        fs.writeFileSync(requestsFile, JSON.stringify(requests, null, 2));
+        console.log('✅ User request saved locally:', requestId);
+        return entity;
+      }
+    } catch (error) {
+      console.error('❌ Error saving user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all user requests
+   */
+  async getAllUserRequests() {
+    try {
+      if (this.mode === 'azure') {
+        const requests = [];
+        const entities = this.usersClient.listEntities({
+          queryOptions: { filter: "PartitionKey eq 'user_request'" }
+        });
+
+        for await (const entity of entities) {
+          requests.push(entity);
+        }
+
+        // Sort by requested date, newest first
+        return requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+      } else {
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        if (!fs.existsSync(requestsFile)) {
+          return [];
+        }
+
+        const requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+        const requestsList = Object.values(requests);
+
+        // Sort by requested date, newest first
+        return requestsList.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+      }
+    } catch (error) {
+      console.error('❌ Error getting user requests:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user request status
+   */
+  async updateUserRequestStatus(requestId, status, adminUserId, adminNotes = '') {
+    try {
+      if (this.mode === 'azure') {
+        const entity = await this.usersClient.getEntity('user_request', requestId);
+        entity.status = status;
+        entity.processedBy = adminUserId;
+        entity.processedAt = new Date().toISOString();
+        entity.adminNotes = adminNotes;
+
+        await this.usersClient.updateEntity(entity, 'Replace');
+        console.log('✅ User request updated:', requestId, status);
+        return entity;
+      } else {
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        const requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+
+        if (requests[requestId]) {
+          requests[requestId].status = status;
+          requests[requestId].processedBy = adminUserId;
+          requests[requestId].processedAt = new Date().toISOString();
+          requests[requestId].adminNotes = adminNotes;
+
+          fs.writeFileSync(requestsFile, JSON.stringify(requests, null, 2));
+          console.log('✅ User request updated locally:', requestId, status);
+          return requests[requestId];
+        } else {
+          throw new Error('User request not found');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error updating user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create approved user from request
+   */
+  async approveUserRequest(requestId, adminUserId) {
+    try {
+      // Get the request
+      const request = this.mode === 'azure'
+        ? await this.usersClient.getEntity('user_request', requestId)
+        : JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'user_requests.json'), 'utf8'))[requestId];
+
+      if (!request) {
+        throw new Error('User request not found');
+      }
+
+      if (request.status !== 'pending') {
+        throw new Error('User request already processed');
+      }
+
+      // Create the user account
+      const userData = {
+        twitchUserId: request.twitchUserId,
+        username: request.username,
+        displayName: request.displayName,
+        email: request.email,
+        profileImageUrl: request.profileImageUrl,
+        isActive: true,
+        role: 'streamer',
+        features: {
+          chatCommands: true,
+          channelPoints: false,
+          autoClip: false,
+          customCommands: false,
+          analytics: false,
+          webhooks: false,
+          bitsIntegration: false,
+          streamOverlay: false,
+          alertAnimations: false,
+          streamAlerts: true,
+          discordNotifications: true
+        },
+        createdAt: new Date().toISOString(),
+        approvedBy: adminUserId,
+        approvedAt: new Date().toISOString()
+      };
+
+      const newUser = await this.saveUser(userData);
+
+      // Update request status
+      await this.updateUserRequestStatus(requestId, 'approved', adminUserId, 'User account created');
+
+      console.log('✅ User request approved and account created:', request.username);
+      return newUser;
+    } catch (error) {
+      console.error('❌ Error approving user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a broken user record (for cleanup purposes)
+   * @param {string} partitionKey - Partition key of the user
+   * @param {string} rowKey - Row key of the user
+   * @returns {boolean} - True if deleted successfully
+   */
+  async deleteBrokenUser(partitionKey, rowKey) {
+    try {
+      console.log(`🗑️ Attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+
+      if (this.mode === 'azure') {
+        // Delete from Azure Table Storage
+        await this.usersClient.deleteEntity(partitionKey, rowKey);
+        console.log('✅ Broken user deleted from Azure Table Storage');
+        return true;
+      } else {
+        // Delete from local storage
+        const users = this.loadLocalUsers();
+        const originalLength = users.length;
+
+        // Filter out the broken user (match by partition and row keys or other identifying data)
+        const filteredUsers = users.filter(user => {
+          // Try multiple ways to identify the user since broken users may have inconsistent data
+          const userPartition = user.partitionKey || user.twitchUserId || 'unknown';
+          const userRow = user.rowKey || user.twitchUserId || user.username || 'unknown';
+
+          return !(userPartition === partitionKey && userRow === rowKey);
+        });
+
+        if (filteredUsers.length < originalLength) {
+          this.saveLocalUsers(filteredUsers);
+          console.log('✅ Broken user deleted from local storage');
+          return true;
+        } else {
+          console.log('❌ Broken user not found in local storage');
+          return false;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error deleting broken user:', error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance

@@ -224,6 +224,10 @@ app.get('/mobile', (req, res) => {
   res.sendFile(path.join(frontendPath, 'mobile.html'));
 });
 
+app.get('/request-access', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'request-access.html'));
+});
+
 // Authentication routes
 app.use('/auth', authRoutes);
 

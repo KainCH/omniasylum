@@ -25,6 +25,11 @@ function DiscordWebhookSettings({ user }) {
   // Discord invite link state
   const [discordInvite, setDiscordInvite] = useState('')
 
+  // Helper function to get the correct user ID
+  const getUserId = () => {
+    return user?.twitchUserId || user?.userId
+  }
+
   // Debug form state changes
   useEffect(() => {
     console.log('🔄 FORM STATE CHANGED:', {
@@ -112,8 +117,8 @@ function DiscordWebhookSettings({ user }) {
 
         if (adminMode) {
           // Admin viewing another user's settings - use admin API
-          console.log('👑 Using admin API to load webhook configuration for user:', user?.userId)
-          discordData = await notificationAPI.getSettings(user?.userId)
+          console.log('👑 Using admin API to load webhook configuration for user:', getUserId())
+          discordData = await notificationAPI.getSettings(getUserId())
           // Admin API returns { discordSettings: {...} }, so extract the inner object
           discordData = discordData?.discordSettings || discordData
         } else {
@@ -152,7 +157,7 @@ function DiscordWebhookSettings({ user }) {
         const payload = JSON.parse(atob(token.split('.')[1]))
         const currentUserId = payload.userId || payload.twitchUserId
         const isCurrentUserAdmin = payload.role === 'admin'
-        const targetUserId = user?.userId
+        const targetUserId = getUserId()
 
         console.log('🔍 Admin mode check:', {
           currentUserId,
@@ -183,8 +188,8 @@ function DiscordWebhookSettings({ user }) {
 
           if (adminMode) {
             // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load webhook for user:', user?.userId)
-            webhookData = await notificationAPI.getWebhook(user?.userId)
+            console.log('👑 Using admin API to load webhook for user:', getUserId())
+            webhookData = await notificationAPI.getWebhook(getUserId())
           } else {
             // User viewing their own settings - use user API
             console.log('� Using user API to load own webhook')
@@ -215,8 +220,8 @@ function DiscordWebhookSettings({ user }) {
 
           if (adminMode) {
             // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load notification settings for user:', user?.userId)
-            discordData = await notificationAPI.getSettings(user?.userId)
+            console.log('👑 Using admin API to load notification settings for user:', getUserId())
+            discordData = await notificationAPI.getSettings(getUserId())
             // Admin API returns { discordSettings: {...} }, so extract the inner object
             discordData = discordData?.discordSettings || discordData
           } else {
@@ -293,8 +298,9 @@ function DiscordWebhookSettings({ user }) {
 
           if (adminMode) {
             // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load webhook for user:', user?.userId)
-            webhookData = await notificationAPI.getWebhook(user?.userId)
+            const targetUserId = user?.twitchUserId || getUserId()
+            console.log('👑 Using admin API to load webhook for user:', targetUserId)
+            webhookData = await notificationAPI.getWebhook(targetUserId)
           } else {
             // User viewing their own settings - use user API
             console.log('👤 Using user API to load own webhook')
@@ -325,8 +331,8 @@ function DiscordWebhookSettings({ user }) {
 
           if (adminMode) {
             // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load notification settings for user:', user?.userId)
-            discordData = await notificationAPI.getSettings(user?.userId)
+            console.log('👑 Using admin API to load notification settings for user:', getUserId())
+            discordData = await notificationAPI.getSettings(getUserId())
             // Admin API returns { discordSettings: {...} }, so extract the inner object
             discordData = discordData?.discordSettings || discordData
           } else {
@@ -369,8 +375,8 @@ function DiscordWebhookSettings({ user }) {
 
           if (adminMode) {
             // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load Discord invite for user:', user?.userId)
-            inviteData = await notificationAPI.getDiscordInvite(user?.userId)
+            console.log('👑 Using admin API to load Discord invite for user:', getUserId())
+            inviteData = await notificationAPI.getDiscordInvite(getUserId())
           } else {
             // User viewing their own settings - use user API
             console.log('👤 Using user API to load own Discord invite')
@@ -397,7 +403,7 @@ function DiscordWebhookSettings({ user }) {
     try {
       await withLoading(async () => {
         const inviteData = isAdminMode()
-          ? await notificationAPI.getDiscordInvite(user?.userId)
+          ? await notificationAPI.getDiscordInvite(getUserId())
           : await userAPI.getDiscordInvite()
         console.log('🎮 Discord invite data received:', inviteData)
         setDiscordInvite(inviteData?.discordInviteLink || '')
@@ -428,7 +434,7 @@ function DiscordWebhookSettings({ user }) {
         }
 
         if (isAdminMode()) {
-          await notificationAPI.updateDiscordInvite(user?.userId, { discordInviteLink: discordInvite })
+          await notificationAPI.updateDiscordInvite(getUserId(), { discordInviteLink: discordInvite })
         } else {
           await userAPI.updateDiscordInvite({ discordInviteLink: discordInvite })
         }
@@ -493,8 +499,8 @@ function DiscordWebhookSettings({ user }) {
 
         if (adminMode) {
           // Admin saving another user's webhook - use admin API
-          console.log('👑 Using admin API to save webhook for user:', user?.userId)
-          await notificationAPI.updateWebhook(user?.userId, webhookPayload)
+          console.log('👑 Using admin API to save webhook for user:', getUserId())
+          await notificationAPI.updateWebhook(getUserId(), webhookPayload)
         } else {
           // User saving their own webhook - use user API
           console.log('👤 Using user API to save own webhook')
@@ -531,8 +537,8 @@ function DiscordWebhookSettings({ user }) {
 
         if (adminMode) {
           // Admin saving another user's notification settings - use admin API
-          console.log('👑 Using admin API to save notification settings for user:', user?.userId)
-          await notificationAPI.updateSettings(user?.userId, notificationSettings)
+          console.log('👑 Using admin API to save notification settings for user:', getUserId())
+          await notificationAPI.updateSettings(getUserId(), notificationSettings)
         } else {
           // User saving their own notification settings - use user API
           console.log('👤 Using user API to save own notification settings')
@@ -569,8 +575,8 @@ function DiscordWebhookSettings({ user }) {
       await withLoading(async () => {
         if (adminMode) {
           // Admin testing another user's webhook - use admin API
-          console.log('👑 Using admin API to test webhook for user:', user?.userId)
-          await notificationAPI.testWebhook(user?.userId, { webhookUrl: formState?.webhookUrl || '' })
+          console.log('👑 Using admin API to test webhook for user:', getUserId())
+          await notificationAPI.testWebhook(getUserId(), { webhookUrl: formState?.webhookUrl || '' })
         } else {
           // User testing their own webhook - use user API
           console.log('👤 Using user API to test own webhook')

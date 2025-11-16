@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
-import AlertEventManager from './AlertEventManager'
 import AlertEffectsModal from './AlertEffectsModal'
-import DiscordWebhookSettings from './DiscordWebhookSettings'
-import SeriesSaveManager from './SeriesSaveManager'
+import AlertEventManagerModal from './AlertEventManagerModal'
+import DiscordWebhookSettingsModal from './DiscordWebhookSettingsModal'
+import SeriesSaveManagerModal from './SeriesSaveManagerModal'
 import UserManagementModal from './UserManagementModal'
+import UserRequestsModal from './UserRequestsModal'
+import BrokenUserManagerModal from './BrokenUserManagerModal'
 import UserConfigurationPortal from './UserConfigurationPortal'
 import PermissionManager from './PermissionManager'
 import OverlaySettingsModal from './OverlaySettingsModal'
@@ -12,6 +14,27 @@ import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from
 import { useUserData, useLoading, useToast } from '../hooks'
 import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
 import './AdminDashboard.css'
+
+// Helper function to get user-friendly feature names
+const getFeatureDisplayName = (featureKey) => {
+  const featureNames = {
+    chatCommands: '💬 Chat Commands',
+    channelPoints: '🏆 Channel Points',
+    autoClip: '🎬 Auto Clip',
+    customCommands: '⚡ Custom Commands',
+    analytics: '📊 Analytics',
+    webhooks: '🔗 Webhooks',
+    bitsIntegration: '💎 Bits Integration',
+    streamOverlay: '🖼️ Stream Overlay',
+    alertAnimations: '✨ Alert Animations',
+    streamAlerts: '🚨 Stream Alerts',
+    discordNotifications: '🎮 Discord Notifications',
+    seriesSaves: '💾 Series Saves',
+    nightMode: '🌙 Night Mode',
+    advancedStats: '📈 Advanced Stats'
+  }
+  return featureNames[featureKey] || featureKey
+}
 
 function AdminDashboard({ onNavigateToDebug }) {
   const [users, setUsers] = useState([])
@@ -23,6 +46,8 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [showUserModal, setShowUserModal] = useState(false)
+  const [showUserRequestsModal, setShowUserRequestsModal] = useState(false)
+  const [showBrokenUserModal, setShowBrokenUserModal] = useState(false)
   const [showUserConfigPortal, setShowUserConfigPortal] = useState(false)
   const [showPermissionManager, setShowPermissionManager] = useState(false)
   const [showOverlayModal, setShowOverlayModal] = useState(false)
@@ -115,7 +140,12 @@ function AdminDashboard({ onNavigateToDebug }) {
       const usersResponse = await fetch('/api/admin/users', { headers })
       if (usersResponse.ok) {
         const usersData = await usersResponse.json()
-        setUsers(usersData)
+        // Backend returns { users: [...], total: ... }
+        const usersList = usersData.users || usersData
+        setUsers(Array.isArray(usersList) ? usersList : [])
+      } else {
+        console.error('Failed to fetch users:', usersResponse.status)
+        setUsers([])
       }
 
       // Fetch stats
@@ -155,6 +185,13 @@ function AdminDashboard({ onNavigateToDebug }) {
 
     } catch (error) {
       console.error('❌ Error fetching admin data:', error)
+      // Ensure state is set to safe defaults on error
+      setUsers([])
+      setStats({})
+      setFeatures([])
+      setRoles([])
+      setPermissions([])
+      setStreams([])
     } finally {
       setRefreshing(false)
     }
@@ -212,6 +249,40 @@ function AdminDashboard({ onNavigateToDebug }) {
     }
   }
 
+  const deleteUser = async (user) => {
+    const userName = user.displayName || user.username || 'Unknown User'
+
+    if (!confirm(`⚠️ Are you sure you want to permanently delete user "${userName}"?\n\nThis will remove:\n• User account and profile\n• All counter data\n• All settings and features\n• Discord webhooks\n• All associated data\n\nThis action CANNOT be undone!`)) {
+      return
+    }
+
+    try {
+      const headers = getAuthHeaders()
+      const userId = user.twitchUserId || user.userId
+      if (!userId) {
+        alert('❌ Cannot delete user: Invalid user ID')
+        return
+      }
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers
+      })
+
+      if (response.ok) {
+        alert(`✅ User "${userName}" has been successfully deleted.`)
+        // Refresh data to show changes
+        await fetchAdminData()
+      } else {
+        const errorData = await response.json()
+        alert(`❌ Failed to delete user: ${errorData.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error deleting user:', error)
+      alert('❌ Network error: Failed to delete user')
+    }
+  }
+
   return (
     <div className="admin-dashboard">
       {/* Header */}
@@ -233,6 +304,18 @@ function AdminDashboard({ onNavigateToDebug }) {
           onClick={() => setShowUserModal(true)}
         >
           👥 Users
+        </button>
+        <button
+          className={`tab-btn ${showUserRequestsModal ? 'active' : ''}`}
+          onClick={() => setShowUserRequestsModal(true)}
+        >
+          📋 User Requests
+        </button>
+        <button
+          className={`tab-btn ${showBrokenUserModal ? 'active' : ''}`}
+          onClick={() => setShowBrokenUserModal(true)}
+        >
+          🛠️ Broken Users
         </button>
         <button
           className={`tab-btn ${showPermissionManager ? 'active' : ''}`}
@@ -272,19 +355,151 @@ function AdminDashboard({ onNavigateToDebug }) {
         </div>
       </div>
 
+      {/* Users Overview Section */}
+      <div className="users-overview-section">
+        <div className="section-header">
+          <h2>👥 Users & Features Overview</h2>
+          <div className="section-actions">
+            <span className="user-count">{users.length} Total Users</span>
+            <button
+              onClick={() => setShowUserModal(true)}
+              className="manage-users-btn"
+            >
+              ⚙️ Manage Users
+            </button>
+          </div>
+        </div>
+
+        <div className="users-grid">
+          {!Array.isArray(users) || users.length === 0 ? (
+            <div className="no-users-message">
+              <div className="no-users-icon">👥</div>
+              <h3>No Users Found</h3>
+              <p>No registered users in the system yet.</p>
+            </div>
+          ) : (
+            users.map(user => (
+              <div key={user.twitchUserId || user.userId} className="user-tile">
+                <div className="user-header">
+                  <div className="user-info">
+                    <img
+                      src={user.profileImageUrl || '/default-avatar.png'}
+                      alt={user.displayName || user.username}
+                      className="user-avatar"
+                    />
+                    <div className="user-details">
+                      <h4 className="user-name">{user.displayName || user.username}</h4>
+                      <div className="user-meta">
+                        <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
+                          {user.isActive ? '✅ Active' : '❌ Inactive'}
+                        </span>
+                        <span className="user-role">{user.role || 'streamer'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="user-actions">
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user)
+                        setShowUserConfigPortal(true)
+                      }}
+                      className="action-btn edit-btn"
+                      title="Edit User"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                </div>
+
+                <div className="user-features">
+                  <h5>Enabled Features:</h5>
+                  <div className="features-list">
+                    {user.features && Object.keys(user.features).length > 0 ? (
+                      Object.entries(user.features)
+                        .filter(([key, value]) => value === true)
+                        .map(([featureKey, enabled]) => (
+                          <span key={featureKey} className="feature-tag enabled">
+                            {getFeatureDisplayName(featureKey)}
+                          </span>
+                        ))
+                    ) : (
+                      <span className="no-features">No features enabled</span>
+                    )}
+                  </div>
+
+                  {user.features && Object.entries(user.features).filter(([key, value]) => value === false).length > 0 && (
+                    <>
+                      <h5>Disabled Features:</h5>
+                      <div className="features-list">
+                        {Object.entries(user.features)
+                          .filter(([key, value]) => value === false)
+                          .slice(0, 3)
+                          .map(([featureKey, enabled]) => (
+                            <span key={featureKey} className="feature-tag disabled">
+                              {getFeatureDisplayName(featureKey)}
+                            </span>
+                          ))}
+                        {Object.entries(user.features).filter(([key, value]) => value === false).length > 3 && (
+                          <span className="feature-tag more">
+                            +{Object.entries(user.features).filter(([key, value]) => value === false).length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="user-quick-actions">
+                  <button
+                    onClick={() => {
+                      setSelectedOverlayUser(user)
+                      setShowOverlayModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Overlay Settings"
+                  >
+                    ⚙️ Overlay
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedAlertUser(user)
+                      setShowAlertModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Alert Settings"
+                  >
+                    🎬 Alerts
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedDiscordUser(user)
+                      setShowDiscordModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Discord Settings"
+                  >
+                    🎮 Discord
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* Modals */}
-      {showUserModal && (
-        <UserManagementModal
-          isOpen={showUserModal}
-          onClose={() => setShowUserModal(false)}
-          users={users}
-          onRefresh={fetchAdminData}
+      <UserManagementModal
+        isOpen={showUserModal}
+        onClose={() => setShowUserModal(false)}
+        users={users}
+        onRefresh={fetchAdminData}
           onEditUser={(user) => {
             setSelectedUser(user)
             setShowUserConfigPortal(true)
           }}
           onToggleUser={toggleUserStatus}
           onToggleFeature={toggleFeature}
+          onDeleteUser={deleteUser}
           onShowOverlay={(user) => {
             setSelectedOverlayUser(user)
             setShowOverlayModal(true)
@@ -302,20 +517,15 @@ function AdminDashboard({ onNavigateToDebug }) {
             setShowSeriesModal(true)
           }}
         />
-      )}
 
-      {showPermissionManager && (
-        <PermissionManager
-          isOpen={showPermissionManager}
-          onClose={() => setShowPermissionManager(false)}
-          users={users}
+      <PermissionManager
+        isOpen={showPermissionManager}
+        onClose={() => setShowPermissionManager(false)}
+        users={users}
           roles={roles}
-          permissions={permissions}
-          onRefresh={fetchAdminData}
-        />
-      )}
-
-      {showUserConfigPortal && selectedUser && (
+        permissions={permissions}
+        onRefresh={fetchAdminData}
+      />      {showUserConfigPortal && selectedUser && (
         <UserConfigurationPortal
           user={selectedUser}
           onClose={() => {
@@ -342,94 +552,59 @@ function AdminDashboard({ onNavigateToDebug }) {
       />
 
       {/* Alert Settings Modal */}
-      {(showAlertModal && selectedAlertUser) && (
-        <div className="modal-overlay" onClick={() => setShowAlertModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1000px', width: '90vw' }}>
-            <div className="modal-header">
-              <h2>🎬 Alert Management - {selectedAlertUser.displayName || selectedAlertUser.username}</h2>
-              <button
-                onClick={() => {
-                  setShowAlertModal(false)
-                  setSelectedAlertUser(null)
-                }}
-                className="close-btn"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <AlertEventManager
-                user={selectedAlertUser}
-                onUpdate={() => {
-                  console.log('🔄 Alert settings updated, refreshing data...')
-                  fetchAdminData()
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertEventManagerModal
+        isOpen={showAlertModal && selectedAlertUser}
+        onClose={() => {
+          setShowAlertModal(false)
+          setSelectedAlertUser(null)
+        }}
+        user={selectedAlertUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Alert settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
 
       {/* Discord Settings Modal */}
-      {(showDiscordModal && selectedDiscordUser) && (
-        <div className="modal-overlay" onClick={() => setShowDiscordModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90vw' }}>
-            <div className="modal-header">
-              <h2>🎮 Discord Integration - {selectedDiscordUser.displayName || selectedDiscordUser.username}</h2>
-              <button
-                onClick={() => {
-                  setShowDiscordModal(false)
-                  setSelectedDiscordUser(null)
-                }}
-                className="close-btn"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <DiscordWebhookSettings
-                user={selectedDiscordUser}
-                onUpdate={() => {
-                  console.log('🔄 Discord settings updated, refreshing data...')
-                  fetchAdminData()
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <DiscordWebhookSettingsModal
+        isOpen={showDiscordModal && selectedDiscordUser}
+        onClose={() => {
+          setShowDiscordModal(false)
+          setSelectedDiscordUser(null)
+        }}
+        user={selectedDiscordUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Discord settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
 
       {/* Series Save Modal */}
-      {(showSeriesModal && selectedSeriesUser) && (
-        <div className="modal-overlay" onClick={() => setShowSeriesModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1000px', width: '90vw' }}>
-            <div className="modal-header">
-              <h2>💾 Series Save Management - {selectedSeriesUser.displayName || selectedSeriesUser.username}</h2>
-              <button
-                onClick={() => {
-                  setShowSeriesModal(false)
-                  setSelectedSeriesUser(null)
-                }}
-                className="close-btn"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <SeriesSaveManager
-                user={selectedSeriesUser}
-                onUpdate={() => {
-                  console.log('🔄 Series settings updated, refreshing data...')
-                  fetchAdminData()
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <SeriesSaveManagerModal
+        isOpen={showSeriesModal}
+        onClose={() => {
+          setShowSeriesModal(false)
+          setSelectedSeriesUser(null)
+        }}
+        user={selectedSeriesUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Series settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
+
+      <UserRequestsModal
+        isOpen={showUserRequestsModal}
+        onClose={() => setShowUserRequestsModal(false)}
+      />
+
+      <BrokenUserManagerModal
+        isOpen={showBrokenUserModal}
+        onClose={() => setShowBrokenUserModal(false)}
+      />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import './UserManagementModal.css'
+import './AdminDashboard.css'
 import '../styles/CommonControls.css'
 import { ToggleSwitch, ActionButton, FormSection, InputGroup, StatusBadge, NotificationTypeCard } from './ui/CommonControls'
 import { useUserData, useNotificationSettings, useFormState, useToast, useLoading } from '../hooks'
@@ -114,6 +115,7 @@ const UserManagementModal = ({
   onEditUser,
   onToggleUser,
   onToggleFeature,
+  onDeleteUser,
   onShowOverlay,
   onShowAlerts,
   onShowDiscord,
@@ -424,6 +426,27 @@ const UserManagementModal = ({
                     >
                       {user.isActive ? '❌ Deactivate' : '✅ Activate'}
                     </button>
+
+                    {onDeleteUser && (
+                      <button
+                        onClick={() => onDeleteUser(user)}
+                        style={{
+                          padding: '6px 12px',
+                          background: '#e74c3c',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.backgroundColor = '#c0392b'}
+                        onMouseOut={(e) => e.target.style.backgroundColor = '#e74c3c'}
+                        title="Permanently delete this user and all their data"
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
 
                     <button
                       onClick={() => onShowOverlay(user)}
