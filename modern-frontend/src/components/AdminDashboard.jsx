@@ -11,6 +11,1100 @@ import { useUserData, useLoading, useToast } from '../hooks'
 import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
 import './AdminDashboard.css'
 
+// Admin Overlay Interface Component
+function AdminOverlayInterface({ user, onUpdate }) {
+  const [overlaySettings, setOverlaySettings] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
+
+  // Load overlay settings when component mounts
+  useEffect(() => {
+    if (user?.userId && !hasLoaded) {
+      loadOverlaySettings()
+    }
+  }, [user?.userId, hasLoaded])
+
+  const loadOverlaySettings = async () => {
+    if (!user?.userId) return
+
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/overlay`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📥 Loaded overlay settings:', data)
+
+        // Set default settings if none exist
+        const settings = data.overlaySettings || {
+          enabled: false,
+          position: 'top-right',
+          size: 'medium',
+          counters: {
+            deaths: true,
+            swears: true,
+            screams: true,
+            bits: false,
+            channelPoints: false
+          },
+          theme: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderColor: '#9146ff',
+            textColor: '#ffffff',
+            accentColor: '#f0f0f0'
+          },
+          animations: {
+            enabled: true,
+            showAlerts: true,
+            celebrationEffects: true,
+            bounceOnUpdate: true,
+            fadeTransitions: true
+          },
+          display: {
+            showLabels: true,
+            showIcons: true,
+            compactMode: false,
+            hideWhenZero: false
+          }
+        }
+
+        setOverlaySettings(settings)
+        setHasLoaded(true)
+      } else {
+        console.error('❌ Failed to load overlay settings:', response.status)
+        // Set default settings on error
+        setOverlaySettings({
+          enabled: false,
+          position: 'top-right',
+          size: 'medium',
+          counters: { deaths: true, swears: true, screams: true, bits: false, channelPoints: false },
+          theme: { backgroundColor: 'rgba(0,0,0,0.8)', borderColor: '#9146ff', textColor: '#ffffff' },
+          animations: { enabled: true, showAlerts: true, celebrationEffects: true },
+          display: { showLabels: true, showIcons: true, compactMode: false, hideWhenZero: false }
+        })
+        setHasLoaded(true)
+      }
+    } catch (error) {
+      console.error('❌ Error loading overlay settings:', error)
+      setOverlaySettings({
+        enabled: false,
+        position: 'top-right',
+        size: 'medium',
+        counters: { deaths: true, swears: true, screams: true, bits: false, channelPoints: false },
+        theme: { backgroundColor: 'rgba(0,0,0,0.8)', borderColor: '#9146ff', textColor: '#ffffff' },
+        animations: { enabled: true, showAlerts: true, celebrationEffects: true },
+        display: { showLabels: true, showIcons: true, compactMode: false, hideWhenZero: false }
+      })
+      setHasLoaded(true)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateOverlaySettings = async (newSettings) => {
+    if (!user?.userId) return
+
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/overlay`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ overlaySettings: newSettings })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Updated overlay settings:', result)
+        setOverlaySettings(newSettings)
+        if (onUpdate) onUpdate()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to update overlay settings:', errorData)
+        alert(`Failed to update overlay settings: ${errorData.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error updating overlay settings:', error)
+      alert('Network error: Failed to update overlay settings')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSettingChange = (path, value) => {
+    if (!overlaySettings) return
+
+    const newSettings = { ...overlaySettings }
+    const keys = path.split('.')
+    let current = newSettings
+
+    for (let i = 0; i < keys.length - 1; i++) {
+      current = current[keys[i]]
+    }
+    current[keys[keys.length - 1]] = value
+
+    setOverlaySettings(newSettings)
+    updateOverlaySettings(newSettings)
+  }
+
+  if (isLoading && !hasLoaded) {
+    return (
+      <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+        <div style={{ fontSize: '24px', marginBottom: '10px' }}>⏳</div>
+        <p>Loading overlay settings...</p>
+      </div>
+    )
+  }
+
+  if (!overlaySettings) {
+    return (
+      <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+        <div style={{ fontSize: '24px', marginBottom: '10px' }}>❌</div>
+        <p>Failed to load overlay settings</p>
+        <button
+          onClick={loadOverlaySettings}
+          style={{
+            background: '#9146ff',
+            color: '#fff',
+            border: 'none',
+            padding: '10px 20px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            marginTop: '10px'
+          }}
+        >
+          🔄 Retry
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ color: '#fff', maxHeight: '70vh', overflowY: 'auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '25px', textAlign: 'center' }}>
+        <h3 style={{ color: '#9146ff', marginBottom: '10px' }}>
+          🎨 Overlay Settings for {user?.displayName || user?.username}
+        </h3>
+        <p style={{ color: '#aaa', margin: 0 }}>
+          Configure stream overlay appearance and behavior
+        </p>
+      </div>
+
+      {/* Enable/Disable Overlay */}
+      <div style={{ marginBottom: '25px', padding: '15px', background: '#2a2a2a', borderRadius: '8px', border: '2px solid #9146ff' }}>
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+          <div>
+            <h4 style={{ color: '#fff', margin: 0 }}>🎬 Enable Overlay</h4>
+            <p style={{ color: '#aaa', fontSize: '12px', margin: '5px 0 0 0' }}>Show overlay when stream is live</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={overlaySettings.enabled}
+            onChange={(e) => handleSettingChange('enabled', e.target.checked)}
+            style={{ width: '24px', height: '24px', cursor: 'pointer' }}
+            disabled={isLoading}
+          />
+        </label>
+      </div>
+
+      {/* Position Selector */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎯 Overlay Position</h4>
+        <select
+          value={overlaySettings.position}
+          onChange={(e) => handleSettingChange('position', e.target.value)}
+          disabled={isLoading}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '6px',
+            background: '#2a2a2a',
+            color: '#fff',
+            border: '1px solid #444',
+            fontSize: '14px'
+          }}
+        >
+          <option value="top-left">↖️ Top Left</option>
+          <option value="top-right">↗️ Top Right</option>
+          <option value="bottom-left">↙️ Bottom Left</option>
+          <option value="bottom-right">↘️ Bottom Right</option>
+        </select>
+      </div>
+
+      {/* Size Selector */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
+        <select
+          value={overlaySettings.size || 'medium'}
+          onChange={(e) => handleSettingChange('size', e.target.value)}
+          disabled={isLoading}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '6px',
+            background: '#2a2a2a',
+            color: '#fff',
+            border: '1px solid #444',
+            fontSize: '14px'
+          }}
+        >
+          <option value="small">📱 Small</option>
+          <option value="medium">📺 Medium</option>
+          <option value="large">🖥️ Large</option>
+        </select>
+      </div>
+
+      {/* Counter Selection */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>🔢 Counters to Display</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          {[
+            { key: 'deaths', label: '💀 Deaths', enabled: true },
+            { key: 'swears', label: '🤬 Swears', enabled: true },
+            { key: 'screams', label: '😱 Screams', enabled: true },
+            { key: 'bits', label: '💎 Bits', enabled: false }
+          ].map(counter => (
+            <label key={counter.key} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              padding: '8px',
+              background: '#1a1a1a',
+              borderRadius: '6px'
+            }}>
+              <input
+                type="checkbox"
+                checked={overlaySettings.counters?.[counter.key] || false}
+                onChange={(e) => handleSettingChange(`counters.${counter.key}`, e.target.checked)}
+                disabled={isLoading}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span>{counter.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Animations */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>✨ Animation Settings</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          {[
+            { key: 'enabled', label: '⚡ Enable Animations' },
+            { key: 'showAlerts', label: '🚨 Show Alerts' },
+            { key: 'celebrationEffects', label: '🎉 Celebration Effects' },
+            { key: 'bounceOnUpdate', label: '🎈 Bounce on Update' },
+            { key: 'fadeTransitions', label: '🌊 Fade Transitions' }
+          ].map(animation => (
+            <label key={animation.key} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              padding: '8px',
+              background: '#1a1a1a',
+              borderRadius: '6px'
+            }}>
+              <input
+                type="checkbox"
+                checked={overlaySettings.animations?.[animation.key] || false}
+                onChange={(e) => handleSettingChange(`animations.${animation.key}`, e.target.checked)}
+                disabled={isLoading}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span>{animation.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Theme Colors */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎨 Theme Colors</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+          <label style={{ color: '#fff' }}>
+            <span style={{ display: 'block', marginBottom: '5px' }}>Border Color:</span>
+            <input
+              type="color"
+              value={overlaySettings.theme?.borderColor || '#9146ff'}
+              onChange={(e) => handleSettingChange('theme.borderColor', e.target.value)}
+              disabled={isLoading}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
+          </label>
+          <label style={{ color: '#fff' }}>
+            <span style={{ display: 'block', marginBottom: '5px' }}>Text Color:</span>
+            <input
+              type="color"
+              value={overlaySettings.theme?.textColor || '#ffffff'}
+              onChange={(e) => handleSettingChange('theme.textColor', e.target.value)}
+              disabled={isLoading}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Display Options */}
+      <div style={{ marginBottom: '25px' }}>
+        <h4 style={{ color: '#fff', marginBottom: '10px' }}>🖼️ Display Options</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          {[
+            { key: 'showLabels', label: '🏷️ Show Labels' },
+            { key: 'showIcons', label: '🎭 Show Icons' },
+            { key: 'compactMode', label: '📱 Compact Mode' },
+            { key: 'hideWhenZero', label: '👻 Hide When Zero' }
+          ].map(display => (
+            <label key={display.key} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              padding: '8px',
+              background: '#1a1a1a',
+              borderRadius: '6px'
+            }}>
+              <input
+                type="checkbox"
+                checked={overlaySettings.display?.[display.key] || false}
+                onChange={(e) => handleSettingChange(`display.${display.key}`, e.target.checked)}
+                disabled={isLoading}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span>{display.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview Link */}
+      <div style={{ textAlign: 'center', padding: '20px', background: '#1a1a1a', borderRadius: '8px', border: '2px solid #4ade80' }}>
+        <h4 style={{ color: '#4ade80', margin: '0 0 10px 0' }}>📺 Preview Overlay</h4>
+        <p style={{ color: '#aaa', fontSize: '14px', margin: '0 0 15px 0' }}>
+          Copy this URL into OBS Browser Source
+        </p>
+        <a
+          href={`/overlay/${user.userId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: '#4ade80',
+            textDecoration: 'none',
+            background: '#0f4f3f',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            display: 'inline-block'
+          }}
+        >
+          🔗 /overlay/{user.userId}
+        </a>
+      </div>
+
+      {/* Loading overlay */}
+      {isLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{ color: '#fff', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', marginBottom: '10px' }}>⏳</div>
+            <p>Updating settings...</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Admin Series Interface Component
+function AdminSeriesInterface({ user, onUpdate }) {
+  const [seriesSaves, setSeriesSaves] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+
+  // Save form state
+  const [seriesName, setSeriesName] = useState('')
+  const [description, setDescription] = useState('')
+  const [showSaveForm, setShowSaveForm] = useState(false)
+
+  // Confirmation states
+  const [showLoadConfirm, setShowLoadConfirm] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [selectedSeries, setSelectedSeries] = useState(null)
+  const [seriesToDelete, setSeriesToDelete] = useState(null)
+
+  // Load series saves when component mounts
+  useEffect(() => {
+    if (user?.userId && !hasLoaded) {
+      loadSeriesSaves()
+    }
+  }, [user?.userId, hasLoaded])
+
+  // Auto-clear messages after 5 seconds
+  useEffect(() => {
+    if (error || success) {
+      const timer = setTimeout(() => {
+        setError(null)
+        setSuccess(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [error, success])
+
+  const loadSeriesSaves = async () => {
+    if (!user?.userId) return
+
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/series-saves`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📥 Loaded series saves:', data)
+        setSeriesSaves(data.seriesSaves || [])
+        setHasLoaded(true)
+      } else {
+        console.error('❌ Failed to load series saves:', response.status)
+        setError('Failed to load series saves')
+        setHasLoaded(true)
+      }
+    } catch (error) {
+      console.error('❌ Error loading series saves:', error)
+      setError('Failed to load series saves')
+      setHasLoaded(true)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSaveSeries = async (e) => {
+    e.preventDefault()
+
+    if (!seriesName.trim()) {
+      setError('Series name is required')
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/series-saves`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          seriesName: seriesName.trim(),
+          description: description.trim()
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Saved series:', result)
+        setSuccess(`Series "${seriesName}" saved successfully!`)
+        setSeriesName('')
+        setDescription('')
+        setShowSaveForm(false)
+        await loadSeriesSaves() // Refresh the list
+        if (onUpdate) onUpdate()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to save series:', errorData)
+        setError(errorData.error || 'Failed to save series')
+      }
+    } catch (error) {
+      console.error('❌ Error saving series:', error)
+      setError('Network error: Failed to save series')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleLoadSeries = async (series) => {
+    setIsLoading(true)
+    setError(null)
+    setShowLoadConfirm(false)
+
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/series-saves/${series.seriesId}/load`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Loaded series:', result)
+        setSuccess(`Series "${series.seriesName}" loaded successfully!`)
+        setSelectedSeries(null)
+        if (onUpdate) onUpdate()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to load series:', errorData)
+        setError(errorData.error || 'Failed to load series')
+      }
+    } catch (error) {
+      console.error('❌ Error loading series:', error)
+      setError('Network error: Failed to load series')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleDeleteSeries = async (series) => {
+    setIsLoading(true)
+    setError(null)
+    setShowDeleteConfirm(false)
+
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/series-saves/${series.seriesId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Deleted series:', result)
+        setSuccess(`Series "${series.seriesName}" deleted successfully`)
+        setSeriesToDelete(null)
+        await loadSeriesSaves() // Refresh the list
+        if (onUpdate) onUpdate()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to delete series:', errorData)
+        setError(errorData.error || 'Failed to delete series')
+      }
+    } catch (error) {
+      console.error('❌ Error deleting series:', error)
+      setError('Network error: Failed to delete series')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  if (isLoading && !hasLoaded) {
+    return (
+      <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+        <div style={{ fontSize: '24px', marginBottom: '10px' }}>⏳</div>
+        <p>Loading series saves...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ color: '#fff', maxHeight: '70vh', overflowY: 'auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '25px', textAlign: 'center' }}>
+        <h3 style={{ color: '#9146ff', marginBottom: '10px' }}>
+          💾 Series Save Manager for {user?.displayName || user?.username}
+        </h3>
+        <p style={{ color: '#aaa', margin: 0 }}>
+          Manage series save states and counter snapshots
+        </p>
+      </div>
+
+      {/* Messages */}
+      {error && (
+        <div style={{
+          background: 'rgba(220, 53, 69, 0.2)',
+          border: '1px solid #dc3545',
+          borderRadius: '6px',
+          padding: '12px 16px',
+          marginBottom: '20px',
+          color: '#dc3545'
+        }}>
+          ❌ {error}
+        </div>
+      )}
+
+      {success && (
+        <div style={{
+          background: 'rgba(40, 167, 69, 0.2)',
+          border: '1px solid #28a745',
+          borderRadius: '6px',
+          padding: '12px 16px',
+          marginBottom: '20px',
+          color: '#28a745'
+        }}>
+          ✅ {success}
+        </div>
+      )}
+
+      {/* Save Current State Section */}
+      <div style={{ marginBottom: '30px', padding: '20px', background: '#2a2a2a', borderRadius: '8px', border: '1px solid #444' }}>
+        <h4 style={{ color: '#fff', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          💾 Save Current State
+        </h4>
+
+        {!showSaveForm ? (
+          <button
+            onClick={() => setShowSaveForm(true)}
+            disabled={isLoading}
+            style={{
+              background: '#9146ff',
+              color: '#fff',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            💾 Save Current State
+          </button>
+        ) : (
+          <form onSubmit={handleSaveSeries} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px', color: '#fff', fontSize: '14px' }}>
+                Series Name *
+              </label>
+              <input
+                type="text"
+                value={seriesName}
+                onChange={(e) => setSeriesName(e.target.value)}
+                placeholder="e.g., Elden Ring Episode 5"
+                required
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  background: '#1a1a1a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  fontSize: '14px'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px', color: '#fff', fontSize: '14px' }}>
+                Description (optional)
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g., Fighting Malenia"
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  background: '#1a1a1a',
+                  color: '#fff',
+                  border: '1px solid #444',
+                  fontSize: '14px'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="submit"
+                disabled={isLoading}
+                style={{
+                  background: '#28a745',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                {isLoading ? 'Saving...' : 'Save Series'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveForm(false)
+                  setSeriesName('')
+                  setDescription('')
+                }}
+                disabled={isLoading}
+                style={{
+                  background: '#6c757d',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Saved Series List */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h4 style={{ color: '#fff', margin: 0 }}>
+            📋 Saved Series ({seriesSaves.length})
+          </h4>
+          <button
+            onClick={loadSeriesSaves}
+            disabled={isLoading}
+            style={{
+              background: '#17a2b8',
+              color: '#fff',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500'
+            }}
+          >
+            🔄 Refresh
+          </button>
+        </div>
+
+        {isLoading && seriesSaves.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+            Loading series saves...
+          </div>
+        ) : seriesSaves.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+            <p>No series saves yet.</p>
+            <p>Save the current counter state to create one!</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {seriesSaves.map((series) => (
+              <div key={series.seriesId} style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '15px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#fff', fontSize: '16px' }}>
+                    {series.seriesName}
+                  </h4>
+                  {series.description && (
+                    <p style={{ margin: '0 0 12px 0', color: '#aaa', fontSize: '14px' }}>
+                      {series.description}
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: '15px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ background: 'rgba(220, 53, 69, 0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '13px', color: '#fff' }}>
+                      💀 Deaths: {series.deaths || 0}
+                    </span>
+                    <span style={{ background: 'rgba(255, 193, 7, 0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '13px', color: '#fff' }}>
+                      🤬 Swears: {series.swears || 0}
+                    </span>
+                    {(series.bits || 0) > 0 && (
+                      <span style={{ background: 'rgba(138, 43, 226, 0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '13px', color: '#fff' }}>
+                        💎 Bits: {series.bits}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>
+                    📅 {formatDate(series.savedAt)} • ID: {series.seriesId?.substring(0, 8)}...
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '100px' }}>
+                  <button
+                    onClick={() => {
+                      setSelectedSeries(series)
+                      setShowLoadConfirm(true)
+                    }}
+                    disabled={isLoading}
+                    style={{
+                      background: '#28a745',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    📂 Load
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSeriesToDelete(series)
+                      setShowDeleteConfirm(true)
+                    }}
+                    disabled={isLoading}
+                    style={{
+                      background: '#dc3545',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Load Confirmation Modal */}
+      {showLoadConfirm && selectedSeries && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: '#1a1a2e',
+            border: '2px solid #9146ff',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%'
+          }}>
+            <h3 style={{ margin: '0 0 15px 0', color: '#fff' }}>Load Series?</h3>
+            <p style={{ color: 'rgba(255, 255, 255, 0.8)', margin: '10px 0' }}>
+              This will replace the user's current counters with values from:
+            </p>
+            <div style={{
+              background: 'rgba(145, 70, 255, 0.1)',
+              border: '1px solid #9146ff',
+              borderRadius: '6px',
+              padding: '15px',
+              margin: '15px 0'
+            }}>
+              <strong style={{ color: '#fff', display: 'block', marginBottom: '10px' }}>
+                {selectedSeries.seriesName}
+              </strong>
+              <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
+                <span style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '5px 10px', borderRadius: '4px', fontSize: '13px', color: '#fff' }}>
+                  💀 Deaths: {selectedSeries.deaths || 0}
+                </span>
+                <span style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '5px 10px', borderRadius: '4px', fontSize: '13px', color: '#fff' }}>
+                  🤬 Swears: {selectedSeries.swears || 0}
+                </span>
+              </div>
+            </div>
+            <p style={{ color: '#ff9800', margin: '10px 0', fontSize: '14px' }}>
+              ⚠️ Current counter values will be overwritten!
+            </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => handleLoadSeries(selectedSeries)}
+                disabled={isLoading}
+                style={{
+                  background: '#28a745',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  flex: 1
+                }}
+              >
+                {isLoading ? 'Loading...' : 'Load Series'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowLoadConfirm(false)
+                  setSelectedSeries(null)
+                }}
+                disabled={isLoading}
+                style={{
+                  background: '#6c757d',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  flex: 1
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && seriesToDelete && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: '#1a1a2e',
+            border: '2px solid #dc3545',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%'
+          }}>
+            <h3 style={{ margin: '0 0 15px 0', color: '#fff' }}>Delete Series?</h3>
+            <p style={{ color: 'rgba(255, 255, 255, 0.8)', margin: '10px 0' }}>
+              Are you sure you want to delete this series save?
+            </p>
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid #dc3545',
+              borderRadius: '6px',
+              padding: '15px',
+              margin: '15px 0'
+            }}>
+              <strong style={{ color: '#fff' }}>{seriesToDelete.seriesName}</strong>
+            </div>
+            <p style={{ color: '#dc3545', margin: '10px 0', fontSize: '14px' }}>
+              ⚠️ This action cannot be undone!
+            </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => handleDeleteSeries(seriesToDelete)}
+                disabled={isLoading}
+                style={{
+                  background: '#dc3545',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  flex: 1
+                }}
+              >
+                {isLoading ? 'Deleting...' : 'Delete'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false)
+                  setSeriesToDelete(null)
+                }}
+                disabled={isLoading}
+                style={{
+                  background: '#6c757d',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  flex: 1
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading overlay */}
+      {isLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{ color: '#fff', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', marginBottom: '10px' }}>⏳</div>
+            <p>Processing...</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AdminDashboard({ onNavigateToDebug }) {
   const [users, setUsers] = useState([])
   const [stats, setStats] = useState({})
@@ -1978,7 +3072,7 @@ function AdminDashboard({ onNavigateToDebug }) {
         {/* Overlay Settings Modal */}
         {(showOverlayModal && selectedOverlayUser) && (
           <div className="modal-overlay" onClick={() => setShowOverlayModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90vw' }}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1000px', width: '90vw' }}>
               <div className="modal-header">
                 <h2>🎨 Stream Overlay Settings - {selectedOverlayUser.displayName || selectedOverlayUser.username}</h2>
                 <button
@@ -1993,11 +3087,13 @@ function AdminDashboard({ onNavigateToDebug }) {
                 </button>
               </div>
               <div className="modal-body">
-                <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
-                  <h3>🚧 Overlay Settings Admin Interface</h3>
-                  <p>Admin overlay management interface coming soon!</p>
-                  <p>Currently, users can manage their own overlay settings from their dashboard.</p>
-                </div>
+                <AdminOverlayInterface
+                  user={selectedOverlayUser}
+                  onUpdate={() => {
+                    console.log('🔄 Overlay settings updated, refreshing data...')
+                    fetchAdminData()
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -2052,12 +3148,7 @@ function AdminDashboard({ onNavigateToDebug }) {
                 </button>
               </div>
               <div className="modal-body">
-                <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
-                  <h3>🚧 Admin Series Management</h3>
-                  <p>Admin access to series save states is coming soon!</p>
-                  <p>Currently, the Series Manager operates in user context only.</p>
-                  <p>Future implementation will allow admins to view and manage save states for users.</p>
-                </div>
+                <AdminSeriesInterface user={selectedSeriesUser} onUpdate={loadUserData} />
               </div>
             </div>
           </div>

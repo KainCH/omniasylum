@@ -1541,8 +1541,17 @@ input[type="email"]:focus {
 
 .user-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 15px;
+  align-items: center;
+}
+
+.user-actions .btn {
+  min-width: 120px;
+  white-space: nowrap;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .btn-danger-outline {

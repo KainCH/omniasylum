@@ -11,6 +11,7 @@ import SeriesSaveManager from './components/SeriesSaveManager'
 import DiscordWebhookSettings from './components/DiscordWebhookSettings'
 import { userAPI } from './utils/apiHelpers'
 import './App.css'
+import './components/AdminDashboard.css'
 
 function App() {
   // Helper function to get size-based styles
@@ -1111,6 +1112,119 @@ function App() {
     console.log('🎬 RENDERING USER PORTAL - Regular user')
   }
 
+  // Helper function to render stream overlay
+  const renderStreamOverlay = () => {
+    if ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled) {
+      console.log('🎨 Rendering overlay:', {
+        streamStatus,
+        overlayEnabled: overlaySettings.enabled,
+        position: overlaySettings.position
+      })
+
+      const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
+
+      return (
+        <div style={{
+          position: 'fixed',
+          [overlaySettings.position?.includes('top') ? 'top' : 'bottom']: '20px',
+          [overlaySettings.position?.includes('left') ? 'left' : 'right']: '20px',
+          zIndex: 9999,
+          background: overlaySettings.theme.backgroundColor,
+          border: `3px solid ${overlaySettings.theme.borderColor}`,
+          borderRadius: '12px',
+          padding: sizeStyles.padding,
+          minWidth: sizeStyles.minWidth,
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          transition: overlaySettings.animations.fadeTransitions ? 'all 0.3s ease' : 'none',
+          animation: overlaySettings.animations.bounceOnUpdate ? 'fadeIn 0.5s ease-in-out' : 'none'
+        }}>
+          <h3 style={{
+            color: overlaySettings.theme.textColor,
+            marginBottom: '15px',
+            fontSize: sizeStyles.headingSize,
+            fontWeight: 'bold',
+            textAlign: 'center',
+            textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
+          }}>
+            🎮 Live Counter
+          </h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {overlaySettings.counters.deaths && (
+              <div style={{
+                background: 'rgba(220, 53, 69, 0.2)',
+                padding: sizeStyles.itemPadding,
+                borderRadius: '8px',
+                border: '2px solid #dc3545',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.fontSize,
+                  fontWeight: 'bold'
+                }}>💀 Deaths</span>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.counterFontSize,
+                  fontWeight: 'bold'
+                }}>{counters?.deaths || 0}</span>
+              </div>
+            )}
+
+            {overlaySettings.counters.swears && (
+              <div style={{
+                background: 'rgba(255, 193, 7, 0.2)',
+                padding: sizeStyles.itemPadding,
+                borderRadius: '8px',
+                border: '2px solid #ffc107',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.fontSize,
+                  fontWeight: 'bold'
+                }}>🤬 Swears</span>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.counterFontSize,
+                  fontWeight: 'bold'
+                }}>{counters?.swears || 0}</span>
+              </div>
+            )}
+
+            {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
+              <div style={{
+                background: 'rgba(145, 70, 255, 0.2)',
+                padding: sizeStyles.itemPadding,
+                borderRadius: '8px',
+                border: '2px solid #9146ff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.fontSize,
+                  fontWeight: 'bold'
+                }}>💎 Bits</span>
+                <span style={{
+                  color: overlaySettings.theme.textColor,
+                  fontSize: sizeStyles.counterFontSize,
+                  fontWeight: 'bold'
+                }}>{counters.bits || 0}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
+
   return (
     <div className="app">
       <div className="container">
@@ -1841,8 +1955,8 @@ function App() {
                   <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• No manual buttons needed - fully automated! 🤖</p>
                 </div>
 
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>�🎮 Counter Controls</h3>
-                <p>• Use <strong>+ / -</strong> buttons to modify counters</p>
+                <h3 style={{ color: '#fff', marginTop: '20px' }}>🎮 Counter Controls</h3>
+                <p>• Use <strong>+ {'/'} -</strong> buttons to modify counters</p>
                 <p>• <strong>Reset All</strong> button clears all counters to zero</p>
                 <p>• <strong>Export Data</strong> saves counter data as JSON</p>
 
@@ -2037,103 +2151,37 @@ function App() {
           </div>
         )}
 
-        {/* Settings Modal */}
-        {showSettingsModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000
-          }} onClick={() => setShowSettingsModal(false)}>
-            <div style={{
-              background: '#1a1a1a',
-              padding: '30px',
-              borderRadius: '12px',
-              maxWidth: '700px',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              border: '2px solid #9146ff'
-            }} onClick={(e) => e.stopPropagation()}>
-              <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>⚙️ Overlay Settings</h2>
 
-              {/* Enable/Disable Overlay */}
-              <div style={{ marginBottom: '25px', padding: '15px', background: '#2a2a2a', borderRadius: '8px', border: '2px solid #9146ff' }}>
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                  <div>
-                    <h4 style={{ color: '#fff', margin: 0 }}>🎬 Enable Overlay</h4>
-                    <p style={{ color: '#aaa', fontSize: '12px', margin: '5px 0 0 0' }}>Show overlay when stream is live</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={overlaySettings.enabled}
+
+
+
+
+
+                {/* Size Selector */}
+                <div style={{ marginBottom: '25px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
+                  <select
+                    value={overlaySettings.size || 'medium'}
                     onChange={(e) => {
-                      const newSettings = { ...overlaySettings, enabled: e.target.checked }
+                      const newSettings = { ...overlaySettings, size: e.target.value }
                       setOverlaySettings(newSettings)
                       updateOverlaySettings(newSettings)
                     }}
-                    style={{ width: '24px', height: '24px', cursor: 'pointer' }}
-                  />
-                </label>
-              </div>
-
-              {/* Position Selector */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎯 Overlay Position</h4>
-                <select
-                  value={overlaySettings.position}
-                  onChange={(e) => {
-                    const newSettings = { ...overlaySettings, position: e.target.value }
-                    setOverlaySettings(newSettings)
-                    updateOverlaySettings(newSettings)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #444',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="top-left">↖️ Top Left</option>
-                  <option value="top-right">↗️ Top Right</option>
-                  <option value="bottom-left">↙️ Bottom Left</option>
-                  <option value="bottom-right">↘️ Bottom Right</option>
-                </select>
-              </div>
-
-              {/* Size Selector */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
-                <select
-                  value={overlaySettings.size || 'medium'}
-                  onChange={(e) => {
-                    const newSettings = { ...overlaySettings, size: e.target.value }
-                    setOverlaySettings(newSettings)
-                    updateOverlaySettings(newSettings)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #444',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="small">🔹 Small (Compact)</option>
-                  <option value="medium">🔸 Medium (Default)</option>
-                  <option value="large">🔶 Large (Bold)</option>
-                </select>
-              </div>
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '6px',
+                      background: '#2a2a2a',
+                      color: '#fff',
+                      border: '1px solid #444',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="small">� Small</option>
+                    <option value="medium">� Medium</option>
+                    <option value="large">�️ Large</option>
+                  </select>
+                </div>
 
               {/* Counters */}
               <div style={{ marginBottom: '25px' }}>
@@ -2196,177 +2244,13 @@ function App() {
                 </div>
               </div>
 
-              {/* Theme Colors */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎨 Theme Colors</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <label style={{ color: '#fff' }}>
-                    <span style={{ display: 'block', marginBottom: '5px' }}>Border Color:</span>
-                    <input
-                      type="color"
-                      value={overlaySettings.theme.borderColor}
-                      onChange={(e) => {
-                        const newSettings = {
-                          ...overlaySettings,
-                          theme: { ...overlaySettings.theme, borderColor: e.target.value }
-                        }
-                        setOverlaySettings(newSettings)
-                        updateOverlaySettings(newSettings)
-                      }}
-                      style={{ width: '100%', height: '40px', cursor: 'pointer' }}
-                    />
-                  </label>
-                  <label style={{ color: '#fff' }}>
-                    <span style={{ display: 'block', marginBottom: '5px' }}>Text Color:</span>
-                    <input
-                      type="color"
-                      value={overlaySettings.theme.textColor}
-                      onChange={(e) => {
-                        const newSettings = {
-                          ...overlaySettings,
-                          theme: { ...overlaySettings.theme, textColor: e.target.value }
-                        }
-                        setOverlaySettings(newSettings)
-                        updateOverlaySettings(newSettings)
-                      }}
-                      style={{ width: '100%', height: '40px', cursor: 'pointer' }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                style={{
-                  background: '#9146ff',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 30px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  width: '100%'
-                }}
-              >
-                ✅ Save & Close
-              </button>
-            </div>
-          </div>
         )}
 
         {/* Stream Overlay - Rendered when stream is live */}
-        {console.log('🎨 Overlay render check:', {
-          streamStatus,
-          overlayEnabled: overlaySettings.enabled,
-          shouldShow: (streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled,
-          overlayPosition: overlaySettings.position
-        }) || ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (() => {
-          const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
-          return (
-          <div style={{
-            position: 'fixed',
-            [overlaySettings.position.includes('top') ? 'top' : 'bottom']: '20px',
-            [overlaySettings.position.includes('left') ? 'left' : 'right']: '20px',
-            zIndex: 9999,
-            background: overlaySettings.theme.backgroundColor,
-            border: `3px solid ${overlaySettings.theme.borderColor}`,
-            borderRadius: '12px',
-            padding: sizeStyles.padding,
-            minWidth: sizeStyles.minWidth,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            transition: overlaySettings.animations.fadeTransitions ? 'all 0.3s ease' : 'none',
-            animation: overlaySettings.animations.bounceOnUpdate ? 'fadeIn 0.5s ease-in-out' : 'none'
-          }}>
-            <h3 style={{
-              color: overlaySettings.theme.textColor,
-              marginBottom: '15px',
-              fontSize: sizeStyles.headingSize,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
-            }}>
-              🎮 Live Counter
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {overlaySettings.counters.deaths && (
-                <div style={{
-                  background: 'rgba(220, 53, 69, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #dc3545',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>💀 Deaths</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters?.deaths || 0}</span>
-                </div>
-              )}
-
-              {overlaySettings.counters.swears && (
-                <div style={{
-                  background: 'rgba(255, 193, 7, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #ffc107',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>🤬 Swears</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters?.swears || 0}</span>
-                </div>
-              )}
-
-              {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
-                <div style={{
-                  background: 'rgba(145, 70, 255, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #9146ff',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>💎 Bits</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters.bits || 0}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          )
-        })()
-        )}
+        {renderStreamOverlay()}
       </div>
     </div>
   )
 }
 
 export default App
-
-

@@ -148,6 +148,10 @@
   transition: all 0.3s ease;
   text-decoration: none;
   display: inline-block;
+  min-width: 120px;
+  text-align: center;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .btn-secondary {
