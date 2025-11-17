@@ -27,8 +27,8 @@ export function useDiscordSettings(user) {
 
   const [notificationSettings, setNotificationSettings] = useState({
     enableChannelNotifications: false,
-    deathMilestoneEnabled: true,
-    swearMilestoneEnabled: true,
+    deathMilestoneEnabled: false,
+    swearMilestoneEnabled: false,
     deathThresholds: '10,25,50,100,250,500',
     swearThresholds: '25,50,100,200,500'
   })

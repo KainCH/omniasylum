@@ -190,20 +190,29 @@ function DiscordWebhookSettings({ user }) {
         {activeTab === 'counters' && (
           <div className="tab-panel">
             <FormSection title="🎯 Milestone Notifications">
+              {/* Template System Notice */}
+              <div className="template-notice">
+                <div className="notice-icon">⚠️</div>
+                <div className="notice-text">
+                  <strong>Milestone notifications are temporarily disabled:</strong>
+                  The template system is being updated. Milestone notifications will be re-enabled once the template system is working properly.
+                </div>
+              </div>
+
               <div className="milestone-settings">
                 <div className="milestone-group">
                   <div className="milestone-header">
                     <div className="milestone-icon">💀</div>
                     <div className="milestone-title">
                       <h4>Death Count Milestones</h4>
-                      <p>Trigger notifications when death count reaches specific milestones</p>
+                      <p>Temporarily disabled - Template system being updated</p>
                     </div>
                     <div className="milestone-toggle">
                       <ToggleSwitch
                         checked={notificationSettings?.deathMilestoneEnabled || false}
                         onChange={(e) => updateNotificationSetting('deathMilestoneEnabled', e.target.checked)}
-                        label="Enable"
-                        disabled={isLoading}
+                        label="Disabled"
+                        disabled={true} // Disabled until template system is working
                         size="medium"
                       />
                     </div>
@@ -216,13 +225,12 @@ function DiscordWebhookSettings({ user }) {
                         value={notificationSettings?.deathThresholds || '10,25,50,100,250,500'}
                         onChange={(e) => updateNotificationSetting('deathThresholds', e.target.value)}
                         placeholder="10,25,50,100,250,500"
-                        disabled={isLoading || !notificationSettings?.deathMilestoneEnabled}
-                        className="threshold-input"
+                        disabled={true} // Disabled until template system is working
+                        readOnly={true}
+                        className="threshold-input disabled"
                       />
                       <div className="input-hint">
-                        {notificationSettings?.deathMilestoneEnabled
-                          ? "Comma-separated numbers (e.g., 10,25,50,100,250,500)"
-                          : "Enable Death Count Milestones above to edit these thresholds"}
+                        Milestone notifications are temporarily disabled while the template system is being updated
                       </div>
                     </div>
                   </div>
@@ -233,14 +241,14 @@ function DiscordWebhookSettings({ user }) {
                     <div className="milestone-icon">🤬</div>
                     <div className="milestone-title">
                       <h4>Swear Count Milestones</h4>
-                      <p>Trigger notifications when swear count reaches specific milestones</p>
+                      <p>Temporarily disabled - Template system being updated</p>
                     </div>
                     <div className="milestone-toggle">
                       <ToggleSwitch
                         checked={notificationSettings?.swearMilestoneEnabled || false}
                         onChange={(e) => updateNotificationSetting('swearMilestoneEnabled', e.target.checked)}
-                        label="Enable"
-                        disabled={isLoading}
+                        label="Disabled"
+                        disabled={true} // Disabled until template system is working
                         size="medium"
                       />
                     </div>
@@ -253,13 +261,12 @@ function DiscordWebhookSettings({ user }) {
                         value={notificationSettings?.swearThresholds || '25,50,100,200,500'}
                         onChange={(e) => updateNotificationSetting('swearThresholds', e.target.value)}
                         placeholder="25,50,100,200,500"
-                        disabled={isLoading || !notificationSettings?.swearMilestoneEnabled}
-                        className="threshold-input"
+                        disabled={true} // Disabled until template system is working
+                        readOnly={true}
+                        className="threshold-input disabled"
                       />
                       <div className="input-hint">
-                        {notificationSettings?.swearMilestoneEnabled
-                          ? "Comma-separated numbers (e.g., 25,50,100,200,500)"
-                          : "Enable Swear Count Milestones above to edit these thresholds"}
+                        Milestone notifications are temporarily disabled while the template system is being updated
                       </div>
                     </div>
                   </div>

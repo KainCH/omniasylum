@@ -450,6 +450,18 @@
   border-radius: 8px;
 }
 
+/* Template system notice */
+.template-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  border-radius: 8px;
+}
+
 .notice-icon {
   font-size: 1.25rem;
   flex-shrink: 0;
@@ -756,6 +768,13 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   padding: 20px;
+  opacity: 0.6;
+  /* Visually indicate disabled state */
+}
+
+.milestone-group:hover {
+  opacity: 0.7;
+  /* Slightly brighter on hover but still disabled appearance */
 }
 
 .milestone-header {
@@ -778,9 +797,12 @@
 
 .milestone-title p {
   margin: 0;
-  color: #bbb;
+  color: #999;
+  /* Slightly more muted for disabled state */
   font-size: 13px;
   line-height: 1.4;
+  font-style: italic;
+  /* Indicate temporary disabled state */
 }
 
 .milestone-toggle {
