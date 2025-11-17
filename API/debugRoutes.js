@@ -997,6 +997,13 @@ router.post('/test-notification/:userId/:eventType', async (req, res) => {
         newValue: 100,
         previousMilestone: 50,
         timestamp: new Date().toISOString()
+      },
+      raid: {
+        userId: userId,
+        username: username,
+        raider: 'DebugRaider',
+        viewers: 42,
+        timestamp: new Date().toISOString()
       }
     };
 
@@ -1015,7 +1022,8 @@ router.post('/test-notification/:userId/:eventType', async (req, res) => {
     }
 
     // Map event type to WebSocket event name
-    const eventName = (eventType === 'subscription') ? 'newSubscription' :
+    const eventName = (eventType === 'follow') ? 'newFollower' :
+                     (eventType === 'subscription') ? 'newSubscription' :
                      (eventType === 'resub') ? 'newResub' :
                      (eventType === 'giftsub') ? 'newGiftSub' :
                      (eventType === 'bits' || eventType === 'cheer') ? 'newCheer' :
@@ -1024,6 +1032,7 @@ router.post('/test-notification/:userId/:eventType', async (req, res) => {
                      eventType === 'bits' ? 'newCheer' :
                      eventType === 'bitsuse' ? 'newBitsUse' :
                      eventType === 'milestone' ? 'milestoneReached' :
+                     eventType === 'raid' ? 'raidReceived' :
                      `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
 
     // Check room membership

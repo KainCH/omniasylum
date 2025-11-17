@@ -822,6 +822,50 @@ twitchService.on('bitsReceived', async ({ userId, username, channel, amount, mes
     // Get custom alert configuration
     const alertConfig = await database.getAlertForEventType(userId, 'bits');
 
+    // Check and update bits goal progress
+    try {
+      const overlaySettings = await database.getOverlaySettings(userId);
+      if (overlaySettings?.bitsGoal?.enabled && overlaySettings?.bitsGoal?.target > 0) {
+        const currentBits = counters.bits;
+        const targetBits = overlaySettings.bitsGoal.target;
+        const progressPercent = Math.min((currentBits / targetBits) * 100, 100);
+
+        console.log(`🎯 Bits goal progress: ${currentBits}/${targetBits} (${progressPercent.toFixed(1)}%)`);
+
+        // Check if goal was just completed
+        const wasCompleted = overlaySettings.bitsGoal.current >= targetBits;
+        const isNowCompleted = currentBits >= targetBits;
+
+        if (!wasCompleted && isNowCompleted) {
+          console.log(`🎉 Bits goal COMPLETED! ${currentBits}/${targetBits} bits`);
+
+          // Emit goal completion celebration
+          io.to(`user:${userId}`).emit('bitsGoalComplete', {
+            userId,
+            current: currentBits,
+            target: targetBits,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        // Update goal progress in database
+        overlaySettings.bitsGoal.current = currentBits;
+        await database.updateOverlaySettings(userId, overlaySettings);
+
+        // Emit real-time bits goal progress update
+        io.to(`user:${userId}`).emit('bitsGoalUpdate', {
+          userId,
+          current: currentBits,
+          target: targetBits,
+          progress: progressPercent,
+          completed: isNowCompleted,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (goalError) {
+      console.warn('⚠️ Error updating bits goal progress:', goalError.message);
+    }
+
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('bitsReceived', {
       userId,

@@ -100,6 +100,34 @@ router.get('/:userId', async (req, res) => {
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
+        /* Bits Goal Progress */
+        .bits-goal-progress {
+            margin-top: 8px;
+        }
+
+        .goal-label {
+            font-size: 0.8rem;
+            color: ${overlaySettings.theme.borderColor};
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+
+        .goal-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .goal-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #9146ff, #772ce8);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 8px rgba(145, 70, 255, 0.5);
+        }
+
         /* Alert animations */
         .counter-alert {
             position: fixed;
@@ -204,6 +232,21 @@ router.get('/:userId', async (req, res) => {
             }
         }
 
+        @keyframes sparkleFloat {
+            0% {
+                transform: translateY(0) rotate(0deg) scale(0);
+                opacity: 1;
+            }
+            50% {
+                transform: translateY(-50px) rotate(180deg) scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100px) rotate(360deg) scale(0);
+                opacity: 0;
+            }
+        }
+
         .sub-banner {
             position: fixed;
             top: 20px;
@@ -232,85 +275,22 @@ router.get('/:userId', async (req, res) => {
             transform: translateX(-50%) translateY(-100px) scale(0.5);
         }
 
-        /* Stream Status Messages */
-        .status-message {
-            background: rgba(0,0,0,0.7);
-            padding: 20px;
-            border-radius: 10px;
-            border: 2px solid;
-            text-align: center;
-            color: white;
-            font-family: Arial;
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            display: none;
-            transition: all 0.3s ease;
-        }
 
-        .status-message.show {
-            display: block;
-            opacity: 1;
-        }
-
-        .status-offline {
-            border-color: #d4af37;
-        }
-
-        .status-offline h3 {
-            color: #d4af37;
-            margin-top: 0;
-        }
-
-        .status-prepping {
-            border-color: #ffa500;
-        }
-
-        .status-prepping h3 {
-            color: #ffa500;
-            margin-top: 0;
-        }
-
-        .status-ending {
-            border-color: #ff6b6b;
-        }
-
-        .status-ending h3 {
-            color: #ff6b6b;
-            margin-top: 0;
-        }
 
         .counters-container {
-            display: ${streamStatus === 'live' ? 'flex' : 'none'};
+            display: flex;
             flex-direction: column;
             gap: 15px;
             position: fixed;
             ${overlaySettings.position.includes('top') ? 'top: 20px;' : 'bottom: 20px;'}
             ${overlaySettings.position.includes('right') ? 'right: 20px;' : 'left: 20px;'}
+            opacity: ${streamStatus === 'live' ? '1' : '0'};
+            transition: opacity 0.8s ease-in-out;
         }
     </style>
 </head>
 <body>
-    <!-- Status Messages for different stream states -->
-    <div class="status-message status-offline ${streamStatus === 'offline' ? 'show' : ''}" id="status-offline">
-        <h3>🎬 Stream Offline</h3>
-        <p>Overlay will activate when you start prepping.</p>
-        <p><small>Use "Start Prepping" button in admin dashboard</small></p>
-    </div>
-
-    <div class="status-message status-prepping ${streamStatus === 'prepping' ? 'show' : ''}" id="status-prepping">
-        <h3>🎭 Getting Ready</h3>
-        <p>Stream prep in progress...</p>
-        <p><small>Overlay will show counters when you go live</small></p>
-    </div>
-
-    <div class="status-message status-ending ${streamStatus === 'ending' ? 'show' : ''}" id="status-ending">
-        <h3>🏁 Stream Ending</h3>
-        <p>Thanks for watching!</p>
-        <p><small>Stream concluded</small></p>
-    </div>
-
-    <!-- Counters Container - only visible when live -->
+    <!-- Counters Container - fades in when stream goes live -->
     <div class="counters-container" id="counters-container">
         ${overlaySettings.counters.deaths ? `
         <div class="counter-item" id="deaths-counter">
@@ -345,6 +325,13 @@ router.get('/:userId', async (req, res) => {
             <div class="counter-info">
                 <div class="counter-label">Stream Bits</div>
                 <div class="counter-value" id="bits-value">${counters.bits || 0}</div>
+                ${overlaySettings.bitsGoal ? `
+                <div class="bits-goal-progress">
+                    <div class="goal-label">Goal: ${overlaySettings.bitsGoal.current || 0} / ${overlaySettings.bitsGoal.target || 1000}</div>
+                    <div class="goal-bar">
+                        <div class="goal-fill" style="width: ${Math.min(100, ((overlaySettings.bitsGoal.current || 0) / (overlaySettings.bitsGoal.target || 1000)) * 100)}%"></div>
+                    </div>
+                </div>` : ''}
             </div>
         </div>` : ''}
     </div>
@@ -368,12 +355,11 @@ router.get('/:userId', async (req, res) => {
         const overlaySettings = ${JSON.stringify(overlaySettings)};
         const socket = io();
 
-        // Notification Audio Manager for Twitch Events
+        // Notification Audio Manager for Twitch Events - OBS Compatible
         class NotificationAudioManager {
             constructor() {
                 this.audioCache = {};
-                this.desktopAudioContext = null;
-                this.volume = 0.7;
+                this.volume = 0.8; // Higher volume for OBS capture
                 this.notificationSounds = {
                     follow: 'heartMonitor.wav',
                     subscription: 'hypeTrain.wav',
@@ -386,33 +372,39 @@ router.get('/:userId', async (req, res) => {
             }
 
             async init() {
-                // Try to setup Web Audio Context for desktop audio
-                try {
-                    this.desktopAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    console.log('🔊 Desktop Audio Context initialized');
-                } catch (error) {
-                    console.warn('⚠️ Desktop Audio Context not available:', error);
-                }
-
-                // Preload notification sounds
+                console.log('🔊 OBS Audio Manager initializing...');
+                // Preload notification sounds for OBS Browser Source
                 this.preloadNotificationSounds();
             }
 
             preloadNotificationSounds() {
                 Object.entries(this.notificationSounds).forEach(([eventType, soundFile]) => {
+                    // Create dedicated audio element for OBS capture
                     const audio = new Audio('/sounds/' + soundFile);
                     audio.preload = 'auto';
                     audio.volume = this.volume;
+                    audio.crossOrigin = 'anonymous'; // Ensure OBS can access
+
+                    // Set audio attributes for better OBS compatibility
+                    audio.setAttribute('controls', 'false');
+                    audio.setAttribute('autoplay', 'false');
+
                     this.audioCache[eventType] = audio;
 
                     audio.addEventListener('canplaythrough', () => {
-                        console.log('🔊 Notification sound loaded:', eventType, soundFile);
+                        console.log('🔊 OBS notification sound loaded:', eventType, soundFile);
                     }, { once: true });
 
                     audio.addEventListener('error', (e) => {
-                        console.warn('⚠️ Failed to load notification sound:', eventType, soundFile, e);
+                        console.warn('⚠️ Failed to load notification sound for OBS:', eventType, soundFile, e);
                     });
+
+                    // Add to DOM for OBS Browser Source audio capture
+                    audio.style.display = 'none';
+                    document.body.appendChild(audio);
                 });
+
+                console.log('🔊 All notification sounds prepared for OBS capture');
             }
 
             async playNotification(eventType, data = {}) {
@@ -421,55 +413,125 @@ router.get('/:userId', async (req, res) => {
                     return;
                 }
 
+                console.log('🔊 Playing OBS notification:', eventType);
+
                 try {
-                    // Play stream audio (for OBS capture)
-                    await this.playStreamAudio(eventType, data);
+                    const audio = this.audioCache[eventType];
+                    if (!audio) {
+                        console.warn('⚠️ Audio not cached for:', eventType);
+                        return;
+                    }
 
-                    // Try to play desktop audio (may fail due to autoplay policy)
-                    this.playDesktopAudio(eventType, data);
-                } catch (error) {
-                    console.warn('⚠️ Notification audio failed:', error);
-                }
-            }
+                    // Reset audio to beginning and set volume
+                    audio.currentTime = 0;
+                    audio.volume = this.volume;
 
-            async playStreamAudio(eventType, data) {
-                const audio = this.audioCache[eventType];
-                if (audio) {
-                    // Clone audio to allow overlapping sounds
-                    const audioClone = audio.cloneNode();
-                    audioClone.volume = this.volume;
+                    // Simple play for OBS Browser Source capture
+                    const playPromise = audio.play();
 
-                    const playPromise = audioClone.play();
-                    if (playPromise) {
+                    if (playPromise !== undefined) {
                         playPromise.then(() => {
-                            console.log('🔊 Stream notification audio played:', eventType);
+                            console.log('✅ OBS notification played:', eventType);
                         }).catch(error => {
-                            console.warn('⚠️ Stream audio autoplay prevented:', eventType, error);
+                            console.warn('⚠️ OBS audio playback failed:', eventType, error);
+                            // Try user interaction workaround
+                            this.handleAudioPlaybackError(eventType, error);
                         });
                     }
+
+                } catch (error) {
+                    console.warn('⚠️ OBS notification system failed:', error);
                 }
             }
 
-            playDesktopAudio(eventType, data) {
-                // Future: Web Audio API implementation for desktop routing
-                // Currently falls back to stream audio only
-                if (this.desktopAudioContext && this.desktopAudioContext.state === 'suspended') {
-                    this.desktopAudioContext.resume().then(() => {
-                        console.log('🔊 Desktop Audio Context resumed');
-                    });
+            handleAudioPlaybackError(eventType, error) {
+                // Common issue: Browser autoplay policy
+                if (error.name === 'NotAllowedError') {
+                    console.log('🔇 Autoplay blocked for:', eventType, '- User interaction required');
+
+                    // Create a one-time click handler to enable audio
+                    const enableAudio = () => {
+                        console.log('👆 User interaction detected, enabling audio...');
+                        this.audioCache[eventType].play().then(() => {
+                            console.log('✅ Audio enabled after user interaction');
+                        }).catch(e => console.warn('⚠️ Audio still blocked:', e));
+
+                        document.removeEventListener('click', enableAudio);
+                        document.removeEventListener('keydown', enableAudio);
+                    };
+
+                    document.addEventListener('click', enableAudio, { once: true });
+                    document.addEventListener('keydown', enableAudio, { once: true });
                 }
+            }
+
+            // Test method for OBS audio verification
+            testNotificationAudio(eventType = 'follow') {
+                console.log('🧪 Testing OBS audio capture for:', eventType);
+                this.playNotification(eventType, { test: true });
             }
 
             setVolume(volume) {
                 this.volume = Math.max(0, Math.min(1, volume));
+                console.log('🔊 Setting OBS audio volume to:', this.volume);
+
                 Object.values(this.audioCache).forEach(audio => {
                     audio.volume = this.volume;
                 });
+                console.log('✅ OBS audio volume updated:', this.volume);
+            }
+
+            // Get current audio status for debugging
+            getAudioStatus() {
+                return {
+                    volume: this.volume,
+                    sounds: Object.keys(this.notificationSounds),
+                    cacheStatus: Object.keys(this.audioCache).map(key => ({
+                        event: key,
+                        loaded: this.audioCache[key] ? this.audioCache[key].readyState >= 3 : false,
+                        file: this.notificationSounds[key]
+                    }))
+                };
             }
         }
 
         // Initialize notification audio manager
         const notificationAudio = new NotificationAudioManager();
+
+        // Window message handler for OBS audio control
+        window.addEventListener('message', (event) => {
+            // Security: Only accept messages from same origin
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+
+            const { type, payload } = event.data;
+
+            switch (type) {
+                case 'SET_AUDIO_VOLUME':
+                    if (payload && typeof payload.volume === 'number') {
+                        notificationAudio.setVolume(payload.volume);
+                        console.log('✅ OBS audio volume updated via control panel:', payload.volume);
+                    }
+                    break;
+
+                case 'TEST_NOTIFICATION_AUDIO':
+                    if (payload && payload.eventType) {
+                        console.log('🧪 Testing OBS notification audio:', payload.eventType);
+                        notificationAudio.testNotificationAudio(payload.eventType);
+                    }
+                    break;
+
+                case 'GET_AUDIO_STATUS':
+                    // Return current audio status for debugging
+                    const audioStatus = notificationAudio.getAudioStatus();
+                    console.log('📊 OBS audio status:', audioStatus);
+                    break;
+
+                default:
+                    console.log('🔊 Unknown OBS audio message type:', type);
+            }
+        });
 
         // Helper function to get size-based styles
         function getSizeStyles(size) {
@@ -531,54 +593,20 @@ router.get('/:userId', async (req, res) => {
         function switchOverlayContent(status) {
             console.log('🔄 Switching overlay to status:', status);
 
-            // Hide all status messages with fade-out
-            const statusElements = ['status-offline', 'status-prepping', 'status-ending'];
-            statusElements.forEach(id => {
-                const element = document.getElementById(id);
-                if (element.classList.contains('show')) {
-                    element.style.opacity = '0';
-                    setTimeout(() => element.classList.remove('show'), 200);
-                }
-            });
-
             const countersContainer = document.getElementById('counters-container');
 
-            // Show appropriate content with fade-in after delay
-            setTimeout(() => {
-                switch(status) {
-                    case 'offline':
-                        const offlineEl = document.getElementById('status-offline');
-                        offlineEl.classList.add('show');
-                        offlineEl.style.opacity = '1';
-                        countersContainer.style.display = 'none';
-                        break;
-                    case 'prepping':
-                        const preppingEl = document.getElementById('status-prepping');
-                        preppingEl.classList.add('show');
-                        preppingEl.style.opacity = '1';
-                        countersContainer.style.display = 'none';
-                        break;
-                    case 'ending':
-                        const endingEl = document.getElementById('status-ending');
-                        endingEl.classList.add('show');
-                        endingEl.style.opacity = '1';
-                        countersContainer.style.display = 'none';
-                        break;
-                    case 'live':
-                        countersContainer.style.display = 'flex';
-                        countersContainer.style.opacity = '1';
-                        break;
-                    default:
-                        const defaultEl = document.getElementById('status-offline');
-                        defaultEl.classList.add('show');
-                        defaultEl.style.opacity = '1';
-                        countersContainer.style.display = 'none';
-                }
+            // Fade counters in when stream goes live, fade out otherwise
+            if (status === 'live') {
+                console.log('✨ Stream is live - fading counters into existence');
+                countersContainer.style.opacity = '1';
+            } else {
+                console.log('🌙 Stream not live - fading counters out');
+                countersContainer.style.opacity = '0';
+            }
 
-                // Trigger OBS browser source refresh
-                document.body.style.transform = 'translateZ(0)';
-                setTimeout(() => document.body.style.transform = 'none', 100);
-            }, 250);
+            // Trigger OBS browser source refresh
+            document.body.style.transform = 'translateZ(0)';
+            setTimeout(() => document.body.style.transform = 'none', 100);
         }
 
         // Update counter display
@@ -601,6 +629,81 @@ router.get('/:userId', async (req, res) => {
                     showAlert(type, change, value);
                 }
             }
+        }
+
+        // Update bits goal progress
+        function updateBitsGoal(bitsGoal) {
+            const goalLabel = document.querySelector('.goal-label');
+            const goalFill = document.querySelector('.goal-fill');
+
+            if (goalLabel && goalFill && bitsGoal) {
+                goalLabel.textContent = \`Goal: \${bitsGoal.current || 0} / \${bitsGoal.target || 1000}\`;
+                const percentage = Math.min(100, ((bitsGoal.current || 0) / (bitsGoal.target || 1000)) * 100);
+                goalFill.style.width = percentage + '%';
+
+                // Add glow effect if goal is reached
+                if (bitsGoal.current >= bitsGoal.target) {
+                    goalFill.style.boxShadow = '0 0 12px rgba(145, 70, 255, 0.8)';
+
+                    // Show goal reached celebration
+                    if (overlaySettings.animations.celebrationEffects) {
+                        showBitsGoalCelebration();
+                    }
+                } else {
+                    goalFill.style.boxShadow = '0 0 8px rgba(145, 70, 255, 0.5)';
+                }
+            }
+        }
+
+        // Show bits goal celebration
+        function showBitsGoalCelebration() {
+            const alert = document.getElementById('alert-popup');
+            if (alert) {
+                alert.innerHTML = '🎯 BITS GOAL REACHED! 💎';
+                alert.classList.add('show');
+
+                // Add sparkle effect
+                createSparkles();
+
+                setTimeout(() => {
+                    alert.classList.add('hide');
+                    setTimeout(() => {
+                        alert.classList.remove('show', 'hide');
+                    }, 500);
+                }, 5000);
+            }
+        }
+
+        // Create sparkle effects for goal celebration
+        function createSparkles() {
+            const sparkleContainer = document.createElement('div');
+            sparkleContainer.style.cssText = \`
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                pointer-events: none;
+                z-index: 999;
+            \`;
+            document.body.appendChild(sparkleContainer);
+
+            for (let i = 0; i < 20; i++) {
+                const sparkle = document.createElement('div');
+                sparkle.textContent = '✨';
+                sparkle.style.cssText = \`
+                    position: absolute;
+                    font-size: \${Math.random() * 2 + 1}rem;
+                    left: \${Math.random() * 100}vw;
+                    top: \${Math.random() * 100}vh;
+                    animation: sparkleFloat \${Math.random() * 3 + 2}s ease-out forwards;
+                \`;
+                sparkleContainer.appendChild(sparkle);
+            }
+
+            setTimeout(() => {
+                document.body.removeChild(sparkleContainer);
+            }, 5000);
         }
 
         // Show animated alert
@@ -874,18 +977,63 @@ router.get('/:userId', async (req, res) => {
         socket.on('counterUpdate', (data) => {
             console.log('📊 Overlay received counterUpdate:', data);
 
-            // Backend sends counters directly as {deaths: X, swears: Y, screams: Z, bits: W}
+            // Backend sends data with structure: { userId, counters: {deaths, swears, screams, bits}, change }
+            const counters = data.counters || data;  // Handle both formats
+
             if (overlaySettings.counters.deaths) {
-                updateCounter('deaths', data.deaths || 0);
+                updateCounter('deaths', counters.deaths || 0);
             }
             if (overlaySettings.counters.swears) {
-                updateCounter('swears', data.swears || 0);
+                updateCounter('swears', counters.swears || 0);
             }
             if (overlaySettings.counters.screams) {
-                updateCounter('screams', data.screams || 0);
+                updateCounter('screams', counters.screams || 0);
             }
             if (overlaySettings.counters.bits) {
-                updateCounter('bits', data.bits || 0);
+                updateCounter('bits', counters.bits || 0);
+
+                // Update bits goal if enabled and present
+                if (overlaySettings.bitsGoal && overlaySettings.bitsGoal.enabled) {
+                    updateBitsGoal(counters.bits, overlaySettings.bitsGoal.target);
+                }
+            }
+        });
+
+        // Listen for bits goal updates
+        socket.on('bitsGoalUpdate', (data) => {
+            if (data.userId === userId) {
+                console.log('🎯 Bits goal update received:', data);
+
+                if (overlaySettings.bitsGoal && overlaySettings.bitsGoal.enabled) {
+                    updateBitsGoal(data.current, data.target);
+
+                    // Update local settings
+                    overlaySettings.bitsGoal.current = data.current;
+                    overlaySettings.bitsGoal.target = data.target;
+
+                    // Show celebration if completed
+                    if (data.completed && data.current >= data.target) {
+                        showBitsGoalCelebration();
+                    }
+                }
+            }
+        });
+
+        // Listen for bits goal completion
+        socket.on('bitsGoalComplete', (data) => {
+            if (data.userId === userId) {
+                console.log('🎉 Bits goal completed!', data);
+
+                if (overlaySettings.bitsGoal && overlaySettings.bitsGoal.enabled) {
+                    // Update the goal display
+                    updateBitsGoal(data.current, data.target);
+
+                    // Show celebration animation
+                    showBitsGoalCelebration();
+
+                    // Update local settings
+                    overlaySettings.bitsGoal.current = data.current;
+                }
             }
         });
 
@@ -1544,6 +1692,103 @@ router.get('/setup/:userId', async (req, res) => {
                 padding: 20px;
             }
         }
+
+        /* Audio-specific styling */
+        .audio-info {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .audio-explanation {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .audio-path {
+            background: white;
+            border-left: 4px solid #4CAF50;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .audio-control-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin: 15px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .audio-control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+        }
+
+        .audio-features {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .obs-audio-settings {
+            background: rgba(33, 150, 243, 0.05);
+            border: 1px solid rgba(33, 150, 243, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .audio-troubleshoot {
+            background: rgba(255, 152, 0, 0.1);
+            border: 1px solid rgba(255, 152, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .audio-troubleshoot ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .audio-troubleshoot li {
+            margin: 8px 0;
+        }
+
+        .sound-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .sound-list ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .sound-list li {
+            background: white;
+            border-radius: 6px;
+            padding: 10px 15px;
+            margin: 8px 0;
+            border-left: 4px solid #6c5ce7;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -1600,14 +1845,27 @@ router.get('/setup/:userId', async (req, res) => {
 
             <div class="step">
                 <span class="step-number">4</span>
+                <strong>Configure Audio (Important!)</strong><br>
+                <ul>
+                    <li><strong>✅ Control audio via OBS</strong> - Enables audio capture</li>
+                    <li><strong>Monitor and Output</strong> - Audio goes to stream (recommended)</li>
+                    <li><strong>Don't mute</strong> the browser source in OBS Audio Mixer</li>
+                </ul>
+                <div class="audio-info">
+                    <strong>🔊 Dual Audio System:</strong> Your overlay plays notification sounds both to your stream (captured by OBS) AND to your desktop speakers for immediate feedback!
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">5</span>
                 <strong>Position Your Overlay</strong><br>
                 Click OK, then drag and resize the overlay in your OBS preview to position it where you want on your stream
             </div>
 
             <div class="step">
-                <span class="step-number">5</span>
-                <strong>Start Streaming!</strong><br>
-                Your overlay will now show live counter updates. Test by using chat commands like <strong>!death+</strong> or updating counters in your dashboard
+                <span class="step-number">6</span>
+                <strong>Test Audio & Start Streaming!</strong><br>
+                Visit the <a href="${baseUrl}/overlay/${userId}/audio-control" target="_blank"><strong>Audio Control Panel</strong></a> to test sounds and adjust volume. Your overlay will show live counter updates when you use chat commands like <strong>!death+</strong>
             </div>
         </div>
 
@@ -1644,7 +1902,77 @@ router.get('/setup/:userId', async (req, res) => {
         </div>
 
         <div class="card">
-            <h2><span class="emoji">💬</span> Chat Commands</h2>
+            <h2><span class="emoji">�</span> Audio Setup & Control</h2>
+
+            <h3>🎵 How Overlay Audio Works</h3>
+            <p>Your overlay features an advanced <strong>dual audio system</strong>:</p>
+
+            <div class="audio-explanation">
+                <div class="audio-path">
+                    <strong>Stream Audio:</strong> OBS Browser Source automatically captures notification sounds for your viewers
+                </div>
+                <div class="audio-path">
+                    <strong>Desktop Audio:</strong> Same sounds play on your speakers simultaneously for immediate feedback
+                </div>
+            </div>
+
+            <h3>🎚️ Audio Control Panel</h3>
+            <p>Fine-tune your audio experience:</p>
+            <a href="${baseUrl}/overlay/${userId}/audio-control" target="_blank" class="audio-control-btn">
+                <span class="emoji">🎛️</span> Open Audio Control Panel
+            </a>
+
+            <div class="audio-features">
+                <ul>
+                    <li><strong>Master Volume:</strong> Control overall notification volume (0-100%)</li>
+                    <li><strong>Desktop Audio Toggle:</strong> Enable/disable sounds on your speakers</li>
+                    <li><strong>Desktop Volume:</strong> Independent volume for your speakers (% of stream volume)</li>
+                    <li><strong>Sound Testing:</strong> Test all notification types instantly</li>
+                    <li><strong>Real-time Control:</strong> Changes apply immediately to your overlay</li>
+                </ul>
+            </div>
+
+            <h3>🎮 OBS Browser Source Audio Setup</h3>
+            <div class="obs-audio-settings">
+                <p><strong>🚨 REQUIRED for notification sounds in stream:</strong></p>
+                <ol>
+                    <li><strong>✅ Enable "Control audio via OBS"</strong> in Browser Source properties</li>
+                    <li><strong>✅ Unmute browser source</strong> in OBS Audio Mixer</li>
+                    <li><strong>✅ Set to "Monitor and Output"</strong> in Advanced Audio Properties</li>
+                    <li><strong>✅ Restart browser source</strong> after changes</li>
+                </ol>
+
+                <div class="audio-troubleshoot">
+                    <p><strong>🔧 Troubleshooting - No Audio in Stream:</strong></p>
+                    <ol>
+                        <li><strong>Browser Source Properties:</strong> Right-click → Properties → ✅ Check "Control audio via OBS"</li>
+                        <li><strong>Audio Mixer:</strong> Browser source should show as "Browser Source" (not muted 🔇)</li>
+                        <li><strong>Advanced Audio:</strong> Click gear ⚙️ → Advanced Audio Properties → Set "Audio Monitoring" to "Monitor and Output"</li>
+                        <li><strong>Refresh Source:</strong> Right-click browser source → Refresh</li>
+                        <li><strong>Test Audio:</strong> Use Audio Control Panel below to verify overlay is playing sounds</li>
+                        <li><strong>Browser Issues:</strong> Try refreshing the browser source or restarting OBS</li>
+                    </ol>
+
+                    <p><strong>⚠️ Common Issue:</strong> If you don't see your overlay browser source in the Audio Mixer, the "Control audio via OBS" setting is not enabled.</p>
+                </div>
+            </div>
+
+            <h3>🎯 Notification Sounds</h3>
+            <p>Your overlay includes these notification sounds:</p>
+            <div class="sound-list">
+                <ul>
+                    <li><strong>🫶 Follow:</strong> Heart Monitor (heartMonitor.wav)</li>
+                    <li><strong>⭐ Subscription:</strong> Hype Train (hypeTrain.wav)</li>
+                    <li><strong>🔄 Resub:</strong> Typewriter (typewriter.wav)</li>
+                    <li><strong>🎁 Gift Sub:</strong> Pill Rattle (pillRattle.mp3)</li>
+                    <li><strong>💎 Bits:</strong> Electroshock (electroshock.wav)</li>
+                    <li><strong>🏆 Milestone:</strong> Alarm (alarm.wav)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><span class="emoji">�💬</span> Chat Commands</h2>
             <h3>Viewer Commands (Everyone can use):</h3>
             <ul>
                 <li><strong>!deaths</strong> - Show current death count</li>
@@ -1700,6 +2028,9 @@ router.get('/setup/:userId', async (req, res) => {
                 <h4><span class="emoji">🩺</span> Troubleshooting</h4>
                 <ul>
                     <li><strong>Overlay not showing?</strong> Check that the URL is correct and your internet connection is stable</li>
+                    <li><strong>No audio in stream?</strong> Ensure "Control audio via OBS" is checked and browser source isn't muted in OBS mixer</li>
+                    <li><strong>Sounds not playing on desktop?</strong> Visit the <a href="${baseUrl}/overlay/${userId}/audio-control" target="_blank">Audio Control Panel</a> to test and enable desktop audio</li>
+                    <li><strong>Audio too quiet/loud?</strong> Use Audio Control Panel to adjust master volume and desktop volume separately</li>
                     <li><strong>Counters not updating?</strong> Verify that chat commands are enabled in your feature settings</li>
                     <li><strong>Overlay looks wrong?</strong> Try refreshing the browser source in OBS (right-click → Refresh)</li>
                     <li><strong>Performance issues?</strong> Reduce animation effects or update frequency in settings</li>
@@ -1711,10 +2042,14 @@ router.get('/setup/:userId', async (req, res) => {
         <div class="card">
             <h2><span class="emoji">🎯</span> Pro Tips</h2>
             <ul>
+                <li><strong>Test Audio First:</strong> Use the Audio Control Panel to test all sounds before going live</li>
+                <li><strong>Set Desktop Volume:</strong> Keep desktop audio at 80% or lower to avoid feedback</li>
+                <li><strong>Check OBS Mixer:</strong> Ensure browser source shows audio activity when notifications play</li>
                 <li><strong>Test First:</strong> Preview your overlay before going live to ensure everything looks right</li>
                 <li><strong>Backup Scenes:</strong> Create multiple OBS scenes with different overlay configurations</li>
                 <li><strong>Monitor Performance:</strong> Keep an eye on OBS CPU usage - disable animations if needed</li>
                 <li><strong>Engage Viewers:</strong> Encourage chat to use viewer commands to check your stats</li>
+                <li><strong>Audio Balance:</strong> Adjust notification volume so it complements, not overpowers, your game audio</li>
                 <li><strong>Regular Updates:</strong> Check for new features in the dashboard settings periodically</li>
             </ul>
         </div>
@@ -1747,6 +2082,277 @@ router.get('/setup/:userId', async (req, res) => {
   } catch (error) {
     console.error('Error serving overlay setup instructions:', error);
     res.status(500).send('Error loading setup instructions');
+  }
+});
+
+/**
+ * Audio Control Panel for testing dual audio setup
+ * GET /overlay/:userId/audio-control
+ */
+router.get('/:userId/audio-control', async (req, res) => {
+  try {
+    const user = await database.getUser(req.params.userId);
+
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
+
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? 'https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io'
+      : `http://localhost:${process.env.PORT || 3000}`;
+
+    const overlayUrl = `${baseUrl}/overlay/${req.params.userId}`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Control Panel - ${user.displayName || user.username}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .card {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #333;
+        }
+        .control-group {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #333;
+            border-radius: 8px;
+        }
+        .control-group h3 { margin-bottom: 10px; color: #4CAF50; }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0;
+        }
+        .slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #555;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        .btn {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover { background: #45a049; }
+        .btn.test { background: #2196F3; }
+        .btn.test:hover { background: #1976D2; }
+        .toggle {
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+            background: #555;
+            border-radius: 15px;
+            position: relative;
+            cursor: pointer;
+        }
+        .toggle.active { background: #4CAF50; }
+        .toggle:after {
+            content: '';
+            position: absolute;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: 0.3s;
+        }
+        .toggle.active:after { left: 32px; }
+        .status {
+            background: #1a1a1a;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔊 Audio Control Panel</h1>
+            <p>Test and configure dual audio system for <strong>${user.displayName || user.username}</strong></p>
+            <p><small>Overlay URL: ${overlayUrl}</small></p>
+        </div>
+
+        <div class="card">
+            <h2>🎚️ Audio Settings</h2>
+
+            <div class="control-group">
+                <h3>Master Volume</h3>
+                <div class="slider-container">
+                    <span>0%</span>
+                    <input type="range" class="slider" id="masterVolume" min="0" max="100" value="70">
+                    <span>100%</span>
+                    <span id="masterVolumeValue">70%</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Desktop Audio</h3>
+                <div class="slider-container">
+                    <span>Enable Desktop Audio:</span>
+                    <div class="toggle active" id="desktopAudioToggle"></div>
+                    <span id="desktopAudioStatus">Enabled</span>
+                </div>
+                <div class="slider-container">
+                    <span>Desktop Volume (% of stream):</span>
+                    <input type="range" class="slider" id="desktopVolumeMultiplier" min="0" max="200" value="80">
+                    <span id="desktopVolumeValue">80%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🧪 Test Audio</h2>
+            <p>Test different notification sounds:</p>
+            <div style="margin: 15px 0;">
+                <button class="btn test" onclick="testSound('follow')">🫶 Follow</button>
+                <button class="btn test" onclick="testSound('subscription')">⭐ Subscription</button>
+                <button class="btn test" onclick="testSound('resub')">🔄 Resub</button>
+                <button class="btn test" onclick="testSound('giftsub')">🎁 Gift Sub</button>
+                <button class="btn test" onclick="testSound('bits')">💎 Bits</button>
+                <button class="btn test" onclick="testSound('milestone')">🏆 Milestone</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Status Log</h2>
+            <div class="status" id="statusLog">
+                Audio control panel ready...<br>
+            </div>
+            <button class="btn" onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div class="card">
+            <h2>ℹ️ Instructions</h2>
+            <p>1. <strong>Open your overlay in OBS</strong> as a Browser Source</p>
+            <p>2. <strong>Adjust settings above</strong> and test different sounds</p>
+            <p>3. <strong>Stream Audio:</strong> Captured by OBS Browser Source</p>
+            <p>4. <strong>Desktop Audio:</strong> Plays on your speakers for immediate feedback</p>
+            <p>5. <strong>Changes apply instantly</strong> to your overlay</p>
+        </div>
+    </div>
+
+    <script>
+        const overlayUrl = '${overlayUrl}';
+        let overlayWindow = null;
+
+        // Get overlay window reference
+        function getOverlayWindow() {
+            if (!overlayWindow || overlayWindow.closed) {
+                overlayWindow = window.open(overlayUrl, 'overlay', 'width=400,height=600');
+            }
+            return overlayWindow;
+        }
+
+        // Send message to overlay
+        function sendToOverlay(type, payload) {
+            const overlay = getOverlayWindow();
+            if (overlay) {
+                overlay.postMessage({ type, payload }, window.location.origin);
+                log('📤 Sent to overlay: ' + type, payload);
+            } else {
+                log('❌ Could not communicate with overlay window');
+            }
+        }
+
+        // Log function
+        function log(message, data = null) {
+            const statusLog = document.getElementById('statusLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = timestamp + ' - ' + message + (data ? ' ' + JSON.stringify(data) : '') + '<br>';
+            statusLog.innerHTML += logEntry;
+            statusLog.scrollTop = statusLog.scrollHeight;
+        }
+
+        // Clear log
+        function clearLog() {
+            document.getElementById('statusLog').innerHTML = 'Log cleared...<br>';
+        }
+
+        // Test sound
+        function testSound(eventType) {
+            sendToOverlay('TEST_NOTIFICATION_AUDIO', { eventType });
+            log('🧪 Testing sound: ' + eventType);
+        }
+
+        // Master volume control
+        document.getElementById('masterVolume').addEventListener('input', (e) => {
+            const volume = e.target.value / 100;
+            document.getElementById('masterVolumeValue').textContent = e.target.value + '%';
+            sendToOverlay('SET_AUDIO_VOLUME', { volume });
+        });
+
+        // Desktop audio toggle
+        document.getElementById('desktopAudioToggle').addEventListener('click', (e) => {
+            const toggle = e.target;
+            const enabled = !toggle.classList.contains('active');
+
+            if (enabled) {
+                toggle.classList.add('active');
+                document.getElementById('desktopAudioStatus').textContent = 'Enabled';
+            } else {
+                toggle.classList.remove('active');
+                document.getElementById('desktopAudioStatus').textContent = 'Disabled';
+            }
+
+            sendToOverlay('SET_DESKTOP_AUDIO', { enabled });
+        });
+
+        // Desktop volume multiplier
+        document.getElementById('desktopVolumeMultiplier').addEventListener('input', (e) => {
+            const multiplier = e.target.value / 100;
+            document.getElementById('desktopVolumeValue').textContent = e.target.value + '%';
+            sendToOverlay('SET_DESKTOP_VOLUME_MULTIPLIER', { multiplier });
+        });
+
+        // Initialize
+        log('🚀 Audio Control Panel initialized');
+        log('📖 Click "Test Audio" buttons to test different sounds');
+        log('🔊 Adjust settings and test with your OBS overlay');
+    </script>
+</body>
+</html>`;
+
+    res.send(html);
+  } catch (error) {
+    console.error('Error serving audio control panel:', error);
+    res.status(500).send('Error loading audio control panel');
   }
 });
 

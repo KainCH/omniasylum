@@ -1589,20 +1589,29 @@ router.post('/test-notifications', requireAuth, requireAdmin, async (req, res) =
         newValue: 100,
         previousMilestone: 50,
         timestamp: new Date().toISOString()
+      },
+      raid: {
+        userId: req.user.userId,
+        username: req.user.username,
+        raider: 'TestRaider',
+        viewers: 42,
+        timestamp: new Date().toISOString()
       }
     };
 
     const data = testData[eventType];
     if (!data) {
-      return res.status(400).json({ error: 'Invalid event type. Use: follow, subscription, resub, giftsub, bits, milestone' });
+      return res.status(400).json({ error: 'Invalid event type. Use: follow, subscription, resub, giftsub, bits, milestone, raid' });
     }
 
     // Emit the test event
-    const eventName = eventType === 'subscription' ? 'newSubscription' :
+    const eventName = eventType === 'follow' ? 'newFollower' :
+                     eventType === 'subscription' ? 'newSubscription' :
                      eventType === 'resub' ? 'newResub' :
                      eventType === 'giftsub' ? 'newGiftSub' :
                      eventType === 'bits' ? 'newCheer' :
                      eventType === 'milestone' ? 'milestoneReached' :
+                     eventType === 'raid' ? 'raidReceived' :
                      `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
 
     io.to(`user:${req.user.userId}`).emit(eventName, data);

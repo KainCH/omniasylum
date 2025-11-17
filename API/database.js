@@ -162,7 +162,12 @@ class Database {
       counters: {
         deaths: true,
         swears: true,
+        screams: true,
         bits: false
+      },
+      bitsGoal: {
+        target: 1000,
+        current: 0
       },
       theme: {
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -1140,6 +1145,10 @@ class Database {
             screams: true,
             bits: false
           },
+          bitsGoal: {
+            target: 1000,
+            current: 0
+          },
           theme: {
             backgroundColor: 'rgba(0, 0, 0, 0.7)',
             borderColor: '#d4af37',
@@ -1165,6 +1174,10 @@ class Database {
           swears: true,
           screams: true,
           bits: false
+        },
+        bitsGoal: {
+          target: 1000,
+          current: 0
         },
         theme: {
           backgroundColor: 'rgba(0, 0, 0, 0.7)',

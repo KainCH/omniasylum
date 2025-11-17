@@ -486,7 +486,7 @@ router.put('/overlay/settings', requireAuth, async (req, res) => {
       });
     }
 
-    const { enabled, position, counters, theme, animations } = req.body;
+    const { enabled, position, counters, theme, animations, bitsGoal } = req.body;
 
     // Validate the settings structure
     const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -503,6 +503,7 @@ router.put('/overlay/settings', requireAuth, async (req, res) => {
       counters: {
         deaths: counters?.deaths === true,
         swears: counters?.swears === true,
+        screams: counters?.screams === true,
         bits: counters?.bits === true
       },
       theme: {
@@ -514,6 +515,10 @@ router.put('/overlay/settings', requireAuth, async (req, res) => {
         enabled: animations?.enabled !== false, // Default true
         showAlerts: animations?.showAlerts !== false, // Default true
         celebrationEffects: animations?.celebrationEffects !== false // Default true
+      },
+      bitsGoal: {
+        target: typeof bitsGoal?.target === 'number' ? Math.max(0, bitsGoal.target) : 1000,
+        current: typeof bitsGoal?.current === 'number' ? Math.max(0, bitsGoal.current) : 0
       }
     };
 
@@ -527,6 +532,59 @@ router.put('/overlay/settings', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ Error updating overlay settings:', error);
     res.status(500).json({ error: 'Failed to update overlay settings' });
+  }
+});
+
+/**
+ * Update bits goal progress (when bits are received)
+ * POST /api/counters/overlay/bits-progress
+ */
+router.post('/overlay/bits-progress', requireAuth, async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    // Get current overlay settings
+    const currentSettings = await database.getUserOverlaySettings(req.user.userId);
+
+    if (!currentSettings.bitsGoal) {
+      return res.status(400).json({ error: 'Bits goal not configured' });
+    }
+
+    // Update the current progress
+    const newCurrent = Math.min(
+      currentSettings.bitsGoal.current + amount,
+      currentSettings.bitsGoal.target
+    );
+
+    const updatedSettings = {
+      ...currentSettings,
+      bitsGoal: {
+        ...currentSettings.bitsGoal,
+        current: newCurrent
+      }
+    };
+
+    await database.updateUserOverlaySettings(req.user.userId, updatedSettings);
+
+    console.log(`✅ Updated bits goal progress for ${req.user.username}: +${amount} bits (${newCurrent}/${currentSettings.bitsGoal.target})`);
+
+    // Check if goal is reached
+    const goalReached = newCurrent >= currentSettings.bitsGoal.target;
+
+    res.json({
+      message: 'Bits goal progress updated',
+      bitsGoal: updatedSettings.bitsGoal,
+      goalReached,
+      progress: Math.round((newCurrent / currentSettings.bitsGoal.target) * 100)
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating bits goal progress:', error);
+    res.status(500).json({ error: 'Failed to update bits goal progress' });
   }
 });
 

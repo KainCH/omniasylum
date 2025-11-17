@@ -57,8 +57,12 @@ function OverlaySettingsModal({
           counters: {
             deaths: true,
             swears: true,
-            bits: false,
-            channelPoints: false
+            screams: true,
+            bits: false
+          },
+          bitsGoal: {
+            target: 1000,
+            current: 0
           },
           theme: {
             backgroundColor: 'rgba(0,0,0,0.8)',
@@ -83,7 +87,8 @@ function OverlaySettingsModal({
           enabled: false,
           position: 'top-right',
           size: 'medium',
-          counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+          counters: { deaths: true, swears: true, screams: true, bits: false },
+          bitsGoal: { target: 1000, current: 0 },
           theme: { backgroundColor: 'rgba(0,0,0,0.8)', borderColor: '#9146ff', textColor: '#ffffff' },
           animations: { enabled: true, showAlerts: true, celebrationEffects: true, bounceOnUpdate: true, fadeTransitions: true }
         })
@@ -95,7 +100,8 @@ function OverlaySettingsModal({
         enabled: false,
         position: 'top-right',
         size: 'medium',
-        counters: { deaths: true, swears: true, bits: false, channelPoints: false },
+        counters: { deaths: true, swears: true, screams: true, bits: false },
+        bitsGoal: { target: 1000, current: 0 },
         theme: { backgroundColor: 'rgba(0,0,0,0.8)', borderColor: '#9146ff', textColor: '#ffffff' },
         animations: { enabled: true, showAlerts: true, celebrationEffects: true, bounceOnUpdate: true, fadeTransitions: true }
       })
@@ -252,8 +258,8 @@ function OverlaySettingsModal({
                   {[
                     { key: 'deaths', label: '💀 Deaths', enabled: true },
                     { key: 'swears', label: '🤬 Swears', enabled: true },
-                    { key: 'bits', label: '💎 Bits', enabled: false },
-                    { key: 'channelPoints', label: '⭐ Channel Points', enabled: false }
+                    { key: 'screams', label: '😱 Screams', enabled: true },
+                    { key: 'bits', label: '💎 Bits', enabled: false }
                   ].map(counter => (
                     <label key={counter.key} style={{
                       display: 'flex',
@@ -277,6 +283,78 @@ function OverlaySettingsModal({
                   ))}
                 </div>
               </div>
+
+              {/* Bits Goal Settings */}
+              {overlaySettings.counters?.bits && (
+                <div style={{ marginBottom: '25px' }}>
+                  <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎯 Bits Goal</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                        Goal Amount:
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={overlaySettings.bitsGoal?.target || 1000}
+                        onChange={(e) => handleSettingChange('bitsGoal.target', parseInt(e.target.value) || 0)}
+                        disabled={isLoading}
+                        placeholder="1000"
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          background: '#2a2a2a',
+                          color: '#fff',
+                          border: '1px solid #444',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                        Progress: {overlaySettings.bitsGoal?.current || 0} / {overlaySettings.bitsGoal?.target || 1000}
+                      </label>
+                      <button
+                        onClick={() => handleSettingChange('bitsGoal.current', 0)}
+                        disabled={isLoading}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          background: '#dc3545',
+                          color: '#fff',
+                          border: 'none',
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🔄 Reset Progress
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '10px', background: '#1a1a1a', padding: '10px', borderRadius: '6px' }}>
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>
+                      Progress: {Math.round(((overlaySettings.bitsGoal?.current || 0) / (overlaySettings.bitsGoal?.target || 1000)) * 100)}%
+                    </div>
+                    <div style={{
+                      width: '100%',
+                      height: '8px',
+                      background: '#333',
+                      borderRadius: '4px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: `${Math.min(100, ((overlaySettings.bitsGoal?.current || 0) / (overlaySettings.bitsGoal?.target || 1000)) * 100)}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #9146ff, #772ce8)',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Animations */}
               <div style={{ marginBottom: '25px' }}>
