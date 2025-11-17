@@ -1,0 +1,235 @@
+import { useState, useEffect } from 'react'
+import './DiscordWebhookSettings.css'
+import { ToggleSwitch, ActionButton, FormSection, StatusBadge } from './ui/CommonControls'
+import { useDiscordSettings } from '../hooks'
+
+function DiscordWebhookSettings({ user }) {
+  // Early return if user data is not available yet
+  if (!user) {
+    return (
+      <div className="discord-settings-loading">
+        <p>Loading user data...</p>
+      </div>
+    )
+  }
+
+  // Use our Discord settings hook
+  const {
+    webhookData,
+    notificationSettings,
+    discordInvite,
+    message,
+    messageType,
+    isLoading,
+    updateNotificationSetting,
+    updateWebhookData,
+    saveDiscordSettings,
+    testDiscordWebhook,
+    resetToDefaults,
+    validateSettings,
+    showMessage
+  } = useDiscordSettings(user)
+
+  // Tab state management
+  const [activeTab, setActiveTab] = useState('notifications')
+
+  // Debug tab state changes
+  useEffect(() => {
+    console.log('🔄 ACTIVE TAB CHANGED:', activeTab)
+  }, [activeTab])
+
+  // Debug notification settings changes
+  useEffect(() => {
+    console.log('🔔 NOTIFICATION SETTINGS CHANGED:', {
+      deathMilestoneEnabled: notificationSettings?.deathMilestoneEnabled,
+      swearMilestoneEnabled: notificationSettings?.swearMilestoneEnabled,
+      deathThresholds: notificationSettings?.deathThresholds,
+      swearThresholds: notificationSettings?.swearThresholds,
+      fullSettings: notificationSettings
+    })
+  }, [notificationSettings])
+
+  return (
+    <div className="discord-webhook-settings">
+      <div className="settings-header">
+        <h3>🔔 Discord Settings</h3>
+        {webhookData && (
+          <StatusBadge
+            status={webhookData?.enabled ? 'success' : 'info'}
+          >
+            {webhookData?.enabled ? 'Enabled' : 'Disabled'}
+          </StatusBadge>
+        )}
+      </div>
+
+      {message && (
+        <div className={`message ${messageType}`}>
+          {message}
+        </div>
+      )}
+
+      {/* Tab Navigation */}
+      <div className="tab-navigation">
+        <button
+          className={`tab-button ${activeTab === 'notifications' ? 'active' : ''}`}
+          onClick={() => {
+            console.log('📢 Notifications tab clicked, current:', activeTab)
+            setActiveTab('notifications')
+          }}
+        >
+          📢 Notifications
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'counters' ? 'active' : ''}`}
+          onClick={() => {
+            console.log('🎯 Counters tab clicked, current:', activeTab)
+            setActiveTab('counters')
+          }}
+        >
+          🎯 Counters & Milestones
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'configuration' ? 'active' : ''}`}
+          onClick={() => {
+            console.log('⚙️ Configuration tab clicked, current:', activeTab)
+            setActiveTab('configuration')
+          }}
+        >
+          ⚙️ Configuration
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="tab-content">
+        {activeTab === 'notifications' && (
+          <div className="notifications-tab">
+            <FormSection title="General Channel Notifications">
+              <ToggleSwitch
+                id="channel-notifications"
+                label="Enable general channel notifications"
+                checked={notificationSettings?.enableChannelNotifications || false}
+                onChange={(checked) => updateNotificationSetting('enableChannelNotifications', checked)}
+              />
+            </FormSection>
+
+            <FormSection title="Milestone Notifications">
+              <div className="milestone-section">
+                <h4>Death Milestones</h4>
+                <ToggleSwitch
+                  id="death-milestone-enabled"
+                  label="Enable Death Milestone Notifications"
+                  checked={notificationSettings?.deathMilestoneEnabled || false}
+                  onChange={(checked) => updateNotificationSetting('deathMilestoneEnabled', checked)}
+                />
+                {notificationSettings?.deathMilestoneEnabled && (
+                  <div className="threshold-input">
+                    <label>Death Thresholds (comma-separated):</label>
+                    <input
+                      type="text"
+                      value={notificationSettings?.deathThresholds || ''}
+                      onChange={(e) => updateNotificationSetting('deathThresholds', e.target.value)}
+                      placeholder="10,25,50,100,250,500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="milestone-section">
+                <h4>Swear Milestones</h4>
+                <ToggleSwitch
+                  id="swear-milestone-enabled"
+                  label="Enable Swear Milestone Notifications"
+                  checked={notificationSettings?.swearMilestoneEnabled || false}
+                  onChange={(checked) => updateNotificationSetting('swearMilestoneEnabled', checked)}
+                />
+                {notificationSettings?.swearMilestoneEnabled && (
+                  <div className="threshold-input">
+                    <label>Swear Thresholds (comma-separated):</label>
+                    <input
+                      type="text"
+                      value={notificationSettings?.swearThresholds || ''}
+                      onChange={(e) => updateNotificationSetting('swearThresholds', e.target.value)}
+                      placeholder="25,50,100,200,500"
+                    />
+                  </div>
+                )}
+              </div>
+            </FormSection>
+          </div>
+        )}
+
+        {activeTab === 'counters' && (
+          <div className="counters-tab">
+            <FormSection title="Counter Integration">
+              <p>Counter integration settings and milestone configurations.</p>
+              <div className="counter-settings">
+                <p>🚧 Counter-specific settings will be added here.</p>
+              </div>
+            </FormSection>
+          </div>
+        )}
+
+        {activeTab === 'configuration' && (
+          <div className="configuration-tab">
+            <FormSection title="Discord Webhook Configuration">
+              <ToggleSwitch
+                id="webhook-enabled"
+                label="Enable Discord Webhook"
+                checked={webhookData?.enabled || false}
+                onChange={(checked) => updateWebhookData('enabled', checked)}
+              />
+              
+              {webhookData?.enabled && (
+                <div className="webhook-url-section">
+                  <label htmlFor="webhook-url">Discord Webhook URL:</label>
+                  <input
+                    id="webhook-url"
+                    type="url"
+                    value={webhookData?.webhookUrl || ''}
+                    onChange={(e) => updateWebhookData('webhookUrl', e.target.value)}
+                    placeholder="https://discord.com/api/webhooks/..."
+                  />
+                  <ActionButton
+                    variant="secondary"
+                    onClick={testDiscordWebhook}
+                    disabled={isLoading || !webhookData?.webhookUrl}
+                  >
+                    Test Webhook
+                  </ActionButton>
+                </div>
+              )}
+
+              {discordInvite && (
+                <div className="discord-invite-section">
+                  <label>Discord Server Invite:</label>
+                  <a href={discordInvite} target="_blank" rel="noopener noreferrer">
+                    Join Discord Server
+                  </a>
+                </div>
+              )}
+            </FormSection>
+
+            <div className="settings-actions">
+              <ActionButton
+                variant="primary"
+                onClick={saveDiscordSettings}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Saving...' : 'Save Settings'}
+              </ActionButton>
+              <ActionButton
+                variant="secondary"
+                onClick={() => resetToDefaults()}
+                disabled={isLoading}
+              >
+                Reset to Defaults
+              </ActionButton>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default DiscordWebhookSettings

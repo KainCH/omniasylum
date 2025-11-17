@@ -479,6 +479,14 @@ export const adminAPI = {
       method: 'PUT',
       body: JSON.stringify(inviteData)
     });
+  },
+
+  // Create new user
+  createUser: async (userData) => {
+    return await makeAuthenticatedJsonRequest('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(userData)
+    });
   }
 };
 

@@ -21,7 +21,7 @@
   padding: 12px 16px;
   background: transparent;
   border: none;
-  color: #ccc;
+  color: #ddd;
   cursor: pointer;
   border-radius: 6px;
   transition: all 0.2s ease;
@@ -35,14 +35,20 @@
 }
 
 .tab-button.active {
-  background: rgba(100, 100, 255, 0.2);
-  color: #6464ff;
+  background: linear-gradient(135deg, rgba(100, 100, 255, 0.3), rgba(100, 100, 255, 0.2));
+  color: #8888ff;
   font-weight: 600;
+  border: 1px solid rgba(100, 100, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(100, 100, 255, 0.1);
 }
 
 /* Tab Content */
 .tab-content {
   margin-top: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .tab-panel {
@@ -99,7 +105,7 @@
 
 .template-header p {
   margin: 0;
-  color: #ccc;
+  color: #e0e0e0;
   font-size: 14px;
 }
 
@@ -114,8 +120,10 @@
 
 .settings-header h3 {
   margin: 0;
-  color: #fff;
+  color: #ffffff;
   font-size: 1.5rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .feature-status-badge {
@@ -145,7 +153,7 @@
 }
 
 .settings-info p {
-  color: #ccc;
+  color: #e0e0e0;
   margin-bottom: 10px;
 }
 
@@ -217,7 +225,7 @@
 .input-hint {
   display: block;
   margin-top: 5px;
-  color: #888;
+  color: #bbb;
   font-size: 0.875rem;
 }
 
@@ -425,6 +433,9 @@
 
 .option-toggle {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-left: auto;
 }
 
 /* Requirements notice */
@@ -553,7 +564,7 @@
 
 .discord-webhook-settings .input-group input::placeholder,
 .discord-webhook-settings .input-group textarea::placeholder {
-  color: #999 !important;
+  color: #bbb !important;
 }
 
 .discord-webhook-settings .action-button {
@@ -570,7 +581,7 @@
 .discord-webhook-settings .action-button:disabled {
   background: #333 !important;
   border-color: #555 !important;
-  color: #999 !important;
+  color: #bbb !important;
 }
 
 .discord-webhook-settings .action-button.danger {
@@ -667,7 +678,7 @@
 
 .discord-webhook-settings .status-badge.neutral {
   background: #333 !important;
-  color: #999 !important;
+  color: #bbb !important;
   border-color: #555 !important;
 }
 
@@ -707,7 +718,7 @@
 
 /* Loading states */
 .discord-webhook-settings .loading {
-  color: #999 !important;
+  color: #bbb !important;
 }
 
 .discord-webhook-settings .loading-spinner {
@@ -719,4 +730,182 @@
   background: #1e1e1e !important;
   color: #ffffff !important;
   border: 1px solid #555 !important;
+}
+
+/* Milestone Settings Styling */
+.milestone-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-label {
+  color: #fff;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.milestone-group {
+  background: rgba(30, 30, 40, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.milestone-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.milestone-title {
+  flex: 1;
+}
+
+.milestone-title h4 {
+  margin: 0 0 4px 0;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.milestone-title p {
+  margin: 0;
+  color: #bbb;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.milestone-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.milestone-icon {
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.milestone-config {
+  margin-top: 15px;
+}
+
+.threshold-input {
+  width: 100%;
+  padding: 12px;
+  background: #2a2a2a;
+  border: 2px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-family: 'Courier New', monospace;
+  transition: all 0.2s ease;
+}
+
+.threshold-input:focus {
+  outline: none;
+  border-color: #6464ff;
+  background: #333;
+}
+
+.threshold-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #1a1a1a;
+  border-color: #333;
+}
+
+.milestone-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Toggle Switch Styling for Discord Settings */
+.discord-webhook-settings .toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.discord-webhook-settings .toggle-switch input[type="checkbox"] {
+  position: relative;
+  width: 50px;
+  height: 28px;
+  appearance: none;
+  background: #333;
+  border-radius: 14px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.discord-webhook-settings .toggle-switch input[type="checkbox"]:checked {
+  background: #6464ff;
+}
+
+.discord-webhook-settings .toggle-switch input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.discord-webhook-settings .toggle-switch input[type="checkbox"]:checked::before {
+  transform: translateX(22px);
+}
+
+.discord-webhook-settings .toggle-switch.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.discord-webhook-settings .toggle-label {
+  color: #fff;
+  font-weight: 500;
+  font-size: 14px;
+  margin-left: 12px;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+.discord-webhook-settings .toggle-switch.disabled .toggle-label {
+  color: #888;
+  cursor: not-allowed;
+}
+
+/* Label positioning */
+.discord-webhook-settings .toggle-switch.label-left {
+  flex-direction: row-reverse;
+}
+
+.discord-webhook-settings .toggle-switch.label-left .toggle-label {
+  margin-left: 0;
+  margin-right: 12px;
+}
+
+.discord-webhook-settings .toggle-switch.label-right .toggle-label {
+  margin-left: 12px;
+  margin-right: 0;
 }

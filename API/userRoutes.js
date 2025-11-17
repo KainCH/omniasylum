@@ -522,27 +522,55 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Parse Discord settings from user object, with defaults
-    const discordSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : {
-      enableDiscordNotifications: false,
+    // Parse Discord settings from user object, with defaults matching admin structure
+    const defaultSettings = {
+      templateStyle: 'asylum_themed',
+      enabledNotifications: {
+        death_milestone: true,
+        swear_milestone: true,
+        stream_start: true,
+        stream_end: false,
+        follower_goal: false,
+        subscriber_milestone: false,
+        channel_point_redemption: false
+      },
+      milestoneThresholds: {
+        deaths: [10, 25, 50, 100, 250, 500],
+        swears: [25, 50, 100, 200, 500]
+      },
+      // Legacy flat structure for backward compatibility
       enableChannelNotifications: false,
-      deathMilestoneEnabled: false,
-      swearMilestoneEnabled: false,
-      deathThresholds: '10,25,50,100,250,500,1000',
-      swearThresholds: '25,50,100,250,500,1000,2500'
+      deathMilestoneEnabled: true,
+      swearMilestoneEnabled: true,
+      deathThresholds: '10,25,50,100,250,500',
+      swearThresholds: '25,50,100,200,500'
     };
+
+    const discordSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : defaultSettings;
 
     // Include webhook data in the response
     const webhookUrl = user?.discordWebhookUrl || '';
     const webhookEnabled = !!(webhookUrl && webhookUrl.trim());
 
+    // Map structured format to flat format for frontend compatibility
     const completeSettings = {
-      ...discordSettings,
-      // Add webhook data to the settings response
+      // Webhook data
       webhookUrl: webhookUrl,
       enabled: webhookEnabled,
-      // Add template style preference
-      templateStyle: user?.templateStyle || 'asylum_themed'
+      templateStyle: user?.templateStyle || discordSettings.templateStyle || 'asylum_themed',
+
+      // Map structured notifications to flat format
+      enableChannelNotifications: discordSettings.enableChannelNotifications || false,
+      deathMilestoneEnabled: discordSettings.enabledNotifications?.death_milestone ?? discordSettings.deathMilestoneEnabled ?? true,
+      swearMilestoneEnabled: discordSettings.enabledNotifications?.swear_milestone ?? discordSettings.swearMilestoneEnabled ?? true,
+
+      // Map structured thresholds to comma-separated strings
+      deathThresholds: discordSettings.milestoneThresholds?.deaths?.join(',') || discordSettings.deathThresholds || '10,25,50,100,250,500',
+      swearThresholds: discordSettings.milestoneThresholds?.swears?.join(',') || discordSettings.swearThresholds || '25,50,100,200,500',
+
+      // Include structured format for advanced features
+      enabledNotifications: discordSettings.enabledNotifications || defaultSettings.enabledNotifications,
+      milestoneThresholds: discordSettings.milestoneThresholds || defaultSettings.milestoneThresholds
     };
 
     res.json(completeSettings);
@@ -559,17 +587,51 @@ router.get('/discord-settings', requireAuth, async (req, res) => {
 router.put('/discord-settings', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const settings = req.body;
+    const incomingSettings = req.body;
 
-    console.log(`🔔 Updating Discord notification settings for user ${req.user.username}:`, settings);
+    console.log(`🔔 Updating Discord notification settings for user ${req.user.username}:`, incomingSettings);
+
+    // Get current settings to merge with updates
+    const user = await database.getUser(userId);
+    const currentSettings = user?.discordSettings ? JSON.parse(user.discordSettings) : {};
+
+    // Convert flat format to structured format for storage
+    const structuredSettings = {
+      templateStyle: incomingSettings.templateStyle || currentSettings.templateStyle || 'asylum_themed',
+      enabledNotifications: {
+        death_milestone: incomingSettings.deathMilestoneEnabled ?? incomingSettings.enabledNotifications?.death_milestone ?? currentSettings.enabledNotifications?.death_milestone ?? true,
+        swear_milestone: incomingSettings.swearMilestoneEnabled ?? incomingSettings.enabledNotifications?.swear_milestone ?? currentSettings.enabledNotifications?.swear_milestone ?? true,
+        stream_start: incomingSettings.enabledNotifications?.stream_start ?? currentSettings.enabledNotifications?.stream_start ?? true,
+        stream_end: incomingSettings.enabledNotifications?.stream_end ?? currentSettings.enabledNotifications?.stream_end ?? false,
+        follower_goal: incomingSettings.enabledNotifications?.follower_goal ?? currentSettings.enabledNotifications?.follower_goal ?? false,
+        subscriber_milestone: incomingSettings.enabledNotifications?.subscriber_milestone ?? currentSettings.enabledNotifications?.subscriber_milestone ?? false,
+        channel_point_redemption: incomingSettings.enabledNotifications?.channel_point_redemption ?? currentSettings.enabledNotifications?.channel_point_redemption ?? false
+      },
+      milestoneThresholds: {
+        deaths: incomingSettings.deathThresholds ?
+          incomingSettings.deathThresholds.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) :
+          (incomingSettings.milestoneThresholds?.deaths || currentSettings.milestoneThresholds?.deaths || [10, 25, 50, 100, 250, 500]),
+        swears: incomingSettings.swearThresholds ?
+          incomingSettings.swearThresholds.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) :
+          (incomingSettings.milestoneThresholds?.swears || currentSettings.milestoneThresholds?.swears || [25, 50, 100, 200, 500])
+      },
+      // Keep legacy flat structure for backward compatibility
+      enableChannelNotifications: incomingSettings.enableChannelNotifications ?? currentSettings.enableChannelNotifications ?? false,
+      deathMilestoneEnabled: incomingSettings.deathMilestoneEnabled ?? currentSettings.deathMilestoneEnabled ?? true,
+      swearMilestoneEnabled: incomingSettings.swearMilestoneEnabled ?? currentSettings.swearMilestoneEnabled ?? true,
+      deathThresholds: incomingSettings.deathThresholds || currentSettings.deathThresholds || '10,25,50,100,250,500',
+      swearThresholds: incomingSettings.swearThresholds || currentSettings.swearThresholds || '25,50,100,200,500'
+    };
+
+    console.log(`📊 Converted to structured format:`, structuredSettings);
 
     // Update user with new Discord settings using the specific method
-    const updatedUser = await database.updateUserDiscordSettings(userId, settings);
+    const updatedUser = await database.updateUserDiscordSettings(userId, structuredSettings);
 
     console.log(`✅ Discord notification settings updated for ${req.user.username}`);
     res.json({
       message: 'Discord notification settings updated successfully',
-      settings: settings
+      settings: structuredSettings
     });
   } catch (error) {
     console.error('❌ Error updating Discord notification settings:', error);

@@ -1,26 +1,9 @@
 import { useState, useEffect } from 'react'
 import './DiscordWebhookSettings.css'
-import { ToggleSwitch, ActionButton, FormSection, InputGroup, StatusBadge } from './ui/CommonControls'
-import { useFormState, useToast, useLoading } from '../hooks'
-import {
-  createDefaultNotificationSettings,
-  validateNotificationSettings,
-  parseThresholdString
-} from '../utils/notificationHelpers'
-import {
-  userAPI,
-  adminAPI,
-  APIError,
-  getDiscordSettingsUnified,
-  getDiscordWebhookUnified,
-  getDiscordInviteUnified,
-  updateDiscordSettingsUnified
-} from '../utils/authUtils'
+import { ToggleSwitch, ActionButton, FormSection, StatusBadge } from './ui/CommonControls'
+import { useDiscordSettings } from '../hooks'
 
 function DiscordWebhookSettings({ user }) {
-  const { showToast } = useToast()
-  const { isLoading, withLoading } = useLoading()
-
   // Early return if user data is not available yet
   if (!user) {
     return (
@@ -30,500 +13,51 @@ function DiscordWebhookSettings({ user }) {
     )
   }
 
+  // Use our Discord settings hook
+  const {
+    webhookData,
+    notificationSettings,
+    discordInvite,
+    message,
+    messageType,
+    isLoading,
+    updateNotificationSetting,
+    updateWebhookData,
+    saveDiscordSettings,
+    testDiscordWebhook,
+    resetToDefaults,
+    validateSettings,
+    showMessage
+  } = useDiscordSettings(user)
+
   // Tab state management
   const [activeTab, setActiveTab] = useState('notifications')
 
-  // Form state management using our new hooks
-  const { formState, updateField, resetForm } = useFormState({
-    webhookUrl: '',
-    enabled: false
-  })
-
-  // Discord invite link state
-  const [discordInvite, setDiscordInvite] = useState('')
-
-  // Helper function to get the correct user ID
-  const getUserId = () => {
-    return user?.twitchUserId || user?.userId
-  }
-
-  // Debug form state changes
+  // Debug tab state changes
   useEffect(() => {
-    console.log('🔄 FORM STATE CHANGED:', {
-      webhookUrl: formState?.webhookUrl,
-      enabled: formState?.enabled,
-      timestamp: new Date().toISOString()
-    })
-  }, [formState])
+    console.log('🔄 ACTIVE TAB CHANGED:', activeTab)
+  }, [activeTab])
 
-  // Notification settings with proper initialization
-  const [notificationSettings, setNotificationSettings] = useState({
-    enableChannelNotifications: false,
-    deathMilestoneEnabled: false,
-    swearMilestoneEnabled: false,
-    deathThresholds: '10,25,50,100,250,500,1000',
-    swearThresholds: '25,50,100,250,500,1000,2500'
-  })
-
-  // Message template settings
-  // Template system removed - using standard format for all notifications
-
-  // Helper functions for notification settings
-  const updateNotificationSetting = (key, value) => {
-    console.log('🔧 updateNotificationSetting called:', { key, value })
-    console.log('🔧 Current notification settings before update:', notificationSettings)
-
-    setNotificationSettings(prevSettings => {
-      const updatedSettings = {
-        ...prevSettings,
-        [key]: value
-      }
-      console.log('� Updated notification settings:', updatedSettings)
-      return updatedSettings
-    })
-
-    console.log('🔧 State update dispatched for key:', key, 'value:', value)
-  }
-
-  const validateSettings = () => {
-    return validateNotificationSettings(notificationSettings)
-  }
-
-  const resetToDefaults = (newSettings = null) => {
-    if (newSettings) {
-      setNotificationSettings(newSettings)
-    } else {
-      setNotificationSettings({
-        enableChannelNotifications: false,
-        deathMilestoneEnabled: false,
-        swearMilestoneEnabled: false,
-        deathThresholds: '10,25,50,100,250,500,1000',
-        swearThresholds: '25,50,100,250,500,1000,2500'
-      })
-    }
-  }
-
-  const [message, setMessage] = useState('')
-  const [messageType, setMessageType] = useState('') // 'success' | 'error'
-
+  // Debug notification settings changes
   useEffect(() => {
-    console.log('🎬 DiscordWebhookSettings component mounted/updated')
-    console.log('👤 User:', user)
-    if (user) {
-      console.log('📥 Loading ALL Discord data for user on modal open')
-      loadAllDiscordData()
-    }
-  }, [user])
-
-  const showMessage = (text, type) => {
-    setMessage(text)
-    setMessageType(type)
-    setTimeout(() => setMessage(''), 3000)
-  }
-
-
-
-
-  const loadUserDiscordSettings = async () => {
-    console.log('📥 Starting to load Discord settings...')
-    const adminMode = isAdminMode()
-    console.log('🔍 Loading settings in admin mode:', adminMode)
-
-    try {
-      await withLoading(async () => {
-        // Load webhook URL
-        try {
-          console.log('🔗 Loading webhook URL...')
-          let webhookData
-
-          if (adminMode) {
-            // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load webhook for user:', getUserId())
-            webhookData = await adminAPI.getDiscordWebhook(getUserId())
-          } else {
-            // User viewing their own settings - use user API
-            console.log('� Using user API to load own webhook')
-            webhookData = await userAPI.getDiscordWebhook()
-          }
-
-          console.log('🔗 Webhook data received:', webhookData)
-          console.log('� Extracted webhook URL:', webhookData?.webhookUrl)
-          console.log('🔗 Extracted enabled status:', webhookData?.enabled)
-          console.log('🔧 UPDATING FORM FIELDS:', {
-            webhookUrl: webhookData?.webhookUrl || '',
-            enabled: webhookData?.enabled || false,
-            rawData: webhookData
-          })
-          updateField('webhookUrl', webhookData?.webhookUrl || '')
-          updateField('enabled', webhookData?.enabled || false)
-          console.log('✅ Webhook URL loaded successfully, form updated')
-        } catch (error) {
-          console.error('❌ Error loading webhook:', error)
-          console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
-          showMessage(`Failed to load Discord settings: ${error?.message || 'Unknown error'}`, 'error')
-        }
-
-        // Load notification settings
-        try {
-          console.log('📢 Loading notification settings...')
-          let discordData
-
-          if (adminMode) {
-            // Admin viewing another user's settings - use admin API
-            console.log('👑 Using admin API to load notification settings for user:', getUserId())
-            discordData = await adminAPI.getDiscordSettings(getUserId())
-            // Admin API returns { discordSettings: {...} }, so extract the inner object
-            discordData = discordData?.discordSettings || discordData
-          } else {
-            // User viewing their own settings - use user API
-            console.log('👤 Using user API to load own notification settings')
-            discordData = await userAPI.getDiscordSettings()
-          }
-
-          console.log('📢 Notification data received:', discordData)
-
-          // Note: All Discord data (webhook + notifications) is now loaded via loadAllDiscordData()
-
-          // Set notification settings with proper defaults
-          const settings = {
-            enableChannelNotifications: discordData?.enableChannelNotifications || false,
-            deathMilestoneEnabled: discordData?.deathMilestoneEnabled || false,
-            swearMilestoneEnabled: discordData?.swearMilestoneEnabled || false,
-            deathThresholds: discordData?.deathThresholds || '10,25,50,100,250,500,1000',
-            swearThresholds: discordData?.swearThresholds || '25,50,100,250,500,1000,2500'
-          }
-
-          console.log('📊 Final settings to apply:', settings)
-          // Use setNotificationSettings instead of resetToDefaults for notification settings
-          setNotificationSettings(settings)
-
-          // Load template style preference
-          if (discordData?.templateStyle) {
-            console.log('🎨 Setting template style from server:', discordData.templateStyle)
-            // Template system removed - standard format used for all notifications
-          }
-
-          console.log('✅ Notification settings loaded successfully')
-        } catch (error) {
-          console.error('❌ Error loading notification settings:', error)
-          // Set default notification settings on error
-          setNotificationSettings({
-            enableChannelNotifications: false,
-            deathMilestoneEnabled: false,
-            swearMilestoneEnabled: false,
-            deathThresholds: '10,25,50,100,250,500,1000',
-            swearThresholds: '25,50,100,250,500,1000,2500'
-          })
-          // Set default template style on error
-          // Template system removed
-        }
-      })
-    } catch (error) {
-      console.error('❌ Error loading Discord settings:', error)
-      showMessage('Failed to load Discord settings', 'error')
-    }
-  }
-
-  // Load ALL Discord data when modal opens (webhook, settings, invite) - UNIFIED VERSION
-  const loadAllDiscordData = async () => {
-    console.log('📥 Starting to load ALL Discord data using unified functions...')
-    console.log('� Target user:', user)
-
-    try {
-      await withLoading(async () => {
-        // Load Discord settings (includes webhook URL and notification settings)
-        try {
-          console.log('� Loading Discord settings using unified function...')
-          const discordData = await getDiscordSettingsUnified(user)
-
-          console.log('🔗 RAW Complete Discord data received:', discordData)
-          console.log('🔗 Data type:', typeof discordData)
-          console.log('🔗 Data is null/undefined?', discordData === null || discordData === undefined)
-          console.log('🔗 Data keys:', discordData ? Object.keys(discordData) : 'NO KEYS - data is falsy')
-
-          if (discordData) {
-            console.log('🔗 webhookUrl property:', discordData.webhookUrl)
-            console.log('🔗 enabled property:', discordData.enabled)
-            console.log('🔗 All properties:', {
-              webhookUrl: discordData.webhookUrl,
-              enabled: discordData.enabled,
-              enableChannelNotifications: discordData.enableChannelNotifications,
-              deathMilestoneEnabled: discordData.deathMilestoneEnabled,
-              swearMilestoneEnabled: discordData.swearMilestoneEnabled
-            })
-          }
-
-          // Ensure discordData is valid with safe defaults
-          const safeDiscordData = discordData || {
-            webhookUrl: '',
-            enabled: false,
-            enableChannelNotifications: false,
-            deathMilestoneEnabled: false,
-            swearMilestoneEnabled: false,
-            deathThresholds: '10,25,50,100,250,500,1000',
-            swearThresholds: '25,50,100,250,500,1000,2500'
-          }
-
-          console.log('🔗 Extracted webhook URL:', safeDiscordData.webhookUrl)
-          console.log('🔗 Extracted enabled status:', safeDiscordData.enabled)
-
-          // Update webhook form fields with guaranteed safe values
-          const safeWebhookUrl = safeDiscordData.webhookUrl || ''
-          const safeEnabled = safeDiscordData.enabled || false
-
-          console.log('🔧 UPDATING FORM FIELDS:', {
-            webhookUrl: safeWebhookUrl,
-            enabled: safeEnabled,
-            rawData: safeDiscordData
-          })
-          updateField('webhookUrl', safeWebhookUrl)
-          updateField('enabled', safeEnabled)
-          console.log('✅ Webhook form fields updated successfully')
-
-          // Set notification settings from the same data
-          const settings = {
-            enableChannelNotifications: safeDiscordData.enableChannelNotifications || false,
-            deathMilestoneEnabled: safeDiscordData.deathMilestoneEnabled || false,
-            swearMilestoneEnabled: safeDiscordData.swearMilestoneEnabled || false,
-            deathThresholds: safeDiscordData.deathThresholds || '10,25,50,100,250,500,1000',
-            swearThresholds: safeDiscordData.swearThresholds || '25,50,100,250,500,1000,2500'
-          }
-
-          console.log('📊 Final notification settings to apply:', settings)
-          setNotificationSettings(settings)
-          console.log('✅ Discord settings loaded successfully using unified function')
-
-        } catch (error) {
-          console.error('❌ Error loading Discord settings with unified function:', error)
-          console.error('❌ Full error details:', error?.message || 'Unknown error', error?.stack || 'No stack trace')
-
-          // Set guaranteed safe default values on error
-          updateField('webhookUrl', '')
-          updateField('enabled', false)
-          setNotificationSettings({
-            enableChannelNotifications: false,
-            deathMilestoneEnabled: false,
-            swearMilestoneEnabled: false,
-            deathThresholds: '10,25,50,100,250,500,1000',
-            swearThresholds: '25,50,100,250,500,1000,2500'
-          })
-          showMessage(`Failed to load Discord settings: ${error?.message || 'Unknown error'}`, 'error')
-        }
-
-        // Load Discord invite link using unified function
-        try {
-          console.log('🎮 Loading Discord invite using unified function...')
-          const inviteData = await getDiscordInviteUnified(user)
-
-          console.log('🎮 Discord invite data received:', inviteData)
-          setDiscordInvite(inviteData?.discordInviteLink || '')
-          console.log('✅ Discord invite loaded successfully using unified function')
-        } catch (error) {
-          console.error('❌ Error loading Discord invite with unified function:', error)
-          showMessage(`Failed to load Discord invite: ${error?.message || 'Unknown error'}`, 'error')
-        }
-      })
-    } catch (error) {
-      console.error('❌ Error loading ALL Discord data with unified functions:', error)
-      showMessage('Failed to load Discord settings', 'error')
-    }
-  }
-
-  // Load Discord invite link
-  const loadDiscordInvite = async () => {
-    console.log('🎮 Loading Discord invite link...')
-    try {
-      await withLoading(async () => {
-        const inviteData = isAdminMode()
-          ? await adminAPI.getDiscordInvite(getUserId())
-          : await userAPI.getDiscordInvite()
-        console.log('🎮 Discord invite data received:', inviteData)
-        setDiscordInvite(inviteData?.discordInviteLink || '')
-
-        if (inviteData?.discordInviteLink) {
-          console.log('✅ Discord invite link loaded successfully')
-          showMessage('Discord invite link loaded', 'success')
-        } else {
-          console.log('ℹ️ No Discord invite link configured')
-          showMessage('No Discord invite link configured', 'info')
-        }
-      })
-    } catch (error) {
-      console.error('❌ Error loading Discord invite:', error)
-      showMessage('Failed to load Discord invite link', 'error')
-    }
-  }
-
-  // Save Discord invite link
-  const saveDiscordInvite = async () => {
-    console.log('🎮 Saving Discord invite link...')
-    try {
-      await withLoading(async () => {
-        // Validate Discord invite URL format
-        if (discordInvite && !isValidDiscordInviteUrl(discordInvite)) {
-          showMessage('Invalid Discord invite URL format. Use discord.gg/... or discord.com/invite/...', 'error')
-          return
-        }
-
-        // Use unified function to save Discord invite
-        console.log('🎮 Using unified function to save Discord invite...')
-        await updateDiscordSettingsUnified(user, null, null, { discordInviteLink: discordInvite })
-        console.log('✅ Discord invite link saved successfully')
-        showMessage('Discord invite link saved successfully!', 'success')
-      })
-    } catch (error) {
-      console.error('❌ Error saving Discord invite:', error)
-      showMessage('Failed to save Discord invite link', 'error')
-    }
-  }
-
-  // Remove Discord invite link
-  const removeDiscordInvite = async () => {
-    console.log('🎮 Removing Discord invite link...')
-    try {
-      await withLoading(async () => {
-        // Use unified function to remove Discord invite
-        await updateDiscordSettingsUnified(user, null, null, { discordInviteLink: '' })
-        setDiscordInvite('')
-        console.log('✅ Discord invite link removed successfully')
-        showMessage('Discord invite link removed successfully!', 'success')
-      })
-    } catch (error) {
-      console.error('❌ Error removing Discord invite:', error)
-      showMessage('Failed to remove Discord invite link', 'error')
-    }
-  }
-
-  // Validate Discord invite URL format
-  const isValidDiscordInviteUrl = (url) => {
-    if (!url) return true // Allow empty URLs for removal
-    const discordInviteRegex = /^https?:\/\/(discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\/)/
-    return discordInviteRegex.test(url)
-  }
-
-  const saveWebhookConfiguration = async () => {
-    console.log('� Save Webhook Configuration button clicked')
-    const adminMode = isAdminMode()
-    console.log('🔍 Saving webhook in admin mode:', adminMode)
-    console.log('📊 Form state:', formState)
-    console.log('📊 Values to save:')
-    console.log('   - Webhook URL:', formState?.webhookUrl)
-    console.log('   - Webhook enabled:', formState?.enabled)
-
-    try {
-      await withLoading(async () => {
-        // Validate webhook URL
-        if (formState?.webhookUrl && !formState?.webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
-          console.log('❌ Webhook URL validation failed')
-          showMessage('Invalid Discord webhook URL format', 'error')
-          return
-        }
-        console.log('✅ Webhook URL validation passed')
-
-        // Save webhook URL only
-        console.log('🔗 Saving webhook configuration...')
-        const webhookPayload = {
-          webhookUrl: formState?.webhookUrl || '',
-          enabled: formState?.enabled || false
-        }
-        console.log('🔗 Webhook payload:', webhookPayload)
-
-        // Use unified function to save webhook
-        console.log('� Using unified function to save webhook...')
-        await updateDiscordSettingsUnified(user, webhookPayload, null, null)
-
-        console.log('✅ Webhook configuration saved successfully')
-        showMessage('Webhook configuration saved successfully!', 'success')
-      })
-    } catch (error) {
-      console.error('❌ Error saving webhook configuration:', error)
-      showMessage('Failed to save webhook configuration', 'error')
-    }
-  }
-
-  const saveNotificationSettings = async () => {
-    try {
-      console.log('📢 Saving notification settings only...')
-      console.log('📢 Settings payload:', notificationSettings)
-
-      await withLoading(async () => {
-        // Validate notification settings
-        const validationResult = validateNotificationSettings(notificationSettings)
-        if (!validationResult?.isValid) {
-          console.log('❌ Notification settings validation failed:', validationResult?.errors || [])
-          showMessage(validationResult?.errors?.[0] || 'Validation failed', 'error')
-          return
-        }
-        console.log('✅ Notification settings validation passed')
-
-        // Save notification settings using unified function
-        console.log('� Using unified function to save notification settings...')
-        await updateDiscordSettingsUnified(user, null, notificationSettings, null)
-
-        console.log('✅ Notification settings saved successfully')
-
-        showMessage('Notification settings saved successfully!', 'success')
-      })
-    } catch (error) {
-      console.error('❌ Error saving notification settings:', error)
-      showMessage('Failed to save notification settings', 'error')
-    }
-  }
-
-  // Template settings function removed - standard format used for all notifications
-
-  const testWebhook = async () => {
-    if (!formState?.webhookUrl) {
-      showMessage('Please enter a webhook URL first', 'error')
-      return
-    }
-
-    if (!formState?.webhookUrl?.startsWith('https://discord.com/api/webhooks/')) {
-      showMessage('Invalid Discord webhook URL format', 'error')
-      return
-    }
-
-    try {
-      await withLoading(async () => {
-        // Determine admin mode inline (same logic as unified functions)
-        const token = localStorage.getItem('authToken')
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        const currentUserId = payload.userId || payload.twitchUserId
-        const isCurrentUserAdmin = payload.role === 'admin'
-        const targetUserId = user?.twitchUserId || user?.userId
-        const isAdminMode = isCurrentUserAdmin && targetUserId && currentUserId !== targetUserId
-
-        console.log('🔍 Testing webhook - admin mode:', isAdminMode)
-
-        if (isAdminMode) {
-          // Admin testing another user's webhook - use admin API
-          console.log('👑 Using admin API to test webhook for user:', targetUserId)
-          await adminAPI.testDiscordWebhook(targetUserId, { webhookUrl: formState?.webhookUrl || '' })
-        } else {
-          // User testing their own webhook - use user API
-          console.log('👤 Using user API to test own webhook')
-          await userAPI.testDiscordWebhook({ webhookUrl: formState?.webhookUrl || '' })
-        }
-
-        showMessage('Test notification sent! Check your Discord channel.', 'success')
-      })
-    } catch (error) {
-      console.error('Error testing Discord webhook:', error)
-      showMessage(`Failed to test webhook: ${error?.message || 'Unknown error'}`, 'error')
-    }
-  }
-
-
+    console.log('🔔 NOTIFICATION SETTINGS CHANGED:', {
+      deathMilestoneEnabled: notificationSettings?.deathMilestoneEnabled,
+      swearMilestoneEnabled: notificationSettings?.swearMilestoneEnabled,
+      deathThresholds: notificationSettings?.deathThresholds,
+      swearThresholds: notificationSettings?.swearThresholds,
+      fullSettings: notificationSettings
+    })
+  }, [notificationSettings])
 
   return (
     <div className="discord-webhook-settings">
       <div className="settings-header">
-        <h3>🔔 Discord Integration</h3>
-        {formState && (
+        <h3>🔔 Discord Settings</h3>
+        {webhookData && (
           <StatusBadge
-            status={formState?.enabled ? 'success' : 'info'}
+            status={webhookData?.enabled ? 'success' : 'info'}
           >
-            {formState?.enabled ? 'Enabled' : 'Disabled'}
+            {webhookData?.enabled ? 'Enabled' : 'Disabled'}
           </StatusBadge>
         )}
       </div>
@@ -538,20 +72,26 @@ function DiscordWebhookSettings({ user }) {
       <div className="tab-navigation">
         <button
           className={`tab-button ${activeTab === 'notifications' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notifications')}
+          onClick={() => {
+            console.log('📢 Notifications tab clicked, current:', activeTab)
+            setActiveTab('notifications')
+          }}
         >
           📢 Notifications
         </button>
         <button
           className={`tab-button ${activeTab === 'counters' ? 'active' : ''}`}
-          onClick={() => setActiveTab('counters')}
+          onClick={() => {
+            console.log('🎯 Counters tab clicked, current:', activeTab)
+            setActiveTab('counters')
+          }}
         >
           🎯 Counters & Milestones
         </button>
         <button
           className={`tab-button ${activeTab === 'configuration' ? 'active' : ''}`}
           onClick={() => {
-            console.log('⚙️ Configuration tab clicked, switching and loading configuration...')
+            console.log('⚙️ Configuration tab clicked, current:', activeTab)
             setActiveTab('configuration')
           }}
         >
@@ -561,8 +101,6 @@ function DiscordWebhookSettings({ user }) {
 
       {/* Tab Content */}
       <div className="tab-content">
-
-        {/* Tab 1: Notification Settings */}
         {activeTab === 'notifications' && (
           <div className="tab-panel">
             <FormSection title="🔔 Basic Notification Types">
@@ -570,88 +108,85 @@ function DiscordWebhookSettings({ user }) {
                 <p>Choose which types of notifications you want to receive from your stream!</p>
               </div>
 
-
               {/* Notification Type Toggles */}
-          <div className="notification-settings-grid">
-
-            {/* Discord Notifications - Auto-enabled when webhook is configured */}
-            <div className="notification-info">
-              <div className="option-header">
-                <div className="option-icon">🔔</div>
-                <div className="option-content">
-                  <h4>Discord Notifications</h4>
-                  <p>Automatically enabled when webhook URL is configured above</p>
+              <div className="notification-settings-grid">
+                {/* Discord Notifications - Auto-enabled when webhook is configured */}
+                <div className="notification-info">
+                  <div className="option-header">
+                    <div className="option-icon">🔔</div>
+                    <div className="option-content">
+                      <h4>Discord Notifications</h4>
+                      <p>Automatically enabled when webhook URL is configured above</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Twitch Chat Notifications */}
-            <div
-              className={`notification-option ${notificationSettings?.enableChannelNotifications ? 'active' : ''}`}
-              onClick={() => {
-                console.log('🖱️ Twitch chat notification card clicked')
-                console.log('📋 Current state:', {
-                  isLoading,
-                  currentValue: notificationSettings?.enableChannelNotifications
-                })
-                if (!isLoading) {
-                  const newValue = !notificationSettings?.enableChannelNotifications
-                  console.log('🔄 Toggling Twitch notifications to:', newValue)
-                  updateNotificationSetting('enableChannelNotifications', newValue)
-                }
-              }}
-            >
-              <div className="option-header">
-                <div className="option-icon">💬</div>
-                <div className="option-content">
-                  <h4>Twitch Chat Notifications</h4>
-                  <p>Announce milestones and events in your Twitch chat</p>
-                </div>
-              </div>
-              <div className="option-toggle">
-                <ToggleSwitch
-                  checked={notificationSettings?.enableChannelNotifications || false}
-                  onChange={(e) => {
-                    console.log('🔧 Twitch ToggleSwitch onChange fired:', e.target.checked)
-                    updateNotificationSetting('enableChannelNotifications', e.target.checked)
+                {/* Twitch Chat Notifications */}
+                <div
+                  className={`notification-option ${notificationSettings?.enableChannelNotifications ? 'active' : ''}`}
+                  onClick={() => {
+                    console.log('🖱️ Twitch chat notification card clicked')
+                    console.log('📋 Current state:', {
+                      isLoading,
+                      currentValue: notificationSettings?.enableChannelNotifications
+                    })
+                    if (!isLoading) {
+                      const newValue = !notificationSettings?.enableChannelNotifications
+                      console.log('🔄 Toggling Twitch notifications to:', newValue)
+                      updateNotificationSetting('enableChannelNotifications', newValue)
+                    }
                   }}
-                  disabled={isLoading}
-                />
+                >
+                  <div className="option-header">
+                    <div className="option-icon">💬</div>
+                    <div className="option-content">
+                      <h4>Twitch Chat Notifications</h4>
+                      <p>Announce milestones and events in your Twitch chat</p>
+                    </div>
+                  </div>
+                  <div className="option-toggle">
+                    <ToggleSwitch
+                      checked={notificationSettings?.enableChannelNotifications || false}
+                      onChange={(e) => {
+                        console.log('🔧 Twitch ToggleSwitch onChange fired:', e.target.checked)
+                        updateNotificationSetting('enableChannelNotifications', e.target.checked)
+                      }}
+                      label="Enable Chat Notifications"
+                      disabled={isLoading}
+                      size="medium"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
 
-          </div>
-
-          {/* Save Notification Preferences */}
-          <div className="notification-actions">
-            <ActionButton
-              variant="primary"
-              onClick={() => {
-                console.log('💾 Save Notification Settings button clicked')
-                console.log('📊 Notification settings:', notificationSettings)
-                saveNotificationSettings()
-              }}
-              loading={isLoading}
-            >
-              💾 Save Notification Settings
-            </ActionButton>
-          </div>
-
-          {/* Requirements Notice */}
-          {(!formState?.webhookUrl) && (
-            <div className="requirement-notice">
-              <div className="notice-icon">⚠️</div>
-              <div className="notice-text">
-                <strong>Discord webhook required:</strong> Configure your webhook in the Configuration tab to enable Discord notifications.
+              {/* Save Notification Preferences */}
+              <div className="notification-actions">
+                <ActionButton
+                  variant="primary"
+                  onClick={() => {
+                    console.log('💾 Save Notification Settings button clicked')
+                    console.log('📊 Notification settings:', notificationSettings)
+                    saveDiscordSettings()
+                  }}
+                  loading={isLoading}
+                >
+                  💾 Save Notification Settings
+                </ActionButton>
               </div>
-            </div>
-          )}
 
-        </FormSection>
+              {/* Requirements Notice */}
+              {(!webhookData?.webhookUrl) && (
+                <div className="requirement-notice">
+                  <div className="notice-icon">⚠️</div>
+                  <div className="notice-text">
+                    <strong>Discord webhook required:</strong> Configure your webhook in the Configuration tab to enable Discord notifications.
+                  </div>
+                </div>
+              )}
+            </FormSection>
           </div>
         )}
 
-        {/* Tab 2: Counter & Milestone Settings */}
         {activeTab === 'counters' && (
           <div className="tab-panel">
             <FormSection title="🎯 Milestone Notifications">
@@ -659,49 +194,75 @@ function DiscordWebhookSettings({ user }) {
                 <div className="milestone-group">
                   <div className="milestone-header">
                     <div className="milestone-icon">💀</div>
-                    <ToggleSwitch
-                      checked={notificationSettings?.deathMilestoneEnabled || false}
-                      onChange={(e) => updateNotificationSetting('deathMilestoneEnabled', e.target.checked)}
-                      label="Death Count Milestones"
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {(notificationSettings?.deathMilestoneEnabled) && (
-                    <div className="milestone-config">
-                      <InputGroup
-                        label="Milestone Thresholds"
-                        value={notificationSettings?.deathThresholds || '10,25,50,100,250,500,1000'}
-                        onChange={(e) => updateNotificationSetting('deathThresholds', e.target.value)}
-                        placeholder="10,25,50,100,250,500,1000"
+                    <div className="milestone-title">
+                      <h4>Death Count Milestones</h4>
+                      <p>Trigger notifications when death count reaches specific milestones</p>
+                    </div>
+                    <div className="milestone-toggle">
+                      <ToggleSwitch
+                        checked={notificationSettings?.deathMilestoneEnabled || false}
+                        onChange={(e) => updateNotificationSetting('deathMilestoneEnabled', e.target.checked)}
+                        label="Enable"
                         disabled={isLoading}
-                        hint="Comma-separated numbers (e.g., 10,25,50,100)"
+                        size="medium"
                       />
                     </div>
-                  )}
+                  </div>
+                  <div className="milestone-config">
+                    <div className="input-group">
+                      <label className="input-label">Milestone Thresholds</label>
+                      <input
+                        type="text"
+                        value={notificationSettings?.deathThresholds || '10,25,50,100,250,500'}
+                        onChange={(e) => updateNotificationSetting('deathThresholds', e.target.value)}
+                        placeholder="10,25,50,100,250,500"
+                        disabled={isLoading || !notificationSettings?.deathMilestoneEnabled}
+                        className="threshold-input"
+                      />
+                      <div className="input-hint">
+                        {notificationSettings?.deathMilestoneEnabled
+                          ? "Comma-separated numbers (e.g., 10,25,50,100,250,500)"
+                          : "Enable Death Count Milestones above to edit these thresholds"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="milestone-group">
                   <div className="milestone-header">
                     <div className="milestone-icon">🤬</div>
-                    <ToggleSwitch
-                      checked={notificationSettings?.swearMilestoneEnabled || false}
-                      onChange={(e) => updateNotificationSetting('swearMilestoneEnabled', e.target.checked)}
-                      label="Swear Count Milestones"
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {(notificationSettings?.swearMilestoneEnabled) && (
-                    <div className="milestone-config">
-                      <InputGroup
-                        label="Milestone Thresholds"
-                        value={notificationSettings?.swearThresholds || '25,50,100,250,500,1000,2500'}
-                        onChange={(e) => updateNotificationSetting('swearThresholds', e.target.value)}
-                        placeholder="25,50,100,250,500,1000,2500"
+                    <div className="milestone-title">
+                      <h4>Swear Count Milestones</h4>
+                      <p>Trigger notifications when swear count reaches specific milestones</p>
+                    </div>
+                    <div className="milestone-toggle">
+                      <ToggleSwitch
+                        checked={notificationSettings?.swearMilestoneEnabled || false}
+                        onChange={(e) => updateNotificationSetting('swearMilestoneEnabled', e.target.checked)}
+                        label="Enable"
                         disabled={isLoading}
-                        hint="Comma-separated numbers (e.g., 25,50,100,250)"
+                        size="medium"
                       />
                     </div>
-                  )}
+                  </div>
+                  <div className="milestone-config">
+                    <div className="input-group">
+                      <label className="input-label">Milestone Thresholds</label>
+                      <input
+                        type="text"
+                        value={notificationSettings?.swearThresholds || '25,50,100,200,500'}
+                        onChange={(e) => updateNotificationSetting('swearThresholds', e.target.value)}
+                        placeholder="25,50,100,200,500"
+                        disabled={isLoading || !notificationSettings?.swearMilestoneEnabled}
+                        className="threshold-input"
+                      />
+                      <div className="input-hint">
+                        {notificationSettings?.swearMilestoneEnabled
+                          ? "Comma-separated numbers (e.g., 25,50,100,200,500)"
+                          : "Enable Swear Count Milestones above to edit these thresholds"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -710,14 +271,14 @@ function DiscordWebhookSettings({ user }) {
                 <ActionButton
                   variant="primary"
                   onClick={() => {
-                    console.log('💾 Save Milestone Settings button clicked')
+                    console.log('� Save Milestone Settings button clicked')
                     console.log('📊 Milestone settings:', {
                       deathMilestoneEnabled: notificationSettings?.deathMilestoneEnabled,
                       swearMilestoneEnabled: notificationSettings?.swearMilestoneEnabled,
                       deathThresholds: notificationSettings?.deathThresholds,
                       swearThresholds: notificationSettings?.swearThresholds
                     })
-                    saveNotificationSettings()
+                    saveDiscordSettings()
                   }}
                   loading={isLoading}
                 >
@@ -728,13 +289,12 @@ function DiscordWebhookSettings({ user }) {
           </div>
         )}
 
-        {/* Tab 3: Configuration & Templates */}
         {activeTab === 'configuration' && (
           <div className="tab-panel">
             <FormSection title={`🔧 Webhook Setup ${isLoading ? '(Loading...)' : ''}`}>
               <div className="settings-info">
                 <p>Connect your Discord server to receive stream notifications!</p>
-                {formState?.webhookUrl && !isLoading && (
+                {webhookData?.webhookUrl && !isLoading && (
                   <div className="info-box" style={{
                     background: '#22c55e1a',
                     border: '1px solid #22c55e',
@@ -772,151 +332,70 @@ function DiscordWebhookSettings({ user }) {
                 </ol>
               </div>
 
-              <InputGroup
-                label={`Discord Webhook URL ${formState?.enabled ? '(✅ Enabled)' : '(❌ Disabled)'}`}
-                required={true}
-              >
+              <div className="input-group">
+                <label className="input-label">
+                  Discord Webhook URL {webhookData?.enabled ? '(✅ Enabled)' : '(❌ Disabled)'}
+                </label>
                 <input
                   type="url"
-                  value={formState?.webhookUrl || ''}
-                  onChange={(e) => updateField('webhookUrl', e.target.value)}
+                  value={webhookData?.webhookUrl || ''}
+                  onChange={(e) => updateWebhookData('webhookUrl', e.target.value)}
                   placeholder="https://discord.com/api/webhooks/..."
                   disabled={isLoading}
                   style={{
                     width: '100%',
                     padding: '12px',
                     background: '#2a2a2a',
-                    border: `2px solid ${formState?.webhookUrl ? '#22c55e' : '#444'}`,
+                    border: `2px solid ${webhookData?.webhookUrl ? '#22c55e' : '#444'}`,
                     borderRadius: '8px',
                     color: '#fff',
                     fontSize: '1rem',
-                    fontFamily: 'Courier New, monospace'
+                    fontFamily: 'monospace'
                   }}
                 />
-                <small style={{
-                  color: '#888',
-                  fontSize: '0.875rem',
-                  display: 'block',
-                  marginTop: '5px'
-                }}>
-                  Must start with https://discord.com/api/webhooks/
-                </small>
-                {formState?.webhookUrl && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '6px 10px',
-                    background: formState?.enabled ? '#22c55e1a' : '#ef44441a',
-                    border: `1px solid ${formState?.enabled ? '#22c55e' : '#ef4444'}`,
-                    borderRadius: '4px',
-                    fontSize: '0.8rem',
-                    color: formState?.enabled ? '#22c55e' : '#ef4444'
-                  }}>
-                    Status: {formState?.enabled ? '✅ Webhook is enabled and ready to receive notifications' : '❌ Webhook is disabled - notifications will not be sent'}
-                  </div>
-                )}
-              </InputGroup>
+              </div>
 
               <div className="webhook-actions">
                 <ActionButton
                   variant="primary"
                   onClick={() => {
-                    console.log('� Save Webhook Configuration button clicked')
-                    console.log('📊 Form state:', formState)
-                    saveWebhookConfiguration()
+                    console.log('💾 Save Webhook Configuration button clicked')
+                    console.log('📊 Webhook data:', webhookData)
+                    // Enable webhook when URL is provided
+                    if (webhookData?.webhookUrl && !webhookData?.enabled) {
+                      updateWebhookData('enabled', true)
+                    }
+                    saveDiscordSettings()
                   }}
                   loading={isLoading}
                 >
-                  � Save Webhook Configuration
+                  💾 Save Webhook Configuration
                 </ActionButton>
 
                 <ActionButton
                   variant="secondary"
                   onClick={() => {
                     console.log('🧪 Test Webhook button clicked')
-                    console.log('🔗 Webhook URL:', formState?.webhookUrl)
-                    testWebhook()
+                    testDiscordWebhook()
                   }}
                   loading={isLoading}
-                  disabled={isLoading || !formState?.webhookUrl}
+                  disabled={isLoading || !webhookData?.webhookUrl}
                 >
                   🧪 Send Test
                 </ActionButton>
-
-                <ActionButton
-                  variant="info"
-                  onClick={() => {
-                    console.log('🔄 Refresh Configuration button clicked - loading all Discord data')
-                    loadAllDiscordData()
-                  }}
-                  loading={isLoading}
-                >
-                  🔄 Refresh Configuration
-                </ActionButton>
               </div>
             </FormSection>
 
-            <FormSection title="📋 Notification Format" collapsible>
-              <div style={{
-                background: 'rgba(34, 197, 94, 0.1)',
-                border: '1px solid #22c55e',
-                borderRadius: '8px',
-                padding: '16px',
-                color: '#22c55e'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '18px' }}>✅</span>
-                  <strong>Standard Format Active</strong>
-                </div>
-                <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.5' }}>
-                  All Discord notifications now use a clean, consistent format:<br/>
-                  • Clear titles with your display name<br/>
-                  • Category/game prominently displayed<br/>
-                  • Watch Now buttons for stream notifications<br/>
-                  • Progress tracking for milestone achievements
-                </p>
-                <p style={{ margin: '12px 0 0 0', fontSize: '12px', opacity: 0.8 }}>
-                  📋 Customizable templates will be available in a future update!
-                </p>
-              </div>
-            </FormSection>
-
-            <FormSection title="🎮 Discord Server Invite" collapsible>
-              <div style={{
-                background: 'rgba(88, 101, 242, 0.1)',
-                border: '1px solid #5865f2',
-                borderRadius: '8px',
-                padding: '16px',
-                marginBottom: '20px',
-                color: '#5865f2'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '20px' }}>💬</span>
-                  <strong>Chat Commands Available</strong>
-                </div>
-                <div style={{ fontSize: '14px', lineHeight: '1.6' }}>
-                  <p style={{ margin: '0 0 8px 0' }}>
-                    <strong>For Viewers:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!discord</code> - Get the Discord server invite link
-                  </p>
-                  <p style={{ margin: '0 0 8px 0' }}>
-                    <strong>For Viewers:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!help</code> - Show all available chat commands
-                  </p>
-                  <p style={{ margin: '0 0 8px 0' }}>
-                    <strong>For Moderators:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!setdiscord &lt;invite_url&gt;</code> - Set the invite link
-                  </p>
-                  <p style={{ margin: '0' }}>
-                    <strong>For Moderators:</strong> <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!removediscord</code> - Remove the invite link
-                  </p>
-                </div>
-              </div>
-
-              <InputGroup
-                label="Discord Server Invite URL"
-                required={false}
-              >
+            <FormSection title="🎮 Discord Server Invite">
+              <div className="input-group">
+                <label className="input-label">Discord Server Invite URL</label>
                 <input
                   type="url"
-                  value={discordInvite}
-                  onChange={(e) => setDiscordInvite(e.target.value)}
+                  value={discordInvite || ''}
+                  onChange={(e) => {
+                    // This would need to be handled by the hook
+                    console.log('Discord invite changed:', e.target.value)
+                  }}
                   placeholder="https://discord.gg/YOUR_INVITE_CODE"
                   disabled={isLoading}
                   style={{
@@ -927,64 +406,9 @@ function DiscordWebhookSettings({ user }) {
                     borderRadius: '8px',
                     color: '#fff',
                     fontSize: '1rem',
-                    fontFamily: 'Courier New, monospace'
+                    fontFamily: 'monospace'
                   }}
                 />
-                <small style={{
-                  color: '#888',
-                  fontSize: '0.875rem',
-                  display: 'block',
-                  marginTop: '5px'
-                }}>
-                  Supported formats: discord.gg/..., discord.com/invite/..., or discordapp.com/invite/...
-                </small>
-                {discordInvite && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '6px 10px',
-                    background: isValidDiscordInviteUrl(discordInvite) ? '#5865f21a' : '#ef44441a',
-                    border: `1px solid ${isValidDiscordInviteUrl(discordInvite) ? '#5865f2' : '#ef4444'}`,
-                    borderRadius: '4px',
-                    fontSize: '0.8rem',
-                    color: isValidDiscordInviteUrl(discordInvite) ? '#5865f2' : '#ef4444'
-                  }}>
-                    {isValidDiscordInviteUrl(discordInvite)
-                      ? '✅ Valid Discord invite URL format'
-                      : '❌ Invalid format - please use a proper Discord invite URL'
-                    }
-                  </div>
-                )}
-              </InputGroup>
-
-              <div className="webhook-actions">
-                <ActionButton
-                  variant="primary"
-                  onClick={saveDiscordInvite}
-                  loading={isLoading}
-                  disabled={isLoading || (discordInvite && !isValidDiscordInviteUrl(discordInvite))}
-                >
-                  💾 Save Discord Invite
-                </ActionButton>
-
-                <ActionButton
-                  variant="danger"
-                  onClick={removeDiscordInvite}
-                  loading={isLoading}
-                  disabled={isLoading || !discordInvite}
-                >
-                  🗑️ Remove Invite
-                </ActionButton>
-
-                <ActionButton
-                  variant="info"
-                  onClick={() => {
-                    console.log('🔄 Refresh Discord invite button clicked - loading all Discord data')
-                    loadAllDiscordData()
-                  }}
-                  loading={isLoading}
-                >
-                  🔄 Refresh
-                </ActionButton>
               </div>
 
               {discordInvite && (
@@ -1001,17 +425,16 @@ function DiscordWebhookSettings({ user }) {
                     <strong>Invite Link Active!</strong>
                   </div>
                   <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
-                    Viewers can now use <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!discord</code> in chat to get your server invite.
+                    Viewers can use <code style={{ background: '#2a2a2a', padding: '2px 6px', borderRadius: '4px' }}>!discord</code> in chat to get your server invite.
                   </p>
                   <p style={{ margin: '0', fontSize: '12px', opacity: 0.8 }}>
-                    Current invite: <span style={{ fontFamily: 'Courier New, monospace' }}>{discordInvite}</span>
+                    Current invite: <span style={{ fontFamily: 'monospace' }}>{discordInvite}</span>
                   </p>
                 </div>
               )}
             </FormSection>
           </div>
         )}
-
       </div>
     </div>
   )

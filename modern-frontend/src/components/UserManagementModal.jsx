@@ -9,7 +9,7 @@ import {
   validateNotificationSettings,
   parseThresholdString
 } from '../utils/notificationHelpers'
-import { userAPI, APIError } from '../utils/authUtils'
+import { userAPI, adminAPI, APIError } from '../utils/authUtils'
 
 // Default feature flags for new users
 const defaultFeatures = {
@@ -146,6 +146,13 @@ const UserManagementModal = ({
 
   const [originalUser, setOriginalUser] = useState(null)
   const [message, setMessage] = useState({ text: '', type: '' })
+  const [showAddUserForm, setShowAddUserForm] = useState(false)
+  const [newUserData, setNewUserData] = useState({
+    username: '',
+    displayName: '',
+    email: '',
+    twitchUserId: ''
+  })
 
   const showMessage = (text, type) => {
     setMessage({ text, type })
@@ -327,6 +334,38 @@ const UserManagementModal = ({
     }
   }
 
+  const handleCreateUser = async () => {
+    // Validate required fields
+    if (!newUserData.username || !newUserData.twitchUserId) {
+      showToast('Username and Twitch User ID are required', 'error')
+      return
+    }
+
+    try {
+      await withLoading(async () => {
+        const result = await adminAPI.createUser(newUserData)
+        showToast('User created successfully!', 'success')
+
+        // Reset form and hide it
+        setNewUserData({
+          username: '',
+          displayName: '',
+          email: '',
+          twitchUserId: ''
+        })
+        setShowAddUserForm(false)
+
+        // Refresh user list
+        if (onRefresh) {
+          onRefresh()
+        }
+      })
+    } catch (error) {
+      console.error('Error creating user:', error)
+      showToast(`Failed to create user: ${error?.message || 'Unknown error'}`, 'error')
+    }
+  }
+
   const handleOverlayChange = (key, value) => {
     const currentSettings = formState?.overlaySettings || {}
     const newSettings = { ...currentSettings, [key]: value }
@@ -354,20 +393,176 @@ const UserManagementModal = ({
           <div className="modal-body">
             <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', margin: 0 }}>Manage Users ({users.length})</h3>
-              <button
-                onClick={onRefresh}
-                style={{
-                  padding: '8px 16px',
-                  background: '#9146ff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                🔄 Refresh
-              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={() => setShowAddUserForm(true)}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#00ff88',
+                    color: 'black',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  ➕ Add User
+                </button>
+                <button
+                  onClick={onRefresh}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#9146ff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔄 Refresh
+                </button>
+              </div>
             </div>
+
+            {/* Add User Form */}
+            {showAddUserForm && (
+              <div style={{
+                background: '#1a1a1a',
+                padding: '20px',
+                borderRadius: '8px',
+                border: '2px solid #00ff88',
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <h4 style={{ color: '#00ff88', margin: 0 }}>➕ Add New User</h4>
+                  <button
+                    onClick={() => setShowAddUserForm(false)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#ccc',
+                      cursor: 'pointer',
+                      fontSize: '18px'
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                      Username (required) *
+                    </label>
+                    <input
+                      type="text"
+                      value={newUserData.username}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, username: e.target.value }))}
+                      placeholder="Enter Twitch username"
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        background: '#2a2a2a',
+                        color: '#fff'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                      Twitch User ID (required) *
+                    </label>
+                    <input
+                      type="text"
+                      value={newUserData.twitchUserId}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, twitchUserId: e.target.value }))}
+                      placeholder="Enter Twitch User ID"
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        background: '#2a2a2a',
+                        color: '#fff'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                      Display Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newUserData.displayName}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
+                      placeholder="Enter display name"
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        background: '#2a2a2a',
+                        color: '#fff'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={newUserData.email}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="Enter email address"
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        background: '#2a2a2a',
+                        color: '#fff'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowAddUserForm(false)}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#666',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateUser}
+                    disabled={isLoading || !newUserData.username || !newUserData.twitchUserId}
+                    style={{
+                      padding: '8px 16px',
+                      background: (!newUserData.username || !newUserData.twitchUserId) ? '#666' : '#00ff88',
+                      color: (!newUserData.username || !newUserData.twitchUserId) ? '#999' : 'black',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: (!newUserData.username || !newUserData.twitchUserId) ? 'not-allowed' : 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {isLoading ? '⏳ Creating...' : '✅ Create User'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gap: '15px' }}>
               {users.map(user => (
