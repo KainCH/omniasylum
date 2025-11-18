@@ -470,8 +470,7 @@ router.get('/:userId', async (req, res) => {
                 });
 
                 const healthPercentage = (healthyNotifications.length / expectedNotifications.length) * 100;
-                const healthMsg = 'Notification cache health: ' + healthPercentage.toFixed(1) + '% (' + healthyNotifications.length + '/' + expectedNotifications.length + ')';
-                console.log(healthMsg);
+                console.log('Notification cache health: ' + healthPercentage.toFixed(1) + '% (' + healthyNotifications.length + '/' + expectedNotifications.length + ')');
 
                 return {
                     healthy: healthPercentage >= 80,

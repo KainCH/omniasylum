@@ -14,6 +14,11 @@ class AsylumEffects {
     this.audioCache = {};
     this.audioVolume = 0.7; // 70% volume by default
 
+    // Audio retry management to prevent infinite loops
+    this.audioRetryAttempts = new Map(); // Track retry attempts per sound
+    this.maxRetryAttempts = 3;
+    this.retryTimeout = 5000; // 5 second timeout
+
     // Effect toggles - can be enabled/disabled
     this.settings = {
       enableSound: true,
@@ -340,17 +345,30 @@ class AsylumEffects {
     }, 3000);
   }
 
-  // Enhanced playSound with cache health checking
-  playSound(soundTrigger) {
+  // Enhanced playSound with retry tracking to prevent infinite loops
+  playSound(soundTrigger, retryCount = 0) {
     if (!soundTrigger) return;
+
+    // Check retry limits to prevent infinite loops
+    const retryKey = `${soundTrigger}_${Date.now()}`;
+    if (retryCount >= this.maxRetryAttempts) {
+      console.warn(`Max retry attempts (${this.maxRetryAttempts}) reached for: ${soundTrigger}`);
+      this.audioRetryAttempts.delete(retryKey);
+      return;
+    }
 
     // Check if audio cache is empty and recover if needed
     if (Object.keys(this.audioCache).length === 0) {
-      console.log('🔊 Audio cache empty, attempting recovery...');
-      this.restoreAudioCacheState();
+      console.log('Audio cache empty, attempting recovery...');
+      const restored = this.restoreAudioCacheState();
 
-      // Queue the sound to play once cache is restored
-      setTimeout(() => this.playSound(soundTrigger), 1000);
+      if (!restored && retryCount === 0) {
+        console.warn('Failed to restore audio cache, sound will not play:', soundTrigger);
+        return;
+      }
+
+      // Queue the sound to play once cache is restored (with retry tracking)
+      setTimeout(() => this.playSound(soundTrigger, retryCount + 1), 1000);
       return;
     }
 
@@ -359,6 +377,9 @@ class AsylumEffects {
     const audio = this.audioCache[soundName];
 
     if (audio && audio.readyState >= 3) {
+      // Audio is ready - play it and clear any retry tracking
+      this.audioRetryAttempts.delete(retryKey);
+
       // Clone the audio to allow overlapping sounds
       const soundInstance = audio.cloneNode();
       soundInstance.volume = this.audioVolume;
@@ -369,27 +390,40 @@ class AsylumEffects {
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            console.log(`🔊 Playing sound: ${soundTrigger}`);
+            console.log(`Playing sound: ${soundTrigger}`);
           })
           .catch(error => {
-            console.warn(`⚠️ Autoplay prevented for: ${soundTrigger}`, error);
+            console.warn(`Autoplay prevented for: ${soundTrigger}`, error);
             // User interaction required - this is expected on first load
           });
       }
     } else if (audio && audio.readyState < 3) {
-      // Audio exists but not ready, wait for it to load
-      console.log(`🔄 Audio loading, will play when ready: ${soundTrigger}`);
+      // Audio exists but not ready, wait for it to load (with timeout)
+      console.log(`Audio loading, will play when ready: ${soundTrigger}`);
+
+      const timeoutId = setTimeout(() => {
+        console.warn(`Audio load timeout for: ${soundTrigger}`);
+        this.playSound(soundTrigger, retryCount + 1);
+      }, this.retryTimeout);
+
       audio.addEventListener('canplaythrough', () => {
-        this.playSound(soundTrigger);
+        clearTimeout(timeoutId);
+        this.playSound(soundTrigger, retryCount);
       }, { once: true });
+
     } else {
-      console.warn(`⚠️ Sound not found in cache: ${soundTrigger}`);
+      // Sound not found in cache - try to load it
+      console.warn(`Sound not found in cache: ${soundTrigger}`);
 
-      // Try to load the missing sound immediately
-      this.priorityLoadSound(soundName, `/sounds/${soundName}.wav`);
+      // Only attempt loading if we haven't exceeded retry limits
+      if (retryCount < this.maxRetryAttempts) {
+        this.priorityLoadSound(soundName, `/sounds/${soundName}.wav`);
 
-      // Queue the sound to play once loaded
-      setTimeout(() => this.playSound(soundTrigger), 1500);
+        // Queue the sound to play once loaded (with retry tracking)
+        setTimeout(() => this.playSound(soundTrigger, retryCount + 1), 1500);
+      } else {
+        console.error(`Failed to load sound after ${this.maxRetryAttempts} attempts: ${soundTrigger}`);
+      }
     }
   }
 
@@ -421,9 +455,9 @@ class AsylumEffects {
       };
 
       localStorage.setItem('omni_asylum_audio_cache', JSON.stringify(cacheState));
-      console.log('💾 Audio cache state saved:', cacheState);
+      console.log(`Audio cache saved: ${cacheState.sounds.length} sounds at ${new Date(cacheState.timestamp).toLocaleTimeString()}`);
     } catch (error) {
-      console.warn('⚠️ Failed to save audio cache state:', error);
+      console.warn('Failed to save audio cache state:', error);
     }
   }
 
@@ -438,12 +472,14 @@ class AsylumEffects {
 
       // Cache is valid for 24 hours
       if (age > 24 * 60 * 60 * 1000) {
-        console.log('🕒 Audio cache expired, will reload fresh');
+        console.log('Audio cache expired, will reload fresh');
         localStorage.removeItem('omni_asylum_audio_cache');
         return false;
       }
 
-      console.log('🔄 Restoring audio cache from localStorage...', cacheState);
+      console.log(
+        `Restoring audio cache: ${cacheState.sounds?.length || 0} sounds, volume=${cacheState.volume || 0.7}, cache age=${Math.round(age / 1000)}s`
+      );
 
       // Restore volume and settings
       this.audioVolume = cacheState.volume || 0.7;
@@ -472,13 +508,39 @@ class AsylumEffects {
     this.audioCache[key] = audio;
 
     audio.addEventListener('canplaythrough', () => {
-      console.log(`⚡ Priority restored sound: ${key}`);
+      console.log(`Priority restored sound: ${key}`);
       this.saveAudioCacheState(); // Update cache state
     }, { once: true });
 
     audio.addEventListener('error', (e) => {
-      console.warn(`⚠️ Priority load failed for: ${key}`, e);
+      console.warn(`Priority load failed for: ${key}`, e);
       delete this.audioCache[key]; // Remove failed entry
+    });
+  }
+
+  // Load audio with fallback support (eliminates code duplication)
+  loadAudioWithFallback(key, primaryUrl, fallbackUrl = null) {
+    const audio = new Audio(primaryUrl);
+    audio.volume = this.audioVolume;
+    audio.preload = 'auto';
+    this.audioCache[key] = audio;
+
+    audio.addEventListener('canplaythrough', () => {
+      const fileType = primaryUrl.includes('.mp3') ? 'mp3' : 'wav';
+      console.log(`Recovered sound (${fileType}): ${key}`);
+      this.saveAudioCacheState();
+    }, { once: true });
+
+    audio.addEventListener('error', (e) => {
+      if (fallbackUrl) {
+        console.warn(`Primary audio load failed for ${key}, trying fallback...`);
+        // Remove failed attempt and try fallback
+        delete this.audioCache[key];
+        this.loadAudioWithFallback(key, fallbackUrl, null);
+      } else {
+        console.error(`All audio load attempts failed for: ${key}`, e);
+        delete this.audioCache[key];
+      }
     });
   }
 
@@ -497,7 +559,7 @@ class AsylumEffects {
 
     const healthPercentage = (healthySounds.length / expectedSounds.length) * 100;
 
-    console.log(`🏥 Audio cache health: ${healthPercentage.toFixed(1)}% (${healthySounds.length}/${expectedSounds.length})`);
+    console.log(`Audio cache health: ${healthPercentage.toFixed(1)}% (${healthySounds.length}/${expectedSounds.length})`);
 
     return {
       healthy: healthPercentage >= 80, // 80% threshold
@@ -512,44 +574,21 @@ class AsylumEffects {
 
   // Recover unhealthy audio cache
   recoverAudioCache(healthStatus) {
-    console.log('🏥 Starting audio cache recovery...');
+    console.log('Starting audio cache recovery...');
 
-    // Reload failed sounds
+    // Reload failed sounds using helper method with fallback
     healthStatus.failed.forEach(key => {
-      console.log(`🔄 Recovering failed sound: ${key}`);
+      console.log(`Recovering failed sound: ${key}`);
       delete this.audioCache[key];
 
-      // Find original filename - try .wav first, then .mp3
-      let filename = key + '.wav';
-      const audio = new Audio(`/sounds/${filename}`);
-      audio.volume = this.audioVolume;
-      audio.preload = 'auto';
-      this.audioCache[key] = audio;
-
-      audio.addEventListener('canplaythrough', () => {
-        console.log(`✅ Recovered sound: ${filename}`);
-        this.saveAudioCacheState();
-      }, { once: true });
-
-      audio.addEventListener('error', () => {
-        // Try .mp3 if .wav fails
-        filename = key + '.mp3';
-        const mp3Audio = new Audio(`/sounds/${filename}`);
-        mp3Audio.volume = this.audioVolume;
-        mp3Audio.preload = 'auto';
-        this.audioCache[key] = mp3Audio;
-
-        mp3Audio.addEventListener('canplaythrough', () => {
-          console.log(`✅ Recovered sound (mp3): ${filename}`);
-          this.saveAudioCacheState();
-        }, { once: true });
-      });
+      // Use helper method with .wav primary and .mp3 fallback
+      this.loadAudioWithFallback(key, `/sounds/${key}.wav`, `/sounds/${key}.mp3`);
     });
 
-    // Load missing sounds
+    // Load missing sounds using helper method with fallback
     healthStatus.missing.forEach(key => {
-      console.log(`🔄 Loading missing sound: ${key}`);
-      this.priorityLoadSound(key, `/sounds/${key}.wav`);
+      console.log(`Loading missing sound: ${key}`);
+      this.loadAudioWithFallback(key, `/sounds/${key}.wav`, `/sounds/${key}.mp3`);
     });
   }
 
