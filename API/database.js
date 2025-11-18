@@ -104,6 +104,12 @@ class Database {
    * Get user by Twitch user ID
    */
   async getUser(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUser called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
     if (this.mode === 'azure') {
       try {
         const entity = await this.usersClient.getEntity('user', twitchUserId);
@@ -143,7 +149,10 @@ class Database {
       bitsIntegration: false,
       streamOverlay: false,
       alertAnimations: false,
-      discordNotifications: true
+      discordNotifications: true,
+      discordWebhook: false,
+      templateStyle: 'asylum_themed',
+      streamAlerts: true
     };
 
     // Default overlay settings for new users
@@ -153,7 +162,12 @@ class Database {
       counters: {
         deaths: true,
         swears: true,
+        screams: true,
         bits: false
+      },
+      bitsGoal: {
+        target: 1000,
+        current: 0
       },
       theme: {
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -182,6 +196,7 @@ class Database {
       features: JSON.stringify(userData.features || (existingUser?.features ? JSON.parse(existingUser.features) : defaultFeatures)),
       overlaySettings: JSON.stringify(userData.overlaySettings || (existingUser?.overlaySettings ? JSON.parse(existingUser.overlaySettings) : defaultOverlaySettings)),
       discordWebhookUrl: userData.discordWebhookUrl || existingUser?.discordWebhookUrl || '',
+      discordInviteLink: userData.discordInviteLink || existingUser?.discordInviteLink || '',
       isActive: userData.isActive !== undefined ? userData.isActive : (existingUser?.isActive !== undefined ? existingUser.isActive : true),
       streamStatus: userData.streamStatus || existingUser?.streamStatus || 'offline', // 'offline' | 'prepping' | 'live' | 'ending'
       createdAt: userData.createdAt || existingUser?.createdAt || new Date().toISOString(),
@@ -238,6 +253,7 @@ class Database {
         return {
           deaths: entity.deaths || 0,
           swears: entity.swears || 0,
+          screams: entity.screams || 0,
           bits: entity.bits || 0,
           lastUpdated: entity.lastUpdated,
           streamStarted: entity.streamStarted || null
@@ -247,6 +263,7 @@ class Database {
           return {
             deaths: 0,
             swears: 0,
+            screams: 0,
             bits: 0,
             lastUpdated: new Date().toISOString(),
             streamStarted: null
@@ -259,6 +276,7 @@ class Database {
       return counters[twitchUserId] || {
         deaths: 0,
         swears: 0,
+        screams: 0,
         bits: 0,
         lastUpdated: new Date().toISOString(),
         streamStarted: null
@@ -301,7 +319,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 1, swears: 0 }
+      change: { deaths: 1, swears: 0, screams: 0 }
     };
   }
 
@@ -316,7 +334,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: change, swears: 0 }
+      change: { deaths: change, swears: 0, screams: 0 }
     };
   }
 
@@ -330,7 +348,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 1 }
+      change: { deaths: 0, swears: 1, screams: 0 }
     };
   }
 
@@ -345,7 +363,36 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: change }
+      change: { deaths: 0, swears: change, screams: 0 }
+    };
+  }
+
+  /**
+   * Increment scream counter
+   */
+  async incrementScreams(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const newCounters = { ...oldCounters, screams: oldCounters.screams + 1 };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, screams: 1 }
+    };
+  }
+
+  /**
+   * Decrement scream counter
+   */
+  async decrementScreams(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const change = oldCounters.screams > 0 ? -1 : 0;
+    const newCounters = { ...oldCounters, screams: Math.max(0, oldCounters.screams - 1) };
+    const saved = await this.saveCounters(twitchUserId, newCounters);
+
+    return {
+      ...saved,
+      change: { deaths: 0, swears: 0, screams: change }
     };
   }
 
@@ -357,13 +404,14 @@ class Database {
     const saved = await this.saveCounters(twitchUserId, {
       deaths: 0,
       swears: 0,
+      screams: 0,
       bits: oldCounters.bits, // Keep bits counter
       streamStarted: oldCounters.streamStarted
     });
 
     return {
       ...saved,
-      change: { deaths: -oldCounters.deaths, swears: -oldCounters.swears, bits: 0 }
+      change: { deaths: -oldCounters.deaths, swears: -oldCounters.swears, screams: -oldCounters.screams, bits: 0 }
     };
   }
 
@@ -380,7 +428,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 0, bits: amount }
+      change: { deaths: 0, swears: 0, screams: 0, bits: amount }
     };
   }
 
@@ -399,7 +447,7 @@ class Database {
 
     return {
       ...saved,
-      change: { deaths: 0, swears: 0, bits: -oldCounters.bits }
+      change: { deaths: 0, swears: 0, screams: 0, bits: -oldCounters.bits }
     };
   }
 
@@ -901,6 +949,145 @@ class Database {
   }
 
   /**
+   * Grant mod permissions to a user for a specific broadcaster (admin only)
+   */
+  async grantModPermissions(modUserId, broadcasterUserId) {
+    const mod = await this.getUser(modUserId);
+    const broadcaster = await this.getUser(broadcasterUserId);
+
+    if (!mod) {
+      throw new Error('Mod user not found');
+    }
+    if (!broadcaster) {
+      throw new Error('Broadcaster user not found');
+    }
+
+    // Initialize managedStreamers array if it doesn't exist
+    if (!mod.managedStreamers) {
+      mod.managedStreamers = [];
+    }
+
+    // Add broadcaster to managed streamers if not already there
+    if (!mod.managedStreamers.includes(broadcasterUserId)) {
+      mod.managedStreamers.push(broadcasterUserId);
+    }
+
+    // Update mod role if they're not already a mod
+    if (mod.role === 'streamer') {
+      mod.role = 'mod';
+    }
+
+    // Save the updated mod user
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(mod, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[modUserId]) {
+        users[modUserId] = mod;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('Mod user not found in local storage');
+      }
+    }
+
+    return mod;
+  }
+
+  /**
+   * Revoke mod permissions from a user for a specific broadcaster (admin only)
+   */
+  async revokeModPermissions(modUserId, broadcasterUserId) {
+    const mod = await this.getUser(modUserId);
+
+    if (!mod) {
+      throw new Error('Mod user not found');
+    }
+
+    // Remove broadcaster from managed streamers
+    if (mod.managedStreamers) {
+      mod.managedStreamers = mod.managedStreamers.filter(id => id !== broadcasterUserId);
+
+      // If no more managed streamers, downgrade to regular streamer
+      if (mod.managedStreamers.length === 0) {
+        mod.role = 'streamer';
+        delete mod.managedStreamers;
+      }
+    }
+
+    // Save the updated mod user
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(mod, 'Merge');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      if (users[modUserId]) {
+        users[modUserId] = mod;
+        fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+      } else {
+        throw new Error('Mod user not found in local storage');
+      }
+    }
+
+    return mod;
+  }
+
+  /**
+   * Check if a user can manage another user's settings
+   */
+  async canManageUser(managerUserId, targetUserId) {
+    // Users can always manage themselves
+    if (managerUserId === targetUserId) {
+      return true;
+    }
+
+    const manager = await this.getUser(managerUserId);
+    if (!manager) {
+      return false;
+    }
+
+    // Admin can manage anyone
+    if (manager.role === 'admin') {
+      return true;
+    }
+
+    // Mods can only manage their assigned streamers
+    if (manager.role === 'mod' && manager.managedStreamers) {
+      return manager.managedStreamers.includes(targetUserId);
+    }
+
+    return false;
+  }
+
+  /**
+   * Get all users a manager can manage (includes themselves)
+   */
+  async getManagedUsers(managerUserId) {
+    const manager = await this.getUser(managerUserId);
+    if (!manager) {
+      return [];
+    }
+
+    const managedUsers = [manager]; // Always include self
+
+    // Admin can see all users
+    if (manager.role === 'admin') {
+      const allUsers = await this.getAllUsers();
+      return allUsers;
+    }
+
+    // Managers can see their assigned streamers
+    if (manager.role === 'manager' && manager.managedStreamers) {
+      for (const streamerId of manager.managedStreamers) {
+        const streamer = await this.getUser(streamerId);
+        if (streamer) {
+          managedUsers.push(streamer);
+        }
+      }
+    }
+
+    return managedUsers;
+  }
+
+  /**
    * Get user features
    */
   async getUserFeatures(twitchUserId) {
@@ -955,7 +1142,12 @@ class Database {
           counters: {
             deaths: true,
             swears: true,
+            screams: true,
             bits: false
+          },
+          bitsGoal: {
+            target: 1000,
+            current: 0
           },
           theme: {
             backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -980,7 +1172,12 @@ class Database {
         counters: {
           deaths: true,
           swears: true,
+          screams: true,
           bits: false
+        },
+        bitsGoal: {
+          target: 1000,
+          current: 0
         },
         theme: {
           backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -1176,6 +1373,12 @@ class Database {
    * Get user's Discord webhook configuration
    */
   async getUserDiscordWebhook(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUserDiscordWebhook called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
     const user = await this.getUser(twitchUserId);
     if (!user) {
       return null;
@@ -1187,6 +1390,74 @@ class Database {
     };
 
     return result;
+  }
+
+  /**
+   * Get user's Discord invite link
+   */
+  async getUserDiscordInviteLink(twitchUserId) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      console.warn('⚠️ getUserDiscordInviteLink called with invalid twitchUserId:', twitchUserId);
+      return null;
+    }
+
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      return null;
+    }
+
+    return user.discordInviteLink || '';
+  }
+
+  /**
+   * Update user's Discord invite link
+   */
+  async updateUserDiscordInviteLink(twitchUserId, inviteLink) {
+    // Validate input
+    if (!twitchUserId || typeof twitchUserId !== 'string') {
+      throw new Error('Invalid twitchUserId provided');
+    }
+
+    // Validate Discord invite link format
+    if (inviteLink && !this.isValidDiscordInvite(inviteLink)) {
+      throw new Error('Invalid Discord invite link format');
+    }
+
+    const user = await this.getUser(twitchUserId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Update the user's Discord invite link
+    user.discordInviteLink = inviteLink || '';
+
+    if (this.mode === 'azure') {
+      await this.usersClient.upsertEntity(user, 'Replace');
+    } else {
+      const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
+      users[twitchUserId] = user;
+      fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
+    }
+
+    console.log(`✅ Updated Discord invite link for user ${twitchUserId}: ${inviteLink ? 'Set' : 'Removed'}`);
+    return true;
+  }
+
+  /**
+   * Validate Discord invite link format
+   */
+  isValidDiscordInvite(inviteLink) {
+    if (!inviteLink) return false;
+
+    // Discord invite patterns
+    const patterns = [
+      /^https?:\/\/discord\.gg\/[a-zA-Z0-9]+$/,
+      /^https?:\/\/discord\.com\/invite\/[a-zA-Z0-9]+$/,
+      /^https?:\/\/discordapp\.com\/invite\/[a-zA-Z0-9]+$/
+    ];
+
+    return patterns.some(pattern => pattern.test(inviteLink));
   }
 
   /**
@@ -1233,8 +1504,8 @@ class Database {
         type: 'follow',
         name: 'New Follower',
         visualCue: 'A door creaks open slowly',
-        sound: 'distant-footsteps',
-        soundDescription: 'Distant footsteps or whisper',
+        sound: 'door-creak',
+        soundDescription: 'Heavy door creaking open',
         textPrompt: '🚪 A new patient has arrived… [User]',
         duration: 5000,
         backgroundColor: '#1a0d0d',
@@ -1571,6 +1842,33 @@ class Database {
   // ==================== EVENT-TO-ALERT MAPPING ====================
 
   /**
+   * Get all available EventSub events (both enabled and disabled)
+   */
+  getAllAvailableEvents() {
+    return [
+      'channel.follow',
+      'channel.subscribe',
+      'channel.subscription.gift',
+      'channel.subscription.message',
+      'channel.bits.use'
+    ];
+  }
+
+  /**
+   * Get available alert types (including "none" for disabling)
+   */
+  getAvailableAlertTypes() {
+    return [
+      'none',        // Special value to disable alerts
+      'follow',
+      'subscription',
+      'giftsub',
+      'resub',
+      'bits'
+    ];
+  }
+
+  /**
    * Get default event-to-alert mappings for EventSub events
    */
   getDefaultEventMappings() {
@@ -1579,8 +1877,7 @@ class Database {
       'channel.subscribe': 'subscription',
       'channel.subscription.gift': 'giftsub',
       'channel.subscription.message': 'resub',
-      'channel.cheer': 'bits',
-      'channel.bits.use': 'bits'  // NEW bits event type
+      'channel.bits.use': 'bits'
     };
   }
 
@@ -1601,31 +1898,36 @@ class Database {
    * Get event-to-alert mappings for a user
    */
   async getEventMappings(twitchUserId) {
+    let mappings;
+
     if (this.mode === 'azure') {
       try {
         const entity = await this.usersClient.getEntity(twitchUserId, 'event-mappings');
-        return JSON.parse(entity.mappings || '{}');
+        mappings = JSON.parse(entity.mappings || '{}');
       } catch (error) {
         if (error.statusCode === 404) {
-          return {};
+          mappings = {};
+        } else {
+          throw error;
         }
-        throw error;
       }
     } else {
       const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
 
       if (!fs.existsSync(mappingsFile)) {
-        return {};
-      }
-
-      try {
-        const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
-        return allMappings[twitchUserId] || {};
-      } catch (error) {
-        console.error('Error reading event mappings:', error);
-        return {};
+        mappings = {};
+      } else {
+        try {
+          const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+          mappings = allMappings[twitchUserId] || {};
+        } catch (error) {
+          console.error('Error reading event mappings:', error);
+          mappings = {};
+        }
       }
     }
+
+    return mappings;
   }
 
   /**
@@ -1660,6 +1962,69 @@ class Database {
   }
 
   /**
+   * Migrate all users from channel.cheer to channel.bits.use
+   * This is a one-time migration function
+   */
+  async migrateAllCheerToBitsUse() {
+    console.log('🔄 Starting bulk migration from channel.cheer to channel.bits.use...');
+    let migratedCount = 0;
+
+    if (this.mode === 'azure') {
+      // Azure Table Storage migration
+      try {
+        const entities = this.usersClient.listEntities({
+          queryOptions: { filter: "PartitionKey ne ''" }
+        });
+
+        for await (const entity of entities) {
+          const mappings = JSON.parse(entity.mappings || '{}');
+          if (mappings['channel.cheer'] && !mappings['channel.bits.use']) {
+            mappings['channel.bits.use'] = mappings['channel.cheer'];
+            delete mappings['channel.cheer'];
+
+            await this.usersClient.updateEntity({
+              partitionKey: entity.partitionKey,
+              rowKey: entity.rowKey,
+              mappings: JSON.stringify(mappings)
+            });
+
+            migratedCount++;
+            console.log(`✅ Migrated user ${entity.partitionKey}`);
+          }
+        }
+      } catch (error) {
+        console.error('Error during Azure migration:', error);
+      }
+    } else {
+      // Local JSON migration
+      const mappingsFile = path.join(this.localDataDir, 'event-mappings.json');
+      if (fs.existsSync(mappingsFile)) {
+        try {
+          const allMappings = JSON.parse(fs.readFileSync(mappingsFile, 'utf8'));
+
+          for (const [userId, mappings] of Object.entries(allMappings)) {
+            if (mappings['channel.cheer'] && !mappings['channel.bits.use']) {
+              mappings['channel.bits.use'] = mappings['channel.cheer'];
+              delete mappings['channel.cheer'];
+              migratedCount++;
+              console.log(`✅ Migrated user ${userId}`);
+            }
+          }
+
+          if (migratedCount > 0) {
+            fs.writeFileSync(mappingsFile, JSON.stringify(allMappings, null, 2), 'utf8');
+          }
+        } catch (error) {
+          console.error('Error during local migration:', error);
+        }
+      }
+    }
+
+    console.log(`🎉 Migration completed! Migrated ${migratedCount} users from channel.cheer to channel.bits.use`);
+    return migratedCount;
+  }
+
+  /**
    * Get alert configuration for a specific EventSub event
    */
   async getAlertForEvent(twitchUserId, eventType) {
@@ -1671,6 +2036,12 @@ class Database {
       return null;
     }
 
+    // Check if alerts are disabled for this event
+    if (alertType === 'none') {
+      console.log(`Alerts disabled for event type: ${eventType}`);
+      return null;
+    }
+
     const alerts = await this.getUserAlerts(twitchUserId);
     const alert = alerts.find(alert => alert.type === alertType && alert.isEnabled);
 
@@ -1679,6 +2050,662 @@ class Database {
     }
 
     return alert || null;
+  }
+
+  // ==================== TEMPLATE MANAGEMENT ====================
+
+  /**
+   * Get available template definitions
+   */
+  getAvailableTemplates() {
+    return {
+      asylum_themed: {
+        name: 'Asylum Themed',
+        description: 'Dark horror-themed template with blood effects and creepy animations',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#8B0000',
+            secondary: '#DC143C',
+            background: '#1a0000',
+            text: '#FFFFFF',
+            accent: '#FF6B6B'
+          },
+          fonts: {
+            primary: 'Creepster, cursive',
+            secondary: 'Arial, sans-serif'
+          },
+          animations: {
+            bloodDrip: true,
+            screenshake: true,
+            fadeEffects: true,
+            particleEffects: true
+          },
+          sounds: {
+            death: 'scream.mp3',
+            swear: 'bleep.mp3',
+            milestone: 'creepy_bell.mp3'
+          }
+        }
+      },
+      modern_minimal: {
+        name: 'Modern Minimal',
+        description: 'Clean, modern design with smooth animations',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#6366f1',
+            secondary: '#8b5cf6',
+            background: '#ffffff',
+            text: '#1f2937',
+            accent: '#3b82f6'
+          },
+          fonts: {
+            primary: 'Inter, sans-serif',
+            secondary: 'SF Pro Display, sans-serif'
+          },
+          animations: {
+            slideIn: true,
+            fadeEffects: true,
+            bounceOnUpdate: true,
+            glassmorphism: true
+          },
+          sounds: {
+            death: 'notification.mp3',
+            swear: 'pop.mp3',
+            milestone: 'achievement.mp3'
+          }
+        }
+      },
+      streamer_pro: {
+        name: 'Streamer Pro',
+        description: 'Professional streaming template with customizable colors',
+        type: 'built-in',
+        config: {
+          colors: {
+            primary: '#9146ff',
+            secondary: '#772ce8',
+            background: 'rgba(0, 0, 0, 0.8)',
+            text: '#ffffff',
+            accent: '#00f5ff'
+          },
+          fonts: {
+            primary: 'Roboto, sans-serif',
+            secondary: 'Open Sans, sans-serif'
+          },
+          animations: {
+            slideIn: true,
+            typewriter: true,
+            neonGlow: true,
+            particleTrails: true
+          },
+          sounds: {
+            death: 'game_over.mp3',
+            swear: 'censored.mp3',
+            milestone: 'level_up.mp3'
+          }
+        }
+      }
+    };
+  }
+
+  /**
+   * Get user's template configuration
+   */
+  async getUserTemplate(twitchUserId) {
+    try {
+      const user = await this.getUser(twitchUserId);
+      if (!user) return null;
+
+      const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
+      const templateStyle = features.templateStyle || 'asylum_themed';
+
+      // Check if user has a custom template
+      const customTemplate = await this.getUserCustomTemplate(twitchUserId);
+      if (customTemplate && templateStyle === 'custom') {
+        return {
+          type: 'custom',
+          name: customTemplate.name,
+          config: customTemplate.config,
+          templateStyle: 'custom'
+        };
+      }
+
+      // Return built-in template
+      const availableTemplates = this.getAvailableTemplates();
+      const template = availableTemplates[templateStyle];
+
+      if (!template) {
+        console.log(`⚠️ Template ${templateStyle} not found, falling back to asylum_themed`);
+        return availableTemplates.asylum_themed;
+      }
+
+      return {
+        ...template,
+        templateStyle
+      };
+    } catch (error) {
+      console.error('❌ Error getting user template:', error);
+      return this.getAvailableTemplates().asylum_themed;
+    }
+  }
+
+  /**
+   * Get user's custom template (if any)
+   */
+  async getUserCustomTemplate(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'customTemplate');
+        return JSON.parse(entity.templateConfig);
+      } else {
+        const customTemplatesFile = path.join(this.dataDir, 'customTemplates.json');
+        if (!fs.existsSync(customTemplatesFile)) {
+          return null;
+        }
+        const templates = JSON.parse(fs.readFileSync(customTemplatesFile, 'utf8'));
+        return templates[twitchUserId] || null;
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting custom template:', error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Save user's custom template
+   */
+  async saveUserCustomTemplate(twitchUserId, templateData) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'customTemplate',
+          templateConfig: JSON.stringify(templateData),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const customTemplatesFile = path.join(this.dataDir, 'customTemplates.json');
+        let templates = {};
+
+        if (fs.existsSync(customTemplatesFile)) {
+          templates = JSON.parse(fs.readFileSync(customTemplatesFile, 'utf8'));
+        }
+
+        templates[twitchUserId] = {
+          ...templateData,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(customTemplatesFile, JSON.stringify(templates, null, 2));
+      }
+
+      console.log(`✅ Custom template saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving custom template:', error);
+      throw error;
+    }
+  }
+
+  // ==================== CUSTOM COUNTERS MANAGEMENT ====================
+
+  /**
+   * Get user's custom counters
+   */
+  async getUserCustomCounters(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'customCounters');
+        return JSON.parse(entity.countersConfig);
+      } else {
+        const customCountersFile = path.join(this.dataDir, 'customCounters.json');
+        if (!fs.existsSync(customCountersFile)) {
+          return {};
+        }
+        const counters = JSON.parse(fs.readFileSync(customCountersFile, 'utf8'));
+        return counters[twitchUserId] || {};
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting custom counters:', error);
+      }
+      return {};
+    }
+  }
+
+  /**
+   * Save user's custom counters configuration
+   */
+  async saveUserCustomCounters(twitchUserId, countersConfig) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'customCounters',
+          countersConfig: JSON.stringify(countersConfig),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const customCountersFile = path.join(this.dataDir, 'customCounters.json');
+        let counters = {};
+
+        if (fs.existsSync(customCountersFile)) {
+          counters = JSON.parse(fs.readFileSync(customCountersFile, 'utf8'));
+        }
+
+        counters[twitchUserId] = {
+          ...countersConfig,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(customCountersFile, JSON.stringify(counters, null, 2));
+      }
+
+      console.log(`✅ Custom counters saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving custom counters:', error);
+      throw error;
+    }
+  }
+
+  // ==================== CUSTOM CHAT COMMANDS ====================
+
+  /**
+   * Get user's custom chat commands
+   */
+  async getUserChatCommands(twitchUserId) {
+    try {
+      if (this.dbMode === 'azure') {
+        const entity = await this.tableClient.getEntity(twitchUserId, 'chatCommands');
+        return JSON.parse(entity.commandsConfig);
+      } else {
+        const chatCommandsFile = path.join(this.dataDir, 'chatCommands.json');
+        if (!fs.existsSync(chatCommandsFile)) {
+          return this.getDefaultChatCommands();
+        }
+        const commands = JSON.parse(fs.readFileSync(chatCommandsFile, 'utf8'));
+        return commands[twitchUserId] || this.getDefaultChatCommands();
+      }
+    } catch (error) {
+      if (error.statusCode !== 404) {
+        console.error('❌ Error getting chat commands:', error);
+      }
+      return this.getDefaultChatCommands();
+    }
+  }
+
+  /**
+   * Get default chat commands
+   */
+  getDefaultChatCommands() {
+    return {
+      // Public commands
+      '!deaths': {
+        response: 'Current death count: {{deaths}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!swears': {
+        response: 'Current swear count: {{swears}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!screams': {
+        response: 'Current scream count: {{screams}}',
+        permission: 'everyone',
+        cooldown: 5,
+        enabled: true
+      },
+      '!stats': {
+        response: 'Deaths: {{deaths}}, Swears: {{swears}}, Screams: {{screams}}, Bits: {{bits}}',
+        permission: 'everyone',
+        cooldown: 10,
+        enabled: true
+      },
+
+      // Moderator commands
+      '!death+': {
+        action: 'increment',
+        counter: 'deaths',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!death-': {
+        action: 'decrement',
+        counter: 'deaths',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!swear+': {
+        action: 'increment',
+        counter: 'swears',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!swear-': {
+        action: 'decrement',
+        counter: 'swears',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!scream+': {
+        action: 'increment',
+        counter: 'screams',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!scream-': {
+        action: 'decrement',
+        counter: 'screams',
+        permission: 'moderator',
+        cooldown: 1,
+        enabled: true
+      },
+      '!resetcounters': {
+        action: 'reset',
+        permission: 'moderator',
+        cooldown: 30,
+        enabled: true
+      }
+    };
+  }
+
+  /**
+   * Save user's custom chat commands
+   */
+  async saveUserChatCommands(twitchUserId, commandsConfig) {
+    try {
+      if (this.dbMode === 'azure') {
+        await this.tableClient.upsertEntity({
+          partitionKey: twitchUserId,
+          rowKey: 'chatCommands',
+          commandsConfig: JSON.stringify(commandsConfig),
+          lastUpdated: new Date().toISOString()
+        });
+      } else {
+        const chatCommandsFile = path.join(this.dataDir, 'chatCommands.json');
+        let commands = {};
+
+        if (fs.existsSync(chatCommandsFile)) {
+          commands = JSON.parse(fs.readFileSync(chatCommandsFile, 'utf8'));
+        }
+
+        commands[twitchUserId] = {
+          ...commandsConfig,
+          lastUpdated: new Date().toISOString()
+        };
+
+        fs.writeFileSync(chatCommandsFile, JSON.stringify(commands, null, 2));
+      }
+
+      console.log(`✅ Chat commands saved for user ${twitchUserId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving chat commands:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Save user access request
+   */
+  async saveUserRequest(requestData) {
+    try {
+      const requestId = `request_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      if (this.mode === 'azure') {
+        const entity = {
+          partitionKey: 'user_request',
+          rowKey: requestId,
+          twitchUserId: requestData.twitchUserId,
+          username: requestData.username,
+          displayName: requestData.displayName,
+          email: requestData.email || '',
+          profileImageUrl: requestData.profileImageUrl || '',
+          requestedAt: new Date().toISOString(),
+          status: 'pending', // pending, approved, rejected
+          adminNotes: '',
+          processedBy: '',
+          processedAt: ''
+        };
+
+        await this.usersClient.createEntity(entity);
+        console.log('✅ User request saved:', requestId);
+        return { requestId, ...entity };
+      } else {
+        // Local file storage
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        let requests = {};
+
+        if (fs.existsSync(requestsFile)) {
+          requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+        }
+
+        const entity = {
+          requestId,
+          twitchUserId: requestData.twitchUserId,
+          username: requestData.username,
+          displayName: requestData.displayName,
+          email: requestData.email || '',
+          profileImageUrl: requestData.profileImageUrl || '',
+          requestedAt: new Date().toISOString(),
+          status: 'pending',
+          adminNotes: '',
+          processedBy: '',
+          processedAt: ''
+        };
+
+        requests[requestId] = entity;
+        fs.writeFileSync(requestsFile, JSON.stringify(requests, null, 2));
+        console.log('✅ User request saved locally:', requestId);
+        return entity;
+      }
+    } catch (error) {
+      console.error('❌ Error saving user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all user requests
+   */
+  async getAllUserRequests() {
+    try {
+      if (this.mode === 'azure') {
+        const requests = [];
+        const entities = this.usersClient.listEntities({
+          queryOptions: { filter: "PartitionKey eq 'user_request'" }
+        });
+
+        for await (const entity of entities) {
+          requests.push(entity);
+        }
+
+        // Sort by requested date, newest first
+        return requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+      } else {
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        if (!fs.existsSync(requestsFile)) {
+          return [];
+        }
+
+        const requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+        const requestsList = Object.values(requests);
+
+        // Sort by requested date, newest first
+        return requestsList.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+      }
+    } catch (error) {
+      console.error('❌ Error getting user requests:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user request status
+   */
+  async updateUserRequestStatus(requestId, status, adminUserId, adminNotes = '') {
+    try {
+      if (this.mode === 'azure') {
+        const entity = await this.usersClient.getEntity('user_request', requestId);
+        entity.status = status;
+        entity.processedBy = adminUserId;
+        entity.processedAt = new Date().toISOString();
+        entity.adminNotes = adminNotes;
+
+        await this.usersClient.updateEntity(entity, 'Replace');
+        console.log('✅ User request updated:', requestId, status);
+        return entity;
+      } else {
+        const requestsFile = path.join(__dirname, 'data', 'user_requests.json');
+        const requests = JSON.parse(fs.readFileSync(requestsFile, 'utf8'));
+
+        if (requests[requestId]) {
+          requests[requestId].status = status;
+          requests[requestId].processedBy = adminUserId;
+          requests[requestId].processedAt = new Date().toISOString();
+          requests[requestId].adminNotes = adminNotes;
+
+          fs.writeFileSync(requestsFile, JSON.stringify(requests, null, 2));
+          console.log('✅ User request updated locally:', requestId, status);
+          return requests[requestId];
+        } else {
+          throw new Error('User request not found');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error updating user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create approved user from request
+   */
+  async approveUserRequest(requestId, adminUserId) {
+    try {
+      // Get the request
+      const request = this.mode === 'azure'
+        ? await this.usersClient.getEntity('user_request', requestId)
+        : JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'user_requests.json'), 'utf8'))[requestId];
+
+      if (!request) {
+        throw new Error('User request not found');
+      }
+
+      if (request.status !== 'pending') {
+        throw new Error('User request already processed');
+      }
+
+      // Create the user account
+      const userData = {
+        twitchUserId: request.twitchUserId,
+        username: request.username,
+        displayName: request.displayName,
+        email: request.email,
+        profileImageUrl: request.profileImageUrl,
+        isActive: true,
+        role: 'streamer',
+        features: {
+          chatCommands: true,
+          channelPoints: false,
+          autoClip: false,
+          customCommands: false,
+          analytics: false,
+          webhooks: false,
+          bitsIntegration: false,
+          streamOverlay: false,
+          alertAnimations: false,
+          streamAlerts: true,
+          discordNotifications: true
+        },
+        createdAt: new Date().toISOString(),
+        approvedBy: adminUserId,
+        approvedAt: new Date().toISOString()
+      };
+
+      const newUser = await this.saveUser(userData);
+
+      // Update request status
+      await this.updateUserRequestStatus(requestId, 'approved', adminUserId, 'User account created');
+
+      console.log('✅ User request approved and account created:', request.username);
+      return newUser;
+    } catch (error) {
+      console.error('❌ Error approving user request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a broken user record (for cleanup purposes)
+   * @param {string} partitionKey - Partition key of the user
+   * @param {string} rowKey - Row key of the user
+   * @returns {boolean} - True if deleted successfully
+   */
+  async deleteBrokenUser(partitionKey, rowKey) {
+    try {
+      console.log(`🗑️ Attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
+
+      if (this.mode === 'azure') {
+        // Delete from Azure Table Storage
+        console.log(`🔍 Attempting Azure Table Storage deletion: partition=${partitionKey}, row=${rowKey}`);
+        try {
+          await this.usersClient.deleteEntity(partitionKey, rowKey);
+          console.log('✅ Broken user deleted from Azure Table Storage');
+          return true;
+        } catch (azureError) {
+          // Handle specific Azure errors
+          if (azureError.statusCode === 404) {
+            console.log('⚠️ Entity not found in Azure Table Storage - considering it already deleted');
+            return true; // Entity doesn't exist, so deletion is "successful"
+          } else {
+            console.error('❌ Azure Table Storage deletion failed:', {
+              statusCode: azureError.statusCode,
+              message: azureError.message,
+              code: azureError.code
+            });
+            throw azureError; // Re-throw for handling in outer catch
+          }
+        }
+      } else {
+        // Delete from local storage
+        const users = this.loadLocalUsers();
+        const originalLength = users.length;
+
+        // Filter out the broken user (match by partition and row keys or other identifying data)
+        const filteredUsers = users.filter(user => {
+          // Try multiple ways to identify the user since broken users may have inconsistent data
+          const userPartition = user.partitionKey || user.twitchUserId || 'unknown';
+          const userRow = user.rowKey || user.twitchUserId || user.username || 'unknown';
+
+          return !(userPartition === partitionKey && userRow === rowKey);
+        });
+
+        if (filteredUsers.length < originalLength) {
+          this.saveLocalUsers(filteredUsers);
+          console.log('✅ Broken user deleted from local storage');
+          return true;
+        } else {
+          console.log('❌ Broken user not found in local storage');
+          return false;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error deleting broken user:', error);
+      return false;
+    }
   }
 }
 

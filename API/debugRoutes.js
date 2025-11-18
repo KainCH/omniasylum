@@ -600,6 +600,7 @@ router.post('/test-discord-webhook/:userId?', requireAuth, async (req, res) => {
     console.log(`🧪 Testing Discord webhook for user ${targetUserId}...`);
 
     const user = await database.getUser(targetUserId);
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -784,9 +785,11 @@ router.get('/system-health', requireAuth, async (req, res) => {
       const users = await database.getAllUsers();
       const usersWithDiscord = users.filter(user => {
         if (user.discordWebhookUrl) return true;
-        // Also check new webhook system
+        // Also check new webhook system (use rowKey as the userId - this is what identifies the user)
+        const userId = user.rowKey || user.twitchUserId;
+        if (!userId) return false;
         try {
-          const webhookData = database.getUserDiscordWebhook(user.twitchUserId);
+          const webhookData = database.getUserDiscordWebhook(userId);
           return webhookData?.webhookUrl;
         } catch {
           return false;
@@ -898,6 +901,526 @@ router.post('/test-stream-status/:userId/:status', async (req, res) => {
   } catch (error) {
     console.error('❌ DEBUG: Manual stream status test failed:', error);
     res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
+/**
+ * Test notification system (no auth required for debugging)
+ * POST /api/debug/test-notification/:userId/:eventType
+ */
+router.post('/test-notification/:userId/:eventType', async (req, res) => {
+  try {
+    const { userId, eventType } = req.params;
+    const io = req.app.get('io');
+
+    if (!io) {
+      return res.status(500).json({ error: 'WebSocket not available' });
+    }
+
+    console.log(`🧪 DEBUG: Testing ${eventType} notification for user ${userId}`);
+
+    // Get user info for more realistic test data
+    let username = 'TestUser';
+    try {
+      const user = await database.getUser(userId);
+      if (user) {
+        username = user.username || user.displayName || 'TestUser';
+      }
+    } catch (error) {
+      console.warn('Could not get user info, using default test data');
+    }
+
+    const testData = {
+      follow: {
+        userId: userId,
+        username: username,
+        follower: 'DebugFollower',
+        timestamp: new Date().toISOString()
+      },
+      subscription: {
+        userId: userId,
+        username: username,
+        subscriber: 'DebugSubscriber',
+        tier: 1,
+        isGift: false,
+        timestamp: new Date().toISOString()
+      },
+      resub: {
+        userId: userId,
+        username: username,
+        subscriber: 'DebugResubscriber',
+        tier: 1,
+        months: 12,
+        streakMonths: 6,
+        message: 'Debug resub message!',
+        timestamp: new Date().toISOString()
+      },
+      giftsub: {
+        userId: userId,
+        username: username,
+        gifter: 'DebugGifter',
+        amount: 5,
+        tier: 1,
+        timestamp: new Date().toISOString()
+      },
+      bits: {
+        userId: userId,
+        username: username,
+        cheerer: 'DebugCheerer',
+        bits: 500,
+        message: 'Debug cheer! cheer500',
+        isAnonymous: false,
+        timestamp: new Date().toISOString()
+      },
+      bitsuse: {
+        userId: userId,
+        username: username,
+        user: 'DebugBitsUser',
+        bits: 300,
+        message: 'Debug bits use! Power up!',
+        eventType: 'power-up',
+        isAnonymous: false,
+        timestamp: new Date().toISOString(),
+        alertConfig: {
+          enabled: true,
+          soundFile: 'pillRattle.mp3',
+          textPrompt: '[User] used [X] bits with [EventType]!',
+          backgroundColor: '#1a0d0d',
+          textColor: '#ffffff',
+          borderColor: '#d4af37'
+        }
+      },
+      milestone: {
+        userId: userId,
+        counterType: 'deaths',
+        milestone: 100,
+        newValue: 100,
+        previousMilestone: 50,
+        timestamp: new Date().toISOString()
+      },
+      raid: {
+        userId: userId,
+        username: username,
+        raider: 'DebugRaider',
+        viewers: 42,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Handle aliases for event types
+    let actualEventType = eventType;
+    if (eventType === 'cheer') {
+      actualEventType = 'bits'; // 'cheer' is an alias for 'bits'
+    }
+
+    const data = testData[actualEventType];
+    if (!data) {
+      return res.status(400).json({
+        error: 'Invalid event type',
+        validTypes: [...Object.keys(testData), 'cheer (alias for bits)']
+      });
+    }
+
+    // Map event type to WebSocket event name
+    const eventName = (eventType === 'follow') ? 'newFollower' :
+                     (eventType === 'subscription') ? 'newSubscription' :
+                     (eventType === 'resub') ? 'newResub' :
+                     (eventType === 'giftsub') ? 'newGiftSub' :
+                     (eventType === 'bits' || eventType === 'cheer') ? 'newCheer' :
+                     eventType === 'resub' ? 'newResub' :
+                     eventType === 'giftsub' ? 'newGiftSub' :
+                     eventType === 'bits' ? 'newCheer' :
+                     eventType === 'bitsuse' ? 'newBitsUse' :
+                     eventType === 'milestone' ? 'milestoneReached' :
+                     eventType === 'raid' ? 'raidReceived' :
+                     `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
+
+    // Check room membership
+    const roomName = `user:${userId}`;
+    const room = io.sockets.adapter.rooms.get(roomName);
+    const clientCount = room ? room.size : 0;
+
+    console.log(`🧪 DEBUG: Emitting ${eventName} to room ${roomName} (${clientCount} clients)`);
+    console.log(`🧪 DEBUG: Event data:`, data);
+
+    // Emit the test event
+    io.to(roomName).emit(eventName, data);
+
+    res.json({
+      success: true,
+      message: `Debug ${eventType} notification sent`,
+      eventName: eventName,
+      roomClients: clientCount,
+      data: data
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Test notification failed:', error);
+    res.status(500).json({ error: 'Test notification failed', details: error.message });
+  }
+});
+
+/**
+ * Get current user info for debugging (requires auth)
+ * GET /api/debug/user-info
+ */
+router.get('/user-info', requireAuth, async (req, res) => {
+  try {
+    const user = await database.getUser(req.user.userId);
+
+    res.json({
+      success: true,
+      userInfo: {
+        userId: req.user.userId,
+        username: req.user.username,
+        displayName: req.user.displayName,
+        role: req.user.role,
+        dbUser: {
+          twitchUserId: user?.twitchUserId,
+          username: user?.username,
+          displayName: user?.displayName,
+          isActive: user?.isActive,
+          streamStatus: user?.streamStatus,
+          features: user?.features ? JSON.parse(user.features) : null
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to get user info:', error);
+    res.status(500).json({ error: 'Failed to get user info', details: error.message });
+  }
+});
+
+/**
+ * Serve debug notifications HTML page
+ * GET /api/debug/notifications
+ */
+router.get('/notifications', (req, res) => {
+  try {
+    res.sendFile('debug-notifications.html', { root: './frontend' });
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to serve debug page:', error);
+    res.status(500).json({ error: 'Failed to load debug page' });
+  }
+});
+
+/**
+ * Test all notifications at once
+ * POST /api/debug/test-all-notifications/:userId
+ */
+router.post('/test-all-notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const io = req.app.get('io');
+
+    if (!io) {
+      return res.status(500).json({ error: 'WebSocket not available' });
+    }
+
+    console.log(`🧪 DEBUG: Testing ALL notifications for user ${userId}`);
+
+    const eventTypes = ['follow', 'subscription', 'resub', 'giftsub', 'bits', 'milestone'];
+    const results = [];
+
+    // Delay between notifications to prevent spam
+    for (let i = 0; i < eventTypes.length; i++) {
+      const eventType = eventTypes[i];
+
+      // Wait 2 seconds between each notification
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      try {
+        // Trigger the individual notification
+        const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/debug/test-notification/${userId}/${eventType}`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          results.push({ eventType, success: true, result });
+          console.log(`✅ DEBUG: ${eventType} notification sent`);
+        } else {
+          results.push({ eventType, success: false, error: 'HTTP error' });
+        }
+      } catch (error) {
+        results.push({ eventType, success: false, error: error.message });
+        console.error(`❌ DEBUG: ${eventType} notification failed:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `All debug notifications sent to user ${userId}`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Test all notifications failed:', error);
+    res.status(500).json({ error: 'Test all notifications failed', details: error.message });
+  }
+});
+
+/**
+ * Get Azure Log Analytics KQL queries for investigation
+ * GET /api/debug/kql-queries
+ */
+router.get('/kql-queries', (req, res) => {
+  try {
+    const queries = {
+      "API Request Analysis": {
+        "description": "Monitor all HTTP requests with response codes and timing",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "HTTP" or Message contains "API"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Error Monitoring": {
+        "description": "Track application errors and exceptions",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where SeverityLevel >= 3  // Warning and above
+| project TimeGenerated, Message, SeverityLevel, Properties
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Twitch Events": {
+        "description": "Monitor EventSub webhooks and bot connections",
+        "query": `AppTraces
+| where TimeGenerated > ago(2h)
+| where Message contains "EventSub" or Message contains "Twitch" or Message contains "🔗" or Message contains "🎯"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Authentication Flow": {
+        "description": "Track user logins and token operations",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "auth" or Message contains "login" or Message contains "token" or Message contains "🔐"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Real-time Monitoring": {
+        "description": "Live application activity (last 5 minutes)",
+        "query": `AppTraces
+| where TimeGenerated > ago(5m)
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc`
+      },
+
+      "Structured Logs": {
+        "description": "Query structured logs from the new logging system",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "[API]" or Message contains "[AUTH]" or Message contains "[TWITCH]" or Message contains "[DATABASE]"
+| project TimeGenerated, Message, SeverityLevel, Properties
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "HTTP Request Logs": {
+        "description": "Track all HTTP requests with detailed timing",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "HTTP" and (Message contains "GET" or Message contains "POST" or Message contains "PUT" or Message contains "DELETE")
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Slow Requests": {
+        "description": "Find requests taking longer than 1 second",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "⏱️" and Message contains "Slow request"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Performance Analysis": {
+        "description": "Database and service performance metrics",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "ms" or Message contains "performance" or Message contains "⏱️"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50`
+      },
+
+      "Discord Notifications": {
+        "description": "Track Discord webhook notifications and events",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "Discord" or Message contains "webhook" or Message contains "🔔"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      },
+
+      "Counter Operations": {
+        "description": "Monitor counter updates and milestone events",
+        "query": `AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains "counter" or Message contains "death" or Message contains "swear" or Message contains "milestone"
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 100`
+      }
+    };
+
+    res.json({
+      success: true,
+      message: "Azure Log Analytics KQL queries for investigation",
+      workspace: "Use these queries in your Azure Log Analytics workspace",
+      usage: "Copy queries into Log Analytics workspace query editor",
+      queries: queries,
+      tips: [
+        "Adjust time ranges by changing 'ago(1h)' to 'ago(2h)', 'ago(30m)', etc.",
+        "Use 'limit 200' for more results or 'limit 20' for fewer",
+        "Add '| where Message contains \"your-search-term\"' for specific filtering",
+        "SeverityLevel: 0=Verbose, 1=Information, 2=Warning, 3=Error, 4=Critical"
+      ]
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: Failed to get KQL queries:', error);
+    res.status(500).json({ error: 'Failed to get KQL queries', details: error.message });
+  }
+});
+
+/**
+ * Test EventSub API compliance and subscription creation
+ * POST /api/debug/test-eventsub-api
+ */
+router.post('/test-eventsub-api', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const database = require('./database');
+    const { ApiClient } = require('@twurple/api');
+    const { RefreshingAuthProvider } = require('@twurple/auth');
+    const keyVault = require('./keyVault');
+
+    console.log(`🧪 DEBUG: Testing EventSub API compliance for user ${req.user.username} (ID: ${userId})`);
+
+    // Get user credentials
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get Twitch client credentials
+    const clientId = await keyVault.getSecret('TWITCH-CLIENT-ID');
+    const clientSecret = await keyVault.getSecret('TWITCH-CLIENT-SECRET');
+
+    // Create auth provider
+    const authProvider = new RefreshingAuthProvider({
+      clientId,
+      clientSecret
+    });
+
+    // Set user token
+    const tokenExpiry = new Date(user.tokenExpiry);
+    const expiresInSeconds = Math.max(0, Math.floor((tokenExpiry.getTime() - Date.now()) / 1000));
+
+    await authProvider.addUserForToken({
+      accessToken: user.accessToken,
+      refreshToken: user.refreshToken,
+      expiresIn: expiresInSeconds,
+      obtainmentTimestamp: Date.now() - (3600000 - (expiresInSeconds * 1000)), // Approximate
+      scope: ['user:read:email', 'channel:read:subscriptions', 'moderator:read:followers']
+    }, []);
+
+    // Create API client
+    const apiClient = new ApiClient({ authProvider });
+
+    // Test 1: Check EventSub subscription endpoint availability
+    console.log('📊 Step 1: Testing EventSub GET subscriptions endpoint...');
+    const subscriptions = await apiClient.eventSub.getSubscriptions();
+
+    console.log('EventSub API Response:', {
+      totalSubscriptions: subscriptions.data.length,
+      totalCost: subscriptions.totalCost,
+      maxTotalCost: subscriptions.maxTotalCost,
+      apiResponseStructure: {
+        hasData: Array.isArray(subscriptions.data),
+        hasTotalCost: typeof subscriptions.totalCost === 'number',
+        hasMaxTotalCost: typeof subscriptions.maxTotalCost === 'number'
+      }
+    });
+
+    // Test 2: Verify subscription structure matches API spec
+    const results = {
+      apiCompliance: true,
+      subscriptionCount: subscriptions.data.length,
+      totalCost: subscriptions.totalCost,
+      maxTotalCost: subscriptions.maxTotalCost,
+      subscriptionTypes: [],
+      apiEndpointVerified: true
+    };
+
+    if (subscriptions.data.length > 0) {
+      const sampleSub = subscriptions.data[0];
+      console.log('Sample subscription structure:', {
+        id: sampleSub.id,
+        type: sampleSub.type,
+        version: sampleSub.version,
+        status: sampleSub.status,
+        cost: sampleSub.cost,
+        hasCondition: !!sampleSub.condition,
+        hasTransport: !!sampleSub.transport
+      });
+
+      results.subscriptionTypes = [...new Set(subscriptions.data.map(s => s.type))];
+    }
+
+    // Test 3: Verify we can access the correct API methods
+    console.log('🔍 Step 2: Verifying API client methods...');
+    const apiMethods = {
+      hasEventSub: !!apiClient.eventSub,
+      hasGetSubscriptions: typeof apiClient.eventSub?.getSubscriptions === 'function',
+      hasDeleteSubscription: typeof apiClient.eventSub?.deleteSubscription === 'function',
+      hasCreateSubscription: typeof apiClient.eventSub?.createSubscription === 'function'
+    };
+
+    console.log('API Methods Available:', apiMethods);
+    results.apiMethods = apiMethods;
+
+    // Compliance check
+    const isCompliant = (
+      apiMethods.hasEventSub &&
+      apiMethods.hasGetSubscriptions &&
+      apiMethods.hasDeleteSubscription &&
+      typeof results.totalCost === 'number' &&
+      typeof results.maxTotalCost === 'number'
+    );
+
+    results.apiCompliance = isCompliant;
+
+    console.log(`✅ EventSub API Compliance: ${isCompliant ? 'PASSED' : 'FAILED'}`);
+
+    res.json({
+      success: true,
+      message: `EventSub API compliance test ${isCompliant ? 'passed' : 'failed'}`,
+      results
+    });
+
+  } catch (error) {
+    console.error('❌ DEBUG: EventSub API test failed:', error);
+    res.status(500).json({
+      error: 'EventSub API test failed',
+      details: error.message,
+      stack: error.stack
+    });
   }
 });
 

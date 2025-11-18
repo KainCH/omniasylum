@@ -16,7 +16,10 @@ const overlayRoutes = require('./overlayRoutes');
 const streamRoutes = require('./streamRoutes');
 const userRoutes = require('./userRoutes');
 const debugRoutes = require('./debugRoutes');
+const logsRoutes = require('./logsRoutes');
 const { verifySocketAuth } = require('./authMiddleware');
+const { mainLogger, apiLogger } = require('./logger');
+const { requestLogger, errorLogger, performanceLogger } = require('./loggingMiddleware');
 
 // Initialize Express app
 const app = express();
@@ -43,6 +46,50 @@ const io = socketIo(server, {
     callback(null, true);
   }
 });
+
+// Command throttling to prevent spam
+const commandThrottle = new Map(); // Format: "userId:command" -> timestamp
+const THROTTLE_COOLDOWN = 30000; // 30 seconds cooldown for Discord command
+const GENERAL_COOLDOWN = 5000;   // 5 seconds cooldown for other public commands
+
+// Function to check if command is throttled
+function isCommandThrottled(userId, command) {
+  const key = `${userId}:${command}`;
+  const lastUsed = commandThrottle.get(key);
+  const now = Date.now();
+
+  // Different cooldowns for different command types
+  let cooldown;
+  if (command === '!discord') {
+    cooldown = THROTTLE_COOLDOWN; // 30 seconds for Discord
+  } else if (command.includes('+') || command.includes('-')) {
+    cooldown = 2000; // 2 seconds for mod counter commands
+  } else {
+    cooldown = GENERAL_COOLDOWN; // 5 seconds for other public commands
+  }
+
+  if (lastUsed && (now - lastUsed) < cooldown) {
+    return true; // Still in cooldown
+  }
+
+  // Update the last used timestamp
+  commandThrottle.set(key, now);
+  return false; // Not throttled
+}
+
+// Clean up old throttle entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = Math.max(THROTTLE_COOLDOWN, GENERAL_COOLDOWN) + 60000; // Add 1 minute buffer
+
+  for (const [key, timestamp] of commandThrottle.entries()) {
+    if (now - timestamp > maxAge) {
+      commandThrottle.delete(key);
+    }
+  }
+
+  console.log(`🧹 Cleaned up throttle map. Current size: ${commandThrottle.size}`);
+}, 5 * 60 * 1000); // Every 5 minutes
 
 // Configure Socket.IO engine to set proper content-type
 io.engine.on('headers', (headers, req) => {
@@ -92,6 +139,10 @@ app.use(cors({
 app.use(express.json({ type: 'application/json' }));
 app.use(cookieParser());
 
+// Add logging middleware
+app.use(requestLogger);
+app.use(performanceLogger(1000)); // Log requests taking > 1 second
+
 // Add cache-control headers to all API responses
 app.use('/api', (req, res, next) => {
   // API responses should not be cached
@@ -133,6 +184,16 @@ app.use(express.static(frontendPath, {
   }
 }));
 
+// Serve sound files specifically (for overlay audio)
+app.use('/sounds', express.static(path.join(__dirname, 'frontend', 'sounds'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : '0',
+  setHeaders: (res, filePath) => {
+    // Allow audio files to be cached
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+
 // Health check endpoint (unauthenticated)
 app.get('/api/health', (req, res) => {
   res.json({
@@ -144,6 +205,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// DEBUG: Test PUT route directly in server.js
+app.put('/api/test-put-direct', (req, res) => {
+  console.log('🚀 DIRECT PUT ROUTE HIT in server.js');
+  res.json({
+    message: 'Direct PUT route works!',
+    method: req.method,
+    url: req.url
+  });
+});
+
 // Frontend routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
@@ -151,6 +222,10 @@ app.get('/', (req, res) => {
 
 app.get('/mobile', (req, res) => {
   res.sendFile(path.join(frontendPath, 'mobile.html'));
+});
+
+app.get('/request-access', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'request-access.html'));
 });
 
 // Authentication routes
@@ -166,6 +241,10 @@ app.use('/api', userRoutes); // For /api/overlay-settings
 // Admin routes (requires admin role)
 app.use('/api/admin', adminRoutes);
 
+// Moderator routes (requires authentication and moderator permissions)
+const moderatorRoutes = require('./moderatorRoutes');
+app.use('/api/moderator', moderatorRoutes);
+
 // Overlay routes (public for OBS browser sources)
 app.use('/overlay', overlayRoutes);
 
@@ -178,10 +257,27 @@ app.use('/api/rewards', channelPointRoutes);
 
 // Alert management routes (requires authentication)
 const alertRoutes = require('./alertRoutes');
+console.log('🔧 SERVER: Mounting alertRoutes on /api/alerts');
 app.use('/api/alerts', alertRoutes);
+console.log('🔧 SERVER: alertRoutes mounted successfully');
+
+// Template management routes (requires authentication)
+const templateRoutes = require('./templateRoutes');
+app.use('/api/templates', templateRoutes);
+
+// Custom counter management routes (requires authentication)
+const customCounterRoutes = require('./customCounterRoutes');
+app.use('/api/custom-counters', customCounterRoutes);
+
+// Chat command management routes (requires authentication)
+const chatCommandRoutes = require('./chatCommandRoutes');
+app.use('/api/chat-commands', chatCommandRoutes);
 
 // Debug routes (requires authentication)
 app.use('/api/debug', debugRoutes);
+
+// Logging routes (requires authentication)
+app.use('/api/logs', logsRoutes);
 
 // Twitch status endpoint
 app.get('/api/twitch/status', (req, res) => {
@@ -238,28 +334,52 @@ io.on('connection', (socket) => {
     // Send current stream status and features
     database.getUser(userId).then(user => {
       if (user) {
-        const streamStatus = user.streamStatus || 'offline';
+        const dbStreamStatus = user.streamStatus || 'offline';
         const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
 
+        // Cross-check stream status with EventSub connection
+        const streamMonitor = app.get('streamMonitor');
+        const eventSubConnected = streamMonitor ? streamMonitor.isUserConnected(userId) : false;
+
+        // Only trust "live" status if EventSub is actively monitoring
+        let actualStreamStatus = dbStreamStatus;
+        if (dbStreamStatus === 'live' && !eventSubConnected) {
+          actualStreamStatus = 'offline';
+          console.log(`⚠️ Stream status in DB is 'live' but EventSub not connected for ${user.username} - reporting as offline`);
+
+          // Update DB to reflect actual status
+          database.updateStreamStatus(userId, 'offline').catch(error => {
+            console.error('❌ Failed to update stream status to offline:', error);
+          });
+        }
+
         socket.emit('streamStatusUpdate', {
-          streamStatus: streamStatus,
+          streamStatus: actualStreamStatus,
           isActive: user.isActive || false
         });
 
         socket.emit('userFeaturesUpdate', features);
 
+        // Send EventSub connection status
+        socket.emit('eventSubStatusChanged', {
+          connected: eventSubConnected,
+          monitoring: eventSubConnected,
+          lastConnected: eventSubConnected ? new Date().toISOString() : null,
+          subscriptionsEnabled: true
+        });
+
         // If user is in streaming mode (prep or live), send active stream status
-        if (streamStatus === 'prepping') {
+        if (actualStreamStatus === 'prepping') {
           socket.emit('prepModeActive', {
             userId: userId,
             username: user.username,
             displayName: user.displayName,
             streamStatus: 'prepping',
-            eventListenersActive: true
+            eventListenersActive: eventSubConnected
           });
 
-          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring active`);
-        } else if (streamStatus === 'live') {
+          console.log(`🎬 Client connected in prep mode: ${user.displayName}, EventSub monitoring: ${eventSubConnected}`);
+        } else if (actualStreamStatus === 'live' && eventSubConnected) {
           socket.emit('streamModeActive', {
             userId: userId,
             username: user.username,
@@ -415,6 +535,12 @@ io.on('connection', (socket) => {
 // Twitch chat command handlers
 twitchService.on('incrementDeaths', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!d+')) {
+      console.log(`⏱️ Deaths increment throttled for ${username}`);
+      return;
+    }
+
     const data = await database.incrementDeaths(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`💀 Deaths incremented by ${username}`);
@@ -425,6 +551,12 @@ twitchService.on('incrementDeaths', async ({ userId, username }) => {
 
 twitchService.on('decrementDeaths', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!d-')) {
+      console.log(`⏱️ Deaths decrement throttled for ${username}`);
+      return;
+    }
+
     const data = await database.decrementDeaths(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`💀 Deaths decremented by ${username}`);
@@ -435,6 +567,12 @@ twitchService.on('decrementDeaths', async ({ userId, username }) => {
 
 twitchService.on('incrementSwears', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!s+')) {
+      console.log(`⏱️ Swears increment throttled for ${username}`);
+      return;
+    }
+
     const data = await database.incrementSwears(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`🤬 Swears incremented by ${username}`);
@@ -445,6 +583,12 @@ twitchService.on('incrementSwears', async ({ userId, username }) => {
 
 twitchService.on('decrementSwears', async ({ userId, username }) => {
   try {
+    // Light throttle for mod commands (2 second cooldown)
+    if (isCommandThrottled(userId, '!s-')) {
+      console.log(`⏱️ Swears decrement throttled for ${username}`);
+      return;
+    }
+
     const data = await database.decrementSwears(userId);
     io.to(`user:${userId}`).emit('counterUpdate', data);
     console.log(`🤬 Swears decremented by ${username}`);
@@ -460,6 +604,51 @@ twitchService.on('resetCounters', async ({ userId, username }) => {
     console.log(`🔄 Counters reset by ${username}`);
   } catch (error) {
     console.error('Error handling Twitch reset:', error);
+  }
+});
+
+// Handle context-aware help command
+twitchService.on('helpCommand', async ({ userId, username, channel, isBroadcaster, isMod }) => {
+  try {
+    // Check if help command is throttled
+    if (isCommandThrottled(userId, '!help')) {
+      console.log(`⏱️ Help command throttled for user ${username} (${userId})`);
+      return; // Silently ignore throttled help requests
+    }
+
+    let helpMessage = '';
+
+    if (isBroadcaster) {
+      // Broadcaster doesn't need help - they have access to all commands
+      // Don't respond since they can't whisper themselves and shouldn't clutter chat
+      console.log(`🎯 Help request from broadcaster ${username} - no response needed`);
+      return;
+    } else if (isMod) {
+      // Mods get mod command info via whisper for privacy
+      // Get broadcaster's display name for clarity
+      const user = await database.getUser(userId);
+      const broadcasterName = user ? user.displayName : 'the broadcaster';
+      const modHelpMessage = `🔧 Chat Commands (Mods Only): !d+ !d- !s+ !s- !saveseries <name> !loadseries <name> !listseries | Use these in ${broadcasterName}'s Twitch chat to manage counters and series saves during stream.`;
+
+      const success = await twitchService.sendWhisper(userId, username, modHelpMessage);
+      if (success) {
+        console.log(`📱 Mod help sent via whisper to ${username}`);
+        return; // Don't send public message
+      } else {
+        console.log(`❌ Failed to send mod help whisper to ${username}`);
+        // Fall back to public message
+        helpMessage = '💬 Available commands: !stats, !bits, !streamstats, !discord, !help | Mod commands sent via whisper.';
+      }
+    } else {
+      // Regular viewers get public commands only
+      helpMessage = '💬 Available commands: !stats, !bits, !streamstats, !discord, !help';
+    }
+
+    if (helpMessage) {
+      await twitchService.sendMessage(userId, helpMessage);
+    }
+  } catch (error) {
+    console.error('Error handling help command:', error);
   }
 });
 
@@ -622,7 +811,6 @@ twitchService.on('deleteSeries', async ({ userId, username, seriesId }) => {
   }
 });
 
-
 // Handle bits events
 twitchService.on('bitsReceived', async ({ userId, username, channel, amount, message, timestamp, thresholds }) => {
   try {
@@ -633,6 +821,50 @@ twitchService.on('bitsReceived', async ({ userId, username, channel, amount, mes
 
     // Get custom alert configuration
     const alertConfig = await database.getAlertForEventType(userId, 'bits');
+
+    // Check and update bits goal progress
+    try {
+      const overlaySettings = await database.getOverlaySettings(userId);
+      if (overlaySettings?.bitsGoal?.enabled && overlaySettings?.bitsGoal?.target > 0) {
+        const currentBits = counters.bits;
+        const targetBits = overlaySettings.bitsGoal.target;
+        const progressPercent = Math.min((currentBits / targetBits) * 100, 100);
+
+        console.log(`🎯 Bits goal progress: ${currentBits}/${targetBits} (${progressPercent.toFixed(1)}%)`);
+
+        // Check if goal was just completed
+        const wasCompleted = overlaySettings.bitsGoal.current >= targetBits;
+        const isNowCompleted = currentBits >= targetBits;
+
+        if (!wasCompleted && isNowCompleted) {
+          console.log(`🎉 Bits goal COMPLETED! ${currentBits}/${targetBits} bits`);
+
+          // Emit goal completion celebration
+          io.to(`user:${userId}`).emit('bitsGoalComplete', {
+            userId,
+            current: currentBits,
+            target: targetBits,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        // Update goal progress in database
+        overlaySettings.bitsGoal.current = currentBits;
+        await database.updateOverlaySettings(userId, overlaySettings);
+
+        // Emit real-time bits goal progress update
+        io.to(`user:${userId}`).emit('bitsGoalUpdate', {
+          userId,
+          current: currentBits,
+          target: targetBits,
+          progress: progressPercent,
+          completed: isNowCompleted,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (goalError) {
+      console.warn('⚠️ Error updating bits goal progress:', goalError.message);
+    }
 
     // Broadcast to overlay and connected clients
     io.to(`user:${userId}`).emit('bitsReceived', {
@@ -784,14 +1016,16 @@ twitchService.on('giftSub', async ({ userId, gifter, recipient, channel, tier, t
 // Handle public commands (anyone can use)
 twitchService.on('publicCommand', async ({ userId, channel, username, command }) => {
   try {
+    // Check if command is throttled
+    if (isCommandThrottled(userId, command)) {
+      console.log(`⏱️ Command ${command} throttled for user ${username} (${userId})`);
+      return; // Silently ignore throttled commands
+    }
+
     const counters = await database.getCounters(userId);
     let message = '';
 
-    if (command === '!deaths') {
-      message = `💀 Current deaths: ${counters.deaths}`;
-    } else if (command === '!swears') {
-      message = `🤬 Current swears: ${counters.swears}`;
-    } else if (command === '!bits') {
+    if (command === '!bits') {
       message = `💎 Current stream bits: ${counters.bits || 0}`;
     } else if (command === '!stats') {
       const total = counters.deaths + counters.swears;
@@ -805,9 +1039,18 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
       } else {
         message = `🎮 No active stream session. Use !startstream to begin!`;
       }
+    } else if (command === '!discord') {
+      // Get Discord invite link for this user
+      const discordInvite = await database.getUserDiscordInviteLink(userId);
+      if (discordInvite) {
+        message = `🎮 Join our Discord server: ${discordInvite}`;
+      } else {
+        message = `🎮 Discord server not set up yet. Check the streamer's portal for updates!`;
+      }
     }
 
     if (message) {
+      console.log(`💬 Sending command response: ${command} -> ${username} (${userId})`);
       await twitchService.sendMessage(userId, message);
     }
   } catch (error) {
@@ -815,73 +1058,51 @@ twitchService.on('publicCommand', async ({ userId, channel, username, command })
   }
 });
 
-// Auto-start Twitch bots for users with chatCommands feature
-async function autoStartTwitchBots() {
-  try {
-    console.log('🤖 Starting Twitch bots for users with chatCommands feature...');
 
-    // Get all users from database
-    const users = await database.getAllUsers();
-    let botsStarted = 0;
-    let botsSkipped = 0;
 
-    for (const user of users) {
-      try {
-        // Parse features (could be string or object)
-        const features = typeof user.features === 'string'
-          ? JSON.parse(user.features)
-          : user.features || {};
+// Add error handling middleware (must be after all routes)
+app.use(errorLogger);
 
-        // Check if user has chatCommands feature enabled
-        if (features.chatCommands) {
-          // Check if user has required auth tokens
-          if (user.accessToken && user.refreshToken) {
-            console.log(`🤖 Starting Twitch bot for ${user.username}...`);
-            const success = await twitchService.connectUser(user.twitchUserId);
+// Global error handler
+app.use((err, req, res, next) => {
+  apiLogger.error('Unhandled application error', {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method
+  });
 
-            if (success) {
-              botsStarted++;
-              console.log(`✅ Twitch bot started for ${user.username}`);
-            } else {
-              console.log(`❌ Failed to start Twitch bot for ${user.username}`);
-            }
-          } else {
-            console.log(`⚠️  Skipping ${user.username} - missing auth tokens`);
-            botsSkipped++;
-          }
-        } else {
-          // Skip users without chatCommands feature
-          botsSkipped++;
-        }
-      } catch (userError) {
-        console.error(`❌ Error processing user ${user.username}:`, userError);
-        botsSkipped++;
-      }
-    }
-
-    console.log(`🤖 Twitch bots startup complete: ${botsStarted} started, ${botsSkipped} skipped`);
-
-  } catch (error) {
-    console.error('❌ Error auto-starting Twitch bots:', error);
-  }
-}
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   try {
+    mainLogger.info('🚀 Starting OmniAsylum Stream Counter server...', {
+      nodeVersion: process.version,
+      environment: process.env.NODE_ENV || 'development',
+      logLevel: process.env.LOG_LEVEL || 'INFO'
+    });
+
     // Initialize Key Vault
+    mainLogger.info('🔑 Initializing Key Vault...');
     await keyVault.initialize();
+    mainLogger.info('✅ Key Vault initialized successfully');
 
     // Initialize database
+    mainLogger.info('💾 Initializing database...');
     await database.initialize();
+    mainLogger.info('✅ Database initialized successfully');
 
     // Initialize Twitch service
+    mainLogger.info('🎯 Initializing Twitch service...');
     await twitchService.initialize();
-
-    // Auto-connect Twitch bots for users with chatCommands feature enabled
-    await autoStartTwitchBots();
+    mainLogger.info('✅ Twitch service initialized successfully');
 
     // Initialize Stream Monitor (but don't auto-subscribe to users)
     const streamMonitorInitialized = await streamMonitor.initialize();
@@ -1183,10 +1404,50 @@ async function startServer() {
           console.error('Error handling cheer event:', error);
         }
       });
+
+      // Handle bits use events (new channel.bits.use EventSub)
+      streamMonitor.on('newBitsUse', async ({ userId, username, user, bits, message, eventType, isAnonymous, timestamp, alert }) => {
+        try {
+          console.log(`💎 Bits Use: ${user} used ${bits} bits (${eventType}) in ${username}'s channel`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('newBitsUse', {
+            userId,
+            username,
+            user,
+            bits,
+            message,
+            eventType, // 'cheer', 'power-up', 'combo', etc.
+            isAnonymous,
+            timestamp,
+            alertConfig: alert
+          });
+
+          // Trigger custom alert if enabled
+          if (alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: 'bits',
+              userId,
+              username: user,
+              data: { user, bits, message, eventType, isAnonymous },
+              alertConfig: alert,
+              timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling bits use event:', error);
+        }
+      });
     }
 
     // Start HTTP server
     server.listen(PORT, () => {
+      mainLogger.info('🌐 HTTP server started successfully', {
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development'
+      });
+
       console.log('');
       console.log('╔════════════════════════════════════════════════════════╗');
       console.log('║        🎮 OmniAsylum API Server Started 🎮           ║');
@@ -1202,8 +1463,15 @@ async function startServer() {
       console.log(`║  WebSocket:     ws://localhost:${PORT}`.padEnd(56) + '║');
       console.log('╚════════════════════════════════════════════════════════╝');
       console.log('');
+
+      mainLogger.info('🎉 Server startup completed successfully', {
+        port: PORT,
+        apiEndpoint: `http://localhost:${PORT}/api/health`,
+        loggingEndpoint: `http://localhost:${PORT}/api/logs/status`
+      });
     });
   } catch (error) {
+    mainLogger.error('💥 Failed to start server', { error: error.message, stack: error.stack });
     console.error('❌ Failed to start server:', error);
     process.exit(1);
   }

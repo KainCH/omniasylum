@@ -5,12 +5,15 @@ import AuthPrompt from './components/AuthPrompt'
 import ConnectionStatus from './components/ConnectionStatus'
 import AdminDashboard from './components/AdminDashboard'
 import DebugDashboard from './components/DebugDashboard'
-import UserAlertManager from './components/UserAlertManager'
-import AlertEffectsSettings from './components/AlertEffectsSettings'
+import AlertEffectsModal from './components/AlertEffectsModal'
 import SeriesSaveManager from './components/SeriesSaveManager'
-import DiscordWebhookSettings from './components/DiscordWebhookSettings'
-import { userAPI } from './utils/apiHelpers'
+import OverlaySettingsModal from './components/OverlaySettingsModal'
+import InstructionsModal from './components/InstructionsModal'
+import AlertManagerModal from './components/AlertManagerModal'
+import DiscordWebhookSettingsModal from './components/DiscordWebhookSettingsModal'
+import { userAPI } from './utils/authUtils'
 import './App.css'
+import './components/AdminDashboard.css'
 
 function App() {
   // Helper function to get size-based styles
@@ -61,29 +64,7 @@ function App() {
   const [showDiscordSettings, setShowDiscordSettings] = useState(false)
   const [userFeatures, setUserFeatures] = useState({})
   const [streamStatus, setStreamStatus] = useState('offline')
-  const [overlaySettings, setOverlaySettings] = useState({
-    enabled: true,
-    position: 'top-right',
-    size: 'medium',
-    counters: {
-      deaths: true,
-      swears: true,
-      bits: false,
-      channelPoints: false
-    },
-    animations: {
-      enabled: true,
-      showAlerts: true,
-      celebrationEffects: false,
-      bounceOnUpdate: true,
-      fadeTransitions: true
-    },
-    theme: {
-      borderColor: '#9146ff',
-      textColor: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)'
-    }
-  }) // ALWAYS start in user mode
+  const [overlaySettings, setOverlaySettings] = useState({})
 
   // EventSub monitoring state
   const [eventSubStatus, setEventSubStatus] = useState({
@@ -96,6 +77,18 @@ function App() {
     streamStatus: 'offline'  // Real-time stream status from EventSub
   })
   const [isStartingMonitoring, setIsStartingMonitoring] = useState(false)
+
+  // Twitch bot connection state
+  const [twitchBotStatus, setTwitchBotStatus] = useState({
+    connected: false,
+    userId: '',
+    username: '',
+    eligible: false,
+    chatCommandsEnabled: false,
+    hasTokens: false,
+    reason: 'Not connected',
+    lastUpdated: null
+  })
 
   // Discord notification status tracking
   const [discordNotificationStatus, setDiscordNotificationStatus] = useState({
@@ -272,6 +265,7 @@ function App() {
 
         // Check EventSub monitoring status
         checkEventSubStatus()
+        checkTwitchBotStatus()
 
         // Check Discord notification status
         checkDiscordNotificationStatus()
@@ -352,16 +346,13 @@ function App() {
       setStreamStatus(data?.streamStatus)
     })
 
-    newSocket.on('overlaySettingsUpdate', (data) => {
-      console.log('🎨 Overlay settings update received:', data)
-      const settings = typeof data?.overlaySettings === 'string'
-        ? JSON.parse(data?.overlaySettings)
-        : data?.overlaySettings
-      setOverlaySettings(settings)
-    })
+
 
     newSocket.on('streamOnline', (data) => {
       console.log('🔴 Stream ONLINE event received:', data)
+
+      // Update main stream status to show overlay
+      setStreamStatus('live')
 
       // Update EventSub status with real-time stream status
       setEventSubStatus(prevStatus => ({
@@ -375,6 +366,9 @@ function App() {
 
     newSocket.on('streamOffline', (data) => {
       console.log('⚫ Stream OFFLINE event received:', data)
+
+      // Update main stream status to hide overlay
+      setStreamStatus('offline')
 
       // Update EventSub status with real-time stream status
       setEventSubStatus(prevStatus => ({
@@ -403,6 +397,21 @@ function App() {
 
       // Discord notification status is now handled by real-time Socket.io events
       // No need to override with static API calls
+    })
+
+    // Real-time Twitch bot status updates
+    newSocket.on('twitchBotStatusChanged', (data) => {
+      console.log('🤖 Twitch bot status changed:', data)
+      setTwitchBotStatus({
+        connected: data.connected || false,
+        userId: data.userId || '',
+        username: data.username || '',
+        eligible: data.eligible || false,
+        chatCommandsEnabled: data.chatCommandsEnabled || false,
+        hasTokens: data.hasTokens || false,
+        reason: data.reason || (data.connected ? 'Connected' : 'Not connected'),
+        lastUpdated: data.lastUpdated || new Date().toISOString()
+      })
     })
 
     // Handle Discord notification status updates
@@ -588,32 +597,7 @@ function App() {
     }
   }
 
-  const updateOverlaySettings = async (settings) => {
-    const token = localStorage.getItem('authToken')
-    if (!token) return
 
-    try {
-      const response = await fetch('/api/overlay-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(settings)
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to update overlay settings')
-      }
-
-      const result = await response.json()
-      setOverlaySettings(result?.overlaySettings)
-      console.log('✅ Overlay settings updated')
-    } catch (error) {
-      console.error('❌ Failed to update overlay settings:', error)
-      alert('Failed to update overlay settings')
-    }
-  }
 
   const fetchUserSettings = async (token) => {
     try {
@@ -722,7 +706,7 @@ function App() {
   const checkEventSubStatus = async () => {
     try {
       const token = localStorage.getItem('authToken')
-      const response = await fetch('/api/stream/eventsub-status', {
+      const response = await fetch('/api/stream/monitor/status', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -732,13 +716,55 @@ function App() {
       if (response.ok) {
         const status = await response.json()
         setEventSubStatus({
-          connected: status.connectionStatus?.connected || false,
-          monitoring: status.connectionStatus?.connected || false,
-          lastConnected: status.connectionStatus?.lastConnected || null
+          connected: status.connected || false,
+          monitoring: status.currentUserMonitored || false,
+          lastConnected: status.lastConnected || null
         })
+
+        // Update bot status if included
+        if (status.twitchBot) {
+          setTwitchBotStatus({
+            connected: status.twitchBot.connected || false,
+            userId: status.twitchBot.userId || '',
+            username: username,
+            eligible: status.twitchBot.eligible || false,
+            chatCommandsEnabled: status.twitchBot.chatCommandsEnabled || false,
+            hasTokens: status.twitchBot.hasTokens || false,
+            reason: status.twitchBot.reason || 'Not connected',
+            lastUpdated: status.twitchBot.lastConnected || null
+          })
+        }
       }
     } catch (error) {
       console.error('❌ Error checking EventSub status:', error)
+    }
+  }
+
+  const checkTwitchBotStatus = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch('/api/stream/bot/status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const status = await response.json()
+        setTwitchBotStatus({
+          connected: status.bot?.connected || false,
+          userId: status.userId || '',
+          username: status.username || username,
+          eligible: status.bot?.eligible || false,
+          chatCommandsEnabled: status.bot?.chatCommandsEnabled || false,
+          hasTokens: status.bot?.hasTokens || false,
+          reason: status.bot?.reason || 'Not connected',
+          lastUpdated: status.bot?.lastConnected || status.timestamp
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error checking Twitch bot status:', error)
     }
   }
 
@@ -1035,6 +1061,14 @@ function App() {
     console.log('🎬 RENDERING USER PORTAL - Regular user')
   }
 
+  // Helper function to render stream overlay
+  const renderStreamOverlay = () => {
+    // The overlay is now managed by the /overlay/{userId} route
+    // This function is kept for backward compatibility but doesn't render anything
+    // Users should add the overlay URL to their streaming software directly
+    return null
+  }
+
   return (
     <div className="app">
       <div className="container">
@@ -1242,6 +1276,135 @@ function App() {
               <p style={{ margin: 0, fontSize: '14px' }}>
                 ⚠️ <strong>Connection issues detected</strong><br/>
                 <small>EventSub disconnected • Last connected: {eventSubStatus.lastConnected ? new Date(eventSubStatus.lastConnected).toLocaleString() : 'Never'}</small>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Twitch Bot Status */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.3)',
+          padding: '20px',
+          borderRadius: '12px',
+          marginTop: '20px',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ marginBottom: '15px', color: '#fff' }}>🤖 Twitch Chat Bot</h3>
+
+          {/* Bot Connection Status */}
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  backgroundColor: twitchBotStatus.connected ? '#28a745' : '#dc3545'
+                }}></div>
+                <p style={{ margin: 0, color: '#ccc' }}>
+                  Bot Status: <strong style={{
+                    color: twitchBotStatus.connected ? '#28a745' : '#dc3545'
+                  }}>
+                    {twitchBotStatus.connected ? '🟢 Connected' : '🔴 Disconnected'}
+                  </strong>
+                </p>
+              </div>
+
+              {eventSubStatus.monitoring && (
+                <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                  {twitchBotStatus.connected ? 'Auto-started with monitoring' : 'Not eligible for auto-start'}
+                </div>
+              )}
+            </div>
+
+            {/* Bot Eligibility Status */}
+            <div style={{ marginBottom: '10px' }}>
+              <p style={{ margin: 0, color: '#ccc', fontSize: '14px' }}>
+                Eligibility: <strong style={{
+                  color: twitchBotStatus.eligible ? '#28a745' : '#ffc107'
+                }}>
+                  {twitchBotStatus.eligible ? '✅ Ready' : '⚠️ ' + twitchBotStatus.reason}
+                </strong>
+              </p>
+
+              {!twitchBotStatus.eligible && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#6c757d',
+                  marginTop: '5px',
+                  display: 'flex',
+                  gap: '15px'
+                }}>
+                  <span>Chat Commands: {twitchBotStatus.chatCommandsEnabled ? '✅' : '❌'}</span>
+                  <span>Auth Tokens: {twitchBotStatus.hasTokens ? '✅' : '❌'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bot Status Messages */}
+          {!twitchBotStatus.eligible ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid rgba(255, 193, 7, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#ffc107'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                ⚠️ <strong>Bot not eligible for auto-start</strong><br/>
+                <small>{twitchBotStatus.reason}</small>
+                {!twitchBotStatus.chatCommandsEnabled && (
+                  <><br/><small>Enable "Chat Commands" feature in settings to use the bot</small></>
+                )}
+                {!twitchBotStatus.hasTokens && (
+                  <><br/><small>Re-authenticate with Twitch to refresh your tokens</small></>
+                )}
+              </p>
+            </div>
+          ) : twitchBotStatus.connected ? (
+            <div style={{
+              background: 'rgba(40, 167, 69, 0.1)',
+              border: '1px solid rgba(40, 167, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#28a745'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🤖 <strong>Bot active in your chat!</strong><br/>
+                <small>Listening for commands • Connected as @{twitchBotStatus.username || username} • Auto-manages with monitoring</small>
+              </p>
+            </div>
+          ) : eventSubStatus.monitoring ? (
+            <div style={{
+              background: 'rgba(220, 53, 69, 0.1)',
+              border: '1px solid rgba(220, 53, 69, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#dc3545'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                🔴 <strong>Bot failed to connect</strong><br/>
+                <small>Monitoring started but bot connection failed • Check your Twitch authentication</small>
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'rgba(108, 117, 125, 0.1)',
+              border: '1px solid rgba(108, 117, 125, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#6c757d'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>
+                📱 <strong>Bot ready for monitoring</strong><br/>
+                <small>Will auto-connect when you start stream monitoring • Eligible for chat commands</small>
               </p>
             </div>
           )}
@@ -1589,185 +1752,26 @@ function App() {
         </div>
 
         {/* Instructions Modal */}
-        {showInstructionsModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000
-          }} onClick={() => setShowInstructionsModal(false)}>
-            <div style={{
-              background: '#1a1a1a',
-              padding: '30px',
-              borderRadius: '12px',
-              maxWidth: '600px',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              border: '2px solid #9146ff'
-            }} onClick={(e) => e.stopPropagation()}>
-              <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>📖 How to Use</h2>
-
-              <div style={{ color: '#fff', lineHeight: '1.8' }}>
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>� OBS ??? Setup (Browser Source)</h3>
-                <div style={{ background: 'rgba(145, 70, 255, 0.2)', padding: '15px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #9146ff' }}>
-                  <p style={{ marginBottom: '10px' }}><strong>1. Add Browser Source to OBS</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Right-click in Sources → Add → Browser</p>
-
-                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>2. Configure Browser Source</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• URL: <code style={{ background: '#000', padding: '2px 6px', borderRadius: '4px' }}>{`${window.location.origin}/overlay/${userId}`}</code></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Width: <code style={{ background: '#000', padding: '2px 6px', borderRadius: '4px' }}>1920</code></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Height: <code style={{ background: '#000', padding: '2px 6px', borderRadius: '4px' }}>1080</code></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• ✅ Check "Shutdown source when not visible"</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• ✅ Check "Refresh browser when scene becomes active"</p>
-
-                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>3. Customize (Optional)</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• The overlay will automatically show when you go live!</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Go to ⚙️ Overlay Settings to customize position & theme</p>
-
-                  <p style={{ marginTop: '15px', marginBottom: '10px' }}><strong>4. Start Your Stream</strong></p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Just go live on Twitch as normal!</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• Overlay automatically activates when you go live</p>
-                  <p style={{ fontSize: '13px', color: '#ccc', marginLeft: '15px' }}>• No manual buttons needed - fully automated! 🤖</p>
-                </div>
-
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>�🎮 Counter Controls</h3>
-                <p>• Use <strong>+ / -</strong> buttons to modify counters</p>
-                <p>• <strong>Reset All</strong> button clears all counters to zero</p>
-                <p>• <strong>Export Data</strong> saves counter data as JSON</p>
-
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>💬 Chat Commands (Broadcaster/Mods)</h3>
-                <p>• <strong>!death+</strong> or <strong>!d+</strong> - Increment deaths</p>
-                <p>• <strong>!death-</strong> or <strong>!d-</strong> - Decrement deaths</p>
-                <p>• <strong>!swear+</strong> or <strong>!s+</strong> - Increment swears</p>
-                <p>• <strong>!swear-</strong> or <strong>!s-</strong> - Decrement swears</p>
-                <p>• <strong>!resetcounters</strong> - Reset all counters</p>
-
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>🤖 Auto Stream Detection</h3>
-                <p>• Counters <strong>automatically activate</strong> when you go live on Twitch</p>
-                <p>• Stream session <strong>automatically ends</strong> when you stop streaming</p>
-                <p>• Discord notifications sent automatically (if webhook configured)</p>
-                <p>• No manual buttons needed - everything is detected via EventSub!</p>
-
-                <h3 style={{ color: '#fff', marginTop: '20px' }}>🔌 Real-time Sync</h3>
-                <p>All devices connected to your account will update automatically in real-time!</p>
-              </div>
-
-              <button
-                onClick={() => setShowInstructionsModal(false)}
-                style={{
-                  background: '#9146ff',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 30px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  marginTop: '20px',
-                  width: '100%'
-                }}
-              >
-                ✅ Got it!
-              </button>
-            </div>
-          </div>
-        )}
+        <InstructionsModal
+          isOpen={showInstructionsModal}
+          onClose={() => setShowInstructionsModal(false)}
+          user={{ userId, username }}
+        />
 
         {/* Alert Manager Modal */}
-        {showAlertManager && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 2000,
-              padding: '20px'
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowAlertManager(false)
-            }}
-          >
-            <div
-              style={{
-                background: '#1a1a2e',
-                borderRadius: '12px',
-                width: '100%',
-                maxWidth: '1200px',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                position: 'relative'
-              }}
-            >
-              <button
-                onClick={() => setShowAlertManager(false)}
-                style={{
-                  position: 'absolute',
-                  top: '20px',
-                  right: '20px',
-                  background: '#dc3545',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                  zIndex: 10
-                }}
-              >
-                ✖ Close
-              </button>
-              <UserAlertManager userId={userId} />
-            </div>
-          </div>
-        )}
+        <AlertManagerModal
+          isOpen={showAlertManager}
+          onClose={() => setShowAlertManager(false)}
+          user={{ userId, username }}
+        />
 
         {/* Alert Effects Settings Modal */}
-        {showAlertEffectsSettings && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 2000,
-              padding: '20px'
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowAlertEffectsSettings(false)
-            }}
-          >
-            <div
-              style={{
-                background: '#1a1a2e',
-                borderRadius: '12px',
-                width: '100%',
-                maxWidth: '900px',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                position: 'relative'
-              }}
-            >
-              <AlertEffectsSettings onClose={() => setShowAlertEffectsSettings(false)} />
-            </div>
-          </div>
-        )}
+        <AlertEffectsModal
+          isOpen={showAlertEffectsSettings}
+          onClose={() => setShowAlertEffectsSettings(false)}
+          user={{ userId, username }}
+          isAdminMode={false}
+        />
 
         {/* Series Save Manager Modal */}
         {showSeriesSaveManager && (
@@ -1778,390 +1782,25 @@ function App() {
         )}
 
         {/* Discord Notification Settings Modal */}
-        {showDiscordSettings && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 2000,
-              padding: '20px'
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowDiscordSettings(false)
-            }}
-          >
-            <div
-              style={{
-                background: '#1a1a2e',
-                borderRadius: '12px',
-                width: '100%',
-                maxWidth: '600px',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                position: 'relative'
-              }}
-            >
-              <button
-                onClick={() => setShowDiscordSettings(false)}
-                style={{
-                  position: 'absolute',
-                  top: '20px',
-                  right: '20px',
-                  background: '#dc3545',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                  zIndex: 10
-                }}
-              >
-                ✖ Close
-              </button>
-              <DiscordWebhookSettings user={{ twitchUserId: userId, username }} />
-            </div>
-          </div>
-        )}
+        <DiscordWebhookSettingsModal
+          isOpen={showDiscordSettings}
+          onClose={() => setShowDiscordSettings(false)}
+          user={{ twitchUserId: userId, username }}
+          isAdminMode={false}
+        />
 
-        {/* Settings Modal */}
-        {showSettingsModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000
-          }} onClick={() => setShowSettingsModal(false)}>
-            <div style={{
-              background: '#1a1a1a',
-              padding: '30px',
-              borderRadius: '12px',
-              maxWidth: '700px',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              border: '2px solid #9146ff'
-            }} onClick={(e) => e.stopPropagation()}>
-              <h2 style={{ color: '#9146ff', marginBottom: '20px' }}>⚙️ Overlay Settings</h2>
-
-              {/* Enable/Disable Overlay */}
-              <div style={{ marginBottom: '25px', padding: '15px', background: '#2a2a2a', borderRadius: '8px', border: '2px solid #9146ff' }}>
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                  <div>
-                    <h4 style={{ color: '#fff', margin: 0 }}>🎬 Enable Overlay</h4>
-                    <p style={{ color: '#aaa', fontSize: '12px', margin: '5px 0 0 0' }}>Show overlay when stream is live</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={overlaySettings.enabled}
-                    onChange={(e) => {
-                      const newSettings = { ...overlaySettings, enabled: e.target.checked }
-                      setOverlaySettings(newSettings)
-                      updateOverlaySettings(newSettings)
-                    }}
-                    style={{ width: '24px', height: '24px', cursor: 'pointer' }}
-                  />
-                </label>
-              </div>
-
-              {/* Position Selector */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎯 Overlay Position</h4>
-                <select
-                  value={overlaySettings.position}
-                  onChange={(e) => {
-                    const newSettings = { ...overlaySettings, position: e.target.value }
-                    setOverlaySettings(newSettings)
-                    updateOverlaySettings(newSettings)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #444',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="top-left">↖️ Top Left</option>
-                  <option value="top-right">↗️ Top Right</option>
-                  <option value="bottom-left">↙️ Bottom Left</option>
-                  <option value="bottom-right">↘️ Bottom Right</option>
-                </select>
-              </div>
-
-              {/* Size Selector */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>📏 Overlay Size</h4>
-                <select
-                  value={overlaySettings.size || 'medium'}
-                  onChange={(e) => {
-                    const newSettings = { ...overlaySettings, size: e.target.value }
-                    setOverlaySettings(newSettings)
-                    updateOverlaySettings(newSettings)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #444',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="small">🔹 Small (Compact)</option>
-                  <option value="medium">🔸 Medium (Default)</option>
-                  <option value="large">🔶 Large (Bold)</option>
-                </select>
-              </div>
-
-              {/* Counters */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>📊 Visible Counters</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { key: 'deaths', label: '💀 Deaths' },
-                    { key: 'swears', label: '🤬 Swears' },
-                    { key: 'bits', label: '💎 Bits' },
-                    { key: 'channelPoints', label: '⭐ Channel Points' }
-                  ].map(counter => (
-                    <label key={counter.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={overlaySettings.counters[counter.key] || false}
-                        onChange={(e) => {
-                          const newSettings = {
-                            ...overlaySettings,
-                            counters: { ...overlaySettings.counters, [counter.key]: e.target.checked }
-                          }
-                          setOverlaySettings(newSettings)
-                          updateOverlaySettings(newSettings)
-                        }}
-                        style={{ width: '18px', height: '18px' }}
-                      />
-                      <span>{counter.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Animations */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>✨ Animations & Effects</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { key: 'enabled', label: 'Basic Animations' },
-                    { key: 'showAlerts', label: 'Counter Alerts' },
-                    { key: 'celebrationEffects', label: 'Celebrations' },
-                    { key: 'bounceOnUpdate', label: 'Bounce Effect' },
-                    { key: 'fadeTransitions', label: 'Fade Transitions' }
-                  ].map(animation => (
-                    <label key={animation.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={overlaySettings.animations[animation.key] || false}
-                        onChange={(e) => {
-                          const newSettings = {
-                            ...overlaySettings,
-                            animations: { ...overlaySettings.animations, [animation.key]: e.target.checked }
-                          }
-                          setOverlaySettings(newSettings)
-                          updateOverlaySettings(newSettings)
-                        }}
-                        style={{ width: '18px', height: '18px' }}
-                      />
-                      <span>{animation.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Theme Colors */}
-              <div style={{ marginBottom: '25px' }}>
-                <h4 style={{ color: '#fff', marginBottom: '10px' }}>🎨 Theme Colors</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <label style={{ color: '#fff' }}>
-                    <span style={{ display: 'block', marginBottom: '5px' }}>Border Color:</span>
-                    <input
-                      type="color"
-                      value={overlaySettings.theme.borderColor}
-                      onChange={(e) => {
-                        const newSettings = {
-                          ...overlaySettings,
-                          theme: { ...overlaySettings.theme, borderColor: e.target.value }
-                        }
-                        setOverlaySettings(newSettings)
-                        updateOverlaySettings(newSettings)
-                      }}
-                      style={{ width: '100%', height: '40px', cursor: 'pointer' }}
-                    />
-                  </label>
-                  <label style={{ color: '#fff' }}>
-                    <span style={{ display: 'block', marginBottom: '5px' }}>Text Color:</span>
-                    <input
-                      type="color"
-                      value={overlaySettings.theme.textColor}
-                      onChange={(e) => {
-                        const newSettings = {
-                          ...overlaySettings,
-                          theme: { ...overlaySettings.theme, textColor: e.target.value }
-                        }
-                        setOverlaySettings(newSettings)
-                        updateOverlaySettings(newSettings)
-                      }}
-                      style={{ width: '100%', height: '40px', cursor: 'pointer' }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                style={{
-                  background: '#9146ff',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 30px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  width: '100%'
-                }}
-              >
-                ✅ Save & Close
-              </button>
-            </div>
-          </div>
-        )}
-
+        {/* Overlay Settings Modal */}
+        <OverlaySettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          user={{ userId, username }}
+          isAdminMode={false}
+        />
         {/* Stream Overlay - Rendered when stream is live */}
-        {console.log('🎨 Overlay render check:', {
-          streamStatus,
-          overlayEnabled: overlaySettings.enabled,
-          shouldShow: (streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled,
-          overlayPosition: overlaySettings.position
-        }) || ((streamStatus === 'live' || streamStatus === 'ending') && overlaySettings.enabled && (() => {
-          const sizeStyles = getSizeStyles(overlaySettings.size || 'medium')
-          return (
-          <div style={{
-            position: 'fixed',
-            [overlaySettings.position.includes('top') ? 'top' : 'bottom']: '20px',
-            [overlaySettings.position.includes('left') ? 'left' : 'right']: '20px',
-            zIndex: 9999,
-            background: overlaySettings.theme.backgroundColor,
-            border: `3px solid ${overlaySettings.theme.borderColor}`,
-            borderRadius: '12px',
-            padding: sizeStyles.padding,
-            minWidth: sizeStyles.minWidth,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            transition: overlaySettings.animations.fadeTransitions ? 'all 0.3s ease' : 'none',
-            animation: overlaySettings.animations.bounceOnUpdate ? 'fadeIn 0.5s ease-in-out' : 'none'
-          }}>
-            <h3 style={{
-              color: overlaySettings.theme.textColor,
-              marginBottom: '15px',
-              fontSize: sizeStyles.headingSize,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
-            }}>
-              🎮 Live Counter
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {overlaySettings.counters.deaths && (
-                <div style={{
-                  background: 'rgba(220, 53, 69, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #dc3545',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>💀 Deaths</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters?.deaths || 0}</span>
-                </div>
-              )}
-
-              {overlaySettings.counters.swears && (
-                <div style={{
-                  background: 'rgba(255, 193, 7, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #ffc107',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>🤬 Swears</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters?.swears || 0}</span>
-                </div>
-              )}
-
-              {overlaySettings.counters.bits && (counters?.bits || 0) > 0 && (
-                <div style={{
-                  background: 'rgba(145, 70, 255, 0.2)',
-                  padding: sizeStyles.itemPadding,
-                  borderRadius: '8px',
-                  border: '2px solid #9146ff',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.fontSize,
-                    fontWeight: 'bold'
-                  }}>💎 Bits</span>
-                  <span style={{
-                    color: overlaySettings.theme.textColor,
-                    fontSize: sizeStyles.counterFontSize,
-                    fontWeight: 'bold'
-                  }}>{counters.bits || 0}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          )
-        })()
-        )}
+        {renderStreamOverlay()}
       </div>
     </div>
   )
 }
 
 export default App
-
-

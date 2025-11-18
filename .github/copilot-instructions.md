@@ -439,6 +439,31 @@ app.use('/api/counters', requireAuth, counterRoutes);
 app.use('/api/admin', requireAuth, requireAdmin, adminRoutes);
 ```
 
+### **CRITICAL: User ID Usage Pattern**
+The authentication middleware assigns `req.user.userId = user.twitchUserId`, so:
+
+**✅ CORRECT - Use `req.user.userId` for authenticated requests:**
+```javascript
+// For authenticated user's own data
+const counters = await database.getCounters(req.user.userId);
+const userData = await database.getUser(req.user.userId);
+```
+
+**✅ CORRECT - Use `user.twitchUserId` when iterating database results:**
+```javascript
+// When working with user objects from database
+const allUsers = await database.getAllUsers();
+for (const user of allUsers) {
+  const counters = await database.getCounters(user.twitchUserId);
+}
+```
+
+**❌ WRONG - Don't use `req.params.userId` directly without validation:**
+```javascript
+// This can cause undefined partition key errors
+const counters = await database.getCounters(req.params.userId);
+```
+
 ### WebSocket Room Broadcast
 ```javascript
 // Emit to specific user's devices only
@@ -571,14 +596,15 @@ try {
 
 ## When Writing New Code
 
-1. **Check user context** - Always verify `req.user` exists and matches data owner
-2. **Use middleware** - Don't duplicate auth/role checks
-3. **Log important events** - Help with debugging in production
-4. **Handle Twitch token expiry** - Implement automatic refresh
-5. **Validate inputs** - Sanitize all user inputs
-6. **Return consistent errors** - Use standard error format
-7. **Update documentation** - Keep README.md in sync with changes
-8. **Test multi-tenant isolation** - Ensure users can't access others' data
+1. **Use correct user ID pattern** - `req.user.userId` for authenticated requests, `user.twitchUserId` for database iteration
+2. **Check user context** - Always verify `req.user` exists and matches data owner
+3. **Use middleware** - Don't duplicate auth/role checks
+4. **Log important events** - Help with debugging in production
+5. **Handle Twitch token expiry** - Implement automatic refresh
+6. **Validate inputs** - Sanitize all user inputs
+7. **Return consistent errors** - Use standard error format
+8. **Update documentation** - Keep README.md in sync with changes
+9. **Test multi-tenant isolation** - Ensure users can't access others' data
 
 ## Admin User Reference
 

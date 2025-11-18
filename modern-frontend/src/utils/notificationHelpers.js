@@ -5,19 +5,19 @@
 
 // Default notification settings factory
 export const createDefaultNotificationSettings = () => ({
-  templateStyle: 'asylum_themed', // asylum_themed, minimal, detailed, custom
+  templateStyle: 'custom', // Disabled template system for now: asylum_themed, minimal, detailed, custom
   discordNotifications: {
-    death_milestone: true,
-    swear_milestone: true,
-    stream_start: true,
-    stream_end: true,
+    death_milestone: false, // Disabled by default until template system is working
+    swear_milestone: false, // Disabled by default until template system is working
+    stream_start: false,
+    stream_end: false,
     follower_goal: false,
     subscriber_milestone: false,
     channel_point_redemption: false
   },
   channelNotifications: {
-    death_milestone: true,
-    swear_milestone: true,
+    death_milestone: false, // Disabled by default until template system is working
+    swear_milestone: false, // Disabled by default until template system is working
     stream_start: false,
     stream_end: false,
     follower_goal: false,
@@ -36,21 +36,21 @@ export const createNotificationTypes = () => [
     id: 'death_milestone',
     icon: '💀',
     title: 'Death Milestones',
-    description: 'Notify when reaching death count goals',
+    description: 'Notify when reaching death count goals (currently disabled)',
     supportsDiscord: true,
     supportsChannel: true,
-    defaultDiscord: true,
-    defaultChannel: true
+    defaultDiscord: false, // Disabled until template system is working
+    defaultChannel: false  // Disabled until template system is working
   },
   {
     id: 'swear_milestone',
     icon: '🤬',
     title: 'Swear Milestones',
-    description: 'Track profanity milestones',
+    description: 'Track profanity milestones (currently disabled)',
     supportsDiscord: true,
     supportsChannel: true,
-    defaultDiscord: true,
-    defaultChannel: true
+    defaultDiscord: false, // Disabled until template system is working
+    defaultChannel: false  // Disabled until template system is working
   },
   {
     id: 'stream_start',

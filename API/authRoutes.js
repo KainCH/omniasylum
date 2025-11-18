@@ -32,6 +32,7 @@ router.get('/twitch', async (req, res) => {
       'user:read:email',              // Read user email
       'chat:read',                    // Read chat messages
       'chat:edit',                    // Send chat messages
+      'user:manage:whispers',         // Send whisper messages
       'channel:read:subscriptions',   // Read subscriptions (EventSub cost reduction)
       'channel:read:redemptions',     // Read channel point redemptions (EventSub cost reduction)
       'moderator:read:followers',     // Read followers (EventSub cost reduction)
@@ -104,17 +105,37 @@ router.get('/twitch/callback', async (req, res) => {
     // Calculate token expiry
     const tokenExpiry = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
 
-    // Save user to database
-    const user = await database.saveUser({
-      twitchUserId: twitchUser.id,
-      username: twitchUser.login,
-      displayName: twitchUser.display_name,
-      email: twitchUser.email,
-      profileImageUrl: twitchUser.profile_image_url,
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token,
-      tokenExpiry: tokenExpiry
-    });
+    // Check if user exists and is approved
+    let user;
+    try {
+      user = await database.getUser(twitchUser.id);
+      if (!user) {
+        // User doesn't exist - redirect to request access page
+        console.log(`🚫 Access denied for ${twitchUser.login} - user not in approved list`);
+        return res.redirect(`${process.env.FRONTEND_URL}/?error=access_denied&username=${encodeURIComponent(twitchUser.login)}&displayName=${encodeURIComponent(twitchUser.display_name)}&userId=${twitchUser.id}`);
+      }
+
+      if (user.isActive === false) {
+        // User exists but is deactivated
+        console.log(`🚫 Access denied for ${twitchUser.login} - account deactivated`);
+        return res.redirect(`${process.env.FRONTEND_URL}/?error=account_deactivated&username=${encodeURIComponent(twitchUser.login)}`);
+      }
+
+      // Update existing approved user's tokens and profile info
+      user = await database.saveUser({
+        twitchUserId: twitchUser.id,
+        username: twitchUser.login,
+        displayName: twitchUser.display_name,
+        email: twitchUser.email,
+        profileImageUrl: twitchUser.profile_image_url,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        tokenExpiry: tokenExpiry
+      });
+    } catch (error) {
+      console.log(`🚫 Access denied for ${twitchUser.login} - user not found in database`);
+      return res.redirect(`${process.env.FRONTEND_URL}/?error=access_denied&username=${encodeURIComponent(twitchUser.login)}&displayName=${encodeURIComponent(twitchUser.display_name)}&userId=${twitchUser.id}`);
+    }
 
     // Create JWT for our application
     const jwtSecret = await getJwtSecret();
@@ -442,6 +463,59 @@ router.post('/logout', async (req, res) => {
   } catch (error) {
     console.error('Error logging out:', error);
     res.status(500).json({ error: 'Failed to logout' });
+  }
+});
+
+/**
+ * Request access to the system
+ * POST /auth/request-access
+ */
+router.post('/request-access', async (req, res) => {
+  try {
+    const { twitchUserId, username, displayName, email } = req.body;
+
+    if (!twitchUserId || !username || !displayName) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check if user already exists
+    try {
+      const existingUser = await database.getUser(twitchUserId);
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists in system' });
+      }
+    } catch (error) {
+      // User doesn't exist, which is what we want
+    }
+
+    // Check if there's already a pending request
+    const existingRequests = await database.getAllUserRequests();
+    const pendingRequest = existingRequests.find(req =>
+      req.twitchUserId === twitchUserId && req.status === 'pending'
+    );
+
+    if (pendingRequest) {
+      return res.status(400).json({ error: 'Access request already pending' });
+    }
+
+    // Create the access request
+    const request = await database.saveUserRequest({
+      twitchUserId,
+      username,
+      displayName,
+      email
+    });
+
+    console.log('📝 New access request from:', username);
+
+    res.json({
+      message: 'Access request submitted successfully',
+      requestId: request.requestId
+    });
+
+  } catch (error) {
+    console.error('Error creating access request:', error);
+    res.status(500).json({ error: 'Failed to submit access request' });
   }
 });
 

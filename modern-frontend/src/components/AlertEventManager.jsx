@@ -146,6 +146,69 @@ function AlertEventManager({ userId, username, onClose }) {
     }
   }
 
+  const playTestSound = (soundFile) => {
+    if (!soundFile) return
+
+    try {
+      const audio = new Audio(`/sounds/${soundFile}`)
+      audio.volume = 0.7
+
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`🔊 Playing test sound: ${soundFile}`)
+          })
+          .catch(error => {
+            console.warn(`⚠️ Sound autoplay prevented: ${soundFile}`, error)
+            // This is expected on first interaction due to browser policies
+          })
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to play sound: ${soundFile}`, error)
+    }
+  }
+
+  const triggerLiveTest = async (eventType) => {
+    if (!userId) {
+      window.alert('❌ User ID not available for live testing.')
+      return
+    }
+
+    try {
+      // Map frontend event types to backend event types
+      const eventTypeMap = {
+        'channel.follow': 'follow',
+        'channel.subscribe': 'subscription',
+        'channel.subscription.gift': 'subscription',
+        'channel.subscription.message': 'resub',
+        'channel.cheer': 'cheer',
+        'channel.bits.use': 'cheer',
+        'channel.raid': 'raid'
+      }
+
+      const mappedEventType = eventTypeMap[eventType] || eventType
+
+      const response = await fetch(`/api/debug/test-notification/${userId}/${mappedEventType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        console.log('✅ Live test triggered successfully')
+        window.alert(`🎬 Live test triggered! Check your overlay for the ${eventType} alert with full animations.`)
+      } else {
+        console.error('❌ Failed to trigger live test:', response.statusText)
+        window.alert('❌ Failed to trigger live test. Check console for details.')
+      }
+    } catch (error) {
+      console.error('❌ Error triggering live test:', error)
+      window.alert('❌ Error triggering live test. Check console for details.')
+    }
+  }
+
   const testAlert = (eventType) => {
     const alertId = eventMappings[eventType]
     const alert = alerts.find(a => a.id === alertId)
@@ -155,6 +218,21 @@ function AlertEventManager({ userId, username, onClose }) {
       return
     }
 
+    // Show confirmation dialog for test mode
+    const testMode = window.confirm(
+      `🎭 Choose your test mode:\n\n` +
+      `✅ OK = Live Overlay Test (full animations on overlay)\n` +
+      `❌ Cancel = Quick Preview (static preview here)\n\n` +
+      `Live mode requires overlay to be open in browser/OBS.`
+    )
+
+    if (testMode) {
+      // User chose live overlay test
+      triggerLiveTest(eventType)
+      return
+    }
+
+    // Continue with preview mode
     const eventInfo = eventDescriptions[eventType]
 
     // Create sample data for preview
@@ -164,7 +242,13 @@ function AlertEventManager({ userId, username, onClose }) {
       'channel.subscription.gift': { gifter: username || 'TestUser', amount: 5, tier: '1000' },
       'channel.subscription.message': { subscriber: username || 'TestUser', months: 12, streakMonths: 6, message: 'Love this stream!', tier: '1000' },
       'channel.cheer': { cheerer: username || 'TestUser', bits: 100, message: 'Great content!' },
+      'channel.bits.use': { user: username || 'TestUser', bits: 100, message: 'Great content!', eventType: 'cheer' },
       'channel.raid': { raider: username || 'TestUser', viewers: 50 }
+    }
+
+    // Play the sound if the alert has one configured
+    if (alert.soundFile) {
+      playTestSound(alert.soundFile)
     }
 
     setPreviewData({

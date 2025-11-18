@@ -8,7 +8,8 @@ export const ToggleSwitch = ({
   onChange,
   label,
   disabled = false,
-  size = 'medium' // small, medium, large
+  size = 'medium', // small, medium, large
+  labelPosition = 'right' // left, right
 }) => {
   const sizeClasses = {
     small: 'toggle-small',
@@ -16,8 +17,13 @@ export const ToggleSwitch = ({
     large: 'toggle-large'
   };
 
+  const labelElement = label && (
+    <span className="toggle-label">{label}</span>
+  );
+
   return (
-    <label className={`toggle-switch ${sizeClasses[size]} ${disabled ? 'disabled' : ''}`}>
+    <label className={`toggle-switch ${sizeClasses[size]} ${disabled ? 'disabled' : ''} ${labelPosition === 'left' ? 'label-left' : 'label-right'}`}>
+      {labelPosition === 'left' && labelElement}
       <input
         type="checkbox"
         checked={checked}
@@ -25,7 +31,7 @@ export const ToggleSwitch = ({
         disabled={disabled}
       />
       <span className="toggle-slider"></span>
-      {label && <span className="toggle-label">{label}</span>}
+      {labelPosition === 'right' && labelElement}
     </label>
   );
 };

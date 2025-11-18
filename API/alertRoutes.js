@@ -4,6 +4,20 @@ const { requireAuth, requireAdmin } = require('./authMiddleware');
 
 const router = express.Router();
 
+// Debug route to verify alertRoutes are loaded
+router.get('/debug/status', (req, res) => {
+  res.json({ message: 'alertRoutes loaded successfully', timestamp: new Date().toISOString() });
+});
+
+// Test PUT route to debug routing issue
+router.put('/debug/test-put', requireAuth, (req, res) => {
+  res.json({ message: 'PUT route works', userId: req.user.userId, timestamp: new Date().toISOString() });
+});
+
+console.log('🔧 AlertRoutes: Loading alert routes...');
+console.log('🔧 AlertRoutes: PUT /event-mappings route being registered');
+console.log('🔧 AlertRoutes: Test PUT /debug/test-put route being registered');
+
 /**
  * Get all alerts for current user (includes defaults + custom)
  * GET /api/alerts
@@ -21,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(req.user.userId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
@@ -115,6 +129,80 @@ router.post('/', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error creating alert:', error);
     res.status(500).json({ error: 'Failed to create alert' });
+  }
+});
+
+/**
+ * Update event-to-alert mappings for current user
+ * PUT /api/alerts/event-mappings
+ * NOTE: This MUST come before /:alertId route to avoid conflicts!
+ */
+router.put('/event-mappings', requireAuth, async (req, res) => {
+  try {
+    // Check if user has alerts feature enabled
+    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
+    if (!hasAlerts) {
+      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
+    }
+
+    console.log('🔍 Event mappings update request for user:', req.user.userId);
+
+    // Handle both formats: { mappings: {...} } and direct mappings object
+    let mappings;
+    if (req.body.mappings) {
+      mappings = req.body.mappings;
+    } else {
+      mappings = req.body;
+    }
+
+    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) {
+      return res.status(400).json({
+        error: 'Invalid mappings format',
+        received: mappings,
+        type: typeof mappings
+      });
+    }
+
+    // Validate that all event types are valid
+    const validEvents = database.getAllAvailableEvents();
+
+    for (const eventType of Object.keys(mappings)) {
+      if (!validEvents.includes(eventType)) {
+        console.log(`❌ Invalid event type found: ${eventType}`);
+        console.log(`❌ Valid events are: ${validEvents.join(', ')}`);
+        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
+      }
+    }
+
+    // Validate that all alert types exist for this user (including defaults and "none")
+    const userAlerts = await database.getUserAlerts(req.user.userId);
+    const defaultTemplates = database.getDefaultAlertTemplates();
+
+    const validAlertTypes = [
+      'none',
+      ...defaultTemplates.map(template => template.type),
+      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
+    ];
+
+    for (const alertType of Object.values(mappings)) {
+      if (alertType && !validAlertTypes.includes(alertType)) {
+        return res.status(400).json({
+          error: `No alert found with type: ${alertType}. Use "none" to disable alerts for an event.`,
+          availableTypes: validAlertTypes,
+          disableOption: 'none'
+        });
+      }
+    }
+
+    await database.saveEventMappings(req.user.userId, mappings);
+
+    res.json({
+      message: 'Event mappings updated successfully',
+      mappings: mappings
+    });
+  } catch (error) {
+    console.error('Error updating event mappings:', error);
+    res.status(500).json({ error: 'Failed to update event mappings' });
   }
 });
 
@@ -333,7 +421,7 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
 
     // Get user's custom alerts
     const customAlerts = await database.getUserAlerts(targetUserId);
-    
+
     // Get default alert templates
     const defaultTemplates = database.getDefaultAlertTemplates();
 
@@ -392,13 +480,34 @@ router.get('/event-mappings', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Stream alerts feature not enabled' });
     }
 
-    const mappings = await database.getEventMappings(req.user.userId);
+    let mappings = await database.getEventMappings(req.user.userId);
     const defaultMappings = database.getDefaultEventMappings();
+    const availableEvents = database.getAllAvailableEvents();
+    const availableAlertTypes = database.getAvailableAlertTypes();
+
+    // Auto-migration: Check if user has old channel.cheer mapping
+    if (mappings && mappings['channel.cheer']) {
+      console.log(`🔄 Auto-migrating channel.cheer to channel.bits.use for user ${req.user.userId}`);
+
+      // If user already has channel.bits.use mapping, keep it; otherwise migrate from channel.cheer
+      if (!mappings['channel.bits.use']) {
+        mappings['channel.bits.use'] = mappings['channel.cheer'];
+      }
+
+      // Remove the old channel.cheer mapping
+      delete mappings['channel.cheer'];
+
+      // Save the migrated mappings automatically
+      await database.saveEventMappings(req.user.userId, mappings);
+      console.log(`✅ Auto-migration completed for user ${req.user.userId}`);
+    }
 
     res.json({
       mappings: mappings,
       defaultMappings: defaultMappings,
-      availableEvents: Object.keys(defaultMappings)
+      availableEvents: availableEvents,
+      availableAlertTypes: availableAlertTypes,
+      disableOption: 'none' // Indicates which value disables alerts
     });
   } catch (error) {
     console.error('Error getting event mappings:', error);
@@ -406,53 +515,8 @@ router.get('/event-mappings', requireAuth, async (req, res) => {
   }
 });
 
-/**
- * Update event-to-alert mappings for current user
- * PUT /api/alerts/event-mappings
- */
-router.put('/event-mappings', requireAuth, async (req, res) => {
-  try {
-    // Check if user has alerts feature enabled
-    const hasAlerts = await database.hasFeature(req.user.userId, 'streamAlerts');
-    if (!hasAlerts) {
-      return res.status(403).json({ error: 'Stream alerts feature not enabled' });
-    }
 
-    const { mappings } = req.body;
 
-    if (!mappings || typeof mappings !== 'object') {
-      return res.status(400).json({ error: 'Invalid mappings format' });
-    }
-
-    // Validate that all event types are valid
-    const validEvents = Object.keys(database.getDefaultEventMappings());
-    for (const eventType of Object.keys(mappings)) {
-      if (!validEvents.includes(eventType)) {
-        return res.status(400).json({ error: `Invalid event type: ${eventType}` });
-      }
-    }
-
-    // Validate that all alert types exist for this user
-    const userAlerts = await database.getUserAlerts(req.user.userId);
-    const validAlertTypes = userAlerts.map(alert => alert.type);
-
-    for (const alertType of Object.values(mappings)) {
-      if (alertType && !validAlertTypes.includes(alertType)) {
-        return res.status(400).json({ error: `No alert found with type: ${alertType}` });
-      }
-    }
-
-    await database.saveEventMappings(req.user.userId, mappings);
-
-    res.json({
-      message: 'Event mappings updated successfully',
-      mappings: mappings
-    });
-  } catch (error) {
-    console.error('Error updating event mappings:', error);
-    res.status(500).json({ error: 'Failed to update event mappings' });
-  }
-});
 
 /**
  * Reset event mappings to defaults
@@ -476,6 +540,73 @@ router.post('/event-mappings/reset', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error resetting event mappings:', error);
     res.status(500).json({ error: 'Failed to reset event mappings' });
+  }
+});
+
+/**
+ * Debug endpoint - Get validation info for troubleshooting
+ * GET /api/alerts/debug/validation
+ */
+router.get('/debug/validation', requireAuth, async (req, res) => {
+  try {
+    const userAlerts = await database.getUserAlerts(req.user.userId);
+    const defaultTemplates = database.getDefaultAlertTemplates();
+    const defaultMappings = database.getDefaultEventMappings();
+    const userMappings = await database.getEventMappings(req.user.userId);
+
+    // Get all valid alert types (including "none" for disabling)
+    const validAlertTypes = [
+      'none',  // Special value to disable alerts
+      ...defaultTemplates.map(template => template.type),
+      ...userAlerts.filter(alert => !alert.isDefault).map(alert => alert.type)
+    ];
+
+    res.json({
+      debug: {
+        userId: req.user.userId,
+        defaultAlertTypes: defaultTemplates.map(t => t.type),
+        userCustomAlertTypes: userAlerts.filter(a => !a.isDefault).map(a => a.type),
+        validAlertTypes: validAlertTypes,
+        defaultEventTypes: Object.keys(defaultMappings),
+        defaultMappings: defaultMappings,
+        userMappings: userMappings,
+        mappingValidation: Object.entries(userMappings || defaultMappings).map(([event, alertType]) => ({
+          event,
+          alertType,
+          isValid: validAlertTypes.includes(alertType)
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error);
+    res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
+  }
+});
+
+// Migration endpoint to move from channel.cheer to channel.bits.use
+router.post('/migrate-cheer-to-bits', requireAuth, async (req, res) => {
+  try {
+    // Only allow admin users to run bulk migration
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required for bulk migration' });
+    }
+
+    console.log(`🔄 Admin ${req.user.username} initiated bulk migration from channel.cheer to channel.bits.use`);
+
+    const migratedCount = await database.migrateAllCheerToBitsUse();
+
+    res.json({
+      message: 'Migration completed successfully',
+      migratedUsers: migratedCount,
+      description: 'All users with channel.cheer mappings have been migrated to channel.bits.use'
+    });
+
+  } catch (error) {
+    console.error('Error during migration:', error);
+    res.status(500).json({
+      error: 'Migration failed',
+      details: error.message
+    });
   }
 });
 

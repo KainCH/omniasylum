@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import './DebugDashboard.css'
 import { ActionButton, StatusBadge } from './ui/CommonControls'
-import { userAPI, debugAPI } from '../utils/apiHelpers'
+import { userAPI } from '../utils/authUtils'
 import { useToast, useLoading } from '../hooks'
 
 function DebugDashboard({ user }) {
@@ -107,6 +107,110 @@ function DebugDashboard({ user }) {
         }
       }))
       showMessage(`Discord test failed: ${error.message}`, 'error')
+    }
+  }
+
+  const testEventSubAPI = async () => {
+    try {
+      await withLoading(async () => {
+        const result = await debugAPI.testEventSubAPI()
+        setTestResults(prev => ({
+          ...prev,
+          eventSubAPI: {
+            success: result.success,
+            message: result.message,
+            details: result.results,
+            timestamp: new Date().toISOString()
+          }
+        }))
+        showMessage(`EventSub API test ${result.success ? 'passed' : 'failed'}`, result.success ? 'success' : 'error')
+      })
+    } catch (error) {
+      setTestResults(prev => ({
+        ...prev,
+        eventSubAPI: {
+          success: false,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        }
+      }))
+      showMessage(`EventSub API test failed: ${error.message}`, 'error')
+    }
+  }
+
+  const startMonitoring = async () => {
+    try {
+      await withLoading(async () => {
+        const result = await debugAPI.startMonitoring()
+        showMessage('Stream monitoring started successfully', 'success')
+        setTimeout(() => loadDebugData(), 1000)
+      })
+    } catch (error) {
+      showMessage(`Failed to start monitoring: ${error.message}`, 'error')
+    }
+  }
+
+  const testStreamStatus = async (status) => {
+    if (!user?.twitchUserId) return
+
+    try {
+      await withLoading(async () => {
+        const result = await debugAPI.testStreamStatus(user.twitchUserId, status)
+        setTestResults(prev => ({
+          ...prev,
+          [`streamStatus_${status}`]: {
+            success: result.success,
+            message: result.message,
+            timestamp: new Date().toISOString()
+          }
+        }))
+        showMessage(`Stream ${status} test completed`, 'success')
+      })
+    } catch (error) {
+      showMessage(`Stream status test failed: ${error.message}`, 'error')
+    }
+  }
+
+  const testNotification = async (eventType) => {
+    if (!user?.twitchUserId) return
+
+    try {
+      await withLoading(async () => {
+        const result = await debugAPI.testNotification(user.twitchUserId, eventType)
+        setTestResults(prev => ({
+          ...prev,
+          [`notification_${eventType}`]: {
+            success: result.success,
+            message: result.message,
+            timestamp: new Date().toISOString()
+          }
+        }))
+        showMessage(`${eventType} notification test completed`, 'success')
+      })
+    } catch (error) {
+      showMessage(`Notification test failed: ${error.message}`, 'error')
+    }
+  }
+
+  const testAllNotifications = async () => {
+    if (!user?.twitchUserId) return
+
+    try {
+      await withLoading(async () => {
+        const result = await debugAPI.testAllNotifications(user.twitchUserId)
+        setTestResults(prev => ({
+          ...prev,
+          allNotifications: {
+            success: result.success,
+            message: result.message,
+            details: result.results,
+            timestamp: new Date().toISOString()
+          }
+        }))
+        showMessage('All notifications test completed', result.success ? 'success' : 'warning')
+      })
+    } catch (error) {
+      showMessage(`All notifications test failed: ${error.message}`, 'error')
     }
   }
 
@@ -291,34 +395,123 @@ function DebugDashboard({ user }) {
       {/* Test Actions */}
       <div className="debug-section">
         <h4>🧪 Test Actions</h4>
-        <div className="test-actions">
-          <ActionButton
-            onClick={runDiscordTest}
-            disabled={isLoading}
-            className="test-button"
-          >
-            🔔 Test Discord Webhook
-          </ActionButton>
 
-          <ActionButton
-            onClick={cleanWebhookData}
-            disabled={isLoading}
-            className="test-button warning"
-          >
-            🧹 Clean Webhook Data
-          </ActionButton>
+        {/* Basic Tests */}
+        <div className="test-group">
+          <h5>Basic Tests</h5>
+          <div className="test-actions">
+            <ActionButton
+              onClick={runDiscordTest}
+              disabled={isLoading}
+              className="test-button"
+            >
+              🔔 Test Discord Webhook
+            </ActionButton>
 
-          <ActionButton
-            onClick={loadDebugData}
-            disabled={isLoading}
-            className="test-button"
-          >
-            🔍 Refresh Diagnostics
-          </ActionButton>
+            <ActionButton
+              onClick={testEventSubAPI}
+              disabled={isLoading}
+              className="test-button"
+            >
+              🎯 Test EventSub API
+            </ActionButton>
+
+            <ActionButton
+              onClick={loadDebugData}
+              disabled={isLoading}
+              className="test-button"
+            >
+              🔍 Refresh Diagnostics
+            </ActionButton>
+          </div>
         </div>
 
-        {/* Test Results */}
-        {Object.keys(testResults).length > 0 && (
+        {/* Stream Monitoring Tests */}
+        <div className="test-group">
+          <h5>Stream Monitoring</h5>
+          <div className="test-actions">
+            <ActionButton
+              onClick={startMonitoring}
+              disabled={isLoading}
+              className="test-button"
+            >
+              🎬 Start Monitoring
+            </ActionButton>
+
+            <ActionButton
+              onClick={() => testStreamStatus('online')}
+              disabled={isLoading}
+              className="test-button"
+            >
+              📺 Test Stream Online
+            </ActionButton>
+
+            <ActionButton
+              onClick={() => testStreamStatus('offline')}
+              disabled={isLoading}
+              className="test-button"
+            >
+              📴 Test Stream Offline
+            </ActionButton>
+          </div>
+        </div>
+
+        {/* Notification Tests */}
+        <div className="test-group">
+          <h5>Notification Tests</h5>
+          <div className="test-actions">
+            <ActionButton
+              onClick={() => testNotification('follow')}
+              disabled={isLoading}
+              className="test-button"
+            >
+              � Test Follow Alert
+            </ActionButton>
+
+            <ActionButton
+              onClick={() => testNotification('subscription')}
+              disabled={isLoading}
+              className="test-button"
+            >
+              ⭐ Test Sub Alert
+            </ActionButton>
+
+            <ActionButton
+              onClick={() => testNotification('cheer')}
+              disabled={isLoading}
+              className="test-button"
+            >
+              💎 Test Cheer Alert
+            </ActionButton>
+
+            <ActionButton
+              onClick={testAllNotifications}
+              disabled={isLoading}
+              className="test-button warning"
+            >
+              🚀 Test All Notifications
+            </ActionButton>
+          </div>
+        </div>
+
+        {/* Cleanup Actions */}
+        <div className="test-group">
+          <h5>Cleanup Actions</h5>
+          <div className="test-actions">
+            <ActionButton
+              onClick={cleanWebhookData}
+              disabled={isLoading}
+              className="test-button warning"
+            >
+              🧹 Clean Webhook Data
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+
+      {/* Test Results */}
+      {Object.keys(testResults).length > 0 && (
+        <div className="debug-section">
           <div className="test-results">
             <h5>📋 Recent Test Results</h5>
             {Object.entries(testResults).map(([test, result]) => (
@@ -346,8 +539,8 @@ function DebugDashboard({ user }) {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Raw Data (for development) */}
       {process.env.NODE_ENV === 'development' && debugData && (

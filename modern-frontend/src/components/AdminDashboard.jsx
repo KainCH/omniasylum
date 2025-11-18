@@ -1,12 +1,40 @@
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
-import AlertEventManager from './AlertEventManager'
-import DiscordWebhookSettings from './DiscordWebhookSettings'
+import AlertEffectsModal from './AlertEffectsModal'
+import AlertEventManagerModal from './AlertEventManagerModal'
+import DiscordWebhookSettingsModal from './DiscordWebhookSettingsModal'
+import SeriesSaveManagerModal from './SeriesSaveManagerModal'
 import UserManagementModal from './UserManagementModal'
+import UserRequestsModal from './UserRequestsModal'
+import BrokenUserManagerModal from './BrokenUserManagerModal'
+import UserConfigurationPortal from './UserConfigurationPortal'
+import PermissionManager from './PermissionManager'
+import OverlaySettingsModal from './OverlaySettingsModal'
 import { ActionButton, FormSection, StatusBadge, ToggleSwitch, InputGroup } from './ui/CommonControls'
 import { useUserData, useLoading, useToast } from '../hooks'
-import { userAPI, counterAPI, streamAPI, APIError } from '../utils/apiHelpers'
+import { userAPI, counterAPI, adminAPI, APIError, getAuthToken } from '../utils/authUtils'
 import './AdminDashboard.css'
+
+// Helper function to get user-friendly feature names
+const getFeatureDisplayName = (featureKey) => {
+  const featureNames = {
+    chatCommands: '💬 Chat Commands',
+    channelPoints: '🏆 Channel Points',
+    autoClip: '🎬 Auto Clip',
+    customCommands: '⚡ Custom Commands',
+    analytics: '📊 Analytics',
+    webhooks: '🔗 Webhooks',
+    bitsIntegration: '💎 Bits Integration',
+    streamOverlay: '🖼️ Stream Overlay',
+    alertAnimations: '✨ Alert Animations',
+    streamAlerts: '🚨 Stream Alerts',
+    discordNotifications: '🎮 Discord Notifications',
+    seriesSaves: '💾 Series Saves',
+    nightMode: '🌙 Night Mode',
+    advancedStats: '📈 Advanced Stats'
+  }
+  return featureNames[featureKey] || featureKey
+}
 
 function AdminDashboard({ onNavigateToDebug }) {
   const [users, setUsers] = useState([])
@@ -15,74 +43,71 @@ function AdminDashboard({ onNavigateToDebug }) {
   const [roles, setRoles] = useState([])
   const [permissions, setPermissions] = useState([])
   const [streams, setStreams] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [addingUser, setAddingUser] = useState(false)
-  const [showAddUser, setShowAddUser] = useState(false)
-  const [showRoleManager, setShowRoleManager] = useState(false)
-  const [showRewardsManager, setShowRewardsManager] = useState(false)
-  const [showAlertsManager, setShowAlertsManager] = useState(false)
-  const [showEventMappingManager, setShowEventMappingManager] = useState(false)
-  const [showUserManagementModal, setShowUserManagementModal] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
-  const [eventMappingUser, setEventMappingUser] = useState(null)
-  const [rewards, setRewards] = useState([])
-  const [alerts, setAlerts] = useState([])
-  const [alertTemplates, setAlertTemplates] = useState([])
-  const [newReward, setNewReward] = useState({
-    title: '',
-    cost: 100,
-    action: 'increment_deaths',
-    prompt: '',
-    backgroundColor: '#9147FF'
-  })
-  const [newAlert, setNewAlert] = useState({
-    type: 'custom',
-    name: '',
-    textPrompt: '',
-    visualCue: '',
-    sound: '',
-    soundDescription: '',
-    duration: 4000,
-    backgroundColor: '#1a0d0d',
-    textColor: '#ffffff',
-    borderColor: '#666666'
-  })
-  const [newUser, setNewUser] = useState({
-    username: '',
-    displayName: '',
-    email: '',
-    twitchUserId: ''
-  })
-  const [currentUserRole, setCurrentUserRole] = useState('streamer')
+  const [showUserModal, setShowUserModal] = useState(false)
+  const [showUserRequestsModal, setShowUserRequestsModal] = useState(false)
+  const [showBrokenUserModal, setShowBrokenUserModal] = useState(false)
+  const [showUserConfigPortal, setShowUserConfigPortal] = useState(false)
+  const [showPermissionManager, setShowPermissionManager] = useState(false)
+  const [showOverlayModal, setShowOverlayModal] = useState(false)
+  const [selectedOverlayUser, setSelectedOverlayUser] = useState(null)
+  const [showAlertModal, setShowAlertModal] = useState(false)
+  const [selectedAlertUser, setSelectedAlertUser] = useState(null)
+  const [showDiscordModal, setShowDiscordModal] = useState(false)
+  const [selectedDiscordUser, setSelectedDiscordUser] = useState(null)
+  const [showSeriesModal, setShowSeriesModal] = useState(false)
+  const [selectedSeriesUser, setSelectedSeriesUser] = useState(null)
   const [socket, setSocket] = useState(null)
 
-  // Use our custom hooks for better state management
-  const { showToast } = useToast()
-  const { isLoading, withLoading } = useLoading()
+  useEffect(() => {
+    // Initialize socket connection
+    const newSocket = io({
+      auth: {
+        token: getAuthToken()
+      }
+    })
+
+    setSocket(newSocket)
+
+    // Listen for real-time updates
+    newSocket.on('adminDataUpdate', (data) => {
+      console.log('📡 Real-time admin data update:', data)
+      if (data.users) setUsers(data.users)
+      if (data.stats) setStats(data.stats)
+    })
+
+    // Cleanup on unmount
+    return () => {
+      newSocket.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     fetchAdminData()
   }, [])
 
-  // Socket.io connection for real-time updates
   useEffect(() => {
-    const socketConnection = io()
+    // Initialize socket connection
+    const socketConnection = io({
+      auth: {
+        token: getAuthToken()
+      }
+    })
+
     setSocket(socketConnection)
 
-    // Listen for user status changes (auto-deactivation when stream ends)
-    socketConnection.on('userStatusChanged', (data) => {
-      console.log(`🔄 User status changed: ${data.username} is now ${data.isActive ? 'active' : 'inactive'} (${data.reason})`)
+    // Listen for real-time updates
+    socketConnection.on('adminDataUpdate', (data) => {
+      console.log('📡 Real-time admin data update:', data)
+      if (data.users) setUsers(data.users)
+      if (data.stats) setStats(data.stats)
+    })
 
-      // Update user in the list
-      setUsers(prevUsers =>
-        prevUsers.map(user =>
-          user.twitchUserId === data.userId
-            ? { ...user, isActive: data.isActive }
-            : user
-        )
-      )
-
-      // Show notification to admin
+    // Listen for stream status changes
+    socketConnection.on('streamStatusChanged', (data) => {
+      console.log('📡 Stream status changed:', data)
+      fetchAdminData()
       if (!data.isActive && data.reason === 'Stream ended') {
         alert(`📴 ${data.username} was automatically deactivated because their stream ended`)
       }
@@ -93,1749 +118,456 @@ function AdminDashboard({ onNavigateToDebug }) {
     }
   }, [])
 
-  // Helper function to get auth headers
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken')
-    const headers = {
-      'Content-Type': 'application/json'
-    }
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    return headers
-  }
-
-  // Helper function to get fetch options with credentials
-  const getFetchOptions = (method = 'GET', body = null) => {
-    const options = {
-      method,
-      headers: getAuthHeaders(),
-      credentials: 'include' // Include cookies for authentication
-    }
-
-    if (body) {
-      options.body = JSON.stringify(body)
-    }
-
-    return options
-  }
-
-  // Logout function
-  const handleLogout = () => {
-    localStorage.removeItem('authToken')
-    window.location.href = '/auth/twitch'
-  }
-
   const fetchAdminData = async () => {
     try {
-      const headers = getAuthHeaders()
+      // Fetch all admin data using consolidated API methods
+      const [usersData, statsData, featuresData, rolesData, permissionsData, streamsData] = await Promise.allSettled([
+        adminAPI.getUsers(),
+        adminAPI.getStats(),
+        adminAPI.getFeatures(),
+        adminAPI.getRoles(),
+        adminAPI.getPermissions(),
+        adminAPI.getStreams()
+      ]);
 
-      // Fetch users
-      const usersResponse = await fetch('/api/admin/users', {
-        headers,
-        credentials: 'include'
-      })
-      if (usersResponse.ok) {
-        const usersData = await usersResponse.json()
-        const fetchedUsers = usersData.users || usersData
-        setUsers(fetchedUsers) // Handle both response formats
-
-        // Update selectedUser if it exists (for modal refresh)
-        if (selectedUser) {
-          const updatedUser = fetchedUsers.find(u => u.twitchUserId === selectedUser.twitchUserId)
-          if (updatedUser) {
-            setSelectedUser(updatedUser)
-          }
-        }
+      // Handle users data
+      if (usersData.status === 'fulfilled') {
+        const usersList = usersData.value.users || usersData.value;
+        setUsers(Array.isArray(usersList) ? usersList : []);
       } else {
-        console.error('Failed to fetch users:', usersResponse.status, usersResponse.statusText)
+        console.error('Failed to fetch users:', usersData.reason);
+        setUsers([]);
       }
 
-      // Fetch system stats
-      const statsResponse = await fetch('/api/admin/stats', {
-        headers,
-        credentials: 'include'
-      })
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json()
-        setStats(statsData)
+      // Handle stats data
+      if (statsData.status === 'fulfilled') {
+        setStats(statsData.value);
       } else {
-        console.error('Failed to fetch stats:', statsResponse.status)
+        console.error('Failed to fetch stats:', statsData.reason);
+        setStats({});
       }
 
-      // Fetch available features
-      const featuresResponse = await fetch('/api/admin/features', {
-        headers,
-        credentials: 'include'
-      })
-      if (featuresResponse.ok) {
-        const featuresData = await featuresResponse.json()
-        setFeatures(featuresData.features)
+      // Handle features data
+      if (featuresData.status === 'fulfilled') {
+        setFeatures(featuresData.value);
       } else {
-        console.error('Failed to fetch features:', featuresResponse.status)
+        console.error('Failed to fetch features:', featuresData.reason);
+        setFeatures([]);
       }
 
-      // Fetch available roles
-      const rolesResponse = await fetch('/api/admin/roles', {
-        headers,
-        credentials: 'include'
-      })
-      if (rolesResponse.ok) {
-        const rolesData = await rolesResponse.json()
-        setRoles(rolesData.roles)
+      // Handle roles data
+      if (rolesData.status === 'fulfilled') {
+        setRoles(rolesData.value);
       } else {
-        console.error('Failed to fetch roles:', rolesResponse.status)
+        console.error('Failed to fetch roles:', rolesData.reason);
+        setRoles([]);
       }
 
-      // Fetch available permissions
-      const permissionsResponse = await fetch('/api/admin/permissions', {
-        headers,
-        credentials: 'include'
-      })
-      if (permissionsResponse.ok) {
-        const permissionsData = await permissionsResponse.json()
-        setPermissions(permissionsData.permissions)
+      // Handle permissions data
+      if (permissionsData.status === 'fulfilled') {
+        setPermissions(permissionsData.value);
       } else {
-        console.error('Failed to fetch permissions:', permissionsResponse.status)
+        console.error('Failed to fetch permissions:', permissionsData.reason);
+        setPermissions([]);
       }
 
-      // Fetch stream sessions
-      const streamsResponse = await fetch('/api/admin/streams', {
-        headers,
-        credentials: 'include'
-      })
-      if (streamsResponse.ok) {
-        const streamsData = await streamsResponse.json()
-        setStreams(streamsData.sessions || [])
+      // Handle streams data
+      if (streamsData.status === 'fulfilled') {
+        setStreams(streamsData.value);
       } else {
-        console.error('Failed to fetch streams:', streamsResponse.status)
+        console.error('Failed to fetch streams:', streamsData.reason);
+        setStreams([]);
       }
 
-      // Fetch channel point rewards (admin view)
-      const rewardsResponse = await fetch('/api/rewards/admin/all', {
-        headers,
-        credentials: 'include'
-      })
-      if (rewardsResponse.ok) {
-        const rewardsData = await rewardsResponse.json()
-        setRewards(rewardsData.users || [])
-      } else {
-        console.error('Failed to fetch rewards:', rewardsResponse.status)
-      }
-
-      // Fetch alert configurations (admin view)
-      const alertsResponse = await fetch('/api/alerts/admin/all', {
-        headers,
-        credentials: 'include'
-      })
-      if (alertsResponse.ok) {
-        const alertsData = await alertsResponse.json()
-        setAlerts(alertsData.users || [])
-      } else {
-        console.error('Failed to fetch alerts:', alertsResponse.status)
-      }
-
-      // Fetch alert templates
-      const templatesResponse = await fetch('/api/alerts/templates', {
-        headers,
-        credentials: 'include'
-      })
-      if (templatesResponse.ok) {
-        const templatesData = await templatesResponse.json()
-        setAlertTemplates(templatesData.templates || [])
-      } else {
-        console.error('Failed to fetch alert templates:', templatesResponse.status)
-      }
     } catch (error) {
-      console.error('Failed to fetch admin data:', error)
+      console.error('❌ Error fetching admin data:', error);
+      // Ensure state is set to safe defaults on error
+      setUsers([]);
+      setStats({});
+      setFeatures([]);
+      setRoles([]);
+      setPermissions([]);
+      setStreams([]);
     } finally {
-      setLoading(false)
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await fetchAdminData()
   }
 
-  const toggleUserActive = async (userId, isActive) => {
+  const toggleUserStatus = async (userId, currentStatus) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}/status`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({ isActive: !isActive })
-      })
-
-      if (response.ok) {
-        fetchAdminData() // Refresh data
-      }
+      await adminAPI.toggleUserStatus(userId, !currentStatus);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Failed to update user:', error)
+      console.error('❌ Error toggling user status:', error);
+      alert(`Failed to toggle user status: ${error.message}`);
     }
   }
 
-  const toggleFeature = async (userId, feature, enabled) => {
+  const toggleFeature = async (userId, featureName, currentValue) => {
     try {
-      // Get current features first
-      const user = users.find(u => u.twitchUserId === userId)
-      const currentFeatures = user?.features
-        ? (typeof user.features === 'string'
-            ? JSON.parse(user.features)
-            : user.features)
-        : {}
-
-      // Update the specific feature
-      const updatedFeatures = {
-        ...currentFeatures,
-        [feature]: !enabled
-      }
-
-      const response = await fetch(`/api/admin/users/${userId}/features`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ features: updatedFeatures })
-      })
-
-      if (response.ok) {
-        fetchAdminData() // Refresh data
-      }
+      await adminAPI.updateUserFeatures(userId, featureName, !currentValue);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Failed to update feature:', error)
+      console.error('❌ Error toggling feature:', error);
+      alert(`Failed to toggle feature: ${error.message}`);
     }
   }
 
-  const updateUserRole = async (userId, newRole) => {
-    try {
-      const response = await fetch(`/api/admin/users/${userId}/role`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ role: newRole })
-      })
+  const deleteUser = async (user) => {
+    const userName = user.displayName || user.username || 'Unknown User'
 
-      if (response.ok) {
-        // Refresh users data
-        fetchAdminData()
-      } else {
-        const errorData = await response.json()
-        console.error('❌ Failed to update role:', errorData.error)
-        alert(errorData.error)
-      }
-    } catch (error) {
-      console.error('❌ Failed to update role:', error)
-      alert('Failed to update user role')
+    if (!confirm(`⚠️ Are you sure you want to permanently delete user "${userName}"?\n\nThis will remove:\n• User account and profile\n• All counter data\n• All settings and features\n• Discord webhooks\n• All associated data\n\nThis action CANNOT be undone!`)) {
+      return
     }
-  }
 
-  const updateUserOverlaySettings = async (userId, settings) => {
     try {
-      // Ensure we have a valid token before making the request
-      const hasValidToken = await ensureValidToken()
-      if (!hasValidToken) {
-        console.log('❌ Cannot update overlay settings: invalid token')
+      const userId = user.twitchUserId || user.userId
+      if (!userId) {
+        alert('❌ Cannot delete user: Invalid user ID')
         return
       }
 
-      const authHeaders = getAuthHeaders()
-      const token = localStorage.getItem('authToken')
-
-      console.log('📤 Sending overlay settings update:', {
-        userId,
-        settings,
-        hasToken: !!token,
-        tokenPreview: token ? token.substring(0, 20) + '...' : 'no token',
-        headers: Object.keys(authHeaders)
-      })
-
-      const url = `/api/admin/users/${userId}/overlay-settings`
-      console.log('🌐 Request URL:', url)
-      console.log('🔑 Request headers:', authHeaders)
-
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: authHeaders,
-        body: JSON.stringify(settings)
-      })
-
-      console.log('📊 Response status:', response.status, response.statusText)
-      console.log('📊 Response headers:', Object.fromEntries(response.headers.entries()))
-
-      if (response.ok) {
-        const result = await response.json()
-        console.log('📥 Overlay settings update response:', result)
-
-        // Check token status
-        const tokenStatus = checkTokenExpiry()
-        console.log('🕒 Token status during update:', tokenStatus)
-
-        console.log('⏳ Waiting 1 second before refreshing data to ensure backend persistence...')
-        // Wait longer before refreshing to ensure backend has fully processed
-        setTimeout(async () => {
-          console.log('🔄 Refreshing admin data after overlay update...')
-          await fetchAdminData()
-          console.log('🔄 Data refresh complete')
-        }, 1000)
-        console.log('✅ Overlay settings updated successfully')
-      } else {
-        let errorMessage = 'Unknown error'
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorMessage
-          console.error('❌ Failed to update overlay settings:', errorData)
-        } catch (parseError) {
-          console.error('❌ Failed to parse error response:', parseError)
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`
-        }
-        console.error('❌ Request failed with status:', response.status)
-        alert(errorMessage)
-      }
+      await adminAPI.deleteUser(userId);
+      alert(`✅ User "${userName}" has been successfully deleted.`);
+      // Refresh data to show changes
+      await fetchAdminData();
     } catch (error) {
-      console.error('❌ Failed to update overlay settings (network error):', error)
-      alert('Network error: Failed to update overlay settings')
+      console.error('❌ Error deleting user:', error);
+      alert(`❌ Failed to delete user: ${error.message}`);
     }
-  }
-
-  // Get current user's role from token
-  const getCurrentUserRole = () => {
-    const token = localStorage.getItem('authToken')
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        return payload.role || 'streamer'
-      } catch (e) {
-        return 'streamer'
-      }
-    }
-    return 'streamer'
-  }
-
-  // Check if token is expired or needs refresh
-  const checkTokenExpiry = () => {
-    const token = localStorage.getItem('authToken')
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        const now = Date.now() / 1000
-        const exp = payload.exp || 0
-        const timeUntilExpiry = exp - now
-
-        console.log('🕒 Token info:', {
-          userId: payload.userId,
-          username: payload.username,
-          role: payload.role,
-          issuedAt: new Date(payload.iat * 1000).toISOString(),
-          expiresAt: new Date(exp * 1000).toISOString(),
-          timeUntilExpiry: Math.round(timeUntilExpiry),
-          isExpired: timeUntilExpiry <= 0,
-          needsRefresh: timeUntilExpiry <= 3600 // Less than 1 hour
-        })
-
-        return {
-          isExpired: timeUntilExpiry <= 0,
-          needsRefresh: timeUntilExpiry <= 3600,
-          timeUntilExpiry
-        }
-      } catch (e) {
-        console.error('❌ Failed to parse token:', e)
-        return { isExpired: true, needsRefresh: true, timeUntilExpiry: 0 }
-      }
-    }
-    return { isExpired: true, needsRefresh: true, timeUntilExpiry: 0 }
-  }
-
-  // Refresh JWT token using Twitch refresh token
-  const refreshToken = async () => {
-    try {
-      console.log('🔄 Attempting to refresh token...')
-      const response = await fetch('/auth/refresh', {
-        method: 'POST',
-        headers: getAuthHeaders()
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('authToken', data.token)
-        console.log('✅ Token refreshed successfully')
-        return true
-      } else {
-        console.error('❌ Token refresh failed:', response.status)
-        return false
-      }
-    } catch (error) {
-      console.error('❌ Token refresh error:', error)
-      return false
-    }
-  }
-
-  // Automatically refresh token if needed before making requests
-  const ensureValidToken = async () => {
-    const tokenStatus = checkTokenExpiry()
-
-    if (tokenStatus.isExpired) {
-      console.log('🔄 Token expired, attempting refresh...')
-      const refreshed = await refreshToken()
-      if (!refreshed) {
-        console.log('❌ Token refresh failed, redirecting to login...')
-        localStorage.removeItem('authToken')
-        window.location.href = '/auth/twitch'
-        return false
-      }
-    } else if (tokenStatus.needsRefresh) {
-      console.log('⚠️ Token expires soon, refreshing proactively...')
-      await refreshToken() // Don't fail if this doesn't work
-    }
-
-    return true
-  }
-
-  // Get current user info from JWT token
-  const getCurrentUser = () => {
-    const token = localStorage.getItem('authToken')
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        return {
-          twitchUserId: payload.sub,
-          username: payload.username,
-          role: payload.role || 'streamer'
-        }
-      } catch (e) {
-        return null
-      }
-    }
-    return null
-  }
-
-  // Check if current user can perform action based on role hierarchy
-  const canManageRole = (targetRole) => {
-    const currentRole = getCurrentUserRole()
-    const roleHierarchy = { 'streamer': 0, 'moderator': 1, 'manager': 2, 'admin': 3 }
-    const currentLevel = roleHierarchy[currentRole] || 0
-    const targetLevel = roleHierarchy[targetRole] || 0
-    return currentLevel >= 3 || currentLevel > targetLevel // Only admin can assign same/higher roles
-  }
-
-  // Self-activate function for streamers
-  const selfActivate = async () => {
-    const currentUser = getCurrentUser()
-    if (!currentUser) {
-      alert('❌ Unable to get user information. Please log in again.')
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/admin/users/${currentUser.twitchUserId}/status`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ isActive: true })
-      })
-
-      if (response.ok) {
-        fetchAdminData() // Refresh data
-        console.log('✅ Self-activated successfully')
-        alert('✅ You are now ACTIVE and ready to stream!')
-      } else {
-        const errorData = await response.json()
-        console.error('❌ Failed to self-activate:', errorData.error)
-        alert(`❌ Failed to activate: ${errorData.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to self-activate:', error)
-      alert('❌ Failed to activate. Please try again.')
-    }
-  }
-
-  // Update stream status function
-  const updateStreamStatus = async (userId, action) => {
-    try {
-      const response = await fetch(`/api/stream/${action}`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ userId })
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        console.log(`✅ Stream status updated: ${action}`, result)
-        fetchAdminData() // Refresh data
-
-        // Show user feedback
-        const actionMessages = {
-          'prep': '🎭 Stream prep started! Bots are warming up...',
-          'go-live': '🚀 You are now LIVE! Overlay and bots active.',
-          'end-stream': '🏁 Stream ended. Thanks for streaming!',
-          'cancel-prep': '❌ Prep cancelled. Ready to start again.'
-        }
-        alert(actionMessages[action] || `Status updated: ${action}`)
-      } else {
-        const errorData = await response.json()
-        console.error(`❌ Failed to update stream status (${action}):`, errorData.error)
-        alert(`❌ Failed to ${action}: ${errorData.error}`)
-      }
-    } catch (error) {
-      console.error(`❌ Failed to update stream status (${action}):`, error)
-      alert(`❌ Failed to ${action}. Please try again.`)
-    }
-  }
-
-  const addUser = async () => {
-    try {
-      // Validate required fields
-      if (!newUser.username?.trim() || !newUser.twitchUserId?.trim()) {
-        alert('Username and Twitch User ID are required')
-        return
-      }
-
-      setAddingUser(true)
-
-      // Clean the data before sending
-      const cleanUserData = {
-        username: newUser.username.trim(),
-        displayName: newUser.displayName?.trim() || '',
-        email: newUser.email?.trim() || '',
-        twitchUserId: newUser.twitchUserId.trim()
-      }
-
-      const response = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(cleanUserData)
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        alert(`✅ ${result.message}`) // Show success message with avatar status
-        setShowAddUser(false)
-        setNewUser({ username: '', displayName: '', email: '', twitchUserId: '' })
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to add user: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to add user:', error)
-      alert('Failed to add user')
-    } finally {
-      setAddingUser(false)
-    }
-  }
-
-  const deleteUser = async (userId, username, partitionKey, rowKey) => {
-    let displayName = username || 'Unknown User';
-    if (!username && userId && userId !== 'undefined') {
-      displayName = `User ${userId} (Incomplete Profile)`;
-    } else if (!userId || userId === 'undefined') {
-      displayName = 'Broken User Record';
-    }
-
-    if (!confirm(`Are you sure you want to delete ${displayName}? This cannot be undone.`)) {
-      return
-    }
-
-    try {
-      let response;
-
-      // If we have a valid userId, use normal deletion
-      if (userId && userId !== 'undefined' && userId !== null) {
-        response = await fetch(`/api/admin/users/${userId}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders()
-        });
-      }
-      // If no valid userId but we have table keys, delete by keys
-      else if (partitionKey && rowKey) {
-        response = await fetch(`/api/admin/users/by-keys/${encodeURIComponent(partitionKey)}/${encodeURIComponent(rowKey)}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders()
-        });
-      }
-      // Fallback: try to delete by whatever identifier we have
-      else {
-        const fallbackId = userId || rowKey || 'unknown';
-        response = await fetch(`/api/admin/users/${fallbackId}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders()
-        });
-      }
-
-      if (response.ok) {
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to delete user: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to delete user:', error)
-      alert('Failed to delete user')
-    }
-  }
-
-  // Cleanup unknown users
-  const findUnknownUsers = async () => {
-    try {
-      const response = await fetch('/api/admin/cleanup/unknown-users', {
-        headers: getAuthHeaders()
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.count === 0) {
-          alert('✅ No unknown users found!')
-        } else {
-          alert(`⚠️ Found ${data.count} unknown/invalid users:\n\n${data.users.map(u => `- ${u.username || 'undefined'} (${u.twitchUserId || u.partitionKey || 'no ID'})`).join('\n')}`)
-        }
-        return data
-      } else {
-        const error = await response.json()
-        alert(`Failed to find unknown users: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to find unknown users:', error)
-      alert('Failed to find unknown users')
-    }
-  }
-
-  const cleanupUnknownUsers = async () => {
-    // First, find them to show the user
-    const data = await findUnknownUsers()
-
-    if (!data || data.count === 0) {
-      return
-    }
-
-    if (!confirm(`🗑️ Delete ${data.count} unknown/invalid users?\n\nThis will permanently remove:\n${data.users.map(u => `- ${u.username || 'undefined'} (${u.twitchUserId || u.partitionKey})`).join('\n')}\n\nThis action cannot be undone!`)) {
-      return
-    }
-
-    try {
-      const response = await fetch('/api/admin/cleanup/unknown-users', {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        alert(`✅ ${result.message}`)
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to cleanup unknown users: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to cleanup unknown users:', error)
-      alert('Failed to cleanup unknown users')
-    }
-  }
-
-  // Channel Point Reward Management Functions
-  const createReward = async (userId) => {
-    try {
-      const response = await fetch('/api/rewards', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...newReward,
-          userId: userId
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        alert(`Reward "${newReward.title}" created successfully!`)
-        setNewReward({
-          title: '',
-          cost: 100,
-          action: 'increment_deaths',
-          prompt: '',
-          backgroundColor: '#9147FF'
-        })
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to create reward: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to create reward:', error)
-      alert('Failed to create reward')
-    }
-  }
-
-  const deleteReward = async (userId, rewardId, rewardTitle) => {
-    if (!confirm(`Are you sure you want to delete the reward "${rewardTitle}"? This action cannot be undone.`)) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/rewards/${rewardId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
-
-      if (response.ok) {
-        alert(`Reward "${rewardTitle}" deleted successfully!`)
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to delete reward: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to delete reward:', error)
-      alert('Failed to delete reward')
-    }
-  }
-
-  // Alert Management Functions
-  const createAlert = async (userId) => {
-    try {
-      const response = await fetch('/api/alerts', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...newAlert,
-          userId: userId
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        alert(`Alert "${newAlert.name}" created successfully!`)
-        setNewAlert({
-          type: 'custom',
-          name: '',
-          textPrompt: '',
-          visualCue: '',
-          sound: '',
-          soundDescription: '',
-          duration: 4000,
-          backgroundColor: '#1a0d0d',
-          textColor: '#ffffff',
-          borderColor: '#666666'
-        })
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to create alert: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to create alert:', error)
-      alert('Failed to create alert')
-    }
-  }
-
-  const deleteAlert = async (userId, alertId, alertName) => {
-    if (!confirm(`Are you sure you want to delete the alert "${alertName}"? This action cannot be undone.`)) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/alerts/${alertId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      })
-
-      if (response.ok) {
-        alert(`Alert "${alertName}" deleted successfully!`)
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to delete alert: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to delete alert:', error)
-      alert('Failed to delete alert')
-    }
-  }
-
-  const updateAlertStatus = async (userId, alertId, isEnabled) => {
-    try {
-      const response = await fetch(`/api/alerts/${alertId}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ isEnabled: !isEnabled })
-      })
-
-      if (response.ok) {
-        fetchAdminData() // Refresh data
-      } else {
-        const error = await response.json()
-        alert(`Failed to update alert: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to update alert:', error)
-      alert('Failed to update alert')
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="loading">
-        <div className="loading-spinner"></div>
-        <p>Loading admin dashboard...</p>
-      </div>
-    )
   }
 
   return (
     <div className="admin-dashboard">
-      <div className="container">
-        <header className="admin-header">
-          <div className="admin-header-content">
-            <div>
-              <h1>🔧 Admin Dashboard - OmniForgeStream</h1>
-              <p>Welcome, Administrator! Manage users and system settings.</p>
-            </div>
-            <div className="admin-header-actions">
-              <ActionButton
-                variant="warning"
-                onClick={onNavigateToDebug}
-                title="Open debugging dashboard for troubleshooting"
-              >
-                🔧 Debug Dashboard
-              </ActionButton>
-              <ActionButton
-                variant="secondary"
-                onClick={handleLogout}
-                title="Clear auth token and force re-login"
-              >
-                🚪 Logout & Re-authenticate
-              </ActionButton>
-            </div>
-          </div>
-        </header>
+      {/* Header */}
+      <div className="admin-header">
+        <h1>🛠️ Admin Dashboard</h1>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="refresh-btn"
+        >
+          {refreshing ? '🔄' : '♻️'} Refresh
+        </button>
+      </div>
 
-        {(() => {
-          const currentUser = getCurrentUser()
-          const currentUserData = users.find(u => u.twitchUserId === currentUser?.twitchUserId)
-          const isAdmin = getCurrentUserRole() === 'admin'
+      {/* Navigation Tabs */}
+      <div className="admin-tabs">
+        <button
+          className={`tab-btn ${showUserModal ? 'active' : ''}`}
+          onClick={() => setShowUserModal(true)}
+        >
+          👥 Users
+        </button>
+        <button
+          className={`tab-btn ${showUserRequestsModal ? 'active' : ''}`}
+          onClick={() => setShowUserRequestsModal(true)}
+        >
+          📋 User Requests
+        </button>
+        <button
+          className={`tab-btn ${showBrokenUserModal ? 'active' : ''}`}
+          onClick={() => setShowBrokenUserModal(true)}
+        >
+          🛠️ Broken Users
+        </button>
+        <button
+          className={`tab-btn ${showPermissionManager ? 'active' : ''}`}
+          onClick={() => setShowPermissionManager(true)}
+        >
+          🔐 Permissions
+        </button>
+        <button
+          className="tab-btn"
+          onClick={() => {
+            if (onNavigateToDebug) {
+              onNavigateToDebug()
+            }
+          }}
+        >
+          🐛 Debug Tools
+        </button>
+      </div>
 
-          // Show self-activation panel for non-admin users who are inactive
-          if (!isAdmin && currentUser && currentUserData && !currentUserData.isActive) {
-            return (
-              <div className="self-activation-panel">
-                <div className="activation-card">
-                  <div className="activation-header">
-                    <h2>🎮 Ready to Stream?</h2>
-                    <p>Activate your account to enable all streaming features before going live!</p>
-                  </div>
-                  <div className="activation-status">
-                    <span className="status-indicator inactive">❌ Currently Inactive</span>
-                    <span className="activation-note">• Stream overlay disabled</span>
-                    <span className="activation-note">• Chat commands disabled</span>
-                    <span className="activation-note">• Event tracking disabled</span>
-                  </div>
-                  <ActionButton
-                    variant="primary"
-                    onClick={selfActivate}
-                  >
-                    🚀 Activate Now - Ready to Stream!
-                  </ActionButton>
-                  <small className="activation-info">
-                    💡 Your account will automatically deactivate when you stop streaming
-                  </small>
-                </div>
-              </div>
-            )
-          }
-
-          // Show status for active non-admin users
-          if (!isAdmin && currentUser && currentUserData && currentUserData.isActive) {
-            return (
-              <div className="self-status-panel">
-                <div className="status-card active">
-                  <h3>✅ You're Active and Ready to Stream!</h3>
-                  <p>All features are enabled. Your account will auto-deactivate when you go offline.</p>
-                </div>
-              </div>
-            )
-          }
-
-          return null
-        })()}
-
-        <div className="admin-stats">
-          <h2>📊 System Statistics</h2>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h3>Total Users</h3>
-              <p className="stat-number">{users.length}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Active Users</h3>
-              <p className="stat-number">{users.filter(u => u.isActive).length}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Total Deaths</h3>
-              <p className="stat-number">{stats.totalDeaths || 0}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Total Swears</h3>
-              <p className="stat-number">{stats.totalSwears || 0}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Active Streams</h3>
-              <p className="stat-number">{streams.filter(s => s.isStreaming).length}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Total Bits</h3>
-              <p className="stat-number">{streams.reduce((sum, s) => sum + (s.sessionBits || 0), 0)}</p>
-            </div>
-          </div>
+      {/* Stats Overview */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h3>📊 Total Users</h3>
+          <div className="stat-value">{stats.totalUsers || 0}</div>
         </div>
-
-        <div className="admin-roles">
-          <h2>🛡️ Role Distribution</h2>
-          <div className="stats-grid">
-            {roles.map(role => {
-              const roleCount = users.filter(u => u.role === role.id).length
-              return (
-                <div key={role.id} className="stat-card">
-                  <h3>{role?.icon || '👤'} {role?.name || 'Unknown Role'}</h3>
-                  <p className="stat-number">{roleCount}</p>
-                  <small className="role-description">{role?.description || 'Role description unavailable'}</small>
-                </div>
-              )
-            })}
-          </div>
+        <div className="stat-card">
+          <h3>✅ Active Users</h3>
+          <div className="stat-value">{stats.activeUsers || 0}</div>
         </div>
-
-        <div className="admin-streams">
-          <h2>🎮 Active Stream Sessions</h2>
-          <div className="streams-grid">
-            {streams.filter(s => s.isStreaming).map(stream => (
-              <div key={stream.userId} className="stream-card active">
-                <h3>🔴 {stream.displayName} (@{stream.username})</h3>
-                <p><strong>Started:</strong> {new Date(stream.streamStartTime).toLocaleString()}</p>
-                <div className="stream-stats">
-                  <span className="stat">💎 {stream.sessionBits} bits</span>
-                  <span className="stat">💀 {stream.sessionDeaths} deaths</span>
-                  <span className="stat">🤬 {stream.sessionSwears} swears</span>
-                </div>
-                <div className="stream-settings">
-                  <small>
-                    <strong>Bit Thresholds:</strong>
-                    Death: {stream.streamSettings?.bitThresholds?.death || 100} |
-                    Swear: {stream.streamSettings?.bitThresholds?.swear || 50} |
-                    Celebration: {stream.streamSettings?.bitThresholds?.celebration || 10}
-                  </small>
-                </div>
-              </div>
-            ))}
-            {streams.filter(s => !s.isStreaming).slice(0, 3).map(stream => (
-              <div key={stream.userId} className="stream-card offline">
-                <h3>⚫ {stream.displayName} (@{stream.username})</h3>
-                <p><strong>Status:</strong> Offline</p>
-                <div className="stream-stats">
-                  <span className="stat">💎 {stream.sessionBits} bits</span>
-                  <span className="stat">💀 {stream.sessionDeaths} deaths</span>
-                  <span className="stat">🤬 {stream.sessionSwears} swears</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {streams.filter(s => s.isStreaming).length === 0 && (
-            <div className="no-streams">
-              <p>📴 No active stream sessions</p>
-            </div>
-          )}
+        <div className="stat-card">
+          <h3>🎮 Live Streams</h3>
+          <div className="stat-value">{streams?.length || 0}</div>
         </div>
-
-
-        <div className="admin-users">
-          <div className="users-header">
-            <h2>👥 User Management</h2>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => setShowAddUser(true)}
-                className="btn btn-primary"
-              >
-                ➕ Add User
-              </button>
-            </div>
-          </div>
-
-          {showAddUser && (
-            <div className="add-user-form">
-              <h3>Add New User</h3>
-              <div className="form-grid">
-                <input
-                  type="text"
-                  placeholder="Username (e.g., riress) *Required"
-                  value={newUser.username || ''}
-                  onChange={(e) => setNewUser({...newUser, username: e.target.value})}
-                  required
-                  style={{
-                    color: 'white !important',
-                    WebkitTextFillColor: 'white !important',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                  }}
-                  className="force-white-text"
-                />
-                <input
-                  type="text"
-                  placeholder="Display Name (e.g., Riress)"
-                  value={newUser.displayName || ''}
-                  onChange={(e) => setNewUser({...newUser, displayName: e.target.value})}
-                  style={{
-                    color: 'white !important',
-                    WebkitTextFillColor: 'white !important',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                  }}
-                  className="force-white-text"
-                />
-                <input
-                  type="email"
-                  placeholder="Email (optional)"
-                  value={newUser.email || ''}
-                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                  style={{
-                    color: 'white !important',
-                    WebkitTextFillColor: 'white !important',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                  }}
-                  className="force-white-text"
-                />
-                <input
-                  type="text"
-                  placeholder="Twitch User ID *Required"
-                  value={newUser.twitchUserId || ''}
-                  onChange={(e) => setNewUser({...newUser, twitchUserId: e.target.value})}
-                  required
-                  style={{
-                    color: 'white !important',
-                    WebkitTextFillColor: 'white !important',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                    border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                  }}
-                  className="force-white-text"
-                />
-              </div>
-              <div className="form-actions">
-                <button
-                  onClick={addUser}
-                  className="btn btn-success"
-                  disabled={addingUser}
-                >
-                  {addingUser ? '🔄 Creating & Fetching Avatar...' : 'Create User'}
-                </button>
-                <button
-                  onClick={() => setShowAddUser(false)}
-                  className="btn btn-secondary"
-                  disabled={addingUser}
-                >
-                  Cancel
-                </button>
-              </div>
-              <p className="form-note">
-                💡 System will automatically fetch Twitch avatar and profile data if the username exists on Twitch.
-              </p>
-            </div>
-          )}
-
-          <div className="users-table">
-            {users.length === 0 ? (
-              <div className="no-users" style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                <p>👤 No users found</p>
-                <p>This could mean:</p>
-                <ul style={{ textAlign: 'left', display: 'inline-block' }}>
-                  <li>You're not authenticated as an admin</li>
-                  <li>The admin API is not responding</li>
-                  <li>No users have registered yet</li>
-                </ul>
-                <ActionButton
-                  variant="primary"
-                  onClick={fetchAdminData}
-                  style={{ marginTop: '10px' }}
-                >
-                  🔄 Retry
-                </ActionButton>
-              </div>
-            ) : (
-              users.map(user => {
-                const userFeatures = user?.features
-                  ? (typeof user.features === 'string'
-                      ? JSON.parse(user.features)
-                      : user.features)
-                  : {}
-
-                return (
-                <div key={user.twitchUserId || user.userId || Math.random()} className="user-card">
-                  <div className="user-info">
-                    <img
-                      src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.username || 'User')}&background=random`}
-                      alt={user.displayName}
-                      className="user-avatar"
-                      onError={(e) => {
-                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.username || 'User')}&background=random`;
-                      }}
-                    />
-                    <div>
-                      <h3>
-                        {user.displayName || (user.userStatus === 'incomplete' ? `User ${user.twitchUserId} (Incomplete Profile)` : 'Broken User Record')}
-                        {user.userStatus === 'incomplete' && <span style={{fontSize: '0.8em', color: '#ffa500', marginLeft: '8px'}}>⚠️ Missing Data</span>}
-                        {user.userStatus === 'broken' && <span style={{fontSize: '0.8em', color: '#ff4444', marginLeft: '8px'}}>❌ Invalid</span>}
-                      </h3>
-                      <p>@{user.username || (user.userStatus === 'incomplete' ? `user_${user.twitchUserId}` : 'broken-record')}</p>
-                      <p className={`status stream-status-${user.streamStatus || 'offline'}`}>
-                        {(() => {
-                          const status = user.streamStatus || 'offline';
-                          switch(status) {
-                            case 'offline': return '⚪ Offline';
-                            case 'prepping': return '🟡 Prepping';
-                            case 'live': return '🟢 Live';
-                            case 'ending': return '🔴 Ending';
-                            default: return '❓ Unknown';
-                          }
-                        })()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="user-actions">
-                    {(() => {
-                      const currentUser = getCurrentUser()
-                      const isAdmin = getCurrentUserRole() === 'admin'
-                      const isOwnCard = currentUser?.twitchUserId === user.twitchUserId
-
-                      if (isAdmin) {
-                        // Admin sees admin controls
-                        return (
-                          <>
-                            <button
-                              onClick={() => {
-                                setSelectedUser(user)
-                                setShowUserManagementModal(true)
-                              }}
-                              className="btn btn-primary"
-                            >
-                              ⚙️ Manage User
-                            </button>
-                            <button
-                              onClick={() => toggleUserActive(user.twitchUserId, user.isActive)}
-                              className={`btn ${user.isActive ? 'btn-danger' : 'btn-success'}`}
-                            >
-                              {user.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
-                            {user.role !== 'admin' && (
-                              <button
-                                onClick={() => deleteUser(user.twitchUserId, user.username, user.partitionKey, user.rowKey)}
-                                className="btn btn-danger-outline"
-                              >
-                                🗑️ Delete
-                              </button>
-                            )}
-                          </>
-                        )
-                      } else if (isOwnCard && !user.isActive) {
-                        // Non-admin user sees self-activation button on their own inactive card
-                        return (
-                          <button
-                            onClick={selfActivate}
-                            className="btn btn-success self-activate-btn"
-                            title="Activate your account before streaming"
-                          >
-                            🚀 Activate Myself
-                          </button>
-                        )
-                      } else if (isOwnCard && user.isActive) {
-                        // Non-admin user sees their active status
-                        return (
-                          <div className="self-status active-status">
-                            <span className="status-badge active">✅ Active</span>
-                            <small>Ready to stream!</small>
-                          </div>
-                        )
-                      }
-
-                      // Default: no actions for other users
-                      return null
-                    })()}
-                  </div>
-
-                  <div className="user-features-summary">
-                    <h4>Enabled Features ({Object.values(userFeatures).filter(Boolean).length}/{Object.keys(userFeatures).length})</h4>
-                    <div className="features-badges">
-                      {Object.entries(userFeatures).map(([featureKey, enabled]) => {
-                        if (!enabled) return null
-                        const featureInfo = features.find(f => f.id === featureKey)
-                        return (
-                          <span key={featureKey} className="feature-badge enabled">
-                            {featureInfo?.icon || '📦'} {featureInfo?.name || featureKey}
-                          </span>
-                        )
-                      })}
-                      {Object.values(userFeatures).filter(Boolean).length === 0 && (
-                        <span className="no-features">No features enabled</span>
-                      )}
-                    </div>
-                    <p className="manage-hint">
-                      Click "⚙️ Manage User" to configure features, overlay settings, and Discord notifications
-                    </p>
-                  </div>
-
-                  <div className="user-role-management">
-                    <h4>Role & Permissions</h4>
-                    <div className="role-selector">
-                      <label>
-                        <strong>Role:</strong>
-                        <select
-                          value={user.role || 'streamer'}
-                          onChange={(e) => updateUserRole(user.twitchUserId || user.userId, e.target.value)}
-                          disabled={!canManageRole(user.role) || !user.twitchUserId && !user.userId}
-                          className="role-select"
-                        >
-                          {roles.map(role => (
-                            <option key={role.id} value={role.id}>
-                              {role?.icon || '👤'} {role?.name || 'Unknown Role'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="role-info">
-                        {(() => {
-                          const userRole = roles.find(r => r.id === user.role);
-                          return userRole && (
-                            <div className="role-badge" style={{ backgroundColor: userRole?.color || '#ccc' }}>
-                              {userRole?.icon || '👤'} {userRole?.name || 'Unknown Role'}
-                            </div>
-                          )
-                        })()}
-                        <p className="role-description">
-                          {roles.find(r => r.id === user.role)?.description || 'No description available'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="user-metadata">
-                    <small>
-                      <strong>Created:</strong> {new Date(user.createdAt).toLocaleDateString()} |
-                      <strong>Last Login:</strong> {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
-                    </small>
-                  </div>
-                </div>
-              )
-            })
-          )}
-          </div>
+        <div className="stat-card">
+          <h3>💀 Total Deaths</h3>
+          <div className="stat-value">{stats.totalDeaths || 0}</div>
         </div>
+      </div>
 
-        <div className="admin-rewards">
-          <div className="rewards-header">
-            <h2>🎯 Channel Points Rewards Management</h2>
+      {/* Users Overview Section */}
+      <div className="users-overview-section">
+        <div className="section-header">
+          <h2>👥 Users & Features Overview</h2>
+          <div className="section-actions">
+            <span className="user-count">{users.length} Total Users</span>
             <button
-              onClick={() => setShowRewardsManager(!showRewardsManager)}
-              className="btn btn-primary"
+              onClick={() => setShowUserModal(true)}
+              className="manage-users-btn"
             >
-              {showRewardsManager ? '❌ Close Manager' : '⚙️ Manage Rewards'}
+              ⚙️ Manage Users
             </button>
           </div>
-
-          {showRewardsManager && (
-            <div className="rewards-manager">
-              <div className="rewards-summary">
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <h3>Total Users with Channel Points</h3>
-                    <p className="stat-number">{rewards.filter(r => r.rewards.length > 0).length}</p>
-                  </div>
-                  <div className="stat-card">
-                    <h3>Total Rewards</h3>
-                    <p className="stat-number">{rewards.reduce((sum, r) => sum + r.rewards.length, 0)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="create-reward-form">
-                <h3>Create New Reward</h3>
-                <div className="form-grid">
-                  <input
-                    type="text"
-                    placeholder="Reward Title *"
-                    value={newReward.title}
-                    onChange={(e) => setNewReward({...newReward, title: e.target.value})}
-                    style={{
-                      color: 'white !important',
-                      WebkitTextFillColor: 'white !important',
-                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                    }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="Cost (Channel Points)"
-                    value={newReward.cost}
-                    min="1"
-                    max="1000000"
-                    onChange={(e) => setNewReward({...newReward, cost: parseInt(e.target.value)})}
-                    style={{
-                      color: 'white !important',
-                      WebkitTextFillColor: 'white !important',
-                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                    }}
-                  />
-                  <select
-                    value={newReward.action}
-                    onChange={(e) => setNewReward({...newReward, action: e.target.value})}
-                    style={{
-                      color: 'white !important',
-                      WebkitTextFillColor: 'white !important',
-                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                    }}
-                  >
-                    <option value="increment_deaths">💀 Add Death</option>
-                    <option value="increment_swears">🤬 Add Swear</option>
-                    <option value="decrement_deaths">💀 Remove Death</option>
-                    <option value="decrement_swears">🤬 Remove Swear</option>
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="Custom Prompt (optional)"
-                    value={newReward.prompt}
-                    onChange={(e) => setNewReward({...newReward, prompt: e.target.value})}
-                    style={{
-                      color: 'white !important',
-                      WebkitTextFillColor: 'white !important',
-                      backgroundColor: 'rgba(255, 255, 255, 0.1) !important',
-                      border: '2px solid rgba(139, 69, 19, 0.3) !important'
-                    }}
-                  />
-                  <input
-                    type="color"
-                    value={newReward.backgroundColor}
-                    onChange={(e) => setNewReward({...newReward, backgroundColor: e.target.value})}
-                    title="Background Color"
-                  />
-                </div>
-              </div>
-
-              <div className="users-rewards">
-                <h3>Rewards by User</h3>
-                {rewards.map(userRewards => (
-                  <div key={userRewards.userId} className="user-rewards-section">
-                    <div className="user-rewards-header">
-                      <h4>
-                        {userRewards.displayName} (@{userRewards.username})
-                        <span className="rewards-count">
-                          {userRewards.rewards.length} rewards
-                        </span>
-                      </h4>
-                      <button
-                        onClick={() => createReward(userRewards.userId)}
-                        className="btn btn-primary btn-small"
-                        disabled={!newReward.title || !newReward.cost}
-                      >
-                        ➕ Add Reward
-                      </button>
-                    </div>
-
-                    {userRewards.rewards.length === 0 ? (
-                      <p className="no-rewards">No channel point rewards configured</p>
-                    ) : (
-                      <div className="rewards-grid">
-                        {userRewards.rewards.map(reward => (
-                          <div key={reward.rewardId} className="reward-card">
-                            <div className="reward-header">
-                              <h5 style={{color: reward.backgroundColor || '#9147FF'}}>
-                                {reward.rewardTitle}
-                              </h5>
-                              <span className="reward-cost">{reward.cost} points</span>
-                            </div>
-                            <div className="reward-details">
-                              <p><strong>Action:</strong> {reward.action.replace('_', ' ')}</p>
-                              <p><strong>Created:</strong> {new Date(reward.createdAt).toLocaleDateString()}</p>
-                              <p><strong>Status:</strong>
-                                <span className={`status ${reward.isEnabled ? 'enabled' : 'disabled'}`}>
-                                  {reward.isEnabled ? '✅ Active' : '❌ Disabled'}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="reward-actions">
-                              <button
-                                onClick={() => deleteReward(userRewards.userId, reward.rewardId, reward.rewardTitle)}
-                                className="btn btn-danger btn-small"
-                              >
-                                🗑️ Delete
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="admin-alerts">
-          <div className="section-header">
-            <h2>🚨 Alert Management</h2>
-            <div className="section-actions">
-              <button
-                onClick={() => setShowAlertsManager(!showAlertsManager)}
-                className="btn btn-secondary"
-              >
-                {showAlertsManager ? '🔼 Hide Alerts' : '🔽 Show Alerts'} ({alerts.reduce((sum, user) => sum + user.alerts.length, 0)} total)
-              </button>
+        <div className="users-grid">
+          {!Array.isArray(users) || users.length === 0 ? (
+            <div className="no-users-message">
+              <div className="no-users-icon">👥</div>
+              <h3>No Users Found</h3>
+              <p>No registered users in the system yet.</p>
             </div>
-          </div>
-
-          <div className="alerts-stats">
-            <div className="stat-card">
-              <h3>Users with Alerts</h3>
-              <p className="stat-number">{alerts.length}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Total Alerts</h3>
-              <p className="stat-number">{alerts.reduce((sum, user) => sum + user.alerts.length, 0)}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Active Alerts</h3>
-              <p className="stat-number">{alerts.reduce((sum, user) => sum + user.alerts.filter(a => a.isEnabled).length, 0)}</p>
-            </div>
-            <div className="stat-card">
-              <h3>Default Templates</h3>
-              <p className="stat-number">{alertTemplates.length}</p>
-            </div>
-          </div>
-
-          {showAlertsManager && (
-            <div className="alerts-manager">
-              <div className="create-alert-form">
-                <h3>Create Custom Alert</h3>
-                <div className="alert-form-grid">
-                  <div className="form-group">
-                    <label>Alert Type</label>
-                    <select
-                      value={newAlert.type}
-                      onChange={(e) => setNewAlert({...newAlert, type: e.target.value})}
+          ) : (
+            users.map(user => (
+              <div key={user.twitchUserId || user.userId} className="user-tile">
+                <div className="user-header">
+                  <div className="user-info">
+                    <img
+                      src={user.profileImageUrl || '/default-avatar.png'}
+                      alt={user.displayName || user.username}
+                      className="user-avatar"
+                    />
+                    <div className="user-details">
+                      <h4 className="user-name">{user.displayName || user.username}</h4>
+                      <div className="user-meta">
+                        <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
+                          {user.isActive ? '✅ Active' : '❌ Inactive'}
+                        </span>
+                        <span className="user-role">{user.role || 'streamer'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="user-actions">
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user)
+                        setShowUserConfigPortal(true)
+                      }}
+                      className="action-btn edit-btn"
+                      title="Edit User"
                     >
-                      <option value="custom">Custom Event</option>
-                      <option value="follow">Follow Override</option>
-                      <option value="subscription">Subscription Override</option>
-                      <option value="resub">Resub Override</option>
-                      <option value="bits">Bits Override</option>
-                      <option value="raid">Raid Override</option>
-                      <option value="giftsub">Gift Sub Override</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Alert Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Custom Follow Alert"
-                      value={newAlert.name}
-                      onChange={(e) => setNewAlert({...newAlert, name: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group full-width">
-                    <label>Text Prompt</label>
-                    <input
-                      type="text"
-                      placeholder="Use [User] for username, [X] for values"
-                      value={newAlert.textPrompt}
-                      onChange={(e) => setNewAlert({...newAlert, textPrompt: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group full-width">
-                    <label>Visual Cue (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="Describe the visual effect"
-                      value={newAlert.visualCue}
-                      onChange={(e) => setNewAlert({...newAlert, visualCue: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Sound Effect</label>
-                    <input
-                      type="text"
-                      placeholder="Sound file name or ID"
-                      value={newAlert.sound}
-                      onChange={(e) => setNewAlert({...newAlert, sound: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Sound Description</label>
-                    <input
-                      type="text"
-                      placeholder="Describe the sound"
-                      value={newAlert.soundDescription}
-                      onChange={(e) => setNewAlert({...newAlert, soundDescription: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Duration (ms)</label>
-                    <input
-                      type="number"
-                      min="1000"
-                      max="30000"
-                      value={newAlert.duration}
-                      onChange={(e) => setNewAlert({...newAlert, duration: parseInt(e.target.value)})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Background Color</label>
-                    <input
-                      type="color"
-                      value={newAlert.backgroundColor}
-                      onChange={(e) => setNewAlert({...newAlert, backgroundColor: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Text Color</label>
-                    <input
-                      type="color"
-                      value={newAlert.textColor}
-                      onChange={(e) => setNewAlert({...newAlert, textColor: e.target.value})}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Border Color</label>
-                    <input
-                      type="color"
-                      value={newAlert.borderColor}
-                      onChange={(e) => setNewAlert({...newAlert, borderColor: e.target.value})}
-                    />
+                      ✏️
+                    </button>
                   </div>
                 </div>
 
-                <div className="alert-preview">
-                  <h4>Preview</h4>
-                  <div
-                    className="alert-preview-box"
-                    style={{
-                      backgroundColor: newAlert.backgroundColor,
-                      color: newAlert.textColor,
-                      border: `3px solid ${newAlert.borderColor}`,
-                      padding: '15px',
-                      borderRadius: '8px',
-                      textAlign: 'center',
-                      fontFamily: 'monospace'
-                    }}
-                  >
-                    {newAlert.visualCue && (
-                      <div style={{ fontSize: '12px', opacity: 0.8, fontStyle: 'italic', marginBottom: '8px' }}>
-                        {newAlert.visualCue}
-                      </div>
-                    )}
-                    <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-                      {newAlert.textPrompt || 'Enter text prompt...'}
-                    </div>
-                    {newAlert.soundDescription && (
-                      <div style={{ fontSize: '10px', opacity: 0.6, fontStyle: 'italic', marginTop: '8px' }}>
-                        ♪ {newAlert.soundDescription}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="users-alerts">
-                <h3>Alerts by User</h3>
-                {alerts.map(userAlerts => (
-                  <div key={userAlerts.userId} className="user-alerts-section">
-                    <div className="user-alerts-header">
-                      <h4>
-                        {userAlerts.displayName} (@{userAlerts.username})
-                        <span className="alerts-count">
-                          {userAlerts.alerts.length} alerts ({userAlerts.alerts.filter(a => a.isEnabled).length} active)
-                        </span>
-                      </h4>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                          onClick={() => createAlert(userAlerts.userId)}
-                          className="btn btn-primary btn-small"
-                          disabled={!newAlert.name || !newAlert.textPrompt}
-                        >
-                          ➕ Add Alert
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEventMappingUser({
-                              userId: userAlerts.userId,
-                              username: userAlerts.username,
-                              displayName: userAlerts.displayName
-                            })
-                            setShowEventMappingManager(true)
-                          }}
-                          className="btn btn-secondary btn-small"
-                        >
-                          🎯 Configure Event Mappings
-                        </button>
-                      </div>
-                    </div>
-
-                    {userAlerts.alerts.length === 0 ? (
-                      <p className="no-alerts">No custom alerts configured</p>
+                <div className="user-features">
+                  <h5>Enabled Features:</h5>
+                  <div className="features-list">
+                    {user.features && Object.keys(user.features).length > 0 ? (
+                      Object.entries(user.features)
+                        .filter(([key, value]) => value === true)
+                        .map(([featureKey, enabled]) => (
+                          <span key={featureKey} className="feature-tag enabled">
+                            {getFeatureDisplayName(featureKey)}
+                          </span>
+                        ))
                     ) : (
-                      <div className="alerts-grid">
-                        {userAlerts.alerts.map(alert => (
-                          <div key={alert.id} className={`alert-card ${alert.isDefault ? 'default-alert' : 'custom-alert'} ${alert.isEnabled ? 'enabled' : 'disabled'}`}>
-                            <div className="alert-header">
-                              <div className="alert-info">
-                                <h5>
-                                  {alert.isDefault ? '🔒' : '⚙️'} {alert.name}
-                                  <span className="alert-type-badge">{alert.type}</span>
-                                </h5>
-                                <p className="alert-prompt">"{alert.textPrompt}"</p>
-                              </div>
-                              <div className="alert-status">
-                                <label className="toggle-switch">
-                                  <input
-                                    type="checkbox"
-                                    checked={alert.isEnabled}
-                                    onChange={() => updateAlertStatus(userAlerts.userId, alert.id, alert.isEnabled)}
-                                  />
-                                  <span className="toggle-slider"></span>
-                                </label>
-                              </div>
-                            </div>
-
-                            <div className="alert-details">
-                              {alert.visualCue && (
-                                <div className="alert-detail">
-                                  <strong>Visual:</strong> {alert.visualCue}
-                                </div>
-                              )}
-                              {alert.soundDescription && (
-                                <div className="alert-detail">
-                                  <strong>Sound:</strong> {alert.soundDescription}
-                                </div>
-                              )}
-                              <div className="alert-detail">
-                                <strong>Duration:</strong> {alert.duration}ms
-                              </div>
-                              <div className="alert-colors">
-                                <span
-                                  className="color-preview"
-                                  style={{ backgroundColor: alert.backgroundColor }}
-                                  title="Background"
-                                ></span>
-                                <span
-                                  className="color-preview"
-                                  style={{ backgroundColor: alert.textColor }}
-                                  title="Text"
-                                ></span>
-                                <span
-                                  className="color-preview"
-                                  style={{ backgroundColor: alert.borderColor }}
-                                  title="Border"
-                                ></span>
-                              </div>
-                            </div>
-
-                            {!alert.isDefault && (
-                              <div className="alert-actions">
-                                <button
-                                  onClick={() => deleteAlert(userAlerts.userId, alert.id, alert.name)}
-                                  className="btn btn-danger btn-small"
-                                >
-                                  🗑️ Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      <span className="no-features">No features enabled</span>
                     )}
                   </div>
-                ))}
-              </div>
 
-              <div className="alert-templates">
-                <h3>Default Alert Templates</h3>
-                <div className="templates-grid">
-                  {alertTemplates.map(template => (
-                    <div key={template.id} className="template-card">
-                      <div className="template-header">
-                        <h5>{template.name}</h5>
-                        <span className="template-type">{template.type}</span>
+                  {user.features && Object.entries(user.features).filter(([key, value]) => value === false).length > 0 && (
+                    <>
+                      <h5>Disabled Features:</h5>
+                      <div className="features-list">
+                        {Object.entries(user.features)
+                          .filter(([key, value]) => value === false)
+                          .slice(0, 3)
+                          .map(([featureKey, enabled]) => (
+                            <span key={featureKey} className="feature-tag disabled">
+                              {getFeatureDisplayName(featureKey)}
+                            </span>
+                          ))}
+                        {Object.entries(user.features).filter(([key, value]) => value === false).length > 3 && (
+                          <span className="feature-tag more">
+                            +{Object.entries(user.features).filter(([key, value]) => value === false).length - 3} more
+                          </span>
+                        )}
                       </div>
-                      <div className="template-content">
-                        <p className="template-prompt">"{template.textPrompt}"</p>
-                        <div className="template-details">
-                          <div><strong>Visual:</strong> {template.visualCue}</div>
-                          <div><strong>Sound:</strong> {template.soundDescription}</div>
-                        </div>
-                      </div>
-                      <div
-                        className="template-preview"
-                        style={{
-                          backgroundColor: template.backgroundColor,
-                          color: template.textColor,
-                          border: `2px solid ${template.borderColor}`,
-                          padding: '10px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          textAlign: 'center'
-                        }}
-                      >
-                        Preview Style
-                      </div>
-                    </div>
-                  ))}
+                    </>
+                  )}
+                </div>
+
+                <div className="user-quick-actions">
+                  <button
+                    onClick={() => {
+                      setSelectedOverlayUser(user)
+                      setShowOverlayModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Overlay Settings"
+                  >
+                    ⚙️ Overlay
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedAlertUser(user)
+                      setShowAlertModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Alert Settings"
+                  >
+                    🎬 Alerts
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedDiscordUser(user)
+                      setShowDiscordModal(true)
+                    }}
+                    className="quick-action-btn"
+                    title="Discord Settings"
+                  >
+                    🎮 Discord
+                  </button>
                 </div>
               </div>
-            </div>
+            ))
           )}
         </div>
-
-        {/* Event Mapping Manager Modal */}
-        {showEventMappingManager && eventMappingUser && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            zIndex: 9999,
-            overflow: 'auto',
-            padding: '20px',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center'
-          }}>
-            <AlertEventManager
-              userId={eventMappingUser.userId}
-              username={eventMappingUser.displayName || eventMappingUser.username}
-              onClose={() => {
-                setShowEventMappingManager(false)
-                setEventMappingUser(null)
-              }}
-            />
-          </div>
-        )}
-
-        {/* User Management Modal */}
-        {showUserManagementModal && selectedUser && (
-          <UserManagementModal
-            user={selectedUser}
-            features={features}
-            onClose={() => {
-              setShowUserManagementModal(false)
-              setSelectedUser(null)
-            }}
-            onUpdate={fetchAdminData}
-          />
-        )}
       </div>
+
+      {/* Modals */}
+      <UserManagementModal
+        isOpen={showUserModal}
+        onClose={() => setShowUserModal(false)}
+        users={users}
+        onRefresh={fetchAdminData}
+          onEditUser={(user) => {
+            setSelectedUser(user)
+            setShowUserConfigPortal(true)
+          }}
+          onToggleUser={toggleUserStatus}
+          onToggleFeature={toggleFeature}
+          onDeleteUser={deleteUser}
+          onShowOverlay={(user) => {
+            setSelectedOverlayUser(user)
+            setShowOverlayModal(true)
+          }}
+          onShowAlerts={(user) => {
+            setSelectedAlertUser(user)
+            setShowAlertModal(true)
+          }}
+          onShowDiscord={(user) => {
+            setSelectedDiscordUser(user)
+            setShowDiscordModal(true)
+          }}
+          onShowSeries={(user) => {
+            setSelectedSeriesUser(user)
+            setShowSeriesModal(true)
+          }}
+        />
+
+      <PermissionManager
+        isOpen={showPermissionManager}
+        onClose={() => setShowPermissionManager(false)}
+        users={users}
+          roles={roles}
+        permissions={permissions}
+        onRefresh={fetchAdminData}
+      />      {showUserConfigPortal && selectedUser && (
+        <UserConfigurationPortal
+          user={selectedUser}
+          onClose={() => {
+            setShowUserConfigPortal(false)
+            setSelectedUser(null)
+          }}
+          onUpdate={fetchAdminData}
+        />
+      )}
+
+      {/* Overlay Settings Modal */}
+      <OverlaySettingsModal
+        isOpen={showOverlayModal && !!selectedOverlayUser}
+        onClose={() => {
+          setShowOverlayModal(false)
+          setSelectedOverlayUser(null)
+        }}
+        user={selectedOverlayUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Overlay settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
+
+      {/* Alert Settings Modal */}
+      <AlertEventManagerModal
+        isOpen={showAlertModal && selectedAlertUser}
+        onClose={() => {
+          setShowAlertModal(false)
+          setSelectedAlertUser(null)
+        }}
+        user={selectedAlertUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Alert settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
+
+      {/* Discord Settings Modal */}
+      <DiscordWebhookSettingsModal
+        isOpen={showDiscordModal && selectedDiscordUser}
+        onClose={() => {
+          setShowDiscordModal(false)
+          setSelectedDiscordUser(null)
+        }}
+        user={selectedDiscordUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Discord settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
+
+      {/* Series Save Modal */}
+      <SeriesSaveManagerModal
+        isOpen={showSeriesModal}
+        onClose={() => {
+          setShowSeriesModal(false)
+          setSelectedSeriesUser(null)
+        }}
+        user={selectedSeriesUser}
+        isAdminMode={true}
+        onUpdate={() => {
+          console.log('🔄 Series settings updated, refreshing data...')
+          fetchAdminData()
+        }}
+      />
+
+      <UserRequestsModal
+        isOpen={showUserRequestsModal}
+        onClose={() => setShowUserRequestsModal(false)}
+      />
+
+      <BrokenUserManagerModal
+        isOpen={showBrokenUserModal}
+        onClose={() => setShowBrokenUserModal(false)}
+      />
     </div>
   )
 }
 
 export default AdminDashboard
-

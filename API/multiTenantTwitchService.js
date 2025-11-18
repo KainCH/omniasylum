@@ -141,19 +141,50 @@ class MultiTenantTwitchService extends EventEmitter {
     return msg.userInfo.isBroadcaster || msg.userInfo.isMod;
   }
 
+  hasBroadcasterPermission(msg) {
+    return msg.userInfo.isBroadcaster;
+  }
+
   /**
    * Handle incoming chat messages for a specific user's channel
    */
   handleChatMessage(userId, channel, username, message, msg) {
     const text = message.toLowerCase().trim();
 
+    // Help command - context-aware (different messages for different user types)
+    if (text === '!help') {
+      const isBroadcaster = this.hasBroadcasterPermission(msg);
+      const isMod = this.hasPermission(msg);
+      this.emit('helpCommand', { userId, channel, username, isBroadcaster, isMod });
+      return;
+    }
+
     // Public commands (anyone can use)
-    if (text === '!deaths' || text === '!swears' || text === '!stats' || text === '!bits' || text === '!streamstats') {
+    if (text === '!deaths' || text === '!swears' || text === '!stats' || text === '!bits' || text === '!streamstats' || text === '!discord') {
       this.emit('publicCommand', { userId, channel, username, command: text });
       return;
     }
 
-    // Mod-only commands
+    // Broadcaster-only commands
+    if (text === '!startstream' || text === '!endstream' || text === '!resetcounters' || text === '!resetbits' || text.startsWith('!deleteseries ')) {
+      if (!this.hasBroadcasterPermission(msg)) {
+        return; // Silently ignore unauthorized commands
+      }
+
+      if (text === '!startstream') {
+        this.emit('startStream', { userId, username });
+      } else if (text === '!endstream') {
+        this.emit('endStream', { userId, username });
+      } else if (text === '!resetcounters') {
+        this.emit('resetCounters', { userId, username });
+      } else if (text === '!resetbits') {
+        this.emit('resetBits', { userId, username });
+      } else if (text.startsWith('!deleteseries ')) {
+        const seriesId = message.substring('!deleteseries '.length).trim();
+        this.emit('deleteSeries', { userId, username, seriesId });
+      }
+      return;
+    }    // Mod-only commands (broadcaster + mods)
     if (!this.hasPermission(msg)) {
       return; // Silently ignore unauthorized commands
     }
@@ -167,14 +198,6 @@ class MultiTenantTwitchService extends EventEmitter {
       this.emit('incrementSwears', { userId, username });
     } else if (text === '!swear-' || text === '!s-') {
       this.emit('decrementSwears', { userId, username });
-    } else if (text === '!resetcounters') {
-      this.emit('resetCounters', { userId, username });
-    } else if (text === '!startstream') {
-      this.emit('startStream', { userId, username });
-    } else if (text === '!endstream') {
-      this.emit('endStream', { userId, username });
-    } else if (text === '!resetbits') {
-      this.emit('resetBits', { userId, username });
     } else if (text.startsWith('!saveseries ')) {
       // Extract series name from command
       const seriesName = message.substring('!saveseries '.length).trim();
@@ -185,10 +208,6 @@ class MultiTenantTwitchService extends EventEmitter {
       // Extract series ID from command
       const seriesId = message.substring('!loadseries '.length).trim();
       this.emit('loadSeries', { userId, username, seriesId });
-    } else if (text.startsWith('!deleteseries ')) {
-      // Extract series ID from command
-      const seriesId = message.substring('!deleteseries '.length).trim();
-      this.emit('deleteSeries', { userId, username, seriesId });
     }
   }
 
@@ -347,7 +366,7 @@ class MultiTenantTwitchService extends EventEmitter {
       console.error(`❌ Error handling gift sub event for user ${userId}:`, error);
     }
   }  /**
-   * Send a message to a user's chat
+   * Send a message to a user's chat using chat client
    */
   async sendMessage(userId, message) {
     const client = this.clients.get(userId);
@@ -361,6 +380,77 @@ class MultiTenantTwitchService extends EventEmitter {
       }
     }
     return false;
+  }
+
+  /**
+   * Send a message to a user's chat using Twitch API
+   * This uses the Send Chat Message API endpoint
+   */
+  async sendApiMessage(userId, message) {
+    const client = this.clients.get(userId);
+    if (!client || !client.apiClient) {
+      console.error(`No API client found for user ${userId}`);
+      return false;
+    }
+
+    try {
+      // Get user information for the API call
+      const user = await client.apiClient.users.getUserByName(client.username);
+      if (!user) {
+        console.error(`Could not find user info for ${client.username}`);
+        return false;
+      }
+
+      // Use the Twitch API to send the message
+      const response = await client.apiClient.chat.sendChatMessage(user.id, {
+        message: message,
+        senderId: user.id
+      });
+
+      console.log(`✅ Sent API message to ${client.username}: ${message}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error sending API message for user ${userId}:`, error);
+      // Fallback to chat client method
+      return await this.sendMessage(userId, message);
+    }
+  }
+
+  /**
+   * Send a whisper message to a specific user
+   * Uses the Twitch Whispers API endpoint
+   */
+  async sendWhisper(fromUserId, toUsername, message) {
+    const client = this.clients.get(fromUserId);
+    if (!client || !client.apiClient) {
+      console.error(`❌ No API client found for user ${fromUserId}`);
+      return false;
+    }
+
+    try {
+      // Get the broadcaster's user info (sender)
+      const fromUser = await client.apiClient.users.getUserByName(client.username);
+      if (!fromUser) {
+        console.error(`❌ Could not find sender user info for ${client.username}`);
+        return false;
+      }
+
+      // Get the target user's info (receiver)
+      const toUser = await client.apiClient.users.getUserByName(toUsername);
+      if (!toUser) {
+        console.error(`❌ Could not find target user: ${toUsername}`);
+        return false;
+      }
+
+      // Send whisper using the API
+      await client.apiClient.whispers.sendWhisper(fromUser.id, toUser.id, message);
+
+      console.log(`✅ Whisper sent from ${client.username} to ${toUsername}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error sending whisper from ${fromUserId} to ${toUsername}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -426,6 +516,43 @@ class MultiTenantTwitchService extends EventEmitter {
    */
   getConnectedUsers() {
     return Array.from(this.clients.keys());
+  }
+
+  /**
+   * Check if a specific user's bot is connected
+   */
+  isUserConnected(userId) {
+    return this.clients.has(userId);
+  }
+
+  /**
+   * Get bot status for a specific user
+   */
+  getUserBotStatus(userId) {
+    const isConnected = this.clients.has(userId);
+    const client = this.clients.get(userId);
+
+    return {
+      connected: isConnected,
+      userId: userId,
+      chatConnected: client?.chatClient?.isConnected || false,
+      lastConnected: isConnected ? new Date().toISOString() : null
+    };
+  }
+
+  /**
+   * Get status for all connected bots
+   */
+  getAllBotsStatus() {
+    const statuses = {};
+    for (const [userId, client] of this.clients.entries()) {
+      statuses[userId] = {
+        connected: true,
+        chatConnected: client?.chatClient?.isConnected || false,
+        lastConnected: new Date().toISOString()
+      };
+    }
+    return statuses;
   }
 
   /**

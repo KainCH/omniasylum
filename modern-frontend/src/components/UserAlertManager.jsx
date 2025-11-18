@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import './UserAlertManager.css'
 
-function UserAlertManager({ onClose }) {
+function UserAlertManager({ userId, onClose }) {
   const [alerts, setAlerts] = useState([])
   const [eventMappings, setEventMappings] = useState({})
   const [defaultMappings, setDefaultMappings] = useState({})
   const [availableEvents, setAvailableEvents] = useState([])
+  const [availableAlertTypes, setAvailableAlertTypes] = useState([])
+  const [disableOption, setDisableOption] = useState('none')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('mappings') // 'mappings' or 'create'
@@ -55,12 +57,12 @@ function UserAlertManager({ onClose }) {
       variables: ['[User]', '[Months]', '[Streak]', '[Message]', '[Tier]'],
       example: '[User] resubbed for [Months] months!'
     },
-    'channel.cheer': {
-      name: 'Cheer/Bits',
+    'channel.bits.use': {
+      name: 'Bits Usage',
       icon: '💎',
-      description: 'Bits/cheers from viewers',
+      description: 'Bits usage including cheers, power-ups, and combos',
       variables: ['[User]', '[Bits]', '[Message]'],
-      example: '[User] cheered [Bits] bits!'
+      example: '[User] used [Bits] bits!'
     },
     'channel.raid': {
       name: 'Raid',
@@ -95,6 +97,8 @@ function UserAlertManager({ onClose }) {
       setEventMappings(mappingsData?.mappings || {})
       setDefaultMappings(mappingsData?.defaultMappings || {})
       setAvailableEvents(mappingsData?.availableEvents || [])
+      setAvailableAlertTypes(mappingsData?.availableAlertTypes || [])
+      setDisableOption(mappingsData?.disableOption || 'none')
 
     } catch (error) {
       console.error('Error fetching alert data:', error)
@@ -205,8 +209,77 @@ function UserAlertManager({ onClose }) {
     }
   }
 
+  const playTestSound = (soundFile) => {
+    if (!soundFile) return
+
+    try {
+      const audio = new Audio(`/sounds/${soundFile}`)
+      audio.volume = 0.7
+
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`🔊 Playing test sound: ${soundFile}`)
+          })
+          .catch(error => {
+            console.warn(`⚠️ Sound autoplay prevented: ${soundFile}`, error)
+            // This is expected on first interaction due to browser policies
+          })
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to play sound: ${soundFile}`, error)
+    }
+  }
+
+  const triggerLiveTest = async (eventType) => {
+    if (!userId) {
+      window.alert('❌ User ID not available for live testing.')
+      return
+    }
+
+    try {
+      // Map frontend event types to backend event types
+      const eventTypeMap = {
+        'channel.follow': 'follow',
+        'channel.subscribe': 'subscription',
+        'channel.subscription.gift': 'subscription',
+        'channel.subscription.message': 'resub',
+        'channel.bits.use': 'cheer',
+        'channel.raid': 'raid'
+      }
+
+      const mappedEventType = eventTypeMap[eventType] || eventType
+
+      const response = await fetch(`/api/debug/test-notification/${userId}/${mappedEventType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        console.log('✅ Live test triggered successfully')
+        window.alert(`🎬 Live test triggered! Check your overlay for the ${eventType} alert with full animations.`)
+      } else {
+        console.error('❌ Failed to trigger live test:', response.statusText)
+        window.alert('❌ Failed to trigger live test. Check console for details.')
+      }
+    } catch (error) {
+      console.error('❌ Error triggering live test:', error)
+      window.alert('❌ Error triggering live test. Check console for details.')
+    }
+  }
+
   const testAlert = (eventType) => {
     const alertId = eventMappings[eventType]
+
+    // Check if alerts are disabled for this event
+    if (!alertId || alertId === disableOption) {
+      window.alert('🚫 Alerts are disabled for this event')
+      return
+    }
+
     const alert = alerts.find(a => a?.id === alertId)
 
     if (!alert) {
@@ -214,19 +287,49 @@ function UserAlertManager({ onClose }) {
       return
     }
 
+    // Show confirmation dialog for test mode
+    const testMode = window.confirm(
+      `🎭 Choose your test mode:\n\n` +
+      `✅ OK = Live Overlay Test (full animations on overlay)\n` +
+      `❌ Cancel = Quick Preview (static preview here)\n\n` +
+      `Live mode requires overlay to be open in browser/OBS.`
+    )
+
+    if (testMode) {
+      // User chose live overlay test
+      triggerLiveTest(eventType)
+      return
+    }
+
+    // Continue with preview mode
     const eventInfo = eventDescriptions[eventType]
     const sampleData = {
       'channel.follow': { follower: 'TestUser' },
       'channel.subscribe': { subscriber: 'TestUser', tier: '1000' },
       'channel.subscription.gift': { gifter: 'TestUser', amount: 5, tier: '1000' },
       'channel.subscription.message': { subscriber: 'TestUser', months: 12, streakMonths: 6, message: 'Love this stream!', tier: '1000' },
-      'channel.cheer': { cheerer: 'TestUser', bits: 100, message: 'Great content!' },
+      'channel.bits.use': { user: 'TestUser', bits: 100, message: 'Great content!', eventType: 'cheer' },
       'channel.raid': { raider: 'TestUser', viewers: 50 }
+    }
+
+    // Play the sound if the alert has one configured
+    if (alert.soundFile) {
+      playTestSound(alert.soundFile)
     }
 
     setPreviewData({ eventType, eventInfo, alert, sampleData: sampleData[eventType] })
     setShowPreview(true)
     setTestingEvent(eventType)
+
+    // Apply door animation if it's a follow alert with effects
+    if (alert.effects?.animation) {
+      setTimeout(() => {
+        const previewElement = document.querySelector('.alert-preview-content')
+        if (previewElement && alert.effects.animation === 'doorCreak') {
+          previewElement.style.animation = `doorCreak ${alert.duration / 1000}s ease-out`
+        }
+      }, 100)
+    }
 
     setTimeout(() => {
       setShowPreview(false)
@@ -238,7 +341,7 @@ function UserAlertManager({ onClose }) {
     if (!text || !data) return text
 
     let processed = text
-    processed = processed.replace(/\[User\]/g, data.follower || data.subscriber || data.gifter || data.cheerer || data.raider || 'TestUser')
+    processed = processed.replace(/\[User\]/g, data.follower || data.subscriber || data.gifter || data.cheerer || data.user || data.raider || 'TestUser')
     processed = processed.replace(/\[Tier\]/g, data.tier === '1000' ? 'Tier 1' : data.tier === '2000' ? 'Tier 2' : data.tier === '3000' ? 'Tier 3' : 'Prime')
     processed = processed.replace(/\[Amount\]/g, data.amount || '')
     processed = processed.replace(/\[Months\]/g, data.months || '')
@@ -321,12 +424,12 @@ function UserAlertManager({ onClose }) {
                     <select
                       id={`event-${eventType}`}
                       name={`event-${eventType}`}
-                      value={currentAlertId || ''}
+                      value={currentAlertId || disableOption}
                       onChange={(e) => handleMappingChange(eventType, e.target.value)}
                       className="alert-select"
                     >
-                      <option value="">No Alert (Disabled)</option>
-                      
+                      <option value={disableOption}>🚫 Disabled (No Alert)</option>
+
                       {/* Default Alert Templates */}
                       <optgroup label="🎭 Default Alert Templates">
                         {alerts.filter(a => a?.isDefault && a?.isEnabled !== false).map(alert => (
@@ -335,7 +438,7 @@ function UserAlertManager({ onClose }) {
                           </option>
                         ))}
                       </optgroup>
-                      
+
                       {/* Custom Alerts */}
                       {alerts.filter(a => !a?.isDefault && a?.isEnabled !== false).length > 0 && (
                         <optgroup label="✨ Custom Alerts">

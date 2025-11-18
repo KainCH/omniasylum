@@ -4,90 +4,118 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { notificationAPI, userAPI, counterAPI, APIError, utils } from '../utils/apiHelpers';
+import { userAPI, counterAPI, APIError, debounce, handleAuthError } from '../utils/authUtils';
 
 /**
- * Hook for managing notification settings
+ * Hook for managing loading states
  */
-export const useNotificationSettings = (userId) => {
-  const [settings, setSettings] = useState(null);
+export const useLoading = (initialState = false) => {
+  const [loading, setLoading] = useState(initialState);
+
+  const withLoading = useCallback(async (asyncFunction) => {
+    setLoading(true);
+    try {
+      const result = await asyncFunction();
+      return result;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { loading, setLoading, withLoading };
+};
+
+/**
+ * Hook for managing toast notifications
+ */
+export const useToast = () => {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'info', duration = 5000) => {
+    const id = Date.now() + Math.random();
+    const toast = { id, message, type };
+
+    setToasts(prev => [...prev, toast]);
+
+    if (duration > 0) {
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, duration);
+    }
+
+    return id;
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const success = useCallback((message) => addToast(message, 'success'), [addToast]);
+  const error = useCallback((message) => addToast(message, 'error'), [addToast]);
+  const warning = useCallback((message) => addToast(message, 'warning'), [addToast]);
+  const info = useCallback((message) => addToast(message, 'info'), [addToast]);
+
+  return { toasts, addToast, removeToast, success, error, warning, info };
+};
+
+/**
+ * Hook for managing user data
+ */
+export const useUserData = () => {
+  const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [saving, setSaving] = useState(false);
 
-  // Load settings
-  const loadSettings = useCallback(async () => {
-    if (!userId) return;
-
+  const loadUserData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await notificationAPI.getDiscordSettings(userId);
-      setSettings(data?.discordSettings || null);
+      const data = await userAPI.getCurrentUser();
+      setUserData(data);
+      return data;
     } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      utils.handleAuthError(err);
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to load user data';
+      setError(errorMessage);
+      handleAuthError(err, 'loading user data');
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, []);
 
-  // Save settings
-  const saveSettings = useCallback(async (newSettings) => {
-    setSaving(true);
-    setError(null);
-
+  const updateUserData = useCallback(async (updates) => {
     try {
-      await notificationAPI.updateDiscordSettings(userId, newSettings);
-      setSettings(newSettings?.discordSettings);
-      return { success: true };
+      const updatedData = await userAPI.updateUser(updates);
+      setUserData(updatedData);
+      return { success: true, data: updatedData };
     } catch (err) {
-      const errorMessage = utils.formatErrorMessage(err);
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to update user data';
       setError(errorMessage);
-      utils.handleAuthError(err);
-      return { success: false, error: errorMessage };
-    } finally {
-      setSaving(false);
-    }
-  }, [userId]);
-
-  // Test webhook
-  const testWebhook = useCallback(async (webhookUrl) => {
-    try {
-      await notificationAPI.testDiscordWebhook(webhookUrl);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = utils.formatErrorMessage(err);
+      handleAuthError(err, 'updating user data');
       return { success: false, error: errorMessage };
     }
   }, []);
 
-  // Load settings when userId changes
-  useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
-
   return {
-    settings,
+    userData,
     loading,
     error,
-    saving,
-    saveSettings,
-    testWebhook,
-    reloadSettings: loadSettings
+    loadUserData,
+    updateUserData,
+    setUserData,
+    clearError: () => setError(null)
   };
 };
 
 /**
- * Hook for managing counter state
+ * Hook for managing counter data
  */
 export const useCounters = () => {
   const [counters, setCounters] = useState({ deaths: 0, swears: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load counters
   const loadCounters = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -95,276 +123,52 @@ export const useCounters = () => {
     try {
       const data = await counterAPI.getCounters();
       setCounters(data);
+      return data;
     } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      utils.handleAuthError(err);
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to load counters';
+      setError(errorMessage);
+      handleAuthError(err, 'loading counters');
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Counter operations
-  const incrementDeaths = useCallback(async () => {
+  const updateCounter = useCallback(async (type, value) => {
     try {
-      const data = await counterAPI.incrementDeaths();
-      setCounters(data);
-      return { success: true };
+      const updatedCounters = await counterAPI.updateCounter(type, value);
+      setCounters(updatedCounters);
+      return { success: true, data: updatedCounters };
     } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      return { success: false, error: utils.formatErrorMessage(err) };
-    }
-  }, []);
-
-  const decrementDeaths = useCallback(async () => {
-    try {
-      const data = await counterAPI.decrementDeaths();
-      setCounters(data);
-      return { success: true };
-    } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      return { success: false, error: utils.formatErrorMessage(err) };
-    }
-  }, []);
-
-  const incrementSwears = useCallback(async () => {
-    try {
-      const data = await counterAPI.incrementSwears();
-      setCounters(data);
-      return { success: true };
-    } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      return { success: false, error: utils.formatErrorMessage(err) };
-    }
-  }, []);
-
-  const decrementSwears = useCallback(async () => {
-    try {
-      const data = await counterAPI.decrementSwears();
-      setCounters(data);
-      return { success: true };
-    } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      return { success: false, error: utils.formatErrorMessage(err) };
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to update counter';
+      setError(errorMessage);
+      handleAuthError(err, 'updating counter');
+      return { success: false, error: errorMessage };
     }
   }, []);
 
   const resetCounters = useCallback(async () => {
     try {
-      const data = await counterAPI.resetCounters();
-      setCounters(data);
-      return { success: true };
+      const resetData = await counterAPI.resetCounters();
+      setCounters(resetData);
+      return { success: true, data: resetData };
     } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      return { success: false, error: utils.formatErrorMessage(err) };
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to reset counters';
+      setError(errorMessage);
+      handleAuthError(err, 'resetting counters');
+      return { success: false, error: errorMessage };
     }
   }, []);
-
-  // Load counters on mount
-  useEffect(() => {
-    loadCounters();
-  }, [loadCounters]);
 
   return {
     counters,
     loading,
     error,
-    incrementDeaths,
-    decrementDeaths,
-    incrementSwears,
-    decrementSwears,
+    loadCounters,
+    updateCounter,
     resetCounters,
-    reloadCounters: loadCounters
-  };
-};
-
-/**
- * Hook for managing user data
- */
-export const useUserData = (userId) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const loadUser = useCallback(async () => {
-    if (!userId) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const userData = await userAPI.getUser(userId);
-      setUser(userData);
-    } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      utils.handleAuthError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
-
-  const updateUserFeatures = useCallback(async (features) => {
-    try {
-      await userAPI.updateUserFeatures(userId, features);
-      setUser(current => ({ ...current, features }));
-      return { success: true };
-    } catch (err) {
-      const errorMessage = utils.formatErrorMessage(err);
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    loadUser();
-  }, [loadUser]);
-
-  return {
-    user,
-    loading,
-    error,
-    updateUserFeatures,
-    reloadUser: loadUser
-  };
-};
-
-/**
- * Hook for managing WebSocket connections
- */
-export const useWebSocket = (userId) => {
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef(null);
-  const listenersRef = useRef(new Map());
-
-  // Initialize WebSocket
-  useEffect(() => {
-    if (!userId) return;
-
-    import('../utils/apiHelpers').then(({ WebSocketManager }) => {
-      wsRef.current = new WebSocketManager(userId);
-
-      // Listen for connection status
-      wsRef.current.on('connected', () => setConnected(true));
-      wsRef.current.on('disconnected', () => setConnected(false));
-
-      wsRef.current.connect();
-    });
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.disconnect();
-      }
-    };
-  }, [userId]);
-
-  // Subscribe to events
-  const subscribe = useCallback((eventType, callback) => {
-    if (wsRef.current) {
-      wsRef.current.on(eventType, callback);
-
-      // Track listeners for cleanup
-      if (!listenersRef.current.has(eventType)) {
-        listenersRef.current.set(eventType, []);
-      }
-      listenersRef.current.get(eventType).push(callback);
-    }
-  }, []);
-
-  // Unsubscribe from events
-  const unsubscribe = useCallback((eventType, callback) => {
-    if (wsRef.current) {
-      wsRef.current.off(eventType, callback);
-
-      // Remove from tracked listeners
-      const listeners = listenersRef.current.get(eventType);
-      if (listeners) {
-        const index = listeners.indexOf(callback);
-        if (index > -1) {
-          listeners.splice(index, 1);
-        }
-      }
-    }
-  }, []);
-
-  // Send message
-  const send = useCallback((data) => {
-    if (wsRef.current) {
-      wsRef.current.send(data);
-    }
-  }, []);
-
-  return {
-    connected,
-    subscribe,
-    unsubscribe,
-    send
-  };
-};
-
-/**
- * Hook for managing form state with validation
- */
-export const useFormState = (initialState, validationRules = {}) => {
-  const [values, setValues] = useState(initialState);
-  const [errors, setErrors] = useState({});
-  const [touched, setTouchedState] = useState({});
-
-  // Update field value
-  const setValue = useCallback((field, value) => {
-    setValues(current => ({ ...current, [field]: value }));
-
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(current => ({ ...current, [field]: null }));
-    }
-  }, [errors]);
-
-  // Mark field as touched
-  const setTouched = useCallback((field) => {
-    setTouchedState(current => ({ ...current, [field]: true }));
-  }, []);
-
-  // Validate form
-  const validate = useCallback(() => {
-    const newErrors = {};
-
-    Object.keys(validationRules).forEach(field => {
-      const rule = validationRules[field];
-      const value = values[field];
-
-      if (rule.required && (!value || value.toString().trim() === '')) {
-        newErrors[field] = `${field} is required`;
-      } else if (rule.minLength && value && value.length < rule.minLength) {
-        newErrors[field] = `${field} must be at least ${rule.minLength} characters`;
-      } else if (rule.pattern && value && !rule.pattern.test(value)) {
-        newErrors[field] = rule.message || `${field} format is invalid`;
-      } else if (rule.custom && value) {
-        const customError = rule.custom(value, values);
-        if (customError) {
-          newErrors[field] = customError;
-        }
-      }
-    });
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [values, validationRules]);
-
-  // Reset form
-  const reset = useCallback(() => {
-    setValues(initialState);
-    setErrors({});
-    setTouchedState({});
-  }, [initialState]);
-
-  return {
-    values,
-    errors,
-    touched,
-    setValue,
-    setTouched,
-    validate,
-    reset,
-    isValid: Object.keys(errors).length === 0
+    setCounters,
+    clearError: () => setError(null)
   };
 };
 
@@ -388,77 +192,83 @@ export const useDebounce = (value, delay) => {
 };
 
 /**
- * Hook for managing loading states
+ * Hook for managing async operations with status
  */
-export const useLoading = () => {
-  const [loading, setLoading] = useState(false);
+export const useAsync = (asyncFunction, immediate = true) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(immediate);
   const [error, setError] = useState(null);
 
-  const withLoading = useCallback(async (asyncFunction) => {
+  const execute = useCallback(async (...args) => {
     setLoading(true);
     setError(null);
 
     try {
-      const result = await asyncFunction();
+      const result = await asyncFunction(...args);
+      setData(result);
       return result;
     } catch (err) {
-      setError(utils.formatErrorMessage(err));
-      utils.handleAuthError(err);
+      const errorMessage = err instanceof APIError ? err.message : 'Operation failed';
+      setError(errorMessage);
+      handleAuthError(err, 'async operation');
       throw err;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [asyncFunction]);
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  useEffect(() => {
+    if (immediate) {
+      execute();
+    }
+  }, [execute, immediate]);
 
-  return {
-    loading,
-    error,
-    withLoading,
-    clearError
-  };
+  return { data, loading, error, execute, setData, clearError: () => setError(null) };
 };
 
 /**
- * Hook for managing toast notifications
+ * Hook for managing form state
  */
-export const useToast = () => {
-  const [toasts, setToasts] = useState([]);
+export const useFormState = (initialState = {}) => {
+  const [formState, setFormState] = useState(initialState);
+  const [isDirty, setIsDirty] = useState(false);
 
-  const addToast = useCallback((message, type = 'info', duration = 5000) => {
-    const id = Date.now();
-    const toast = { id, message, type, duration };
-
-    setToasts(current => [...current, toast]);
-
-    if (duration > 0) {
-      setTimeout(() => {
-        setToasts(current => current.filter(t => t.id !== id));
-      }, duration);
-    }
-
-    return id;
+  const updateField = useCallback((field, value) => {
+    setFormState(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    setIsDirty(true);
   }, []);
 
-  const removeToast = useCallback((id) => {
-    setToasts(current => current.filter(t => t.id !== id));
+  const updateFields = useCallback((updates) => {
+    setFormState(prev => ({
+      ...prev,
+      ...updates
+    }));
+    setIsDirty(true);
   }, []);
 
-  const clearAllToasts = useCallback(() => {
-    setToasts([]);
-  }, []);
+  const resetForm = useCallback((newState = initialState) => {
+    setFormState(newState);
+    setIsDirty(false);
+  }, [initialState]);
+
+  const clearForm = useCallback(() => {
+    setFormState(initialState);
+    setIsDirty(false);
+  }, [initialState]);
 
   return {
-    toasts,
-    addToast,
-    removeToast,
-    clearAllToasts,
-    success: (message, duration) => addToast(message, 'success', duration),
-    error: (message, duration) => addToast(message, 'error', duration),
-    warning: (message, duration) => addToast(message, 'warning', duration),
-    info: (message, duration) => addToast(message, 'info', duration)
+    formState,
+    isDirty,
+    updateField,
+    updateFields,
+    resetForm,
+    clearForm,
+    setFormState
   };
 };
+
+// Export Discord settings hook
+export { useDiscordSettings } from './useDiscordSettings';
