@@ -287,7 +287,14 @@ class AsylumEffects {
 
   // ==================== AUDIO SYSTEM ====================
 
+  // Enhanced preloadSounds with cache restoration
   preloadSounds() {
+    console.log('🔊 Initializing audio system...');
+
+    // First try to restore from cache
+    const restored = this.restoreAudioCacheState();
+
+    // Then load any missing sounds
     const soundFiles = [
       'doorCreak.wav',
       'electroshock.wav',
@@ -299,34 +306,59 @@ class AsylumEffects {
     ];
 
     soundFiles.forEach(filename => {
+      const key = filename.replace('.wav', '').replace('.mp3', '');
+
+      // Skip if already loaded from cache
+      if (this.audioCache[key] && this.audioCache[key].readyState >= 3) {
+        console.log(`⚡ Sound already cached: ${filename}`);
+        return;
+      }
+
       const audio = new Audio(`/sounds/${filename}`);
       audio.volume = this.audioVolume;
       audio.preload = 'auto';
-
-      // Store in cache
-      const key = filename.replace('.wav', '').replace('.mp3', '');
       this.audioCache[key] = audio;
 
-      // Log when loaded
       audio.addEventListener('canplaythrough', () => {
         console.log(`🔊 Preloaded sound: ${filename}`);
+        this.saveAudioCacheState(); // Save state after each load
       }, { once: true });
 
-      // Error handling
       audio.addEventListener('error', (e) => {
         console.warn(`⚠️ Failed to load sound: ${filename}`, e);
+        delete this.audioCache[key]; // Clean up failed entry
       });
     });
+
+    // Check cache health after 3 seconds
+    setTimeout(() => {
+      const health = this.checkAudioCacheHealth();
+      if (!health.healthy) {
+        console.warn('⚠️ Audio cache unhealthy, attempting recovery...', health);
+        this.recoverAudioCache(health);
+      }
+    }, 3000);
   }
 
+  // Enhanced playSound with cache health checking
   playSound(soundTrigger) {
     if (!soundTrigger) return;
+
+    // Check if audio cache is empty and recover if needed
+    if (Object.keys(this.audioCache).length === 0) {
+      console.log('🔊 Audio cache empty, attempting recovery...');
+      this.restoreAudioCacheState();
+
+      // Queue the sound to play once cache is restored
+      setTimeout(() => this.playSound(soundTrigger), 1000);
+      return;
+    }
 
     // Extract sound name without extension
     const soundName = soundTrigger.replace('.wav', '').replace('.mp3', '');
     const audio = this.audioCache[soundName];
 
-    if (audio) {
+    if (audio && audio.readyState >= 3) {
       // Clone the audio to allow overlapping sounds
       const soundInstance = audio.cloneNode();
       soundInstance.volume = this.audioVolume;
@@ -344,8 +376,20 @@ class AsylumEffects {
             // User interaction required - this is expected on first load
           });
       }
+    } else if (audio && audio.readyState < 3) {
+      // Audio exists but not ready, wait for it to load
+      console.log(`🔄 Audio loading, will play when ready: ${soundTrigger}`);
+      audio.addEventListener('canplaythrough', () => {
+        this.playSound(soundTrigger);
+      }, { once: true });
     } else {
       console.warn(`⚠️ Sound not found in cache: ${soundTrigger}`);
+
+      // Try to load the missing sound immediately
+      this.priorityLoadSound(soundName, `/sounds/${soundName}.wav`);
+
+      // Queue the sound to play once loaded
+      setTimeout(() => this.playSound(soundTrigger), 1500);
     }
   }
 
@@ -358,6 +402,155 @@ class AsylumEffects {
     });
 
     console.log(`🔊 Volume set to: ${Math.round(this.audioVolume * 100)}%`);
+  }
+
+  // ==================== AUDIO CACHE PERSISTENCE ====================
+
+  // Save audio cache state to localStorage
+  saveAudioCacheState() {
+    try {
+      const cacheState = {
+        timestamp: Date.now(),
+        sounds: Object.keys(this.audioCache).map(key => ({
+          key: key,
+          loaded: this.audioCache[key] && this.audioCache[key].readyState >= 3,
+          src: this.audioCache[key] ? this.audioCache[key].src : null
+        })),
+        volume: this.audioVolume,
+        settings: this.settings
+      };
+
+      localStorage.setItem('omni_asylum_audio_cache', JSON.stringify(cacheState));
+      console.log('💾 Audio cache state saved:', cacheState);
+    } catch (error) {
+      console.warn('⚠️ Failed to save audio cache state:', error);
+    }
+  }
+
+  // Restore audio cache from localStorage
+  restoreAudioCacheState() {
+    try {
+      const saved = localStorage.getItem('omni_asylum_audio_cache');
+      if (!saved) return false;
+
+      const cacheState = JSON.parse(saved);
+      const age = Date.now() - cacheState.timestamp;
+
+      // Cache is valid for 24 hours
+      if (age > 24 * 60 * 60 * 1000) {
+        console.log('🕒 Audio cache expired, will reload fresh');
+        localStorage.removeItem('omni_asylum_audio_cache');
+        return false;
+      }
+
+      console.log('🔄 Restoring audio cache from localStorage...', cacheState);
+
+      // Restore volume and settings
+      this.audioVolume = cacheState.volume || 0.7;
+      this.settings = { ...this.settings, ...(cacheState.settings || {}) };
+
+      // Priority reload of previously cached sounds
+      cacheState.sounds.forEach(sound => {
+        if (sound.loaded && sound.src) {
+          this.priorityLoadSound(sound.key, sound.src);
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Failed to restore audio cache:', error);
+      return false;
+    }
+  }
+
+  // Priority load a specific sound (faster than normal preload)
+  priorityLoadSound(key, src) {
+    const audio = new Audio(src);
+    audio.volume = this.audioVolume;
+    audio.preload = 'auto';
+
+    this.audioCache[key] = audio;
+
+    audio.addEventListener('canplaythrough', () => {
+      console.log(`⚡ Priority restored sound: ${key}`);
+      this.saveAudioCacheState(); // Update cache state
+    }, { once: true });
+
+    audio.addEventListener('error', (e) => {
+      console.warn(`⚠️ Priority load failed for: ${key}`, e);
+      delete this.audioCache[key]; // Remove failed entry
+    });
+  }
+
+  // Check if audio cache is healthy and complete
+  checkAudioCacheHealth() {
+    const expectedSounds = [
+      'doorCreak', 'electroshock', 'typewriter', 'pillRattle',
+      'alarm', 'heartMonitor', 'hypeTrain'
+    ];
+
+    const cachedSounds = Object.keys(this.audioCache);
+    const healthySounds = cachedSounds.filter(key => {
+      const audio = this.audioCache[key];
+      return audio && audio.readyState >= 3; // HAVE_FUTURE_DATA or better
+    });
+
+    const healthPercentage = (healthySounds.length / expectedSounds.length) * 100;
+
+    console.log(`🏥 Audio cache health: ${healthPercentage.toFixed(1)}% (${healthySounds.length}/${expectedSounds.length})`);
+
+    return {
+      healthy: healthPercentage >= 80, // 80% threshold
+      percentage: healthPercentage,
+      missing: expectedSounds.filter(sound => !cachedSounds.includes(sound)),
+      failed: cachedSounds.filter(key => {
+        const audio = this.audioCache[key];
+        return !audio || audio.readyState < 3;
+      })
+    };
+  }
+
+  // Recover unhealthy audio cache
+  recoverAudioCache(healthStatus) {
+    console.log('🏥 Starting audio cache recovery...');
+
+    // Reload failed sounds
+    healthStatus.failed.forEach(key => {
+      console.log(`🔄 Recovering failed sound: ${key}`);
+      delete this.audioCache[key];
+
+      // Find original filename - try .wav first, then .mp3
+      let filename = key + '.wav';
+      const audio = new Audio(`/sounds/${filename}`);
+      audio.volume = this.audioVolume;
+      audio.preload = 'auto';
+      this.audioCache[key] = audio;
+
+      audio.addEventListener('canplaythrough', () => {
+        console.log(`✅ Recovered sound: ${filename}`);
+        this.saveAudioCacheState();
+      }, { once: true });
+
+      audio.addEventListener('error', () => {
+        // Try .mp3 if .wav fails
+        filename = key + '.mp3';
+        const mp3Audio = new Audio(`/sounds/${filename}`);
+        mp3Audio.volume = this.audioVolume;
+        mp3Audio.preload = 'auto';
+        this.audioCache[key] = mp3Audio;
+
+        mp3Audio.addEventListener('canplaythrough', () => {
+          console.log(`✅ Recovered sound (mp3): ${filename}`);
+          this.saveAudioCacheState();
+        }, { once: true });
+      });
+    });
+
+    // Load missing sounds
+    healthStatus.missing.forEach(key => {
+      console.log(`🔄 Loading missing sound: ${key}`);
+      this.priorityLoadSound(key, `/sounds/${key}.wav`);
+    });
   }
 
   // ==================== EFFECT TRIGGERS ====================
@@ -688,5 +881,27 @@ class ParticleSystem {
   }
 }
 
-// Export singleton instance
-window.asylumEffects = new AsylumEffects();
+// Auto-create AsylumEffects instance when DOM is ready
+(function() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAsylumEffects);
+  } else {
+    initializeAsylumEffects();
+  }
+
+  function initializeAsylumEffects() {
+    console.log('Initializing AsylumEffects with cache persistence...');
+    window.asylumEffects = new AsylumEffects();
+
+    // Global method for testing audio cache
+    window.testAsylumAudio = function() {
+      if (window.asylumEffects) {
+        const health = window.asylumEffects.checkAudioCacheHealth();
+        console.log('AsylumEffects Audio Health Test:', health);
+
+        // Test play a sound
+        window.asylumEffects.playSound('heartMonitor');
+      }
+    };
+  }
+})();
