@@ -25,6 +25,7 @@ class StreamMonitor extends EventEmitter {
     this.defaultKeepaliveTimeout = 120; // 2 minutes default (increased from 30s)
     this.pendingNotifications = new Map(); // userId -> pending notification data
     this.persistedNotificationStates = new Map(); // userId -> notification state (survives reconnections)
+    this.pendingSubscriptions = new Set(); // userId -> boolean (true if subscription setup is in progress)
     this.io = null; // Socket.io instance for real-time notifications
   }
 
@@ -241,6 +242,13 @@ class StreamMonitor extends EventEmitter {
         return true;
       }
 
+      // Check if subscription setup is already in progress
+      if (this.pendingSubscriptions.has(userId)) {
+        console.log(`⏳ Subscription setup already in progress for ${user.username} - skipping duplicate request`);
+        return true;
+      }
+      this.pendingSubscriptions.add(userId);
+
       // Provide context about whether this is a reconnection or new subscription
       try {
         const counters = await database.getCounters(userId);
@@ -413,54 +421,27 @@ class StreamMonitor extends EventEmitter {
         );
       }
 
-      // Subscribe to raid events (if user wants notifications)
-      let raidSubscription = null;
-      if (shouldSubscribeToAlerts) {
-        console.log(`🚨 Subscribing to raid events for ${user.username}`);
-        raidSubscription = await this.createSubscriptionWithRetry(
-          () => userListener.onChannelRaidTo(userId, (event) => {
-            this.handleRaidEvent(event, userId);
-          }),
-          'raid events',
-          user.username
-        );
-      }
+      // Legacy subscriptions (raid, subscribe, gift, resub) are now handled by channel.chat.notification
+      // This reduces WebSocket connection load and provides better data.
+      // 
+      // ⚠️ Backward compatibility note:
+      // The legacy events (`raidReceived`, `newSubscription`, `newGiftSub`, `newResub`) are still emitted
+      // for existing event consumers (see server.js lines 1239-1372). The new chat notification handler
+      // (`handleChatNotificationEvent`) parses incoming events and re-emits these legacy events as needed,
+      // ensuring that existing integrations continue to work without modification.
+      // 
+      // If you are building new integrations, prefer listening to the unified `chatNotification` event.
+      // If you are maintaining legacy consumers, no migration is required at this time.
 
-      // Subscribe to subscription events (if user wants notifications)
-      let subscribeSubscription = null;
+      // Subscribe to chat notification events (if user wants notifications)
+      let chatNotificationSubscription = null;
       if (shouldSubscribeToAlerts) {
-        console.log(`⭐ Subscribing to subscription events for ${user.username}`);
-        subscribeSubscription = await this.createSubscriptionWithRetry(
-          () => userListener.onChannelSubscription(userId, (event) => {
-            this.handleSubscribeEvent(event, userId);
+        console.log(`💬 Subscribing to chat notification events for ${user.username}`);
+        chatNotificationSubscription = await this.createSubscriptionWithRetry(
+          () => userListener.onChannelChatNotification(userId, userId, (event) => {
+            this.handleChatNotificationEvent(event, userId);
           }),
-          'subscription events',
-          user.username
-        );
-      }
-
-      // Subscribe to subscription gift events (if user wants notifications)
-      let subGiftSubscription = null;
-      if (shouldSubscribeToAlerts) {
-        console.log(`💝 Subscribing to gift subscription events for ${user.username}`);
-        subGiftSubscription = await this.createSubscriptionWithRetry(
-          () => userListener.onChannelSubscriptionGift(userId, (event) => {
-            this.handleSubGiftEvent(event, userId);
-          }),
-          'gift subscription events',
-          user.username
-        );
-      }
-
-      // Subscribe to subscription message events (resubscriptions with messages)
-      let subMessageSubscription = null;
-      if (shouldSubscribeToAlerts) {
-        console.log(`📝 Subscribing to resub message events for ${user.username}`);
-        subMessageSubscription = await this.createSubscriptionWithRetry(
-          () => userListener.onChannelSubscriptionMessage(userId, (event) => {
-            this.handleSubMessageEvent(event, userId);
-          }),
-          'resub message events',
+          'chat notification events',
           user.username
         );
       }
@@ -497,10 +478,7 @@ class StreamMonitor extends EventEmitter {
         // channelUpdate removed - using direct API calls instead
         channelPoints: !!redemptionSubscription,
         follows: !!followSubscription,
-        raids: !!raidSubscription,
-        subscriptions: !!subscribeSubscription,
-        giftSubs: !!subGiftSubscription,
-        resubMessages: !!subMessageSubscription,
+        chatNotifications: !!chatNotificationSubscription,
         cheers: !!cheerSubscription
       };
 
@@ -514,10 +492,7 @@ class StreamMonitor extends EventEmitter {
         // channelUpdateSubscription removed - no longer needed
         redemptionSubscription,
         followSubscription,
-        raidSubscription,
-        subscribeSubscription,
-        subGiftSubscription,
-        subMessageSubscription,
+        chatNotificationSubscription,
         cheerSubscription,
         subscriptions: Object.keys(subscriptions).filter(key => subscriptions[key])
       });
@@ -545,8 +520,10 @@ class StreamMonitor extends EventEmitter {
       // Check current stream status
       await this.checkCurrentStreamStatus(userId, userId, userApiClient);
 
+      this.pendingSubscriptions.delete(userId);
       return true;
     } catch (error) {
+      this.pendingSubscriptions.delete(userId);
       console.error(`Failed to subscribe to stream events for user ${userId}:`, error);
       return false;
     }
@@ -578,17 +555,8 @@ class StreamMonitor extends EventEmitter {
       if (userData.followSubscription) {
         userData.followSubscription.stop();
       }
-      if (userData.raidSubscription) {
-        userData.raidSubscription.stop();
-      }
-      if (userData.subscribeSubscription) {
-        userData.subscribeSubscription.stop();
-      }
-      if (userData.subGiftSubscription) {
-        userData.subGiftSubscription.stop();
-      }
-      if (userData.subMessageSubscription) {
-        userData.subMessageSubscription.stop();
+      if (userData.chatNotificationSubscription) {
+        userData.chatNotificationSubscription.stop();
       }
       if (userData.cheerSubscription) {
         userData.cheerSubscription.stop();
@@ -1338,12 +1306,11 @@ class StreamMonitor extends EventEmitter {
               message: 'Waiting for channel info - Edit your stream title/category on Twitch and click Done to proceed'
             });
           } else if (waitingFor.includes('stream')) {
-            // Have channel info, waiting for stream start - this is "Ready"
-            console.log(`✅ Discord notification ready for ${pendingNotification.user.username} - waiting for stream start`);
-            this.emitDiscordNotificationStatus(userId, 'Ready', {
+            // Have channel info, waiting for stream info
+            console.log(`⏳ Discord notification waiting for stream info for ${pendingNotification.user.username}`);
+            this.emitDiscordNotificationStatus(userId, 'Pending', {
               waitingFor,
-              message: 'Ready to Stream! Start streaming and the Discord notification will be sent automatically',
-              hasChannelInfo: true,
+              message: 'Stream detected! Start streaming to send notification',
               channelInfo: {
                 title: channelInfo?.title,
                 category: channelInfo?.category || 'No Category'
@@ -1367,343 +1334,6 @@ class StreamMonitor extends EventEmitter {
       this.emitDiscordNotificationStatus(userId, 'Failed', {
         error: error.message || 'Unknown error'
       });
-    }
-  }
-
-  /**
-   * Handle channel update events (title/category changes during stream) - OPTIONAL
-   * NOTE: This is no longer required for Discord notifications since we fetch channel info directly via API.
-   * This method now only handles live stream updates during an active stream for real-time UI updates.
-   */
-  async handleChannelUpdate(event, userId) {
-    console.log(`🔄 Processing channel update for userId: ${userId}`, {
-      eventBroadcasterUserId: event.broadcasterUserId,
-      eventBroadcasterUserName: event.broadcasterUserName,
-      streamTitle: event.streamTitle,
-      categoryName: event.categoryName
-    });
-
-    try {
-      // Find user ID if not provided
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterUserId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Channel update for unknown user: ${event.broadcasterUserName}`);
-        return;
-      }
-
-      // Reset connection health - we received a message from Twitch
-      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      console.log(`📝 ${user.username} updated stream info (live update):`);
-      console.log(`   Title: "${event.streamTitle}"`);
-      console.log(`   Category: "${event.categoryName}"`);
-      console.log(`   📋 Note: Discord notifications now use direct API calls, not EventSub channel.update`);
-
-      // Channel update events are now only used for live stream updates, not Discord notifications
-
-      // Check if user is currently streaming for live updates
-      const counters = await database.getCounters(userId);
-      if (!counters.streamStarted) {
-        console.log(`📋 Channel update processed for ${user.username} (not currently streaming)`);
-        return;
-      }
-
-      // Emit event for real-time updates (frontend can display title/category changes)
-      this.emit('channelUpdate', {
-        userId,
-        username: user.username,
-        displayName: user.displayName,
-        title: event.streamTitle,
-        category: event.categoryName,
-        categoryId: event.categoryId,
-        language: event.language,
-        timestamp: new Date().toISOString()
-      });
-
-      console.log(`✅ Live channel update processed for ${user.username} (UI update only)`);
-
-    } catch (error) {
-      console.error('Error handling channel update event:', error);
-    }
-  }
-
-  /**
-   * Handle channel point reward redemption
-   */
-  async handleRewardRedemption(event, userId) {
-    try {
-      // Find user ID if not provided
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Reward redemption for unknown user: ${event.broadcasterName}`);
-        return;
-      }
-
-      // Reset connection health - we received a message from Twitch
-      this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      // Check if user has channel points feature enabled
-      const hasChannelPoints = await database.hasFeature(userId, 'channelPoints');
-      if (!hasChannelPoints) {
-        console.log(`Channel points disabled for ${user.username}`);
-        return;
-      }
-
-      console.log(`🎯 Channel point redemption: ${event.rewardTitle} by ${event.userName} for ${user.username}`);
-
-      // Get the reward configuration
-      const rewardConfig = await database.getChannelPointReward(userId, event.rewardId);
-
-      if (!rewardConfig || !rewardConfig.isEnabled) {
-        console.log(`Unknown or disabled reward: ${event.rewardTitle}`);
-        return;
-      }
-
-      // Process the reward action
-      let counterUpdate = null;
-      switch (rewardConfig.action) {
-        case 'increment_deaths':
-          counterUpdate = await database.incrementDeaths(userId);
-          console.log(`💀 Deaths incremented by ${event.userName} via channel points`);
-          break;
-        case 'increment_swears':
-          counterUpdate = await database.incrementSwears(userId);
-          console.log(`🤬 Swears incremented by ${event.userName} via channel points`);
-          break;
-        case 'decrement_deaths':
-          counterUpdate = await database.decrementDeaths(userId);
-          console.log(`💀 Deaths decremented by ${event.userName} via channel points`);
-          break;
-        case 'decrement_swears':
-          counterUpdate = await database.decrementSwears(userId);
-          console.log(`🤬 Swears decremented by ${event.userName} via channel points`);
-          break;
-        default:
-          console.log(`Unknown reward action: ${rewardConfig.action}`);
-          return;
-      }
-
-      // Emit events for real-time updates
-      this.emit('rewardRedeemed', {
-        userId,
-        username: user.username,
-        redeemedBy: event.userName,
-        rewardTitle: event.rewardTitle,
-        rewardId: event.rewardId,
-        action: rewardConfig.action,
-        cost: rewardConfig.cost,
-        timestamp: new Date().toISOString()
-      });
-
-      // Emit counter update if applicable
-      if (counterUpdate) {
-        this.emit('counterUpdate', {
-          userId,
-          counters: counterUpdate,
-          source: 'channel_points',
-          redeemedBy: event.userName
-        });
-      }
-
-    } catch (error) {
-      console.error('Error handling reward redemption event:', error);
-    }
-  }
-
-  /**
-   * Check current stream status for a user
-   */
-  /**
-   * Check current stream status for a user
-   */
-  async checkCurrentStreamStatus(userId, twitchUserId, userApiClient) {
-    try {
-      const stream = await userApiClient.streams.getStreamByUserId(twitchUserId);
-
-      if (stream) {
-        // User is currently live
-        await this.handleStreamOnline({
-          broadcasterId: twitchUserId,
-          broadcasterName: stream.userName,
-          streamTitle: stream.title,
-          categoryName: stream.gameName,
-          startDate: stream.startDate
-        }, userId);
-      }
-    } catch (error) {
-      console.error(`Error checking current stream status for user ${userId}:`, error);
-    }
-  }
-
-  /**
-   * Subscribe to all active users
-   */
-  async subscribeToAllUsers() {
-    try {
-      const users = await database.getAllUsers();
-      const activeUsers = users.filter(user => user.isActive);
-
-      console.log(`🎬 Subscribing to stream events for ${activeUsers.length} active users...`);
-
-      for (const user of activeUsers) {
-        await this.subscribeToUser(user.twitchUserId);
-        // Add small delay to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      console.log(`✅ Stream monitoring active for ${this.connectedUsers.size} users`);
-    } catch (error) {
-      console.error('Error subscribing to all users:', error);
-    }
-  }
-
-  /**
-   * Get monitoring status
-   */
-  getStatus() {
-    return {
-      connected: !!this.listener,
-      monitoredUsers: Array.from(this.connectedUsers.entries()).map(([userId, data]) => ({
-        userId,
-        username: data.username,
-        twitchUserId: data.twitchUserId
-      }))
-    };
-  }
-
-  /**
-   * Create custom channel point reward
-   */
-  async createCustomReward(userId, rewardData) {
-    try {
-      const user = await database.getUser(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Get user's API client with proper scopes
-      const userAuth = new RefreshingAuthProvider(
-        {
-          clientId: this.clientId,
-          clientSecret: this.clientSecret
-        },
-        {
-          accessToken: user.accessToken,
-          refreshToken: user.refreshToken,
-          expiryTimestamp: new Date(user.tokenExpiry).getTime()
-        }
-      );
-
-      const userApiClient = new ApiClient({ authProvider: userAuth });
-
-      // Create reward on Twitch
-      const twitchReward = await userApiClient.channelPoints.createCustomReward(user.twitchUserId, {
-        title: rewardData.title,
-        cost: rewardData.cost,
-        prompt: rewardData.prompt || `Trigger ${rewardData.action.replace('_', ' ')} counter`,
-        isEnabled: true,
-        backgroundColor: rewardData.backgroundColor || '#9147FF',
-        userInputRequired: false,
-        maxRedemptionsPerStream: rewardData.maxRedemptionsPerStream || null,
-        maxRedemptionsPerUserPerStream: rewardData.maxRedemptionsPerUserPerStream || null,
-        globalCooldown: rewardData.globalCooldown || null
-      });
-
-      // Save reward configuration to database
-      const rewardConfig = {
-        userId: userId,
-        rewardId: twitchReward.id,
-        rewardTitle: twitchReward.title,
-        cost: twitchReward.cost,
-        action: rewardData.action,
-        isEnabled: true,
-        createdAt: new Date().toISOString()
-      };
-
-      await database.saveChannelPointReward(rewardConfig);
-
-      console.log(`🎯 Created custom reward: ${twitchReward.title} (${twitchReward.cost} points) for ${user.username}`);
-
-      return {
-        success: true,
-        reward: {
-          id: twitchReward.id,
-          title: twitchReward.title,
-          cost: twitchReward.cost,
-          action: rewardData.action
-        }
-      };
-    } catch (error) {
-      console.error('Error creating custom reward:', error);
-      return {
-        success: false,
-        error: error?.message
-      };
-    }
-  }
-
-  /**
-   * Delete custom channel point reward
-   */
-  async deleteCustomReward(userId, rewardId) {
-    try {
-      const user = await database.getUser(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Get user's API client
-      const userAuth = new RefreshingAuthProvider(
-        {
-          clientId: this.clientId,
-          clientSecret: this.clientSecret
-        },
-        {
-          accessToken: user.accessToken,
-          refreshToken: user.refreshToken,
-          expiryTimestamp: new Date(user.tokenExpiry).getTime()
-        }
-      );
-
-      const userApiClient = new ApiClient({ authProvider: userAuth });
-
-      // Delete reward from Twitch
-      await userApiClient.channelPoints.deleteCustomReward(user.twitchUserId, rewardId);
-
-      // Remove from database
-      await database.deleteChannelPointReward(userId, rewardId);
-
-      console.log(`🗑️  Deleted custom reward ${rewardId} for ${user.username}`);
-
-      return { success: true };
-    } catch (error) {
-      console.error('Error deleting custom reward:', error);
-      return {
-        success: false,
-        error: error?.message
-      };
     }
   }
 
@@ -1767,264 +1397,6 @@ class StreamMonitor extends EventEmitter {
 
     } catch (error) {
       console.error('Error handling follow event:', error);
-    }
-  }
-
-  /**
-   * Handle raid events
-   */
-  async handleRaidEvent(event, userId) {
-    try {
-      // Find user ID if not provided
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.toBroadcasterId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Raid event for unknown user: ${event.toBroadcasterName}`);
-        return;
-      }
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      // Check if user has notification settings that would want this alert
-      let shouldNotify = false;
-      try {
-        // Check Discord webhook settings
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
-
-        // Check notification settings - simplified to webhook-only for Discord
-        const notificationData = await database.getUserNotificationSettings(userId);
-        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
-
-        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
-      } catch (error) {
-        console.warn(`⚠️ Could not load notification settings for raid event (${user.username}):`, error.message);
-      }
-
-      if (!shouldNotify) {
-        console.log(`📢 Raid notifications disabled for ${user.username} - skipping`);
-        return;
-      }
-
-      console.log(`🚨 Raid: ${event.fromBroadcasterName} raided ${user.username} with ${event.viewers} viewers`);
-
-      // Get alert configuration for this event type
-      const alert = await database.getAlertForEvent(userId, 'channel.raid');
-
-      // Emit raid event with alert data
-      this.emit('raidReceived', {
-        userId,
-        username: user.username,
-        raider: event.fromBroadcasterName,
-        viewers: event.viewers,
-        timestamp: new Date().toISOString(),
-        alert: alert
-      });
-
-    } catch (error) {
-      console.error('Error handling raid event:', error);
-    }
-  }
-
-  /**
-   * Handle subscription events
-   */
-  async handleSubscribeEvent(event, userId) {
-    try {
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Subscribe event for unknown user: ${event.broadcasterName}`);
-        return;
-      }
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      // Check if user has notification settings that would want this alert
-      let shouldNotify = false;
-      try {
-        // Check Discord webhook settings
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
-
-        // Check notification settings - simplified to webhook-only for Discord
-        const notificationData = await database.getUserNotificationSettings(userId);
-        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
-
-        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
-      } catch (error) {
-        console.warn(`⚠️ Could not load notification settings for subscribe event (${user.username}):`, error.message);
-      }
-
-      if (!shouldNotify) {
-        console.log(`📢 Subscription notifications disabled for ${user.username} - skipping`);
-        return;
-      }
-
-      console.log(`⭐ New subscriber: ${event.userName} subscribed to ${user.username} at tier ${event.tier}`);
-
-      // Get alert configuration for this event type
-      const alert = await database.getAlertForEvent(userId, 'channel.subscribe');
-
-      // Emit subscription event with alert data
-      this.emit('newSubscription', {
-        userId,
-        username: user.username,
-        subscriber: event.userName,
-        tier: event.tier,
-        isGift: event.isGift,
-        timestamp: new Date().toISOString(),
-        alert: alert
-      });
-
-    } catch (error) {
-      console.error('Error handling subscribe event:', error);
-    }
-  }
-
-  /**
-   * Handle subscription gift events
-   */
-  async handleSubGiftEvent(event, userId) {
-    try {
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Sub gift event for unknown user: ${event.broadcasterName}`);
-        return;
-      }
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      // Check if user has notification settings that would want this alert
-      let shouldNotify = false;
-      try {
-        // Check Discord webhook settings
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
-
-        // Check notification settings - simplified to webhook-only for Discord
-        const notificationData = await database.getUserNotificationSettings(userId);
-        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
-
-        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
-      } catch (error) {
-        console.warn(`⚠️ Could not load notification settings for gift sub event (${user.username}):`, error.message);
-      }
-
-      if (!shouldNotify) {
-        console.log(`📢 Gift subscription notifications disabled for ${user.username} - skipping`);
-        return;
-      }
-
-      console.log(`🎁 Gift subs: ${event.userName} gifted ${event.amount || 1} tier ${event.tier} sub(s) to ${user.username}`);
-
-      // Get alert configuration for this event type
-      const alert = await database.getAlertForEvent(userId, 'channel.subscription.gift');
-
-      // Emit gift sub event with alert data
-      this.emit('newGiftSub', {
-        userId,
-        username: user.username,
-        gifter: event.userName,
-        amount: event.amount || event.total || 1,
-        tier: event.tier,
-        timestamp: new Date().toISOString(),
-        alert: alert
-      });
-
-    } catch (error) {
-      console.error('Error handling gift sub event:', error);
-    }
-  }
-
-  /**
-   * Handle subscription message events (resubscriptions)
-   */
-  async handleSubMessageEvent(event, userId) {
-    try {
-      if (!userId) {
-        for (const [uid, sub] of this.connectedUsers) {
-          if (sub.twitchUserId === event.broadcasterId) {
-            userId = uid;
-            break;
-          }
-        }
-      }
-
-      if (!userId) {
-        console.log(`Resub event for unknown user: ${event.broadcasterName}`);
-        return;
-      }
-
-      const user = await database.getUser(userId);
-      if (!user) return;
-
-      // Check if user has notification settings that would want this alert
-      let shouldNotify = false;
-      try {
-        // Check Discord webhook settings
-        const webhookData = await database.getUserDiscordWebhook(userId);
-        const discordWebhookEnabled = !!(webhookData?.webhookUrl && webhookData?.enabled);
-
-        // Check notification settings - simplified to webhook-only for Discord
-        const notificationData = await database.getUserNotificationSettings(userId);
-        const enableChannelNotifications = notificationData?.enableChannelNotifications || false;
-
-        shouldNotify = discordWebhookEnabled || enableChannelNotifications;
-      } catch (error) {
-        console.warn(`⚠️ Could not load notification settings for resub event (${user.username}):`, error.message);
-      }
-
-      if (!shouldNotify) {
-        console.log(`📢 Resub notifications disabled for ${user.username} - skipping`);
-        return;
-      }
-
-      console.log(`🔄 Resub: ${event.userName} resubscribed to ${user.username} (${event.cumulativeMonths} months)`);
-
-      // Get alert configuration for this event type
-      const alert = await database.getAlertForEvent(userId, 'channel.subscription.message');
-
-      // Emit resub event with alert data
-      this.emit('newResub', {
-        userId,
-        username: user.username,
-        subscriber: event.userName,
-        tier: event.tier,
-        months: event.cumulativeMonths,
-        streakMonths: event.streakMonths,
-        message: event.messageText,
-        timestamp: new Date().toISOString(),
-        alert: alert
-      });
-
-    } catch (error) {
-      console.error('Error handling resub event:', error);
     }
   }
 
@@ -2115,25 +1487,184 @@ class StreamMonitor extends EventEmitter {
     return this.handleBitsUseEvent(bitsUseEvent, userId);
   }
 
-  // Removed: sendDiscordNotification method
-  // Now using template-aware sendDiscordNotification from userRoutes.js
+  /**
+   * Handle chat notification events (channel.chat.notification)
+   * This covers subs, resubs, gifts, raids, announcements, etc.
+   */
+  async handleChatNotificationEvent(event, userId) {
+    try {
+      // Extract basic info
+      const { broadcasterId, noticeType, chatterId, chatterName, systemMessage } = event;
+
+      // If userId wasn't passed correctly, try to find it
+      if (!userId && broadcasterId) {
+        for (const [uid, sub] of this.connectedUsers) {
+          if (sub.twitchUserId === broadcasterId) {
+            userId = uid;
+            break;
+          }
+        }
+      }
+
+      if (!userId) {
+        console.log(`Chat notification event for unknown user: ${event.broadcasterName}`);
+        return;
+      }
+
+      const user = await database.getUser(userId);
+      if (!user) return;
+
+      console.log(`💬 Chat Notification (${noticeType}) for ${user.username}: ${systemMessage}`);
+
+      // Map notice types to our internal event types
+      const eventTypeMapping = {
+        'sub': 'chat_notification_subscribe',
+        'resub': 'chat_notification_resub',
+        'sub_gift': 'chat_notification_gift_sub',
+        'community_sub_gift': 'chat_notification_community_gift',
+        'gift_paid_upgrade': 'chat_notification_gift_upgrade',
+        'prime_paid_upgrade': 'chat_notification_prime_upgrade',
+        'raid': 'chat_notification_raid',
+        'unraid': 'chat_notification_unraid',
+        'pay_it_forward': 'chat_notification_pay_it_forward',
+        'announcement': 'chat_notification_announcement',
+        'bits_badge_tier': 'chat_notification_bits_badge',
+        'charity_donation': 'chat_notification_charity_donation'
+      };
+
+      const mappedEventType = eventTypeMapping[noticeType] || `chat_notification_${noticeType}`;
+
+      // Get alert configuration for this event type
+      const alert = await database.getAlertForEvent(userId, mappedEventType);
+
+      // Prepare event data
+      const eventData = {
+        type: 'chat_notification',
+        noticeType,
+        eventType: mappedEventType,
+        userId,
+        username: user.username,
+        chatter: chatterName || 'Anonymous',
+        chatterId,
+        message: systemMessage,
+        timestamp: new Date().toISOString(),
+        alert: alert,
+        details: {}
+      };
+
+      // Add type-specific details
+      switch (noticeType) {
+        case 'sub':
+          eventData.details = event.sub;
+          break;
+        case 'resub':
+          eventData.details = event.resub;
+          break;
+        case 'sub_gift':
+          eventData.details = event.subGift;
+          break;
+        case 'community_sub_gift':
+          eventData.details = event.communitySubGift;
+          break;
+        case 'gift_paid_upgrade':
+          eventData.details = event.giftPaidUpgrade;
+          break;
+        case 'prime_paid_upgrade':
+          eventData.details = event.primePaidUpgrade;
+          break;
+        case 'raid':
+          eventData.details = event.raid;
+          break;
+        case 'announcement':
+          eventData.details = event.announcement;
+          break;
+        case 'bits_badge_tier':
+          eventData.details = event.bitsBadgeTier;
+          break;
+        case 'charity_donation':
+          eventData.details = event.charityDonation;
+          break;
+      }
+
+      // Emit generic chat notification event
+      this.emit('chatNotification', eventData);
+
+      // ---------------------------------------------------------
+      // BACKWARD COMPATIBILITY: Emit legacy events for server.js
+      // ---------------------------------------------------------
+      
+      if (noticeType === 'sub') {
+        this.emit('newSubscription', {
+          userId,
+          username: user.username,
+          subscriber: chatterName,
+          tier: event.sub.subTier,
+          isGift: event.sub.isPrime, // isPrime is true for Prime subs, false for paid
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'resub') {
+        this.emit('newResub', {
+          userId,
+          username: user.username,
+          subscriber: chatterName,
+          tier: event.resub.subTier,
+          months: event.resub.cumulativeMonths,
+          streakMonths: event.resub.streakMonths,
+          message: event.message?.text,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'community_sub_gift') {
+        this.emit('newGiftSub', {
+          userId,
+          username: user.username,
+          gifter: chatterName,
+          amount: event.communitySubGift.total,
+          tier: event.communitySubGift.subTier,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'sub_gift') {
+        // Only emit for direct single gifts (not part of a community gift)
+        // Community gifts are handled by community_sub_gift above
+        if (!event.subGift.communityGiftId) {
+          this.emit('newGiftSub', {
+            userId,
+            username: user.username,
+            gifter: chatterName,
+            amount: 1,
+            tier: event.subGift.subTier,
+            timestamp: new Date().toISOString(),
+            alert: alert
+          });
+        }
+      } else if (noticeType === 'raid') {
+        this.emit('raidReceived', {
+          userId,
+          username: user.username,
+          raider: chatterName,
+          viewers: event.raid.viewerCount,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      }
+
+      // Send to Socket.io
+      if (this.io) {
+        this.io.to(`user:${userId}`).emit('chatNotificationEvent', eventData);
+      }
+
+    } catch (error) {
+      console.error('Error handling chat notification event:', error);
+    }
+  }
 
   /**
    * Check if a user is currently subscribed to EventSub monitoring
    */
   isUserSubscribed(userId) {
     return this.connectedUsers.has(userId);
-  }
-
-  /**
-   * Get status of stream monitor and connected users
-   */
-  getStatus() {
-    return {
-      initialized: this.clientId !== null,
-      connectedUsers: Array.from(this.connectedUsers.keys()),
-      userCount: this.connectedUsers.size
-    };
   }
 
   /**

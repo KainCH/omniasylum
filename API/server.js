@@ -1439,6 +1439,36 @@ async function startServer() {
           console.error('Error handling bits use event:', error);
         }
       });
+
+      // Handle generic chat notification events (for new types like announcements)
+      streamMonitor.on('chatNotification', async (eventData) => {
+        try {
+          const { userId, username, noticeType, message, alert } = eventData;
+          
+          // Log all chat notifications
+          console.log(`💬 Chat Notification (${noticeType}) for ${username}: ${message}`);
+
+          // Broadcast to overlay and connected clients
+          io.to(`user:${userId}`).emit('chatNotification', eventData);
+
+          // Trigger custom alert if enabled (and not already handled by legacy events)
+          // Legacy events (sub, resub, gift, raid) are handled by their specific listeners above
+          const legacyTypes = ['sub', 'resub', 'sub_gift', 'community_sub_gift', 'raid'];
+          if (!legacyTypes.includes(noticeType) && alert) {
+            io.to(`user:${userId}`).emit('customAlert', {
+              type: eventData.eventType, // e.g., chat_notification_announcement
+              userId,
+              username: eventData.chatter,
+              data: eventData.details,
+              alertConfig: alert,
+              timestamp: eventData.timestamp
+            });
+          }
+
+        } catch (error) {
+          console.error('Error handling chat notification event:', error);
+        }
+      });
     }
 
     // Start HTTP server
