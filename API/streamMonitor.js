@@ -422,7 +422,16 @@ class StreamMonitor extends EventEmitter {
       }
 
       // Legacy subscriptions (raid, subscribe, gift, resub) are now handled by channel.chat.notification
-      // This reduces WebSocket connection load and provides better data
+      // This reduces WebSocket connection load and provides better data.
+      // 
+      // ⚠️ Backward compatibility note:
+      // The legacy events (`raidReceived`, `newSubscription`, `newGiftSub`, `newResub`) are still emitted
+      // for existing event consumers (see server.js lines 1239-1372). The new chat notification handler
+      // (`handleChatNotificationEvent`) parses incoming events and re-emits these legacy events as needed,
+      // ensuring that existing integrations continue to work without modification.
+      // 
+      // If you are building new integrations, prefer listening to the unified `chatNotification` event.
+      // If you are maintaining legacy consumers, no migration is required at this time.
 
       // Subscribe to chat notification events (if user wants notifications)
       let chatNotificationSubscription = null;
@@ -1579,6 +1588,67 @@ class StreamMonitor extends EventEmitter {
 
       // Emit generic chat notification event
       this.emit('chatNotification', eventData);
+
+      // ---------------------------------------------------------
+      // BACKWARD COMPATIBILITY: Emit legacy events for server.js
+      // ---------------------------------------------------------
+      
+      if (noticeType === 'sub') {
+        this.emit('newSubscription', {
+          userId,
+          username: user.username,
+          subscriber: chatterName,
+          tier: event.sub.subTier,
+          isGift: event.sub.isPrime, // isPrime is true for Prime subs, false for paid
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'resub') {
+        this.emit('newResub', {
+          userId,
+          username: user.username,
+          subscriber: chatterName,
+          tier: event.resub.subTier,
+          months: event.resub.cumulativeMonths,
+          streakMonths: event.resub.streakMonths,
+          message: event.message?.text,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'community_sub_gift') {
+        this.emit('newGiftSub', {
+          userId,
+          username: user.username,
+          gifter: chatterName,
+          amount: event.communitySubGift.total,
+          tier: event.communitySubGift.subTier,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      } else if (noticeType === 'sub_gift') {
+        // Only emit for direct single gifts (not part of a community gift)
+        // Community gifts are handled by community_sub_gift above
+        if (!event.subGift.communityGiftId) {
+          this.emit('newGiftSub', {
+            userId,
+            username: user.username,
+            gifter: chatterName,
+            amount: 1,
+            tier: event.subGift.subTier,
+            timestamp: new Date().toISOString(),
+            alert: alert
+          });
+        }
+      } else if (noticeType === 'raid') {
+        this.emit('raidReceived', {
+          userId,
+          username: user.username,
+          raider: chatterName,
+          viewers: event.raid.viewerCount,
+          timestamp: new Date().toISOString(),
+          alert: alert
+        });
+      }
 
       // Send to Socket.io
       if (this.io) {
