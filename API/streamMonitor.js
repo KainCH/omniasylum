@@ -756,7 +756,10 @@ class StreamMonitor extends EventEmitter {
         console.log(`🔄 Reconnection detected for ${user.username} - same stream ID ${event.id} already notified, skipping duplicate notification`);
         console.log(`   💡 This is likely an EventSub WebSocket reconnection during an active stream`);
 
-        // Still update connection health and emit basic events for real-time updates
+        // Reset connection health - we received a valid message from Twitch
+        this.resetConnectionHealth(userId, this.defaultKeepaliveTimeout);
+
+        // Still emit basic events for real-time updates
         this.emit('streamOnline', {
           userId,
           username: user.username,
