@@ -487,7 +487,7 @@ class AsylumEffects {
       'doorCreak.wav',
       'electroshock.wav',
       'typewriter.wav',
-      'pillRattle.wav',
+      'pillRattle.mp3',
       'alarm.wav',
       'heartMonitor.wav',
       'hypeTrain.wav'

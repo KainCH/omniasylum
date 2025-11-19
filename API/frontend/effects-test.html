@@ -254,7 +254,46 @@
         </button>
       </div>
 
+      <!-- Individual Sound Testing -->
+      <h2>🔊 Individual Sound Tests</h2>
+      <div class="trigger-buttons">
+        <button class="trigger-button" onclick="testSound('doorCreak.wav')">
+          🚪 Door Creak
+        </button>
+        <button class="trigger-button" onclick="testSound('electroshock.wav')">
+          ⚡ Electroshock
+        </button>
+        <button class="trigger-button" onclick="testSound('typewriter.wav')">
+          ⌨️ Typewriter
+        </button>
+        <button class="trigger-button" onclick="testSound('pillRattle.mp3')">
+          💊 Pill Rattle
+        </button>
+        <button class="trigger-button" onclick="testSound('alarm.wav')">
+          🚨 Alarm
+        </button>
+        <button class="trigger-button" onclick="testSound('heartMonitor.wav')">
+          💓 Heart Monitor
+        </button>
+        <button class="trigger-button" onclick="testSound('hypeTrain.wav')">
+          🚂 Hype Train
+        </button>
+      </div>
+
       <div class="current-settings" id="settings-display"></div>
+
+      <!-- Audio Diagnostics -->
+      <h2>🔧 Audio Diagnostics</h2>
+      <div class="test-controls">
+        <button class="trigger-button" onclick="showAudioDiagnostics()">
+          🔍 Show Audio Cache Status
+        </button>
+        <button class="trigger-button" onclick="reloadAudioCache()">
+          🔄 Reload Audio Cache
+        </button>
+        <pre id="audio-diagnostics"
+          style="background: #0a0a0a; padding: 15px; border-radius: 6px; color: #00ff00; font-size: 12px; max-height: 300px; overflow-y: auto;"></pre>
+      </div>
     </div>
   </div>
 
@@ -323,7 +362,7 @@
           svgMask: 'fog',
           particle: 'dust',
           screenShake: true,
-          soundTrigger: 'doorCreak'
+          soundTrigger: 'doorCreak.wav'
         }
       },
       subscribe: {
@@ -336,7 +375,7 @@
           svgMask: 'glassDistortion',
           particle: 'sparks',
           screenFlicker: true,
-          soundTrigger: 'electroshock'
+          soundTrigger: 'electroshock.wav'
         }
       },
       resub: {
@@ -349,7 +388,7 @@
           svgMask: 'paperTexture',
           particle: 'ink',
           textScramble: true,
-          soundTrigger: 'typewriter'
+          soundTrigger: 'typewriter.wav'
         }
       },
       bits: {
@@ -361,7 +400,7 @@
           animation: 'pillScatter',
           particle: 'pills',
           colorShift: true,
-          soundTrigger: 'pillRattle'
+          soundTrigger: 'pillRattle.mp3'
         }
       },
       raid: {
@@ -373,7 +412,7 @@
           animation: 'sirenFlash',
           particle: 'chaos',
           redAlert: true,
-          soundTrigger: 'alarm'
+          soundTrigger: 'alarm.wav'
         }
       },
       gift: {
@@ -385,7 +424,7 @@
           animation: 'heartbeatPulse',
           svgMask: 'silhouette',
           particle: 'hearts',
-          soundTrigger: 'heartMonitor'
+          soundTrigger: 'heartMonitor.wav'
         }
       },
       hype: {
@@ -397,7 +436,7 @@
           animation: 'wheelchairRoll',
           svgMask: 'hallwayPerspective',
           particle: 'smoke',
-          soundTrigger: 'hypeTrain'
+          soundTrigger: 'hypeTrain.wav'
         }
       }
     };
@@ -406,6 +445,69 @@
       const template = alertTemplates[type];
       if (template) {
         window.asylumEffects.triggerEffect(template);
+      }
+    }
+
+    function testSound(soundFile) {
+      console.log(`🔊 Testing sound: ${soundFile}`);
+      if (window.asylumEffects) {
+        window.asylumEffects.playSound(soundFile);
+      } else {
+        console.error('❌ AsylumEffects not initialized');
+      }
+    }
+
+    function showAudioDiagnostics() {
+      const diagnosticsElement = document.getElementById('audio-diagnostics');
+      let output = '🔊 AUDIO CACHE DIAGNOSTICS\n';
+      output += '='.repeat(50) + '\n\n';
+
+      if (window.asylumEffects) {
+        const cache = window.asylumEffects.audioCache;
+        const settings = window.asylumEffects.getSettings();
+
+        output += `🎛️ Settings:\n`;
+        output += `  Sound Enabled: ${settings.enableSound ? '✅' : '❌'}\n`;
+        output += `  Volume: ${Math.round(window.asylumEffects.audioVolume * 100)}%\n\n`;
+
+        output += `🗂️ Audio Cache (${Object.keys(cache).length} sounds):\n`;
+
+        for (const [key, audio] of Object.entries(cache)) {
+          const states = ['EMPTY', 'LOADING', 'LOADED', 'LOADED', 'READY'];
+          const state = states[audio.readyState] || 'UNKNOWN';
+          const status = audio.readyState >= 3 ? '✅' : '⚠️';
+
+          output += `  ${status} ${key}: ${state} (readyState: ${audio.readyState})\n`;
+          output += `      Source: ${audio.src || 'Not set'}\n`;
+          output += `      Duration: ${audio.duration || 'Unknown'}\n`;
+          output += `      Error: ${audio.error ? audio.error.message : 'None'}\n\n`;
+        }
+
+        // Test browser audio context
+        if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {
+          output += '🎵 Browser Audio Support: ✅ Available\n';
+        } else {
+          output += '🎵 Browser Audio Support: ❌ Not Available\n';
+        }
+
+      } else {
+        output += '❌ AsylumEffects not initialized\n';
+      }
+
+      diagnosticsElement.textContent = output;
+      console.log(output);
+    }
+
+    function reloadAudioCache() {
+      console.log('🔄 Reloading audio cache...');
+      if (window.asylumEffects) {
+        window.asylumEffects.preloadSounds();
+        setTimeout(() => {
+          showAudioDiagnostics();
+          console.log('✅ Audio cache reloaded');
+        }, 2000);
+      } else {
+        console.error('❌ AsylumEffects not initialized');
       }
     }
 

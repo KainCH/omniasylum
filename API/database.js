@@ -1548,7 +1548,7 @@ class Database {
           svgMask: 'fog',
           particle: 'dust',
           screenShake: true,
-          soundTrigger: 'doorCreak.mp3'
+          soundTrigger: 'doorCreak.wav'
         }
       },
       {
@@ -1570,7 +1570,7 @@ class Database {
           particle: 'sparks',
           screenFlicker: true,
           glowIntensity: 'high',
-          soundTrigger: 'electroshock.mp3'
+          soundTrigger: 'electroshock.wav'
         }
       },
       {
@@ -1591,7 +1591,7 @@ class Database {
           svgMask: 'paperTexture',
           particle: 'ink',
           textScramble: true,
-          soundTrigger: 'typewriter.mp3'
+          soundTrigger: 'typewriter.wav'
         }
       },
       {
@@ -1636,7 +1636,7 @@ class Database {
           screenShake: true,
           screenFlicker: true,
           redAlert: true,
-          soundTrigger: 'alarm.mp3'
+          soundTrigger: 'alarm.wav'
         }
       },
       {
@@ -1658,7 +1658,7 @@ class Database {
           particle: 'heartbeats',
           silhouette: true,
           heartbeatLine: true,
-          soundTrigger: 'heartMonitor.mp3'
+          soundTrigger: 'heartMonitor.wav'
         }
       },
       {
@@ -1680,7 +1680,7 @@ class Database {
           particle: 'smoke',
           screenShake: true,
           crescendo: true,
-          soundTrigger: 'hypeTrain.mp3'
+          soundTrigger: 'hypeTrain.wav'
         }
       }
     ];
