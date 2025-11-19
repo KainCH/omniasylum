@@ -4,7 +4,7 @@
  */
 
 console.log('🧪 Testing Sound System Fixes - Phase 1');
-console.log('=' .repeat(50));
+console.log('='.repeat(50));
 
 // Test 1: Verify sound file extensions match between database and actual files
 const expectedSoundMappings = {
