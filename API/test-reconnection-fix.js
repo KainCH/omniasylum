@@ -148,6 +148,26 @@ async function testEdgeCases() {
 }
 
 /**
+ * Clean up test data to prevent database pollution
+ */
+async function cleanupTestData() {
+  console.log('\n🧹 Cleaning up test data...');
+  
+  const testUserIds = ['test_user_123', 'test_user_456', 'test_user_789'];
+  
+  try {
+    for (const userId of testUserIds) {
+      // Ensure all test users are properly cleaned up
+      await database.endStream(userId);
+      console.log(`   ✅ Cleaned up data for ${userId}`);
+    }
+    console.log('✅ All test data cleaned up successfully');
+  } catch (error) {
+    console.warn('⚠️ Some test data cleanup failed (this is usually harmless):', error.message);
+  }
+}
+
+/**
  * Main test runner
  */
 async function runTests() {
@@ -162,6 +182,9 @@ async function runTests() {
     await testDuplicateDetectionLogic();
     await testEdgeCases();
 
+    // Clean up test data after all tests complete
+    await cleanupTestData();
+
     console.log('\n🎉 ALL TESTS PASSED!');
     console.log('\n✅ The fix for Issue #6 is working correctly:');
     console.log('   • Stream ID tracking prevents duplicate notifications');
@@ -171,6 +194,12 @@ async function runTests() {
 
   } catch (error) {
     console.error('\n❌ TESTS FAILED:', error);
+    // Still try to clean up even if tests failed
+    try {
+      await cleanupTestData();
+    } catch (cleanupError) {
+      console.warn('⚠️ Cleanup after test failure also failed:', cleanupError.message);
+    }
     process.exit(1);
   }
 }
@@ -184,5 +213,6 @@ module.exports = {
   testStreamIdTracking,
   testDuplicateDetectionLogic,
   testEdgeCases,
+  cleanupTestData,
   runTests
 };

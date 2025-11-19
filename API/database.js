@@ -496,20 +496,6 @@ class Database {
     return counters.lastNotifiedStreamId;
   }
 
-  /**
-   * Clear the last notified stream ID (called when stream ends)
-   */
-  async clearLastNotifiedStreamId(twitchUserId) {
-    const oldCounters = await this.getCounters(twitchUserId);
-    const saved = await this.saveCounters(twitchUserId, {
-      ...oldCounters,
-      lastNotifiedStreamId: null
-    });
-
-    console.log(`🧹 Cleared last notified stream ID for user ${twitchUserId}`);
-    return saved;
-  }
-
   // ==================== SERIES SAVE STATE OPERATIONS ====================
 
   /**
