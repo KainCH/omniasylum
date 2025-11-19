@@ -1878,10 +1878,17 @@ class Database {
   getAllAvailableEvents() {
     return [
       'channel.follow',
-      'channel.subscribe',
-      'channel.subscription.gift',
-      'channel.subscription.message',
-      'channel.bits.use'
+      'channel.bits.use',
+      'chat_notification_subscribe',
+      'chat_notification_resub',
+      'chat_notification_gift_sub',
+      'chat_notification_community_gift',
+      'chat_notification_gift_upgrade',
+      'chat_notification_prime_upgrade',
+      'chat_notification_raid',
+      'chat_notification_announcement',
+      'chat_notification_bits_badge',
+      'chat_notification_charity_donation'
     ];
   }
 
@@ -1895,7 +1902,9 @@ class Database {
       'subscription',
       'giftsub',
       'resub',
-      'bits'
+      'bits',
+      'raid',
+      'announcement'
     ];
   }
 
@@ -1905,10 +1914,14 @@ class Database {
   getDefaultEventMappings() {
     return {
       'channel.follow': 'follow',
-      'channel.subscribe': 'subscription',
-      'channel.subscription.gift': 'giftsub',
-      'channel.subscription.message': 'resub',
-      'channel.bits.use': 'bits'
+      'channel.bits.use': 'bits',
+      'chat_notification_subscribe': 'subscription',
+      'chat_notification_resub': 'resub',
+      'chat_notification_gift_sub': 'giftsub',
+      'chat_notification_community_gift': 'giftsub',
+      'chat_notification_raid': 'raid',
+      'chat_notification_bits_badge': 'bits',
+      'chat_notification_announcement': 'announcement'
     };
   }
 
@@ -1958,7 +1971,9 @@ class Database {
       }
     }
 
-    return mappings;
+    // Merge with default mappings to ensure all event types are covered
+    const defaultMappings = this.getDefaultEventMappings();
+    return { ...defaultMappings, ...mappings };
   }
 
   /**
