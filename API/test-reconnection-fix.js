@@ -152,9 +152,9 @@ async function testEdgeCases() {
  */
 async function cleanupTestData() {
   console.log('\n🧹 Cleaning up test data...');
-  
+
   const testUserIds = ['test_user_123', 'test_user_456', 'test_user_789'];
-  
+
   try {
     for (const userId of testUserIds) {
       // Ensure all test users are properly cleaned up
