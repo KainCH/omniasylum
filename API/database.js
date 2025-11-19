@@ -256,7 +256,8 @@ class Database {
           screams: entity.screams || 0,
           bits: entity.bits || 0,
           lastUpdated: entity.lastUpdated,
-          streamStarted: entity.streamStarted || null
+          streamStarted: entity.streamStarted || null,
+          lastNotifiedStreamId: entity.lastNotifiedStreamId || null
         };
       } catch (error) {
         if (error.statusCode === 404) {
@@ -266,7 +267,8 @@ class Database {
             screams: 0,
             bits: 0,
             lastUpdated: new Date().toISOString(),
-            streamStarted: null
+            streamStarted: null,
+            lastNotifiedStreamId: null
           };
         }
         throw error;
@@ -279,7 +281,8 @@ class Database {
         screams: 0,
         bits: 0,
         lastUpdated: new Date().toISOString(),
-        streamStarted: null
+        streamStarted: null,
+        lastNotifiedStreamId: null
       };
     }
   }
@@ -293,8 +296,10 @@ class Database {
       rowKey: 'counters',
       deaths: counterData.deaths || 0,
       swears: counterData.swears || 0,
+      screams: counterData.screams || 0,
       bits: counterData.bits || 0,
       streamStarted: counterData.streamStarted || null,
+      lastNotifiedStreamId: counterData.lastNotifiedStreamId || null,
       lastUpdated: new Date().toISOString()
     };
 
@@ -406,7 +411,8 @@ class Database {
       swears: 0,
       screams: 0,
       bits: oldCounters.bits, // Keep bits counter
-      streamStarted: oldCounters.streamStarted
+      streamStarted: oldCounters.streamStarted,
+      lastNotifiedStreamId: oldCounters.lastNotifiedStreamId // Preserve notification tracking
     });
 
     return {
@@ -458,10 +464,49 @@ class Database {
     const oldCounters = await this.getCounters(twitchUserId);
     const saved = await this.saveCounters(twitchUserId, {
       ...oldCounters,
-      streamStarted: null
+      streamStarted: null,
+      lastNotifiedStreamId: null // Clear notification tracking when stream ends
     });
 
-    console.log(`🎬 Stream ended for user ${twitchUserId}`);
+    console.log(`🎬 Stream ended for user ${twitchUserId} - cleared notification tracking`);
+    return saved;
+  }
+
+  /**
+   * Set the last notified stream ID for Discord notifications
+   * This prevents duplicate notifications during EventSub reconnections
+   */
+  async setLastNotifiedStreamId(twitchUserId, streamId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const saved = await this.saveCounters(twitchUserId, {
+      ...oldCounters,
+      lastNotifiedStreamId: streamId
+    });
+
+    console.log(`🔔 Set last notified stream ID for user ${twitchUserId}: ${streamId}`);
+    return saved;
+  }
+
+  /**
+   * Get the last notified stream ID for Discord notifications
+   * Used to detect duplicate notifications during reconnections
+   */
+  async getLastNotifiedStreamId(twitchUserId) {
+    const counters = await this.getCounters(twitchUserId);
+    return counters.lastNotifiedStreamId;
+  }
+
+  /**
+   * Clear the last notified stream ID (called when stream ends)
+   */
+  async clearLastNotifiedStreamId(twitchUserId) {
+    const oldCounters = await this.getCounters(twitchUserId);
+    const saved = await this.saveCounters(twitchUserId, {
+      ...oldCounters,
+      lastNotifiedStreamId: null
+    });
+
+    console.log(`🧹 Cleared last notified stream ID for user ${twitchUserId}`);
     return saved;
   }
 

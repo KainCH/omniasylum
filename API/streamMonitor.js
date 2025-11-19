@@ -73,17 +73,30 @@ class StreamMonitor extends EventEmitter {
     // Set timeout slightly longer than keepalive to account for network delays
     const timeoutMs = (keepaliveTimeoutSeconds + 5) * 1000;
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       const userData = this.connectedUsers.get(userId);
       if (userData) {
-        console.log(`⚠️  No keepalive received for ${userData.username} within ${keepaliveTimeoutSeconds}s - reconnecting`);
+        console.log(`⚠️  No keepalive received for ${userData.username} within ${keepaliveTimeoutSeconds}s - initiating automatic reconnection`);
+
+        // Check if user has an active stream to provide context
+        try {
+          const counters = await database.getCounters(userId);
+          const lastNotifiedStreamId = await database.getLastNotifiedStreamId(userId);
+          if (counters.streamStarted && lastNotifiedStreamId) {
+            console.log(`🎬 User ${userData.username} has active stream (ID: ${lastNotifiedStreamId}) - reconnection will preserve notification state`);
+          } else {
+            console.log(`📴 User ${userData.username} has no active stream - standard reconnection`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Could not check stream state for reconnection context:`, error.message);
+        }
 
         // Stop current connection (automatic reconnection)
         this.unsubscribeFromUser(userId, false);
 
         // Attempt to reconnect
         setTimeout(() => {
-          console.log(`🔄 Attempting to reconnect for ${userData.username} after keepalive timeout...`);
+          console.log(`🔄 Attempting to reconnect EventSub WebSocket for ${userData.username} after keepalive timeout...`);
           this.subscribeToUser(userId).catch(error => {
             console.error(`❌ Failed to reconnect after keepalive timeout for ${userData.username}:`, error);
           });
@@ -226,6 +239,23 @@ class StreamMonitor extends EventEmitter {
       if (this.connectedUsers.has(userId)) {
         console.log(`Already monitoring streams for ${user.username}`);
         return true;
+      }
+
+      // Provide context about whether this is a reconnection or new subscription
+      try {
+        const counters = await database.getCounters(userId);
+        const lastNotifiedStreamId = await database.getLastNotifiedStreamId(userId);
+        const hasPersistedState = this.persistedNotificationStates.has(userId);
+
+        if (counters.streamStarted && lastNotifiedStreamId) {
+          console.log(`🔄 Subscribing to EventSub for ${user.username} - RECONNECTION during active stream (ID: ${lastNotifiedStreamId})`);
+          console.log(`   💾 Persisted notification state: ${hasPersistedState ? 'Yes' : 'No'}`);
+        } else {
+          console.log(`🆕 Subscribing to EventSub for ${user.username} - NEW subscription (no active stream)`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not determine subscription context for ${user.username}:`, error.message);
+        console.log(`🔌 Subscribing to EventSub for ${user.username} - context unknown`);
       }
 
       // Create user-specific auth provider
@@ -597,6 +627,20 @@ class StreamMonitor extends EventEmitter {
         this.persistedNotificationStates.delete(userId);
       }
 
+      // Preserve Discord notification tracking during automatic reconnections
+      if (!isManualStop) {
+        try {
+          const lastNotifiedStreamId = await database.getLastNotifiedStreamId(userId);
+          if (lastNotifiedStreamId) {
+            console.log(`💾 Preserving last notified stream ID ${lastNotifiedStreamId} for user ${userId} during reconnection`);
+            // Note: The stream ID stays in the database, no need to store separately
+            // This ensures the duplicate detection logic will work after reconnection
+          }
+        } catch (error) {
+          console.warn(`⚠️ Could not retrieve last notified stream ID for user ${userId}:`, error.message);
+        }
+      }
+
       // Reset Discord notification status to proper state
       if (isManualStop) {
         // Reset stream state completely when manually stopping monitoring
@@ -706,6 +750,27 @@ class StreamMonitor extends EventEmitter {
       const counters = await database.getCounters(userId);
       const pendingNotification = this.pendingNotifications.get(userId);
 
+      // DUPLICATE DETECTION: Check if this is a reconnection for the same stream
+      const lastNotifiedStreamId = await database.getLastNotifiedStreamId(userId);
+      if (lastNotifiedStreamId && lastNotifiedStreamId === event.id) {
+        console.log(`🔄 Reconnection detected for ${user.username} - same stream ID ${event.id} already notified, skipping duplicate notification`);
+        console.log(`   💡 This is likely an EventSub WebSocket reconnection during an active stream`);
+
+        // Still update connection health and emit basic events for real-time updates
+        this.emit('streamOnline', {
+          userId,
+          username: user.username,
+          streamId: event.id,
+          startedAt: event.startedAt,
+          broadcasterUserId: event.broadcasterId,
+          broadcasterUserName: event.broadcasterName,
+          broadcasterUserLogin: event.broadcasterLogin,
+          isReconnection: true // Flag to indicate this is a reconnection
+        });
+
+        return; // Skip Discord notification processing
+      }
+
       // Send notification if:
       // 1. Stream session not started yet (new stream), OR
       // 2. We have a pending notification ready to be completed (waiting for stream start)
@@ -791,6 +856,10 @@ class StreamMonitor extends EventEmitter {
 
         console.log(`🚀 Creating immediate Discord notification for ${user.username} (no EventSub dependency)`);
         await this.createAndSendDiscordNotification(userId, notificationData);
+
+        // Store the stream ID to prevent duplicate notifications during reconnections
+        await database.setLastNotifiedStreamId(userId, event.id);
+        console.log(`✅ Stored last notified stream ID ${event.id} for user ${userId} to prevent reconnection duplicates`);
       } else {
         console.log(`🔄 Stream already active for ${user.username} - notification already sent, skipping duplicate`);
         console.log(`   💡 Debug: streamStarted=${counters.streamStarted}, pendingNotification=${!!pendingNotification}, hasStreamInfo=${pendingNotification?.hasStreamInfo}`);
@@ -842,8 +911,10 @@ class StreamMonitor extends EventEmitter {
       // This ensures each new stream session gets a Discord notification
       const counters = await database.getCounters(userId);
       if (counters.streamStarted) {
+        const lastNotifiedStreamId = await database.getLastNotifiedStreamId(userId);
         await database.endStream(userId);
-        console.log(`🔄 Reset duplicate detection for ${user.username} - next stream will send notification`);
+        console.log(`🔄 Stream session ended for ${user.username} - cleared notification tracking (was: ${lastNotifiedStreamId || 'none'})`);
+        console.log(`✅ Next stream start will send Discord notification (duplicate detection reset)`);
 
         // Update stream status to 'offline' for overlay display
         await database.updateStreamStatus(userId, 'offline');
