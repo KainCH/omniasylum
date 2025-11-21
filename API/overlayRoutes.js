@@ -1492,6 +1492,10 @@ router.get('/:userId', async (req, res) => {
         socket.on('connect', () => {
             console.log('🔌 Connected to server, initializing overlay...');
             console.log('🔌 Socket connected - Transport:', socket.io.engine.transport.name);
+
+            // Join user's room for real-time updates
+            socket.emit('joinRoom', userId);
+
             // Request current stream status to show correct initial state
             socket.emit('getStreamStatus', userId);
         });

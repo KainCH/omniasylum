@@ -137,7 +137,7 @@ function OverlaySettingsModal({
         : '/api/user/overlay-settings'
 
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
