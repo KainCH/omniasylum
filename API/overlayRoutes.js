@@ -355,6 +355,9 @@ router.get('/:userId', async (req, res) => {
         const overlaySettings = ${JSON.stringify(overlaySettings)};
         const socket = io();
 
+        // Join the user's room to receive updates
+        socket.emit('joinRoom', userId);
+
         // Notification Audio Manager for Twitch Events - OBS Compatible
         class NotificationAudioManager {
             constructor() {
