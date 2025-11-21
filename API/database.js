@@ -1233,6 +1233,19 @@ class Database {
       throw new Error('User not found');
     }
 
+    // Sync feature flag
+    let features = {};
+    try {
+      features = typeof user.features === 'string' ? JSON.parse(user.features) : (user.features || {});
+    } catch (e) {
+      features = {};
+    }
+
+    if (overlaySettings && typeof overlaySettings.enabled === 'boolean') {
+      features.streamOverlay = overlaySettings.enabled;
+      user.features = JSON.stringify(features);
+    }
+
     user.overlaySettings = JSON.stringify(overlaySettings);
 
     if (this.mode === 'azure') {
@@ -1241,6 +1254,7 @@ class Database {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
       if (users[twitchUserId]) {
         users[twitchUserId].overlaySettings = JSON.stringify(overlaySettings);
+        users[twitchUserId].features = user.features; // Sync features locally too
         fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
       } else {
         throw new Error('User not found in local storage');
@@ -1317,6 +1331,19 @@ class Database {
 
     console.log(`🔔 updateUserDiscordSettings - Updating settings for user ${twitchUserId}`);
 
+    // Sync feature flag
+    let features = {};
+    try {
+      features = typeof user.features === 'string' ? JSON.parse(user.features) : (user.features || {});
+    } catch (e) {
+      features = {};
+    }
+
+    if (settings && typeof settings.enabled === 'boolean') {
+      features.discordNotifications = settings.enabled;
+      user.features = JSON.stringify(features);
+    }
+
     if (this.mode === 'azure') {
       const actualPartitionKey = user.partitionKey || twitchUserId;
       const actualRowKey = user.rowKey || twitchUserId;
@@ -1324,7 +1351,8 @@ class Database {
       const updateEntity = {
         partitionKey: actualPartitionKey,
         rowKey: actualRowKey,
-        discordSettings: JSON.stringify(settings)
+        discordSettings: JSON.stringify(settings),
+        features: user.features
       };
 
       try {
@@ -1343,6 +1371,7 @@ class Database {
       const users = JSON.parse(fs.readFileSync(this.localUsersFile, 'utf8'));
       if (users[twitchUserId]) {
         users[twitchUserId].discordSettings = JSON.stringify(settings);
+        users[twitchUserId].features = user.features; // Sync features locally too
         fs.writeFileSync(this.localUsersFile, JSON.stringify(users, null, 2), 'utf8');
       } else {
         throw new Error('User not found in local storage');

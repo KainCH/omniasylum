@@ -115,7 +115,12 @@ router.get('/settings', requireAuth, async (req, res) => {
 router.put('/overlay-settings', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId; // Changed from twitchUserId to userId
-    const newSettings = req.body;
+    let newSettings = req.body;
+
+    // Handle wrapped settings object
+    if (newSettings.overlaySettings) {
+      newSettings = newSettings.overlaySettings;
+    }
 
     console.log(`🎨 Updating overlay settings for user ${req.user.username}`);
 
@@ -137,10 +142,9 @@ router.put('/overlay-settings', requireAuth, async (req, res) => {
 
     // Broadcast to connected clients (in case overlay is open)
     const io = req.app.get('io');
-    io.to(`user:${userId}`).emit('overlaySettingsUpdate', {
-      userId,
-      overlaySettings: newSettings
-    });
+    if (io) {
+      io.to(`user:${userId}`).emit('overlaySettingsUpdate', newSettings);
+    }
 
     res.json({
       message: 'Overlay settings updated successfully',

@@ -1111,6 +1111,13 @@ router.put('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res)
 
   await database.updateUserOverlaySettings(userId, overlaySettings);
 
+    // Emit real-time update to the user's overlay
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${userId}`).emit('overlaySettingsUpdate', overlaySettings);
+      console.log(`📡 Emitted overlaySettingsUpdate to user:${userId}`);
+    }
+
     console.log(`✅ Admin ${req.user.username} updated overlay settings for user ${userId}`);
     res.json({
       message: 'Overlay settings updated successfully',
