@@ -3,36 +3,160 @@
 
 <PageTitle>OmniAsylum Stream Tools</PageTitle>
 
-<div class="text-center mt-5">
-    <h1 class="display-4">OmniAsylum Stream Tools</h1>
-    <p class="lead">Manage your stream counters, overlays, and more.</p>
+<AuthorizeView>
+    <Authorized>
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1>🎮 OmniForgeStream</h1>
+                    <p class="auth-subtitle">Welcome back, @context.User.Identity?.Name!</p>
+                </div>
+                <div class="auth-content">
+                    <div class="auth-login">
+                        <a href="dashboard" class="twitch-login-btn" style="text-decoration: none; justify-content: center;">
+                            Go to Dashboard
+                        </a>
+                        <div style="margin-top: 15px;">
+                            <a href="auth/logout" class="btn btn-outline-danger">Logout</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1>🎮 OmniForgeStream</h1>
+                    <p class="auth-subtitle">Multi-Tenant Stream Counter</p>
+                </div>
 
-    <AuthorizeView>
-        <Authorized>
-            <div class="mt-4">
-                <p>You are logged in as <strong>@context.User.Identity?.Name</strong></p>
-                <a href="dashboard" class="btn btn-primary btn-lg">Go to Dashboard</a>
-                <a href="auth/logout" class="btn btn-outline-danger btn-lg ms-2">Logout</a>
+                <div class="auth-content">
+                    <div class="auth-features">
+                        <h3>✨ Features</h3>
+                        <ul>
+                            <li>🔄 Real-time counter sync across devices</li>
+                            <li>💬 Twitch chat commands (!deaths, !swears)</li>
+                            <li>📱 Mobile-friendly interface</li>
+                            <li>🔐 Secure per-user data isolation</li>
+                            <li>☁️ Cloud-powered reliability</li>
+                        </ul>
+                    </div>
+
+                    <div class="auth-login">
+                        <p>Connect with your Twitch account to get started:</p>
+                        <a href="auth/login?returnUrl=/dashboard" class="twitch-login-btn" style="text-decoration: none; color: white;">
+                            <span class="twitch-icon">🟣</span>
+                            Login with Twitch
+                        </a>
+                    </div>
+
+                    <div class="auth-info">
+                        <p class="privacy-note">
+                            🔒 Your Twitch credentials are securely stored and only used for authentication and chat integration.
+                        </p>
+                    </div>
+                </div>
             </div>
-        </Authorized>
-        <NotAuthorized>
-            <div class="mt-4">
-                <p>Please log in with your Twitch account to access the dashboard.</p>
-                <a href="auth/login?returnUrl=/dashboard" class="btn btn-twitch btn-lg">
-                    <i class="bi bi-twitch"></i> Login with Twitch
-                </a>
-            </div>
-        </NotAuthorized>
-    </AuthorizeView>
-</div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
 
 <style>
-    .btn-twitch {
-        background-color: #9146FF;
+    .auth-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 80vh; /* Adjusted for layout */
+        padding: 20px;
+    }
+
+    .auth-card {
+        background: linear-gradient(135deg, rgba(139, 69, 19, 0.1), rgba(212, 175, 55, 0.1));
+        border: 2px solid rgba(139, 69, 19, 0.3);
+        border-radius: 20px;
+        padding: 40px;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    }
+
+    .auth-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 2.5rem;
+        background: linear-gradient(135deg, #8b4513, #d4af37);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .auth-subtitle {
+        color: #8b4513;
+        font-size: 1.2rem;
+        margin-bottom: 30px;
+        opacity: 0.8;
+    }
+
+    .auth-features {
+        text-align: left;
+        margin: 30px 0;
+    }
+
+    .auth-features h3 {
+        color: #d4af37;
+        margin-bottom: 15px;
+        text-align: center;
+    }
+
+    .auth-features ul {
+        list-style: none;
+        padding: 0;
+    }
+
+    .auth-features li {
+        padding: 5px 0;
+        color: #8b4513;
+    }
+
+    .auth-login {
+        margin: 30px 0;
+    }
+
+    .auth-login p {
+        color: #8b4513;
+        margin-bottom: 20px;
+    }
+
+    .twitch-login-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 15px 30px;
+        background: linear-gradient(135deg, #9146ff, #b19dff);
+        color: white;
+        border: none;
+        border-radius: 50px;
+        font-size: 1.1rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 5px 15px rgba(145, 70, 255, 0.3);
+    }
+
+    .twitch-login-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(145, 70, 255, 0.4);
         color: white;
     }
-    .btn-twitch:hover {
-        background-color: #772ce8;
-        color: white;
+
+    .privacy-note {
+        font-size: 0.9rem;
+        color: #8b4513;
+        opacity: 0.7;
+        margin-top: 20px;
     }
 </style>

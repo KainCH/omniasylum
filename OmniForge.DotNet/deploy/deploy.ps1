@@ -42,7 +42,7 @@ $deployment = az deployment group create `
         storageAccountName=$storageAccountName `
         keyVaultName=$keyVaultName `
         containerImage="$AcrName.azurecr.io/$ImageName`:$ImageTag" `
-        frontendUrl="https://omniforgestream-api-$Environment.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io" `
+        frontendUrl="https://omniforgestream-api-$Environment.proudmeadow-a59c8b17.southcentralus.azurecontainerapps.io" `
     --output json | ConvertFrom-Json
 
 $url = $deployment.properties.outputs.containerAppUrl.value
