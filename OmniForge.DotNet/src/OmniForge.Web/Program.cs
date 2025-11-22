@@ -4,11 +4,20 @@ using OmniForge.Web.Hubs;
 using OmniForge.Web.Services;
 using OmniForge.Core.Interfaces;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using AspNet.Security.OAuth.Twitch;
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Forwarded Headers for Azure Container Apps
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Configure Azure Key Vault
 var keyVaultName = builder.Configuration["KeyVaultName"];
@@ -82,6 +91,8 @@ builder.Services.AddSingleton<IOverlayNotifier, SignalROverlayNotifier>();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
