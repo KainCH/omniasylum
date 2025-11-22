@@ -8,6 +8,8 @@ using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 
+using TwitchLib.Api.Core.Enums; // Added
+
 namespace OmniForge.Infrastructure.Services
 {
     [ExcludeFromCodeCoverage]
@@ -39,6 +41,14 @@ namespace OmniForge.Infrastructure.Services
             api.Settings.ClientId = clientId;
             api.Settings.AccessToken = accessToken;
             await api.Helix.ChannelPoints.DeleteCustomRewardAsync(broadcasterId, rewardId);
+        }
+
+        public async Task CreateEventSubSubscriptionAsync(string clientId, string accessToken, string type, string version, Dictionary<string, string> condition, EventSubTransportMethod method, string sessionId)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            await api.Helix.EventSub.CreateEventSubSubscriptionAsync(type, version, condition, method, sessionId);
         }
 
         private static HelixCustomReward MapToEntity(TwitchLib.Api.Helix.Models.ChannelPoints.CustomReward reward)

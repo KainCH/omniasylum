@@ -311,5 +311,273 @@ namespace OmniForge.Tests
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
             sendMessageMock.Verify(x => x(userId, "Counters have been reset."), Times.Once);
         }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldNotResetCounters_WhenNotMod()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!resetcounters");
+            var counters = new Counter { Deaths = 10 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            Assert.Equal(10, counters.Deaths);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.IsAny<Counter>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldReturnScreams_WhenEnabled()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!screams");
+            var counters = new Counter { Screams = 5 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Scream Count: 5"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldNotReturnScreams_WhenDisabled()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!screams");
+            var counters = new Counter { Screams = 5 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User
+            {
+                TwitchUserId = userId,
+                OverlaySettings = new OverlaySettings { Counters = new OverlayCounters { Screams = false } }
+            });
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldIncrementScreams_WhenModAndEnabled()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!scream+", isMod: true);
+            var counters = new Counter { Screams = 5 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            Assert.Equal(6, counters.Screams);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+            sendMessageMock.Verify(x => x(userId, "Scream Count: 6"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldDecrementScreams_WhenModAndEnabledAndPositive()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!scream-", isMod: true);
+            var counters = new Counter { Screams = 5 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            Assert.Equal(4, counters.Screams);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+            sendMessageMock.Verify(x => x(userId, "Scream Count: 4"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenPermissionGranted()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!custom");
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!custom", new ChatCommandDefinition { Response = "Custom Response", Permission = "Everyone", Cooldown = 0 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Custom Response"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldNotExecuteCustomCommand_WhenPermissionDenied()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!custom"); // Not mod
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!custom", new ChatCommandDefinition { Response = "Custom Response", Permission = "Moderator", Cooldown = 0 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldRespectCooldown()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!custom");
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!custom", new ChatCommandDefinition { Response = "Custom Response", Permission = "Everyone", Cooldown = 10 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object); // First call
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object); // Second call (should be on cooldown)
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Custom Response"), Times.Once); // Only once
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenSubscriberPermissionAndIsSubscriber()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!subcmd");
+            // We need to set IsSubscriber on the message, but CreateMessage helper sets it to false by default.
+            // Let's modify CreateMessage or create a new one manually.
+            // CreateMessage signature: (string message, bool isMod = false, bool isBroadcaster = false)
+            // It doesn't expose isSubscriber. I'll create a new helper or just instantiate ChatMessage directly.
+
+            var chatMessage = new ChatMessage(
+                "bot", "123", "user", "User", "", Color.Black, null, "!subcmd", UserType.Viewer, "channel", "id",
+                true, // isSubscriber
+                0, "room", false, false, false, false, false, false, false, Noisy.False, "", "", null, null, 0, 0);
+
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!subcmd", new ChatCommandDefinition { Response = "Sub Response", Permission = "Subscriber", Cooldown = 0 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, chatMessage, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Sub Response"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldNotExecuteCustomCommand_WhenSubscriberPermissionAndNotSubscriber()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!subcmd"); // isSubscriber = false
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!subcmd", new ChatCommandDefinition { Response = "Sub Response", Permission = "Subscriber", Cooldown = 0 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenBroadcasterPermissionAndIsBroadcaster()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!broadcastercmd", isBroadcaster: true);
+            var counters = new Counter();
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+
+            var chatCommands = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!broadcastercmd", new ChatCommandDefinition { Response = "Broadcaster Response", Permission = "Broadcaster", Cooldown = 0 } }
+                }
+            };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId)).ReturnsAsync(chatCommands);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Broadcaster Response"), Times.Once);
+        }
     }
 }

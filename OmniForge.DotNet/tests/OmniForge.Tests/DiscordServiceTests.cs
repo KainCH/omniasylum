@@ -163,5 +163,153 @@ namespace OmniForge.Tests
                 ItExpr.IsAny<CancellationToken>()
             );
         }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldSendSwearMilestone_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { SwearMilestone = true }
+                }
+            };
+
+            var eventData = new { count = 50, previousMilestone = 40 };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            await _service.SendNotificationAsync(user, "swear_milestone", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldSendScreamMilestone_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { ScreamMilestone = true }
+                }
+            };
+
+            var eventData = new { count = 20, previousMilestone = 10 };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            await _service.SendNotificationAsync(user, "scream_milestone", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldSendStreamStart_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { StreamStart = true }
+                }
+            };
+
+            var eventData = new { title = "Test Stream", game = "Just Chatting", thumbnailUrl = "http://example.com/thumb.jpg" };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            await _service.SendNotificationAsync(user, "stream_start", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Once(),
+                ItExpr.Is<HttpRequestMessage>(req => req.RequestUri!.ToString().Contains("with_components=true")),
+                ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldSendStreamEnd_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { StreamEnd = true }
+                }
+            };
+
+            var eventData = new { duration = "2h 30m" };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            await _service.SendNotificationAsync(user, "stream_end", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldHandleDictionaryData()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
+                }
+            };
+
+            var eventData = new System.Collections.Generic.Dictionary<string, object>
+            {
+                { "count", 100 },
+                { "previousMilestone", 90 }
+            };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            await _service.SendNotificationAsync(user, "death_milestone", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+        }
     }
 }

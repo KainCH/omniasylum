@@ -71,6 +71,7 @@ namespace OmniForge.Infrastructure
 
             // Twitch EventSub
             services.AddTwitchLibEventSubWebsockets();
+            services.AddSingleton<IEventSubWebsocketClientWrapper, EventSubWebsocketClientWrapper>();
             services.AddSingleton<TwitchAPI>();
             services.AddHostedService<StreamMonitorService>();
 

@@ -8,25 +8,25 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.EventSub.Core.EventArgs;
 using TwitchLib.EventSub.Core.EventArgs.Stream;
-using TwitchLib.EventSub.Websockets;
 using TwitchLib.EventSub.Websockets.Core.EventArgs;
 
 namespace OmniForge.Infrastructure.Services
 {
     public class StreamMonitorService : IHostedService
     {
-        private readonly EventSubWebsocketClient _eventSubClient;
+        private readonly IEventSubWebsocketClientWrapper _eventSubClient;
         private readonly TwitchAPI _twitchApi;
         private readonly ILogger<StreamMonitorService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly TwitchSettings _twitchSettings;
 
         public StreamMonitorService(
-            EventSubWebsocketClient eventSubClient,
+            IEventSubWebsocketClientWrapper eventSubClient,
             TwitchAPI twitchApi,
             ILogger<StreamMonitorService> logger,
             IServiceScopeFactory scopeFactory,
@@ -84,6 +84,7 @@ namespace OmniForge.Infrastructure.Services
             using (var scope = _scopeFactory.CreateScope())
             {
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
                 var users = await userRepository.GetAllUsersAsync();
 
                 foreach (var user in users)
@@ -105,12 +106,16 @@ namespace OmniForge.Infrastructure.Services
                         };
 
                         // Subscribe to Stream Online
-                        await _twitchApi.Helix.EventSub.CreateEventSubSubscriptionAsync(
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchApi.Settings.ClientId,
+                            _twitchApi.Settings.AccessToken,
                             "stream.online", "1", condition, EventSubTransportMethod.Websocket,
                             _eventSubClient.SessionId);
 
                         // Subscribe to Stream Offline
-                        await _twitchApi.Helix.EventSub.CreateEventSubSubscriptionAsync(
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchApi.Settings.ClientId,
+                            _twitchApi.Settings.AccessToken,
                             "stream.offline", "1", condition, EventSubTransportMethod.Websocket,
                             _eventSubClient.SessionId);
 
