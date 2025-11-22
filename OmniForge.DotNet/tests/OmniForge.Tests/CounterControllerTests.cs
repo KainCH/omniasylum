@@ -77,7 +77,7 @@ namespace OmniForge.Tests
         public async Task Decrement_ShouldReturnOk_WhenValid()
         {
             var counter = new Counter { Deaths = 9 };
-            _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "deaths"))
+            _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "deaths", 1))
                 .ReturnsAsync(counter);
 
             var result = await _controller.Decrement("deaths");
@@ -91,7 +91,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Decrement_ShouldReturnBadRequest_WhenInvalidType()
         {
-            _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "invalid"))
+            _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "invalid", 1))
                 .ThrowsAsync(new System.ArgumentException());
 
             var result = await _controller.Decrement("invalid");

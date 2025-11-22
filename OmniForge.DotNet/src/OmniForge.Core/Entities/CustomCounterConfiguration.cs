@@ -12,6 +12,7 @@ namespace OmniForge.Core.Entities
         public string Name { get; set; } = string.Empty;
         public string Icon { get; set; } = string.Empty;
         public int IncrementBy { get; set; } = 1;
+        public int DecrementBy { get; set; } = 1;
         public List<int> Milestones { get; set; } = new List<int>();
     }
 }

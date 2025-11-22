@@ -121,25 +121,53 @@ namespace OmniForge.Infrastructure.Repositories
             return counter;
         }
 
-        public async Task<Counter> DecrementCounterAsync(string userId, string counterType)
+        public async Task<Counter> DecrementCounterAsync(string userId, string counterType, int amount = 1)
         {
             var counter = await GetCountersAsync(userId);
 
             switch (counterType.ToLower())
             {
                 case "deaths":
-                    counter.Deaths = Math.Max(0, counter.Deaths - 1);
+                    counter.Deaths = Math.Max(0, counter.Deaths - amount);
                     break;
                 case "swears":
-                    counter.Swears = Math.Max(0, counter.Swears - 1);
+                    counter.Swears = Math.Max(0, counter.Swears - amount);
                     break;
                 case "screams":
-                    counter.Screams = Math.Max(0, counter.Screams - 1);
+                    counter.Screams = Math.Max(0, counter.Screams - amount);
                     break;
                 default:
                     if (counter.CustomCounters.ContainsKey(counterType))
                     {
-                        counter.CustomCounters[counterType] = Math.Max(0, counter.CustomCounters[counterType] - 1);
+                        counter.CustomCounters[counterType] = Math.Max(0, counter.CustomCounters[counterType] - amount);
+                    }
+                    break;
+            }
+
+            counter.LastUpdated = DateTimeOffset.UtcNow;
+            await SaveCountersAsync(counter);
+            return counter;
+        }
+
+        public async Task<Counter> ResetCounterAsync(string userId, string counterType)
+        {
+            var counter = await GetCountersAsync(userId);
+
+            switch (counterType.ToLower())
+            {
+                case "deaths":
+                    counter.Deaths = 0;
+                    break;
+                case "swears":
+                    counter.Swears = 0;
+                    break;
+                case "screams":
+                    counter.Screams = 0;
+                    break;
+                default:
+                    if (counter.CustomCounters.ContainsKey(counterType))
+                    {
+                        counter.CustomCounters[counterType] = 0;
                     }
                     break;
             }

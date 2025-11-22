@@ -119,5 +119,51 @@ namespace OmniForge.Web.Controllers
 
             return Ok(new { success = true, value = newValue });
         }
+
+        [HttpPost("{counterId}/decrement")]
+        public async Task<IActionResult> DecrementCounter(string counterId)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            // Get configuration
+            var config = await _counterRepository.GetCustomCountersConfigAsync(userId);
+            if (!config.Counters.TryGetValue(counterId, out var counterDef))
+            {
+                return NotFound(new { error = "Custom counter not found" });
+            }
+
+            int decrementBy = counterDef.DecrementBy > 0 ? counterDef.DecrementBy : counterDef.IncrementBy;
+            if (decrementBy <= 0) decrementBy = 1;
+
+            var updatedCounter = await _counterRepository.DecrementCounterAsync(userId, counterId, decrementBy);
+            int newValue = updatedCounter.CustomCounters.ContainsKey(counterId) ? updatedCounter.CustomCounters[counterId] : 0;
+
+            // Send update to overlay
+            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounter);
+
+            return Ok(new { success = true, value = newValue });
+        }
+
+        [HttpPost("{counterId}/reset")]
+        public async Task<IActionResult> ResetCounter(string counterId)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            // Get configuration
+            var config = await _counterRepository.GetCustomCountersConfigAsync(userId);
+            if (!config.Counters.ContainsKey(counterId))
+            {
+                return NotFound(new { error = "Custom counter not found" });
+            }
+
+            var updatedCounter = await _counterRepository.ResetCounterAsync(userId, counterId);
+
+            // Send update to overlay
+            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounter);
+
+            return Ok(new { success = true, value = 0 });
+        }
     }
 }

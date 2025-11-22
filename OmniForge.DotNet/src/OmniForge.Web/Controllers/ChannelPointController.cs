@@ -72,6 +72,17 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Title, valid cost, and action are required");
             }
 
+            if (request.Cost > 1000000)
+            {
+                return BadRequest("Cost must be between 1 and 1,000,000");
+            }
+
+            var validActions = new[] { "increment_deaths", "increment_swears", "decrement_deaths", "decrement_swears" };
+            if (!validActions.Contains(request.Action.ToLower()))
+            {
+                return BadRequest("Invalid action type");
+            }
+
             try
             {
                 // 1. Create on Twitch
