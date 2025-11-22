@@ -51,6 +51,25 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
         userStatus = 'incomplete'; // Has ID but missing profile data
       }
 
+      let features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+      
+      // Apply defaults if features are missing
+      if (!features) {
+        features = {
+          chatCommands: true,
+          channelPoints: false,
+          autoClip: false,
+          customCommands: false,
+          analytics: false,
+          streamOverlay: false,
+          alertAnimations: false,
+          discordNotifications: true,
+          discordWebhook: false,
+          templateStyle: 'asylum_themed',
+          streamAlerts: true
+        };
+      }
+
       return {
         userId: user.twitchUserId,
         twitchUserId: user.twitchUserId, // Add this for frontend compatibility
@@ -59,7 +78,7 @@ router.get('/users', requireAuth, requireRole('admin'), async (req, res) => {
         email: user.email,
         profileImageUrl: user.profileImageUrl,
         role: user.role,
-        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
+        features: features,
         isActive: user.isActive !== undefined ? user.isActive : true,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
@@ -124,60 +143,130 @@ router.get('/users/diagnostics', requireAuth, requireAdmin, async (req, res) => 
 
     res.json(diagnostics);
   } catch (error) {
-    console.error('❌ Error getting user diagnostics:', error);
-    res.status(500).json({ error: 'Failed to get user diagnostics' });
+    console.error('Error running user diagnostics:', error);
+    res.status(500).json({ error: 'Failed to run diagnostics' });
   }
 });
 
 /**
- * Delete broken user by partition/row key
- * DELETE /api/admin/users/broken/:partitionKey/:rowKey
+ * Get user overlay settings (admin)
+ * GET /api/admin/users/:userId/overlay-settings
+ * Alias: /api/admin/users/:userId/overlay
  */
-router.delete('/users/broken/:partitionKey/:rowKey', requireAuth, requireAdmin, async (req, res) => {
+const getOverlaySettings = async (req, res) => {
   try {
-    const { partitionKey, rowKey } = req.params;
+    const { userId } = req.params;
+    const user = await database.getUser(userId);
 
-    console.log(`🗑️ Admin ${req.user.username} attempting to delete broken user: partition=${partitionKey}, row=${rowKey}`);
-
-    // For broken users, skip the validation check since they might not be retrievable via normal methods
-    // Instead, attempt to delete directly and let the database method handle the validation
-    console.log(`🔍 Attempting direct deletion without pre-validation for broken record`);
-
-    // Delete the broken user directly from storage
-    const deleted = await database.deleteBrokenUser(partitionKey, rowKey);
-
-    if (deleted) {
-      console.log(`✅ Successfully deleted broken user: partition=${partitionKey}, row=${rowKey}`);
-      res.json({
-        message: 'Broken user deleted successfully',
-        partitionKey,
-        rowKey
-      });
-    } else {
-      console.log(`❌ Failed to delete broken user: partition=${partitionKey}, row=${rowKey}`);
-      res.status(404).json({ error: 'User not found or could not be deleted' });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
+    // Get overlay settings or defaults
+    let overlaySettings = user.overlaySettings;
+
+    // Parse if string
+    if (typeof overlaySettings === 'string') {
+      try {
+        overlaySettings = JSON.parse(overlaySettings);
+      } catch (e) {
+        console.error('Error parsing overlay settings:', e);
+        overlaySettings = null;
+      }
+    }
+
+    if (!overlaySettings) {
+      overlaySettings = {
+        enabled: false,
+        position: 'top-right',
+        size: 'medium',
+        counters: {
+          deaths: true,
+          swears: true,
+          bits: false,
+          channelPoints: false
+        },
+        animations: {
+          enabled: true,
+          showAlerts: true,
+          celebrationEffects: false,
+          bounceOnUpdate: true,
+          fadeTransitions: true
+        },
+        theme: {
+          borderColor: '#9146ff',
+          textColor: '#ffffff',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)'
+        }
+      };
+    }
+
+    res.json({
+      settings: overlaySettings,
+      overlaySettings: overlaySettings // Support both formats
+    });
   } catch (error) {
-    console.error('❌ Error deleting broken user:', error);
-    console.error('❌ Error details:', {
-      message: error.message,
-      code: error.code,
-      statusCode: error.statusCode,
-      stack: error.stack
-    });
-    res.status(500).json({
-      error: 'Failed to delete broken user',
-      details: error.message
-    });
+    console.error('Error fetching user overlay settings (admin):', error);
+    res.status(500).json({ error: 'Failed to fetch overlay settings' });
   }
-});
+};
+
+router.get('/users/:userId/overlay-settings', requireAuth, requireAdmin, getOverlaySettings);
+router.get('/users/:userId/overlay', requireAuth, requireAdmin, getOverlaySettings);
+
+/**
+ * Update user overlay settings (admin)
+ * PUT /api/admin/users/:userId/overlay-settings
+ * Alias: /api/admin/users/:userId/overlay
+ */
+const updateOverlaySettings = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    let newSettings = req.body;
+
+    // Handle wrapped settings object
+    if (newSettings.overlaySettings) {
+      newSettings = newSettings.overlaySettings;
+    }
+
+    // Validate settings structure
+    if (!newSettings || typeof newSettings !== 'object') {
+      return res.status(400).json({ error: 'Invalid settings format' });
+    }
+
+    const user = await database.getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user with new overlay settings
+    await database.updateUserOverlaySettings(userId, newSettings);
+
+    // Broadcast to connected clients
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${userId}`).emit('overlaySettingsUpdate', newSettings);
+    }
+
+    res.json({
+      message: 'Overlay settings updated successfully',
+      settings: newSettings,
+      overlaySettings: newSettings
+    });
+  } catch (error) {
+    console.error('Error updating user overlay settings (admin):', error);
+    res.status(500).json({ error: 'Failed to update overlay settings' });
+  }
+};
+
+router.put('/users/:userId/overlay-settings', requireAuth, requireAdmin, updateOverlaySettings);
+router.put('/users/:userId/overlay', requireAuth, requireAdmin, updateOverlaySettings);
 
 /**
  * Get specific user details
  * GET /api/admin/users/:userId
  */
-router.get('/users/:userId', requireAuth, requireRole('admin'), async (req, res) => {
+router.get('/users/:userId', requireAuth, requireAdmin, async (req, res) => {
   try {
     const user = await database.getUser(req.params.userId);
 
@@ -187,6 +276,25 @@ router.get('/users/:userId', requireAuth, requireRole('admin'), async (req, res)
 
     const counters = await database.getCounters(req.params.userId);
 
+    let features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+    
+    // Apply defaults if features are missing
+    if (!features) {
+      features = {
+        chatCommands: true,
+        channelPoints: false,
+        autoClip: false,
+        customCommands: false,
+        analytics: false,
+        streamOverlay: false,
+        alertAnimations: false,
+        discordNotifications: true,
+        discordWebhook: false,
+        templateStyle: 'asylum_themed',
+        streamAlerts: true
+      };
+    }
+
     res.json({
       user: {
         userId: user.twitchUserId,
@@ -195,7 +303,7 @@ router.get('/users/:userId', requireAuth, requireRole('admin'), async (req, res)
         email: user.email,
         profileImageUrl: user.profileImageUrl,
         role: user.role,
-        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
+        features: features,
         isActive: user.isActive !== undefined ? user.isActive : true,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin
@@ -385,9 +493,6 @@ router.put('/users/:userId/features', requireAuth, requireModAccess, async (req,
     res.status(500).json({ error: error.message || 'Failed to update features' });
   }
 });
-
-// NOTE: Duplicate overlay routes removed - using /users/:userId/overlay instead of /overlay-settings
-// The frontend expects /users/:userId/overlay for admin operations
 
 /**
  * Update user role
@@ -1069,1071 +1174,6 @@ router.get('/permissions', requireAuth, requireRole('admin'), async (req, res) =
       }
     ]
   });
-});
-
-/**
- * Get user's overlay settings (admin)
- * GET /api/admin/users/:userId/overlay
- */
-router.get('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    let overlaySettings = user.overlaySettings;
-    if (typeof overlaySettings === 'string') {
-      try {
-        overlaySettings = JSON.parse(overlaySettings);
-      } catch (e) {
-        overlaySettings = null;
-      }
-    }
-
-    res.json({ overlaySettings });
-  } catch (error) {
-    console.error('❌ Error fetching user overlay settings:', error);
-    res.status(500).json({ error: 'Failed to fetch overlay settings' });
-  }
-});
-
-/**
- * Update user's overlay settings (admin)
- * PUT /api/admin/users/:userId/overlay
- */
-router.put('/users/:userId/overlay', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { overlaySettings } = req.body;
-
-  await database.updateUserOverlaySettings(userId, overlaySettings);
-
-    // Emit real-time update to the user's overlay
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:${userId}`).emit('overlaySettingsUpdate', overlaySettings);
-      console.log(`📡 Emitted overlaySettingsUpdate to user:${userId}`);
-    }
-
-    console.log(`✅ Admin ${req.user.username} updated overlay settings for user ${userId}`);
-    res.json({
-      message: 'Overlay settings updated successfully',
-      overlaySettings
-    });
-  } catch (error) {
-    console.error('❌ Error updating user overlay settings:', error);
-    res.status(500).json({ error: 'Failed to update overlay settings' });
-  }
-});
-
-/**
- * Get user's Discord webhook (admin)
- * GET /api/admin/users/:userId/discord-webhook
- */
-router.get('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    console.log(`🔍 GET Discord webhook request for user ${userId} by admin ${req.user.username}`);
-
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      console.log(`❌ User ${userId} not found`);
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Check if user has Discord notifications feature enabled
-    const hasDiscordFeature = await database.hasFeature(userId, 'discordNotifications');
-
-    console.log(`✅ Admin ${req.user.username} retrieved Discord webhook for user ${userId}:`, {
-      webhookUrl: user.discordWebhookUrl ? 'SET' : 'NOT_SET',
-      enabled: hasDiscordFeature,
-      actualWebhookUrl: user.discordWebhookUrl ? `${user.discordWebhookUrl.substring(0, 50)}...` : 'EMPTY'
-    });
-
-    res.json({
-      webhookUrl: user.discordWebhookUrl || '',
-      enabled: hasDiscordFeature
-    });
-  } catch (error) {
-    console.error('❌ Error fetching user Discord webhook:', error);
-    res.status(500).json({ error: 'Failed to fetch Discord webhook' });
-  }
-});
-
-/**
- * Update user's Discord webhook (admin)
- * PUT /api/admin/users/:userId/discord-webhook
- */
-router.put('/users/:userId/discord-webhook', requireAuth, requireAdmin, async (req, res) => {
-  const startTime = Date.now();
-  let userId = 'unknown';
-
-  try {
-    userId = req.params.userId;
-    const { webhookUrl, enabled } = req.body;
-
-    console.log(`🔗 Admin ${req.user.username} updating Discord webhook for user ${userId}:`, {
-      webhookUrl: webhookUrl ? 'SET' : 'NOT_SET',
-      enabled: enabled
-    });
-
-    // Validate webhook URL if provided
-    if (webhookUrl && !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
-      return res.status(400).json({ error: 'Invalid Discord webhook URL format' });
-    }
-
-    // Check if user exists first
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Update webhook URL
-    await database.updateUserDiscordWebhook(userId, webhookUrl || '');
-
-    // Update Discord notifications feature flag if enabled field is provided
-    if (typeof enabled === 'boolean') {
-      const currentFeatures = typeof user.features === 'string' ? JSON.parse(user.features) : user.features || {};
-      currentFeatures.discordNotifications = enabled;
-      await database.updateUserFeatures(userId, currentFeatures);
-      console.log(`✅ Updated discordNotifications feature to ${enabled} for user ${userId}`);
-    }
-
-    console.log(`✅ Admin ${req.user.username} updated Discord webhook for user ${userId}`);
-
-    const duration = Date.now() - startTime;
-    res.json({
-      message: 'Discord webhook updated successfully',
-      webhookUrl: webhookUrl || '',
-      enabled: typeof enabled === 'boolean' ? enabled : await database.hasFeature(userId, 'discordNotifications'),
-      duration: `${duration}ms`
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [${startTime}] Error updating Discord webhook for user ${userId} (${duration}ms):`, error.message);
-    console.error(`❌ [${startTime}] Full error:`, error);
-    console.error(`❌ [${startTime}] Stack trace:`, error.stack);
-
-    res.status(500).json({
-      error: 'Failed to update Discord webhook',
-      details: error.message,
-      duration: `${duration}ms`
-    });
-  }
-});
-
-/**
- * Get user's Discord notification settings (admin)
- * GET /api/admin/users/:userId/discord-settings
- */
-router.get('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Return Discord settings or defaults
-    const defaultSettings = {
-      templateStyle: 'asylum_themed',
-      enabledNotifications: {
-        death_milestone: true,
-        swear_milestone: true,
-        stream_start: true,
-        stream_end: false, // Disabled by default - user preference
-        follower_goal: false,
-        subscriber_milestone: false,
-        channel_point_redemption: false
-      },
-      milestoneThresholds: {
-        deaths: [10, 25, 50, 100, 250, 500],
-        swears: [25, 50, 100, 200, 500]
-      }
-    };
-
-    const settings = user.discordSettings ? JSON.parse(user.discordSettings) : defaultSettings;
-
-    // Include webhook data in the settings response
-    const hasDiscordFeature = await database.hasFeature(userId, 'discordNotifications');
-    const webhookUrl = user.discordWebhookUrl || '';
-
-    const completeSettings = {
-      ...settings,
-      // Add webhook data to the settings response
-      webhookUrl: webhookUrl,
-      enabled: hasDiscordFeature,
-      // Add template style preference
-      templateStyle: user?.templateStyle || 'asylum_themed'
-    };
-
-    res.json({ discordSettings: completeSettings });
-  } catch (error) {
-    console.error('❌ Error getting Discord settings:', error);
-    res.status(500).json({ error: 'Failed to get Discord settings' });
-  }
-});
-
-/**
- * Update user's Discord notification settings (admin)
- * PUT /api/admin/users/:userId/discord-settings
- */
-router.put('/users/:userId/discord-settings', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const settings = req.body;
-
-    console.log(`🔔 Admin ${req.user.username} updating Discord settings for user ${userId}`);
-
-    // Validate settings structure
-    if (!settings.templateStyle || !settings.enabledNotifications || !settings.milestoneThresholds) {
-      return res.status(400).json({ error: 'Invalid Discord settings format' });
-    }
-
-    await database.updateUserDiscordSettings(userId, settings);
-
-    console.log(`✅ Discord settings updated for user ${userId}`);
-    res.json({ message: 'Discord settings updated successfully' });
-  } catch (error) {
-    console.error('❌ Error updating Discord settings:', error);
-    res.status(500).json({ error: 'Failed to update Discord settings' });
-  }
-});
-
-/**
- * Test endpoint for troubleshooting
- * PUT /api/admin/test-put
- */
-router.put('/test-put', requireAuth, requireAdmin, async (req, res) => {
-  console.log('🧪 Test PUT endpoint hit by:', req.user?.username);
-  console.log('🧪 Request body:', req.body);
-  res.json({
-    message: 'PUT test successful',
-    user: req.user?.username,
-    timestamp: new Date().toISOString(),
-    body: req.body
-  });
-});
-
-/**
- * Test user's Discord webhook (admin)
- * POST /api/admin/users/:userId/discord-webhook/test
- */
-router.post('/users/:userId/discord-webhook/test', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const webhookUrl = user.discordWebhookUrl;
-    if (!webhookUrl) {
-      return res.status(400).json({ error: 'No Discord webhook configured for this user' });
-    }
-
-    // Send test notification
-    const embed = {
-      title: `🧪 Test Notification for ${user.displayName}`,
-      description: `This is a test notification sent by admin ${req.user.username}`,
-      color: 0x9146FF,
-      fields: [
-        {
-          name: 'User',
-          value: `@${user.username}`,
-          inline: true
-        },
-        {
-          name: 'Status',
-          value: 'Test successful ✅',
-          inline: true
-        }
-      ],
-      footer: {
-        text: 'OmniAsylum Stream Counter - Admin Test',
-        icon_url: user.profileImageUrl
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ embeds: [embed] })
-    });
-
-    if (response.ok) {
-      console.log(`✅ Admin ${req.user.username} sent test Discord notification for user ${userId}`);
-      res.json({ message: 'Test notification sent successfully' });
-    } else {
-      const errorText = await response.text();
-      console.error('Discord webhook error:', errorText);
-      throw new Error('Discord webhook returned an error');
-    }
-  } catch (error) {
-    console.error('❌ Error testing Discord webhook:', error);
-    res.status(500).json({ error: 'Failed to send test notification' });
-  }
-});
-
-/**
- * Get user's Discord invite link (admin)
- * GET /api/admin/users/:userId/discord-invite
- */
-router.get('/users/:userId/discord-invite', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const inviteLink = await database.getUserDiscordInviteLink(userId);
-
-    console.log(`✅ Admin ${req.user.username} retrieved Discord invite link for user ${userId}`);
-
-    res.json({
-      discordInviteLink: inviteLink || '',
-      hasInvite: !!(inviteLink && inviteLink.trim())
-    });
-  } catch (error) {
-    console.error('❌ Error fetching Discord invite link:', error);
-    res.status(500).json({ error: 'Failed to fetch Discord invite link' });
-  }
-});
-
-/**
- * Update user's Discord invite link (admin)
- * PUT /api/admin/users/:userId/discord-invite
- */
-router.put('/users/:userId/discord-invite', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { discordInviteLink } = req.body;
-
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Update the Discord invite link
-    await database.updateUserDiscordInviteLink(userId, discordInviteLink);
-
-    console.log(`✅ Admin ${req.user.username} updated Discord invite link for user ${userId}: ${discordInviteLink ? 'Set' : 'Removed'}`);
-
-    res.json({
-      message: 'Discord invite link updated successfully',
-      discordInviteLink: discordInviteLink || ''
-    });
-  } catch (error) {
-    console.error('❌ Error updating Discord invite link:', error);
-    if (error.message.includes('Invalid Discord invite link format')) {
-      res.status(400).json({ error: 'Invalid Discord invite link format. Please use a valid Discord invite URL.' });
-    } else {
-      res.status(500).json({ error: 'Failed to update Discord invite link' });
-    }
-  }
-});
-
-/**
- * Find users with incomplete data
- * GET /api/admin/cleanup/unknown-users
- */
-router.get('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const allUsers = await database.getAllUsers();
-
-    // Find users with missing profile data but valid twitchUserId (these should be FIXED, not deleted)
-    const incompleteUsers = allUsers.filter(user => {
-      const hasValidUserId = user.twitchUserId && user.twitchUserId !== 'undefined' && user.twitchUserId !== null;
-      const hasMissingUsername = !user.username || user.username === 'undefined' || user.username === null;
-      const hasMissingDisplayName = !user.displayName || user.displayName === 'undefined' || user.displayName === null;
-
-      // Include users with valid ID but missing username/displayName
-      return hasValidUserId && (hasMissingUsername || hasMissingDisplayName);
-    });
-
-    // Find TRULY broken users (no valid twitchUserId) - these can be safely deleted
-    const brokenUsers = allUsers.filter(user => {
-      const hasInvalidUserId = !user.twitchUserId || user.twitchUserId === 'undefined' || user.twitchUserId === null;
-      return hasInvalidUserId;
-    });
-
-    console.log(`🔍 Found ${incompleteUsers.length} users with incomplete data, ${brokenUsers.length} truly broken users`);
-
-    res.json({
-      count: incompleteUsers.length + brokenUsers.length,
-      incomplete: incompleteUsers.length,
-      broken: brokenUsers.length,
-      users: [...incompleteUsers, ...brokenUsers].map(u => ({
-        partitionKey: u.partitionKey || u.twitchUserId,
-        rowKey: u.rowKey || u.twitchUserId,
-        username: u.username,
-        displayName: u.displayName,
-        twitchUserId: u.twitchUserId,
-        createdAt: u.createdAt,
-        type: (u.twitchUserId && u.twitchUserId !== 'undefined' && u.twitchUserId !== null) ? 'incomplete' : 'broken'
-      }))
-    });
-  } catch (error) {
-    console.error('❌ Error finding users with issues:', error);
-    res.status(500).json({ error: 'Failed to find users with issues' });
-  }
-});
-
-/**
- * Delete unknown/invalid users
- * DELETE /api/admin/cleanup/unknown-users
- */
-router.delete('/cleanup/unknown-users', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const allUsers = await database.getAllUsers();
-
-    // Find users with TRULY missing or invalid data (must be explicitly 'undefined' string or null)
-    // DO NOT delete users with empty strings or other falsy values
-    const unknownUsers = allUsers.filter(user => {
-      // Only consider truly broken records where the string is literally 'undefined' or null/missing entirely
-      const hasInvalidUsername = user.username === 'undefined' || user.username === null || user.username === undefined;
-      const hasInvalidUserId = user.twitchUserId === 'undefined' || user.twitchUserId === null || user.twitchUserId === undefined;
-      const hasInvalidDisplayName = user.displayName === 'undefined' || user.displayName === null || user.displayName === undefined;
-
-      // User must have at least username AND twitchUserId to be valid
-      return hasInvalidUsername && hasInvalidUserId;
-    });
-
-    console.log(`🗑️ Deleting ${unknownUsers.length} unknown/invalid users (strict criteria)...`);
-
-    let deleted = 0;
-    for (const user of unknownUsers) {
-      try {
-        const userId = user.partitionKey || user.twitchUserId || user.rowKey;
-        await database.deleteUser(userId);
-        deleted++;
-        console.log(`✅ Deleted unknown user: ${userId}`);
-      } catch (error) {
-        console.error(`❌ Failed to delete user:`, error);
-      }
-    }
-
-    console.log(`✅ Admin ${req.user.username} deleted ${deleted} unknown users`);
-    res.json({
-      message: `Deleted ${deleted} unknown users`,
-      deleted: deleted,
-      total: unknownUsers.length
-    });
-  } catch (error) {
-    console.error('❌ Error deleting unknown users:', error);
-    res.status(500).json({ error: 'Failed to delete unknown users' });
-  }
-});
-
-/**
- * Test notification system
- * POST /api/admin/test-notifications
- */
-router.post('/test-notifications', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { eventType } = req.body;
-    const io = req.app.get('io');
-
-    if (!io) {
-      return res.status(500).json({ error: 'WebSocket not available' });
-    }
-
-    const testData = {
-      follow: {
-        userId: req.user.userId,
-        username: req.user.username,
-        follower: 'TestFollower',
-        timestamp: new Date().toISOString()
-      },
-      subscription: {
-        userId: req.user.userId,
-        username: req.user.username,
-        subscriber: 'TestSubscriber',
-        tier: 1,
-        isGift: false,
-        timestamp: new Date().toISOString()
-      },
-      resub: {
-        userId: req.user.userId,
-        username: req.user.username,
-        subscriber: 'TestResubscriber',
-        tier: 1,
-        months: 12,
-        streakMonths: 6,
-        message: 'Love this stream!',
-        timestamp: new Date().toISOString()
-      },
-      giftsub: {
-        userId: req.user.userId,
-        username: req.user.username,
-        gifter: 'TestGifter',
-        amount: 5,
-        tier: 1,
-        timestamp: new Date().toISOString()
-      },
-      bits: {
-        userId: req.user.userId,
-        username: req.user.username,
-        cheerer: 'TestCheerer',
-        bits: 500,
-        message: 'Great stream! cheer500',
-        isAnonymous: false,
-        timestamp: new Date().toISOString()
-      },
-      milestone: {
-        userId: req.user.userId,
-        counterType: 'deaths',
-        milestone: 100,
-        newValue: 100,
-        previousMilestone: 50,
-        timestamp: new Date().toISOString()
-      },
-      raid: {
-        userId: req.user.userId,
-        username: req.user.username,
-        raider: 'TestRaider',
-        viewers: 42,
-        timestamp: new Date().toISOString()
-      }
-    };
-
-    const data = testData[eventType];
-    if (!data) {
-      return res.status(400).json({ error: 'Invalid event type. Use: follow, subscription, resub, giftsub, bits, milestone, raid' });
-    }
-
-    // Emit the test event
-    const eventName = eventType === 'follow' ? 'newFollower' :
-                     eventType === 'subscription' ? 'newSubscription' :
-                     eventType === 'resub' ? 'newResub' :
-                     eventType === 'giftsub' ? 'newGiftSub' :
-                     eventType === 'bits' ? 'newCheer' :
-                     eventType === 'milestone' ? 'milestoneReached' :
-                     eventType === 'raid' ? 'raidReceived' :
-                     `new${eventType.charAt(0).toUpperCase() + eventType.slice(1)}`;
-
-    io.to(`user:${req.user.userId}`).emit(eventName, data);
-
-    console.log(`🧪 Admin ${req.user.username} triggered test ${eventType} notification`);
-    res.json({
-      message: `Test ${eventType} notification sent`,
-      eventName,
-      data
-    });
-
-  } catch (error) {
-    console.error('❌ Error sending test notification:', error);
-    res.status(500).json({ error: 'Failed to send test notification' });
-  }
-});
-
-/**
- * Force reset stream status to offline (debug endpoint)
- * POST /api/admin/users/:userId/force-offline
- */
-router.post('/users/:userId/force-offline', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-
-    // Update stream status to offline
-    await database.updateStreamStatus(userId, 'offline');
-
-    // End any active stream session
-    await database.endStream(userId);
-
-    // Get user for notification
-    const user = await database.getUser(userId);
-
-    // Emit stream status change to connected clients
-    const io = req.app.get('io');
-    if (io && user) {
-      io.to(`user:${userId}`).emit('streamStatusChanged', {
-        userId,
-        username: user.username,
-        streamStatus: 'offline',
-        timestamp: new Date().toISOString(),
-        forced: true
-      });
-    }
-
-    console.log(`🔧 Admin forced stream status to offline for user ${userId} (${user?.username})`);
-
-    res.json({
-      success: true,
-      message: `Stream status forced to offline for ${user?.username || userId}`,
-      streamStatus: 'offline',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Error forcing stream offline:', error);
-    res.status(500).json({ error: 'Failed to force stream offline' });
-  }
-});
-
-// ==================== PERMISSION MANAGEMENT ROUTES ====================
-
-/**
- * Grant manager permissions to a user for a specific broadcaster (super_admin only)
- */
-router.post('/permissions/grant-manager', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { managerUserId, broadcasterUserId } = req.body;
-
-    if (!managerUserId || !broadcasterUserId) {
-      return res.status(400).json({
-        error: 'Missing required fields: managerUserId, broadcasterUserId'
-      });
-    }
-
-    console.log(`🔑 Admin ${req.user.username} granting mod permissions: ${managerUserId} -> ${broadcasterUserId}`);
-
-    const updatedMod = await database.grantModPermissions(managerUserId, broadcasterUserId);
-
-    res.json({
-      success: true,
-      message: 'Mod permissions granted successfully',
-      mod: {
-        userId: updatedMod.twitchUserId,
-        username: updatedMod.username,
-        displayName: updatedMod.displayName,
-        role: updatedMod.role,
-        managedStreamers: updatedMod.managedStreamers || []
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error granting mod permissions:', error);
-    res.status(500).json({
-      error: 'Failed to grant mod permissions',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Revoke manager permissions from a user for a specific broadcaster (super_admin only)
- */
-router.post('/permissions/revoke-manager', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { managerUserId, broadcasterUserId } = req.body;
-
-    if (!managerUserId || !broadcasterUserId) {
-      return res.status(400).json({
-        error: 'Missing required fields: managerUserId, broadcasterUserId'
-      });
-    }
-
-    console.log(`🔑 Admin ${req.user.username} revoking mod permissions: ${managerUserId} -> ${broadcasterUserId}`);
-
-    const updatedMod = await database.revokeModPermissions(managerUserId, broadcasterUserId);
-
-    res.json({
-      success: true,
-      message: 'Mod permissions revoked successfully',
-      mod: {
-        userId: updatedMod.twitchUserId,
-        username: updatedMod.username,
-        displayName: updatedMod.displayName,
-        role: updatedMod.role,
-        managedStreamers: updatedMod.managedStreamers || []
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error revoking mod permissions:', error);
-    res.status(500).json({
-      error: 'Failed to revoke mod permissions',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Get all users a manager can manage (includes permissions context)
- */
-router.get('/permissions/managed-users', requireAuth, requireRole('mod'), async (req, res) => {
-  try {
-    console.log(`🔑 Getting managed users for: ${req.user.username} (${req.user.userId})`);
-
-    const managedUsers = await database.getManagedUsers(req.user.userId);
-    const currentUser = await database.getUser(req.user.userId);
-
-    res.json({
-      success: true,
-      currentUser: {
-        userId: currentUser.twitchUserId,
-        username: currentUser.username,
-        displayName: currentUser.displayName,
-        role: currentUser.role,
-        managedStreamers: currentUser.managedStreamers || []
-      },
-      managedUsers: managedUsers.map(user => ({
-        userId: user.twitchUserId,
-        username: user.username,
-        displayName: user.displayName,
-        role: user.role,
-        isActive: user.isActive,
-        lastLogin: user.lastLogin,
-        managedStreamers: user.managedStreamers || []
-      }))
-    });
-  } catch (error) {
-    console.error('❌ Error getting managed users:', error);
-    res.status(500).json({
-      error: 'Failed to get managed users',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Check if current user can manage a specific user
- */
-router.get('/permissions/can-manage/:targetUserId', requireAuth, async (req, res) => {
-  try {
-    const { targetUserId } = req.params;
-
-    console.log(`🔑 Checking if ${req.user.username} can manage ${targetUserId}`);
-
-    const canManage = await database.canManageUser(req.user.userId, targetUserId);
-    const targetUser = await database.getUser(targetUserId);
-
-    res.json({
-      success: true,
-      canManage,
-      targetUser: targetUser ? {
-        userId: targetUser.twitchUserId,
-        username: targetUser.username,
-        displayName: targetUser.displayName,
-        role: targetUser.role
-      } : null
-    });
-  } catch (error) {
-    console.error('❌ Error checking management permissions:', error);
-    res.status(500).json({
-      error: 'Failed to check management permissions',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Get all users with their roles (super_admin only)
- */
-router.get('/permissions/all-users-roles', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    console.log(`🔑 Super admin ${req.user.username} requesting all user roles`);
-
-    const allUsers = await database.getAllUsers();
-
-    res.json({
-      success: true,
-      users: allUsers.map(user => ({
-        userId: user.twitchUserId,
-        username: user.username,
-        displayName: user.displayName,
-        role: user.role,
-        isActive: user.isActive,
-        lastLogin: user.lastLogin,
-        managedStreamers: user.managedStreamers || [],
-        createdAt: user.createdAt
-      }))
-    });
-  } catch (error) {
-    console.error('❌ Error getting all user roles:', error);
-    res.status(500).json({
-      error: 'Failed to get all user roles',
-      details: error.message
-    });
-  }
-});
-
-// ==================== MANAGER CONFIGURATION ROUTES ====================
-
-/**
- * Update user features (managers can update their assigned streamers)
- */
-router.put('/manage/:userId/features', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const features = req.body;
-
-    console.log(`🔧 Manager ${req.user.username} updating features for user ${userId}:`, features);
-
-    const updatedUser = await database.updateUserFeatures(userId, features);
-
-    res.json({
-      success: true,
-      message: 'User features updated successfully',
-      user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName,
-        features: typeof updatedUser.features === 'string' ? JSON.parse(updatedUser.features) : updatedUser.features
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error updating user features (manager):', error);
-    res.status(500).json({
-      error: 'Failed to update user features',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Update overlay settings (managers can update their assigned streamers)
- */
-router.put('/manage/:userId/overlay', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const overlaySettings = req.body;
-
-    console.log(`🎨 Manager ${req.user.username} updating overlay settings for user ${userId}:`, overlaySettings);
-
-    const updatedUser = await database.updateUserOverlaySettings(userId, overlaySettings);
-
-    res.json({
-      success: true,
-      message: 'Overlay settings updated successfully',
-      user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName,
-        overlaySettings: typeof updatedUser.overlaySettings === 'string' ? JSON.parse(updatedUser.overlaySettings) : updatedUser.overlaySettings
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error updating overlay settings (manager):', error);
-    res.status(500).json({
-      error: 'Failed to update overlay settings',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Get user details (managers can view their assigned streamers)
- */
-router.get('/manage/:userId', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    console.log(`👀 Manager ${req.user.username} viewing user details for ${userId}`);
-
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({
-      success: true,
-      user: {
-        userId: user.twitchUserId,
-        username: user.username,
-        displayName: user.displayName,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        features: typeof user.features === 'string' ? JSON.parse(user.features) : user.features,
-        overlaySettings: typeof user.overlaySettings === 'string' ? JSON.parse(user.overlaySettings) : user.overlaySettings,
-        streamStatus: user.streamStatus,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error getting user details (manager):', error);
-    res.status(500).json({
-      error: 'Failed to get user details',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Update user status (managers can activate/deactivate their assigned streamers)
- */
-router.put('/manage/:userId/status', requireAuth, requireModAccess, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { isActive } = req.body;
-
-    if (typeof isActive !== 'boolean') {
-      return res.status(400).json({ error: 'isActive must be a boolean value' });
-    }
-
-    console.log(`🔄 Manager ${req.user.username} ${isActive ? 'activating' : 'deactivating'} user ${userId}`);
-
-    const updatedUser = await database.updateUserStatus(userId, isActive);
-
-    res.json({
-      success: true,
-      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
-      user: {
-        userId: updatedUser.twitchUserId,
-        username: updatedUser.username,
-        displayName: updatedUser.displayName,
-        isActive: updatedUser.isActive
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error updating user status (manager):', error);
-    res.status(500).json({
-      error: 'Failed to update user status',
-      details: error.message
-    });
-  }
-});
-
-/**
- * Get user's series saves (admin)
- * GET /api/admin/users/:userId/series-saves
- */
-router.get('/users/:userId/series-saves', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await database.getUser(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const seriesSaves = await database.listSeriesSaves(userId);
-
-    console.log(`✅ Admin ${req.user.username} retrieved ${seriesSaves.length} series saves for user ${userId}`);
-
-    res.json({
-      userId: userId,
-      username: user.username,
-      displayName: user.displayName,
-      seriesSaves: seriesSaves || []
-    });
-  } catch (error) {
-    console.error('❌ Error fetching user series saves:', error);
-    res.status(500).json({ error: 'Failed to fetch series saves' });
-  }
-});
-
-/**
- * Save new series state for user (admin)
- * POST /api/admin/users/:userId/series-saves
- */
-router.post('/users/:userId/series-saves', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { seriesName, description } = req.body;
-
-    if (!seriesName || seriesName.trim() === '') {
-      return res.status(400).json({ error: 'Series name is required' });
-    }
-
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const saveData = await database.saveSeries(userId, seriesName.trim(), description || '');
-
-    console.log(`✅ Admin ${req.user.username} saved series "${seriesName}" for user ${userId}`);
-
-    res.status(201).json({
-      message: 'Series saved successfully',
-      seriesData: saveData
-    });
-  } catch (error) {
-    console.error('❌ Error saving series:', error);
-    res.status(500).json({ error: 'Failed to save series' });
-  }
-});
-
-/**
- * Load series state for user (admin)
- * POST /api/admin/users/:userId/series-saves/:seriesId/load
- */
-router.post('/users/:userId/series-saves/:seriesId/load', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId, seriesId } = req.params;
-
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const loadedData = await database.loadSeries(userId, seriesId);
-
-    if (!loadedData) {
-      return res.status(404).json({ error: 'Series save not found' });
-    }
-
-    console.log(`✅ Admin ${req.user.username} loaded series "${loadedData.seriesName}" for user ${userId}`);
-
-    // Emit counter update to user's WebSocket room
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:${userId}`).emit('counterUpdate', {
-        userId: userId,
-        deaths: loadedData.deaths,
-        swears: loadedData.swears,
-        screams: loadedData.screams || 0,
-        bits: loadedData.bits || 0,
-        seriesLoaded: loadedData.seriesName,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    res.json({
-      message: `Series "${loadedData.seriesName}" loaded successfully`,
-      seriesData: loadedData
-    });
-  } catch (error) {
-    console.error('❌ Error loading series:', error);
-    res.status(500).json({ error: 'Failed to load series' });
-  }
-});
-
-/**
- * Delete series save (admin)
- * DELETE /api/admin/users/:userId/series-saves/:seriesId
- */
-router.delete('/users/:userId/series-saves/:seriesId', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId, seriesId } = req.params;
-
-    const user = await database.getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Check if series save exists before attempting deletion
-    const saves = await database.listSeriesSaves(userId);
-    const seriesExists = saves.some(save => save.id === seriesId);
-
-    if (!seriesExists) {
-      return res.status(404).json({ error: 'Series save not found' });
-    }
-
-    // Delete the series save
-    await database.deleteSeries(userId, seriesId);
-
-    console.log(`✅ Admin ${req.user.username} deleted series save ${seriesId} for user ${userId}`);
-
-    res.json({
-      message: 'Series save deleted successfully',
-      seriesId: seriesId
-    });
-  } catch (error) {
-    console.error('❌ Error deleting series save:', error);
-    res.status(500).json({ error: 'Failed to delete series save' });
-  }
 });
 
 module.exports = router;

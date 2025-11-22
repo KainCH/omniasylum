@@ -412,7 +412,7 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
 
     // Check if user has alerts feature enabled
     const hasAlerts = await database.hasFeature(targetUserId, 'streamAlerts');
-    if (!hasAlerts) {
+    if (!hasAlerts && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Stream alerts feature not enabled for this user' });
     }
 

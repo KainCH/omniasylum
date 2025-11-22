@@ -1128,7 +1128,26 @@ class Database {
     }
 
     try {
-      return typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+      const features = typeof user.features === 'string' ? JSON.parse(user.features) : user.features;
+
+      // Return defaults if features are missing or null
+      if (!features) {
+        return {
+          chatCommands: true,
+          channelPoints: false,
+          autoClip: false,
+          customCommands: false,
+          analytics: false,
+          streamOverlay: false,
+          alertAnimations: false,
+          discordNotifications: true,
+          discordWebhook: false,
+          templateStyle: 'asylum_themed',
+          streamAlerts: true
+        };
+      }
+
+      return features;
     } catch (error) {
       console.error('Error parsing user features:', error);
       return {
@@ -1137,7 +1156,12 @@ class Database {
         autoClip: false,
         customCommands: false,
         analytics: false,
-        webhooks: false
+        streamOverlay: false,
+        alertAnimations: false,
+        discordNotifications: true,
+        discordWebhook: false,
+        templateStyle: 'asylum_themed',
+        streamAlerts: true
       };
     }
   }
