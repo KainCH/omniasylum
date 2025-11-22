@@ -22,6 +22,7 @@ namespace OmniForge.Tests
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ILogger<TwitchMessageHandler>> _mockLogger;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
+        private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly TwitchMessageHandler _handler;
 
         public TwitchMessageHandlerTests()
@@ -32,11 +33,26 @@ namespace OmniForge.Tests
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockLogger = new Mock<ILogger<TwitchMessageHandler>>();
             _mockCounterRepository = new Mock<ICounterRepository>();
+            _mockUserRepository = new Mock<IUserRepository>();
 
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository)))
                 .Returns(_mockCounterRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IUserRepository)))
+                .Returns(_mockUserRepository.Object);
+
+            // Default user setup
+            _mockUserRepository.Setup(x => x.GetUserAsync(It.IsAny<string>()))
+                .ReturnsAsync(new User
+                {
+                    TwitchUserId = "user1",
+                    OverlaySettings = new OverlaySettings
+                    {
+                        Counters = new OverlayCounters { Screams = true }
+                    },
+                    DiscordSettings = new DiscordSettings() // Ensure this is not null for milestone checks
+                });
 
             _handler = new TwitchMessageHandler(
                 _mockScopeFactory.Object,

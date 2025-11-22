@@ -41,8 +41,29 @@ namespace OmniForge.Tests
             // Assert
             _mockClients.Verify(x => x.Group($"user:{userId}"), Times.Once);
             _mockClientProxy.Verify(x => x.SendCoreAsync(
-                "ReceiveCounterUpdate",
+                "counterUpdate",
                 It.Is<object[]>(o => o.Length == 1 && o[0] == counter),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task NotifyMilestoneReachedAsync_ShouldSendMilestoneToGroup()
+        {
+            // Arrange
+            var userId = "123";
+            var type = "deaths";
+            var milestone = 10;
+            var current = 10;
+            var previous = 0;
+
+            // Act
+            await _notifier.NotifyMilestoneReachedAsync(userId, type, milestone, current, previous);
+
+            // Assert
+            _mockClients.Verify(x => x.Group($"user:{userId}"), Times.Once);
+            _mockClientProxy.Verify(x => x.SendCoreAsync(
+                "milestoneReached",
+                It.Is<object[]>(o => o.Length == 1), // Just check we got one object argument
                 It.IsAny<CancellationToken>()), Times.Once);
         }
     }
