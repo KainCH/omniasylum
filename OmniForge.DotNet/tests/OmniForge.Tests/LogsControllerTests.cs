@@ -51,7 +51,7 @@ namespace OmniForge.Tests
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
-            
+
             // Verify logs were called
             // Verifying extension methods on ILogger is tricky with Moq, usually requires verifying Log method directly
             // But since we just want to ensure it doesn't crash and returns OK, this is sufficient for now.

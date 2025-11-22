@@ -61,9 +61,9 @@ namespace OmniForge.Tests
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
                 .ReturnsAsync(user);
 
-            var settings = new OverlaySettings 
-            { 
-                Theme = new OverlayTheme { BackgroundColor = "black" } 
+            var settings = new OverlaySettings
+            {
+                Theme = new OverlayTheme { BackgroundColor = "black" }
             };
 
             var result = await _controller.UpdateOverlaySettings(settings);

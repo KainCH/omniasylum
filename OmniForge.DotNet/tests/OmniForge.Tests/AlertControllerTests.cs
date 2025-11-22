@@ -70,11 +70,11 @@ namespace OmniForge.Tests
             var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { StreamAlerts = true } };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
-            var request = new CreateAlertRequest 
-            { 
-                Type = "follow", 
-                Name = "Test Alert", 
-                TextPrompt = "New Follower!" 
+            var request = new CreateAlertRequest
+            {
+                Type = "follow",
+                Name = "Test Alert",
+                TextPrompt = "New Follower!"
             };
 
             var result = await _controller.CreateAlert(request);
