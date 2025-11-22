@@ -15,7 +15,18 @@ var keyVaultName = builder.Configuration["KeyVaultName"];
 if (!string.IsNullOrEmpty(keyVaultName))
 {
     var keyVaultUri = new Uri($"https://{keyVaultName}.vault.azure.net/");
-    builder.Configuration.AddAzureKeyVault(keyVaultUri, new DefaultAzureCredential());
+    var azureClientId = builder.Configuration["AZURE_CLIENT_ID"];
+
+    if (!string.IsNullOrEmpty(azureClientId))
+    {
+        // Use Managed Identity Credential when deployed to Azure with User Assigned Identity
+        builder.Configuration.AddAzureKeyVault(keyVaultUri, new ManagedIdentityCredential(azureClientId));
+    }
+    else
+    {
+        // Fallback to DefaultAzureCredential for local development
+        builder.Configuration.AddAzureKeyVault(keyVaultUri, new DefaultAzureCredential());
+    }
 }
 
 // Add services to the container.
@@ -29,15 +40,39 @@ builder.Services.AddAuthentication(options =>
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = TwitchAuthenticationDefaults.AuthenticationScheme;
 })
-.AddCookie()
+.AddCookie(options =>
+{
+    options.LoginPath = "/";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+})
 .AddTwitch(options =>
 {
-    options.ClientId = builder.Configuration["Authentication:Twitch:ClientId"] ?? builder.Configuration["TWITCH-CLIENT-ID"] ?? throw new InvalidOperationException("Twitch ClientId not found.");
-    options.ClientSecret = builder.Configuration["Authentication:Twitch:ClientSecret"] ?? builder.Configuration["TWITCH-CLIENT-SECRET"] ?? throw new InvalidOperationException("Twitch ClientSecret not found.");
+    var clientId = builder.Configuration["Authentication:Twitch:ClientId"];
+    if (string.IsNullOrEmpty(clientId))
+    {
+        clientId = builder.Configuration["TWITCH-CLIENT-ID"];
+    }
+
+    var clientSecret = builder.Configuration["Authentication:Twitch:ClientSecret"];
+    if (string.IsNullOrEmpty(clientSecret))
+    {
+        clientSecret = builder.Configuration["TWITCH-CLIENT-SECRET"];
+    }
+
+    options.ClientId = !string.IsNullOrEmpty(clientId) ? clientId : throw new InvalidOperationException("Twitch ClientId not found.");
+    options.ClientSecret = !string.IsNullOrEmpty(clientSecret) ? clientSecret : throw new InvalidOperationException("Twitch ClientSecret not found.");
+
     options.CallbackPath = "/auth/twitch/callback";
     options.Scope.Add("user:read:email");
     options.Scope.Add("chat:read");
     options.Scope.Add("chat:edit");
+    options.Scope.Add("channel:manage:broadcast");
+    options.Scope.Add("user:manage:whispers");
+    options.Scope.Add("channel:read:subscriptions");
+    options.Scope.Add("channel:read:redemptions");
+    options.Scope.Add("moderator:read:followers");
+    options.Scope.Add("bits:read");
+    options.Scope.Add("clips:edit");
     options.SaveTokens = true;
 });
 
