@@ -3,9 +3,11 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using System.Text.Json
 @inject NavigationManager NavigationManager
 @inject ICounterRepository CounterRepository
 @inject IUserRepository UserRepository
+@inject IAlertRepository AlertRepository
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
@@ -119,39 +121,117 @@ else
     private HubConnection? hubConnection;
     private OmniForge.Core.Entities.Counter? counter;
     private OmniForge.Core.Entities.User? user;
+    private string StreamStatus { get; set; } = "offline";
+    private List<Alert> alerts = new();
 
     protected override async Task OnInitializedAsync()
     {
-        // Load user and counters
         user = await UserRepository.GetUserAsync(TwitchUserId);
         if (user != null)
         {
             counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+            StreamStatus = user.StreamStatus;
+            alerts = (await AlertRepository.GetAlertsAsync(TwitchUserId)).ToList();
+        }
+    }
 
-            // Connect to SignalR
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && user != null && user.Features.StreamOverlay)
+        {
+            await JSRuntime.InvokeVoidAsync("overlayInterop.init");
+
             hubConnection = new HubConnectionBuilder()
                 .WithUrl(NavigationManager.ToAbsoluteUri("/overlayHub"))
                 .WithAutomaticReconnect()
                 .Build();
 
-            hubConnection.On<OmniForge.Core.Entities.Counter>("ReceiveCounterUpdate", async (updatedCounter) =>
+            hubConnection.On<OmniForge.Core.Entities.Counter>("counterUpdate", (updatedCounter) =>
             {
-                if (counter != null)
-                {
-                    bool deathIncreased = updatedCounter.Deaths > counter.Deaths;
-                    counter = updatedCounter;
-                    await InvokeAsync(StateHasChanged);
+                counter = updatedCounter;
+                InvokeAsync(StateHasChanged);
+            });
 
-                    if (deathIncreased && user.OverlaySettings.Animations.Enabled)
-                    {
-                        await JSRuntime.InvokeVoidAsync("overlayInterop.triggerDeath", updatedCounter.Deaths);
-                    }
+            hubConnection.On<object>("streamStatusUpdate", (data) =>
+            {
+                var json = JsonSerializer.Serialize(data);
+                var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                if (obj.TryGetProperty("streamStatus", out var statusProp))
+                {
+                    StreamStatus = statusProp.GetString() ?? "offline";
+                    InvokeAsync(StateHasChanged);
+                }
+            });
+
+            hubConnection.On<object>("newFollower", async (data) => await TriggerAlert("follow", data));
+            hubConnection.On<object>("newSubscriber", async (data) => await TriggerAlert("subscription", data));
+            hubConnection.On<object>("resub", async (data) => await TriggerAlert("resub", data));
+            hubConnection.On<object>("giftSub", async (data) => await TriggerAlert("giftsub", data));
+            hubConnection.On<object>("bitsReceived", async (data) => await TriggerAlert("bits", data));
+            hubConnection.On<object>("raidReceived", async (data) => await TriggerAlert("raid", data));
+
+            hubConnection.On<object>("customAlert", async (data) =>
+            {
+                var json = JsonSerializer.Serialize(data);
+                var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                if (obj.TryGetProperty("alertType", out var typeProp) && obj.TryGetProperty("data", out var payloadProp))
+                {
+                    await TriggerAlert(typeProp.GetString() ?? "custom", payloadProp);
                 }
             });
 
             await hubConnection.StartAsync();
-            await hubConnection.SendAsync("JoinGroup", $"user:{TwitchUserId}");
+            await hubConnection.InvokeAsync("JoinGroup", TwitchUserId);
         }
+    }
+
+    private async Task TriggerAlert(string type, object data)
+    {
+        var alert = alerts.FirstOrDefault(a => a.Type == type && a.IsEnabled);
+        if (alert == null) return;
+
+        var payload = new Dictionary<string, object>
+        {
+            ["id"] = alert.Id,
+            ["type"] = alert.Type,
+            ["name"] = alert.Name,
+            ["visualCue"] = alert.VisualCue,
+            ["sound"] = alert.Sound,
+            ["soundDescription"] = alert.SoundDescription,
+            ["textPrompt"] = alert.TextPrompt,
+            ["duration"] = alert.Duration,
+            ["backgroundColor"] = alert.BackgroundColor,
+            ["textColor"] = alert.TextColor,
+            ["borderColor"] = alert.BorderColor
+        };
+
+        try
+        {
+            if (!string.IsNullOrEmpty(alert.Effects))
+            {
+                var effectsObj = JsonSerializer.Deserialize<object>(alert.Effects);
+                if (effectsObj != null)
+                {
+                    payload["effects"] = effectsObj;
+                }
+            }
+        }
+        catch {}
+
+        var json = JsonSerializer.Serialize(data);
+        var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+        if (dataDict != null)
+        {
+            foreach (var kvp in dataDict)
+            {
+                if (!payload.ContainsKey(kvp.Key))
+                {
+                    payload[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+
+        await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
     }
 
     private string GetPositionStyle()
@@ -163,6 +243,7 @@ else
 
         style += pos.Contains("top") ? "top: 20px;" : "bottom: 20px;";
         style += pos.Contains("right") ? "right: 20px;" : "left: 20px;";
+        style += StreamStatus == "live" ? "opacity: 1;" : "opacity: 0;";
 
         return style;
     }
@@ -172,7 +253,14 @@ else
         if (user == null) return "";
 
         var theme = user.OverlaySettings.Theme;
-        return $"background: {theme.BackgroundColor}; border: 2px solid {theme.BorderColor};";
+        var style = $"background: {theme.BackgroundColor}; border: 2px solid {theme.BorderColor};";
+
+        if (user.OverlaySettings.Animations.Enabled)
+        {
+            style += " transition: all 0.3s ease;";
+        }
+
+        return style;
     }
 
     public async ValueTask DisposeAsync()

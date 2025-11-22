@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
@@ -33,17 +34,15 @@ namespace OmniForge.Tests
         {
             // Arrange
             var userId = "123";
-            var counterEntity = new CounterTableEntity
+            var tableEntity = new TableEntity(userId, "counters")
             {
-                PartitionKey = userId,
-                RowKey = "counters",
-                Deaths = 5,
-                Swears = 10
+                ["Deaths"] = 5,
+                ["Swears"] = 10
             };
 
-            var mockResponse = Mock.Of<Response<CounterTableEntity>>(r => r.Value == counterEntity);
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<CounterTableEntity>(
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
                 userId,
                 "counters",
                 It.IsAny<IEnumerable<string>>(),
@@ -54,7 +53,6 @@ namespace OmniForge.Tests
             var result = await _repository.GetCountersAsync(userId);
 
             // Assert
-            Assert.NotNull(result);
             Assert.Equal(5, result.Deaths);
             Assert.Equal(10, result.Swears);
         }
@@ -63,10 +61,10 @@ namespace OmniForge.Tests
         public async Task GetCountersAsync_ShouldReturnDefault_WhenNotFound()
         {
             // Arrange
-            var userId = "unknown";
-            var exception = new RequestFailedException(404, "Not Found", "ResourceNotFound", null);
+            var userId = "123";
+            var exception = new RequestFailedException(404, "Not Found", "NotFound", null);
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<CounterTableEntity>(
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
                 userId,
                 "counters",
                 It.IsAny<IEnumerable<string>>(),
@@ -77,9 +75,8 @@ namespace OmniForge.Tests
             var result = await _repository.GetCountersAsync(userId);
 
             // Assert
-            Assert.NotNull(result);
+            Assert.Equal(0, result.Deaths);
             Assert.Equal(userId, result.TwitchUserId);
-            Assert.Equal(0, result.Deaths); // Default value
         }
 
         [Fact]
@@ -90,21 +87,67 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = "123",
                 Deaths = 1,
-                Swears = 2
+                CustomCounters = new Dictionary<string, int> { { "custom1", 5 } }
             };
-
-            _mockTableClient.Setup(x => x.UpsertEntityAsync(
-                It.IsAny<CounterTableEntity>(),
-                TableUpdateMode.Replace,
-                It.IsAny<CancellationToken>()))
-                .ReturnsAsync(Mock.Of<Response>());
 
             // Act
             await _repository.SaveCountersAsync(counter);
 
             // Assert
             _mockTableClient.Verify(x => x.UpsertEntityAsync(
-                It.Is<CounterTableEntity>(e => e.PartitionKey == "123" && e.Deaths == 1),
+                It.Is<TableEntity>(e =>
+                    e.PartitionKey == "123" &&
+                    (int)e["Deaths"] == 1 &&
+                    (int)e["custom1"] == 5),
+                TableUpdateMode.Replace,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetCustomCountersConfigAsync_ShouldReturnConfig_WhenExists()
+        {
+            // Arrange
+            var userId = "123";
+            var config = new CustomCounterConfiguration();
+            config.Counters.Add("c1", new CustomCounterDefinition { Name = "C1", Icon = "💀" });
+
+            var entity = CustomCounterConfigTableEntity.FromConfiguration(userId, config);
+
+            var mockResponse = Mock.Of<Response<CustomCounterConfigTableEntity>>(r => r.Value == entity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<CustomCounterConfigTableEntity>(
+                userId,
+                "customCounters",
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCustomCountersConfigAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.True(result.Counters.ContainsKey("c1"));
+            Assert.Equal("C1", result.Counters["c1"].Name);
+        }
+
+        [Fact]
+        public async Task SaveCustomCountersConfigAsync_ShouldUpsertEntity()
+        {
+            // Arrange
+            var userId = "123";
+            var config = new CustomCounterConfiguration();
+            config.Counters.Add("c1", new CustomCounterDefinition { Name = "C1" });
+
+            // Act
+            await _repository.SaveCustomCountersConfigAsync(userId, config);
+
+            // Assert
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<CustomCounterConfigTableEntity>(e =>
+                    e.PartitionKey == userId &&
+                    e.RowKey == "customCounters" &&
+                    e.CountersConfig.Contains("C1")),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }

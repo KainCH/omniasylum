@@ -21,6 +21,7 @@ namespace OmniForge.Core.Entities
         public DiscordSettings DiscordSettings { get; set; } = new DiscordSettings();
         public bool IsActive { get; set; } = true;
         public string StreamStatus { get; set; } = "offline";
+        public List<string> ManagedStreamers { get; set; } = new List<string>();
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset LastLogin { get; set; }
     }
@@ -40,6 +41,22 @@ namespace OmniForge.Core.Entities
         public bool DiscordWebhook { get; set; } = false;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
+        public StreamSettings StreamSettings { get; set; } = new StreamSettings();
+    }
+
+    public class StreamSettings
+    {
+        public BitThresholds BitThresholds { get; set; } = new BitThresholds();
+        public bool AutoStartStream { get; set; } = false;
+        public bool ResetOnStreamStart { get; set; } = true;
+        public bool AutoIncrementCounters { get; set; } = false;
+    }
+
+    public class BitThresholds
+    {
+        public int Death { get; set; } = 100;
+        public int Swear { get; set; } = 50;
+        public int Celebration { get; set; } = 10;
     }
 
     public class OverlaySettings

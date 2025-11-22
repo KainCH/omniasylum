@@ -10,5 +10,7 @@ namespace OmniForge.Core.Interfaces
         Task SaveUserAsync(User user);
         Task DeleteUserAsync(string twitchUserId);
         Task<IEnumerable<User>> GetAllUsersAsync();
+        Task<ChatCommandConfiguration> GetChatCommandsConfigAsync(string userId);
+        Task SaveChatCommandsConfigAsync(string userId, ChatCommandConfiguration config);
     }
 }

@@ -19,6 +19,9 @@ namespace OmniForge.Infrastructure.Services
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<TwitchMessageHandler> _logger;
 
+        // Cooldown tracking: UserId -> Command -> LastUsedTime
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
+
         public TwitchMessageHandler(
             IServiceScopeFactory scopeFactory,
             IOverlayNotifier overlayNotifier,
@@ -35,6 +38,7 @@ namespace OmniForge.Infrastructure.Services
 
             var command = chatMessage.Message.ToLower().Split(' ')[0];
             var isMod = chatMessage.IsModerator || chatMessage.IsBroadcaster;
+            var isSubscriber = chatMessage.IsSubscriber;
 
             try
             {
@@ -49,28 +53,29 @@ namespace OmniForge.Infrastructure.Services
                     var previousSwears = counters.Swears;
                     var previousScreams = counters.Screams;
 
-                    // If counters don't exist, create them?
-                    // The original code assumed they exist or GetCountersAsync returns a default/new object.
-                    // Let's assume GetCountersAsync returns a valid object as per original code.
-
                     bool changed = false;
+                    bool handled = false;
 
                     switch (command)
                     {
                         case "!deaths":
                             await sendMessage(userId, $"Death Count: {counters.Deaths}");
+                            handled = true;
                             break;
                         case "!swears":
                             await sendMessage(userId, $"Swear Count: {counters.Swears}");
+                            handled = true;
                             break;
                         case "!screams":
                             if (user != null && user.OverlaySettings.Counters.Screams)
                             {
                                 await sendMessage(userId, $"Scream Count: {counters.Screams}");
                             }
+                            handled = true;
                             break;
                         case "!stats":
                             await sendMessage(userId, $"Deaths: {counters.Deaths} | Swears: {counters.Swears} | Screams: {counters.Screams}");
+                            handled = true;
                             break;
 
                         // Mod-only commands
@@ -82,6 +87,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Death Count: {counters.Deaths}");
                             }
+                            handled = true;
                             break;
                         case "!death-":
                         case "!d-":
@@ -91,6 +97,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Death Count: {counters.Deaths}");
                             }
+                            handled = true;
                             break;
                         case "!swear+":
                         case "!s+":
@@ -100,6 +107,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Swear Count: {counters.Swears}");
                             }
+                            handled = true;
                             break;
                         case "!swear-":
                         case "!s-":
@@ -109,6 +117,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Swear Count: {counters.Swears}");
                             }
+                            handled = true;
                             break;
                         case "!scream+":
                         case "!sc+":
@@ -118,6 +127,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Scream Count: {counters.Screams}");
                             }
+                            handled = true;
                             break;
                         case "!scream-":
                         case "!sc-":
@@ -127,6 +137,7 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, $"Scream Count: {counters.Screams}");
                             }
+                            handled = true;
                             break;
                         case "!resetcounters":
                             if (isMod)
@@ -137,7 +148,59 @@ namespace OmniForge.Infrastructure.Services
                                 changed = true;
                                 await sendMessage(userId, "Counters have been reset.");
                             }
+                            handled = true;
                             break;
+                    }
+
+                    // Handle Custom Commands
+                    if (!handled)
+                    {
+                        var chatCommands = await userRepository.GetChatCommandsConfigAsync(userId);
+                        if (chatCommands.Commands.TryGetValue(command, out var cmdConfig))
+                        {
+                            // Check Permission
+                            bool hasPermission = false;
+                            switch (cmdConfig.Permission.ToLower())
+                            {
+                                case "everyone":
+                                    hasPermission = true;
+                                    break;
+                                case "subscriber":
+                                    hasPermission = isSubscriber || isMod; // Mods/Broadcaster imply sub access usually
+                                    break;
+                                case "moderator":
+                                    hasPermission = isMod;
+                                    break;
+                                case "broadcaster":
+                                    hasPermission = chatMessage.IsBroadcaster;
+                                    break;
+                                default:
+                                    hasPermission = true;
+                                    break;
+                            }
+
+                            if (hasPermission)
+                            {
+                                // Check Cooldown
+                                var userCooldowns = _cooldowns.GetOrAdd(userId, _ => new System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>());
+                                var now = DateTimeOffset.UtcNow;
+
+                                bool onCooldown = false;
+                                if (userCooldowns.TryGetValue(command, out var lastUsed))
+                                {
+                                    if ((now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
+                                    {
+                                        onCooldown = true;
+                                    }
+                                }
+
+                                if (!onCooldown)
+                                {
+                                    await sendMessage(userId, cmdConfig.Response);
+                                    userCooldowns[command] = now;
+                                }
+                            }
+                        }
                     }
 
                     if (changed)

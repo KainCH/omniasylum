@@ -47,7 +47,7 @@ namespace OmniForge.Tests
         public async Task Increment_ShouldReturnOk_WhenValid()
         {
             var counter = new Counter { Deaths = 10 };
-            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("12345", "deaths"))
+            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("12345", "deaths", 1))
                 .ReturnsAsync(counter);
 
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
@@ -65,7 +65,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Increment_ShouldReturnBadRequest_WhenInvalidType()
         {
-            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("12345", "invalid"))
+            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("12345", "invalid", 1))
                 .ThrowsAsync(new System.ArgumentException());
 
             var result = await _controller.Increment("invalid");

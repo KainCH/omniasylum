@@ -27,6 +27,7 @@ namespace OmniForge.Infrastructure.Entities
         public string DiscordSettings { get; set; } = "{}";
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
+        public string ManagedStreamers { get; set; } = "[]";
         public bool IsActive { get; set; } = true;
         public string StreamStatus { get; set; } = "offline";
         public DateTimeOffset CreatedAt { get; set; }
@@ -50,6 +51,7 @@ namespace OmniForge.Infrastructure.Entities
                 DiscordSettings = JsonSerializer.Deserialize<DiscordSettings>(DiscordSettings) ?? new DiscordSettings(),
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 DiscordInviteLink = DiscordInviteLink,
+                ManagedStreamers = JsonSerializer.Deserialize<System.Collections.Generic.List<string>>(ManagedStreamers) ?? new System.Collections.Generic.List<string>(),
                 IsActive = IsActive,
                 StreamStatus = StreamStatus,
                 CreatedAt = CreatedAt,
@@ -77,6 +79,7 @@ namespace OmniForge.Infrastructure.Entities
                 DiscordSettings = JsonSerializer.Serialize(user.DiscordSettings),
                 DiscordWebhookUrl = user.DiscordWebhookUrl,
                 DiscordInviteLink = user.DiscordInviteLink,
+                ManagedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
                 IsActive = user.IsActive,
                 StreamStatus = user.StreamStatus,
                 CreatedAt = user.CreatedAt,

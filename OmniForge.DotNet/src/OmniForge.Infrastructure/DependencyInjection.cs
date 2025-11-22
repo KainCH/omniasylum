@@ -57,6 +57,9 @@ namespace OmniForge.Infrastructure
 
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<ICounterRepository, CounterRepository>();
+            services.AddScoped<IAlertRepository, AlertRepository>();
+            services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
+            services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();

@@ -32,5 +32,68 @@ namespace OmniForge.Web.Services
                 timestamp = System.DateTime.UtcNow
             });
         }
+
+        public async Task NotifySettingsUpdateAsync(string userId, OverlaySettings settings)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("overlaySettingsUpdate", new
+            {
+                userId,
+                overlaySettings = settings
+            });
+        }
+
+        public async Task NotifyStreamStatusUpdateAsync(string userId, string status)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("streamStatusUpdate", new
+            {
+                userId,
+                streamStatus = status
+            });
+        }
+
+        public async Task NotifyStreamStartedAsync(string userId, Counter counter)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("streamStarted", counter);
+        }
+
+        public async Task NotifyStreamEndedAsync(string userId, Counter counter)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("streamEnded", counter);
+        }
+
+        public async Task NotifyFollowerAsync(string userId, string displayName)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("newFollower", new { displayName });
+        }
+
+        public async Task NotifySubscriberAsync(string userId, string displayName, string tier, bool isGift)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("newSubscriber", new { displayName, tier, isGift });
+        }
+
+        public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("resub", new { displayName, months, tier, message });
+        }
+
+        public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("giftSub", new { gifterName, recipientName, tier, totalGifts });
+        }
+
+        public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("bitsReceived", new { displayName, amount, message, totalBits });
+        }
+
+        public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("raidReceived", new { raiderName, viewers });
+        }
+
+        public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("customAlert", new { alertType, data });
+        }
     }
 }

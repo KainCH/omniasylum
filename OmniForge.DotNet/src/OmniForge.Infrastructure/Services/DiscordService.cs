@@ -126,9 +126,9 @@ namespace OmniForge.Infrastructure.Services
                     break;
 
                 default:
-                    title = "📢 OmniForge Notification";
-                    description = $"Event: {eventType}";
-                    color = 0x5865F2; // Discord blurple
+                    title = (string?)GetProperty(eventData, "title") ?? "📢 OmniForge Notification";
+                    description = (string?)GetProperty(eventData, "description") ?? $"Event: {eventType}";
+                    color = (int?)GetProperty(eventData, "color") ?? 0x5865F2; // Discord blurple
                     break;
             }
 

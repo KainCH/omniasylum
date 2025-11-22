@@ -29,7 +29,7 @@ namespace OmniForge.Infrastructure.Services
                 new Claim("userId", user.TwitchUserId),
                 new Claim("username", user.Username),
                 new Claim("displayName", user.DisplayName),
-                new Claim("role", user.Role)
+                new Claim(ClaimTypes.Role, user.Role)
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor

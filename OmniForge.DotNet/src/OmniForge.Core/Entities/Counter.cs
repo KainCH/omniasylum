@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace OmniForge.Core.Entities
 {
@@ -12,5 +13,6 @@ namespace OmniForge.Core.Entities
         public DateTimeOffset LastUpdated { get; set; }
         public DateTimeOffset? StreamStarted { get; set; }
         public string? LastNotifiedStreamId { get; set; }
+        public Dictionary<string, int> CustomCounters { get; set; } = new Dictionary<string, int>();
     }
 }
