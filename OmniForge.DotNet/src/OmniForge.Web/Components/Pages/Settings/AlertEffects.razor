@@ -23,10 +23,6 @@
             </div>
         </div>
     }
-    else if (user == null)
-    {
-        <div class="alert alert-danger">User not found.</div>
-    }
     else
     {
         @if (!string.IsNullOrEmpty(message))
@@ -37,7 +33,13 @@
             </div>
         }
 
-        <div class="card shadow-sm">
+        @if (user == null)
+        {
+            <div class="alert alert-danger">User not found.</div>
+        }
+        else
+        {
+            <div class="card shadow-sm">
             <div class="card-header">
                 <h5 class="mb-0">Visual & Audio Settings</h5>
             </div>
@@ -108,6 +110,7 @@
                 </div>
             </div>
         </div>
+    }
     }
 </div>
 

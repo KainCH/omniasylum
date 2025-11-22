@@ -101,5 +101,116 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == request.WebhookUrl)), Times.Once);
         }
+
+        [Fact]
+        public async Task GetDiscordWebhook_ShouldReturnOk()
+        {
+            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.GetDiscordWebhook();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
+
+        [Fact]
+        public async Task TestDiscordWebhook_ShouldReturnOk_WhenValid()
+        {
+            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+            _mockDiscordService.Setup(x => x.SendTestNotificationAsync(user)).Returns(Task.CompletedTask);
+
+            var result = await _controller.TestDiscordWebhook();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockDiscordService.Verify(x => x.SendTestNotificationAsync(user), Times.Once);
+        }
+
+        [Fact]
+        public async Task TestDiscordWebhook_ShouldReturnBadRequest_WhenNoUrl()
+        {
+            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.TestDiscordWebhook();
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task GetDiscordSettings_ShouldReturnOk()
+        {
+            var user = new User { TwitchUserId = "12345", DiscordSettings = new DiscordSettings() };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.GetDiscordSettings();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(user.DiscordSettings, okResult.Value);
+        }
+
+        [Fact]
+        public async Task UpdateDiscordSettings_ShouldReturnOk()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var settings = new DiscordSettings { EnableChannelNotifications = true };
+            var result = await _controller.UpdateDiscordSettings(settings);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordSettings.EnableChannelNotifications == true)), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetDiscordInvite_ShouldReturnOk()
+        {
+            var user = new User { TwitchUserId = "12345", DiscordInviteLink = "https://discord.gg/123" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.GetDiscordInvite();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
+
+        [Fact]
+        public async Task UpdateDiscordInvite_ShouldReturnOk()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateInviteRequest { DiscordInviteLink = "https://discord.gg/new" };
+            var result = await _controller.UpdateDiscordInvite(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordInviteLink == "https://discord.gg/new")), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateTemplateStyle_ShouldReturnOk_WhenValid()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new TemplateStyleRequest { TemplateStyle = "detailed" };
+            var result = await _controller.UpdateTemplateStyle(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.Features.TemplateStyle == "detailed")), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateTemplateStyle_ShouldReturnBadRequest_WhenInvalid()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new TemplateStyleRequest { TemplateStyle = "invalid" };
+            var result = await _controller.UpdateTemplateStyle(request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
     }
 }

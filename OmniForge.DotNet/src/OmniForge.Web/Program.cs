@@ -103,6 +103,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IOverlayNotifier, SignalROverlayNotifier>();
+builder.Services.AddSingleton<IHubConnectionFactory, HubConnectionFactory>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 

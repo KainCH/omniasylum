@@ -9,6 +9,7 @@
 @inject IUserRepository UserRepository
 @inject IAlertRepository AlertRepository
 @inject IJSRuntime JSRuntime
+@inject OmniForge.Web.Services.IHubConnectionFactory HubConnectionFactory
 @implements IAsyncDisposable
 
 <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
@@ -118,7 +119,7 @@ else
     [Parameter]
     public string TwitchUserId { get; set; } = string.Empty;
 
-    private HubConnection? hubConnection;
+    private OmniForge.Web.Services.IHubConnection? hubConnection;
     private OmniForge.Core.Entities.Counter? counter;
     private OmniForge.Core.Entities.User? user;
     private string StreamStatus { get; set; } = "offline";
@@ -137,14 +138,11 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && user != null && user.Features.StreamOverlay)
+        if (user != null && user.Features.StreamOverlay && hubConnection == null)
         {
             await JSRuntime.InvokeVoidAsync("overlayInterop.init");
 
-            hubConnection = new HubConnectionBuilder()
-                .WithUrl(NavigationManager.ToAbsoluteUri("/overlayHub"))
-                .WithAutomaticReconnect()
-                .Build();
+            hubConnection = HubConnectionFactory.CreateConnection(NavigationManager.ToAbsoluteUri("/overlayHub"));
 
             hubConnection.On<OmniForge.Core.Entities.Counter>("counterUpdate", (updatedCounter) =>
             {

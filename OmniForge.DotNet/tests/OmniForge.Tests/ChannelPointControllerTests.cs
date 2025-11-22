@@ -108,5 +108,116 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockChannelPointRepository.Verify(x => x.SaveRewardAsync(It.IsAny<ChannelPointReward>()), Times.Once);
         }
+
+        [Fact]
+        public async Task GetRewards_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync((User?)null);
+
+            var result = await _controller.GetRewards();
+
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.Equal("User not found", notFoundResult.Value);
+        }
+
+        [Fact]
+        public async Task GetRewards_ShouldReturnForbid_WhenFeatureDisabled()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = false } });
+
+            var result = await _controller.GetRewards();
+
+            var forbidResult = Assert.IsType<ForbidResult>(result);
+            Assert.Contains("Channel points feature not enabled", forbidResult.AuthenticationSchemes);
+        }
+
+        [Fact]
+        public async Task GetRewards_ShouldReturnOk_WhenSuccessful()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = true } });
+
+            var rewards = new List<ChannelPointReward>
+            {
+                new ChannelPointReward { RewardId = "1", RewardTitle = "Reward 1" }
+            };
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardsAsync("12345"))
+                .ReturnsAsync(rewards);
+
+            var result = await _controller.GetRewards();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            // Use reflection or dynamic to check anonymous type properties if needed,
+            // or just verify the repository call.
+            _mockChannelPointRepository.Verify(x => x.GetRewardsAsync("12345"), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetRewards_ShouldReturn500_WhenExceptionOccurs()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = true } });
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardsAsync("12345"))
+                .ThrowsAsync(new Exception("DB Error"));
+
+            var result = await _controller.GetRewards();
+
+            var statusCodeResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, statusCodeResult.StatusCode);
+        }
+
+        [Fact]
+        public async Task DeleteReward_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync((User?)null);
+
+            var result = await _controller.DeleteReward("reward1");
+
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.Equal("User not found", notFoundResult.Value);
+        }
+
+        [Fact]
+        public async Task DeleteReward_ShouldReturnForbid_WhenFeatureDisabled()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = false } });
+
+            var result = await _controller.DeleteReward("reward1");
+
+            var forbidResult = Assert.IsType<ForbidResult>(result);
+            Assert.Contains("Channel points feature not enabled", forbidResult.AuthenticationSchemes);
+        }
+
+        [Fact]
+        public async Task DeleteReward_ShouldReturnOk_WhenSuccessful()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = true } });
+
+            var result = await _controller.DeleteReward("reward1");
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockTwitchApiService.Verify(x => x.DeleteCustomRewardAsync("12345", "reward1"), Times.Once);
+            _mockChannelPointRepository.Verify(x => x.DeleteRewardAsync("12345", "reward1"), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteReward_ShouldReturn500_WhenExceptionOccurs()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { Features = new FeatureFlags { ChannelPoints = true } });
+
+            _mockTwitchApiService.Setup(x => x.DeleteCustomRewardAsync("12345", "reward1"))
+                .ThrowsAsync(new Exception("API Error"));
+
+            var result = await _controller.DeleteReward("reward1");
+
+            var statusCodeResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, statusCodeResult.StatusCode);
+        }
     }
 }

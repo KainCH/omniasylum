@@ -1,0 +1,126 @@
+Summary
+  Generated on: 11/22/2025 - 2:53:44 PM
+  Coverage date: 11/22/2025 - 12:53:31 PM - 11/22/2025 - 2:53:39 PM
+  Parser: MultiReport (12x Cobertura)
+  Assemblies: 3
+  Classes: 100
+  Files: 71
+  Line coverage: 84.7%
+  Covered lines: 3861
+  Uncovered lines: 694
+  Coverable lines: 4555
+  Total lines: 8583
+  Branch coverage: 70.1% (1133 of 1616)
+  Covered branches: 1133
+  Total branches: 1616
+  Method coverage: 88.8% (627 of 706)
+  Full method coverage: 79.3% (560 of 706)
+  Covered methods: 627
+  Fully covered methods: 560
+  Total methods: 706
+
+OmniForge.Core                                                       98.7%
+  OmniForge.Core.Constants.AlertTemplates                             100%
+  OmniForge.Core.Entities.Alert                                       100%
+  OmniForge.Core.Entities.BitsGoal                                    100%
+  OmniForge.Core.Entities.BitThresholds                               100%
+  OmniForge.Core.Entities.ChannelPointReward                          100%
+  OmniForge.Core.Entities.ChatCommandConfiguration                    100%
+  OmniForge.Core.Entities.ChatCommandDefinition                       100%
+  OmniForge.Core.Entities.Counter                                     100%
+  OmniForge.Core.Entities.CustomCounterConfiguration                  100%
+  OmniForge.Core.Entities.CustomCounterDefinition                     100%
+  OmniForge.Core.Entities.DiscordEnabledNotifications                 100%
+  OmniForge.Core.Entities.DiscordMilestoneThresholds                  100%
+  OmniForge.Core.Entities.DiscordSettings                             100%
+  OmniForge.Core.Entities.FeatureFlags                                100%
+  OmniForge.Core.Entities.HelixCustomReward                           100%
+  OmniForge.Core.Entities.HelixGlobalCooldownSetting                   50%
+  OmniForge.Core.Entities.HelixMaxPerStreamSetting                     50%
+  OmniForge.Core.Entities.HelixMaxPerUserPerStreamSetting              50%
+  OmniForge.Core.Entities.OverlayAnimations                           100%
+  OmniForge.Core.Entities.OverlayCounters                             100%
+  OmniForge.Core.Entities.OverlaySettings                             100%
+  OmniForge.Core.Entities.OverlayTheme                                100%
+  OmniForge.Core.Entities.Series                                      100%
+  OmniForge.Core.Entities.StreamSettings                              100%
+  OmniForge.Core.Entities.User                                        100%
+  OmniForge.Core.Interfaces.CreateRewardRequest                       100%
+  OmniForge.Core.Interfaces.TwitchCustomReward                       90.9%
+  OmniForge.Core.Interfaces.TwitchTokenResponse                       100%
+  OmniForge.Core.Interfaces.TwitchUserInfo                            100%
+
+OmniForge.Infrastructure                                             87.2%
+  OmniForge.Infrastructure.Configuration.JwtSettings                  100%
+  OmniForge.Infrastructure.Configuration.TwitchSettings               100%
+  OmniForge.Infrastructure.DependencyInjection                          0%
+  OmniForge.Infrastructure.Entities.AlertTableEntity                 96.8%
+  OmniForge.Infrastructure.Entities.ChannelPointRewardTableEntity    94.2%
+  OmniForge.Infrastructure.Entities.ChatCommandConfigTableEntity     70.8%
+  OmniForge.Infrastructure.Entities.CounterTableEntity               94.7%
+  OmniForge.Infrastructure.Entities.CustomCounterConfigTableEntity   70.8%
+  OmniForge.Infrastructure.Entities.UserTableEntity                  97.2%
+  OmniForge.Infrastructure.Repositories.AlertRepository              84.3%
+  OmniForge.Infrastructure.Repositories.ChannelPointRepository         90%
+  OmniForge.Infrastructure.Repositories.CounterRepository            97.7%
+  OmniForge.Infrastructure.Repositories.SeriesRepository               95%
+  OmniForge.Infrastructure.Repositories.UserRepository                100%
+  OmniForge.Infrastructure.Services.DiscordService                   85.3%
+  OmniForge.Infrastructure.Services.EventSubWebsocketClientWrapper      0%
+  OmniForge.Infrastructure.Services.JwtService                       89.3%
+  OmniForge.Infrastructure.Services.NotificationService              85.7%
+  OmniForge.Infrastructure.Services.StreamMonitorService             93.5%
+  OmniForge.Infrastructure.Services.TwitchApiService                 90.5%
+  OmniForge.Infrastructure.Services.TwitchAuthService                 100%
+  OmniForge.Infrastructure.Services.TwitchClientManager              63.3%
+  OmniForge.Infrastructure.Services.TwitchConnectionService            75%
+  OmniForge.Infrastructure.Services.TwitchMessageHandler             96.9%
+
+OmniForge.Web                                                        81.4%
+  OmniForge.Web.Components.Layout.MainLayout                          100%
+  OmniForge.Web.Components.Modals.AlertEffectsModal                  71.8%
+  OmniForge.Web.Components.Modals.BrokenUserManagerModal             73.3%
+  OmniForge.Web.Components.Modals.DiscordWebhookSettingsModal        80.8%
+  OmniForge.Web.Components.Modals.OverlaySettingsModal                 82%
+  OmniForge.Web.Components.Modals.SeriesSaveManagerModal             92.7%
+  OmniForge.Web.Components.Modals.UserManagementModal                85.2%
+  OmniForge.Web.Components.Modals.UserRequestsModal                  62.2%
+  OmniForge.Web.Components.Pages.Admin.Debug                            0%
+  OmniForge.Web.Components.Pages.Admin.Users                         94.7%
+  OmniForge.Web.Components.Pages.Dashboard                           76.2%
+  OmniForge.Web.Components.Pages.Error                                  0%
+  OmniForge.Web.Components.Pages.Overlay                             39.1%
+  OmniForge.Web.Components.Pages.RequestAccess                       86.6%
+  OmniForge.Web.Components.Pages.Settings.AlertEffects               70.9%
+  OmniForge.Web.Components.Pages.Settings.DiscordWebhooks            87.5%
+  OmniForge.Web.Components.Pages.Settings.SeriesManager              83.3%
+  OmniForge.Web.Components.Pages.TemplateDesigner                    97.9%
+  OmniForge.Web.Components.Pages.UserEdit                               0%
+  OmniForge.Web.Controllers.AddCommandRequest                         100%
+  OmniForge.Web.Controllers.AdminController                          96.3%
+  OmniForge.Web.Controllers.AlertController                          92.6%
+  OmniForge.Web.Controllers.AuthController                           94.9%
+  OmniForge.Web.Controllers.ChannelPointController                   90.7%
+  OmniForge.Web.Controllers.ChatCommandController                     100%
+  OmniForge.Web.Controllers.CounterController                        92.8%
+  OmniForge.Web.Controllers.CreateAlertRequest                        100%
+  OmniForge.Web.Controllers.CustomCounterController                   100%
+  OmniForge.Web.Controllers.DebugController                           100%
+  OmniForge.Web.Controllers.GrantAccessRequest                        100%
+  OmniForge.Web.Controllers.LogsController                            100%
+  OmniForge.Web.Controllers.ModeratorController                      97.6%
+  OmniForge.Web.Controllers.SaveSeriesRequest                         100%
+  OmniForge.Web.Controllers.SeriesController                          100%
+  OmniForge.Web.Controllers.StreamController                         87.6%
+  OmniForge.Web.Controllers.TemplateStyleRequest                      100%
+  OmniForge.Web.Controllers.UpdateAlertRequest                        100%
+  OmniForge.Web.Controllers.UpdateInviteRequest                       100%
+  OmniForge.Web.Controllers.UpdateRoleRequest                         100%
+  OmniForge.Web.Controllers.UpdateStatusRequest                       100%
+  OmniForge.Web.Controllers.UpdateUserStatusRequest                   100%
+  OmniForge.Web.Controllers.UpdateWebhookRequest                       50%
+  OmniForge.Web.Controllers.UserController                           97.6%
+  OmniForge.Web.Hubs.OverlayHub                                       100%
+  OmniForge.Web.Middleware.UserStatusMiddleware                         0%
+  OmniForge.Web.Services.SignalROverlayNotifier                       100%
+  Program                                                               0%
