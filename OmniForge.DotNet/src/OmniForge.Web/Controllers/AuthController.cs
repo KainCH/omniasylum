@@ -95,6 +95,12 @@ namespace OmniForge.Web.Controllers
             user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
             user.LastLogin = DateTimeOffset.UtcNow;
 
+            // Admin check (hardcoded in legacy) - Restored to ensure admin access is preserved/restored
+            if (user.Username.ToLower() == "riress")
+            {
+                user.Role = "admin";
+            }
+
             await _userRepository.SaveUserAsync(user);
 
             // Create ClaimsPrincipal for Cookie Auth

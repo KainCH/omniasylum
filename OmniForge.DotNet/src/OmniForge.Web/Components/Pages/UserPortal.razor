@@ -10,6 +10,37 @@
             <div class="col">
                 <h1 class="display-4">Welcome, @context.User.Identity?.Name!</h1>
                 <p class="lead text-muted">Select a tool to get started.</p>
+
+                @if (context.User.IsInRole("admin"))
+                {
+                    <div class="alert alert-success">
+                        <i class="bi bi-shield-lock-fill"></i> You have Administrator access.
+                    </div>
+                }
+
+                <!-- Debug Info (Temporary) -->
+                <div class="card mt-3 mb-3">
+                    <div class="card-header" @onclick="() => showDebug = !showDebug" style="cursor: pointer;">
+                        <small class="text-muted">Debug Info (Click to toggle)</small>
+                    </div>
+                    @if (showDebug)
+                    {
+                        <div class="card-body">
+                            <small>
+                                <p><strong>Is Authenticated:</strong> @context.User.Identity?.IsAuthenticated</p>
+                                <p><strong>Auth Type:</strong> @context.User.Identity?.AuthenticationType</p>
+                                <p><strong>Role Claim:</strong> @context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</p>
+                                <h6>All Claims:</h6>
+                                <ul>
+                                    @foreach (var claim in context.User.Claims)
+                                    {
+                                        <li>@claim.Type: @claim.Value</li>
+                                    }
+                                </ul>
+                            </small>
+                        </div>
+                    }
+                </div>
             </div>
         </div>
     </AuthorizeView>
@@ -136,3 +167,7 @@
         box-shadow: 0 1rem 3rem rgba(0,0,0,.175)!important;
     }
 </style>
+
+@code {
+    private bool showDebug = false;
+}

@@ -11,62 +11,6 @@
       "problemMatcher": []
     },
     {
-      "label": "Install API Dependencies",
-      "type": "shell",
-      "command": "npm install",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Start API Server",
-      "type": "shell",
-      "command": "npm start",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "focus": false
-      }
-    },
-    {
-      "label": "Start API Server (Dev)",
-      "type": "shell",
-      "command": "npm run dev",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "focus": false
-      }
-    },
-    {
-      "label": "Deploy to Azure",
-      "type": "shell",
-      "command": "az deployment group create --resource-group ${input:resourceGroup} --template-file deploy/main.bicep --parameters baseName=${input:baseName}",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      }
-    },
-    {
       "label": "Azure Login",
       "type": "shell",
       "command": "az login",
@@ -74,17 +18,6 @@
       "presentation": {
         "reveal": "always",
         "panel": "shared"
-      }
-    },
-    {
-      "label": "View Azure Logs",
-      "type": "shell",
-      "command": "az containerapp logs show --name ${input:containerAppName} --resource-group ${input:resourceGroup} --follow",
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
       }
     },
     {
