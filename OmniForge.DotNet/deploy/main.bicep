@@ -11,9 +11,6 @@ param environment string = 'dev'
 @description('Container image to deploy')
 param containerImage string
 
-@description('Twitch OAuth redirect URI')
-param twitchRedirectUri string
-
 @description('Frontend URL for CORS')
 param frontendUrl string
 
@@ -61,15 +58,15 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 // Storage Account for Table Storage (Reuse existing if possible, or create new for dev)
 // For this dotnet-dev deployment, we will reference the existing one to test data migration/compatibility
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
-  name: storageAccountName
-}
+// resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
+//   name: storageAccountName
+// }
 
 // Key Vault
 // Reference existing Key Vault
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: keyVaultName
-}
+// resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+//   name: keyVaultName
+// }
 
 // Container Apps Environment
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
@@ -147,14 +144,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'AZURE_CLIENT_ID'
               value: userAssignedIdentity.properties.clientId
-            }
-            {
-              name: 'Authentication__Twitch__ClientId'
-              value: '' // Will be loaded from KeyVault
-            }
-            {
-              name: 'Authentication__Twitch__ClientSecret'
-              value: '' // Will be loaded from KeyVault
             }
             {
               name: 'Authentication__Twitch__CallbackPath'

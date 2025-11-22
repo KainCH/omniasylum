@@ -42,7 +42,6 @@ $deployment = az deployment group create `
         storageAccountName=$storageAccountName `
         keyVaultName=$keyVaultName `
         containerImage="$AcrName.azurecr.io/$ImageName`:$ImageTag" `
-        twitchRedirectUri="https://omniforgestream-api-$Environment.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/auth/twitch/callback" `
         frontendUrl="https://omniforgestream-api-$Environment.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io" `
     --output json | ConvertFrom-Json
 
