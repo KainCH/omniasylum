@@ -104,7 +104,15 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadUsers();
+        try
+        {
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading users: {ex}");
+            users = new List<User>(); // Prevent null reference in UI
+        }
     }
 
     private async Task LoadUsers()

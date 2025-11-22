@@ -43,14 +43,28 @@
     {
         if (firstRender)
         {
-            isDarkMode = await JSRuntime.InvokeAsync<bool>("initDarkMode");
-            StateHasChanged();
+            try
+            {
+                isDarkMode = await JSRuntime.InvokeAsync<bool>("initDarkMode");
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing dark mode: {ex.Message}");
+            }
         }
     }
 
     private async Task ToggleDarkMode()
     {
-        isDarkMode = !isDarkMode;
-        await JSRuntime.InvokeVoidAsync("toggleDarkMode", isDarkMode);
+        try
+        {
+            isDarkMode = !isDarkMode;
+            await JSRuntime.InvokeVoidAsync("toggleDarkMode", isDarkMode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling dark mode: {ex.Message}");
+        }
     }
 }

@@ -40,10 +40,10 @@ namespace OmniForge.Tests
             {
                 PartitionKey = userId,
                 RowKey = $"reward-{rewardId}",
-                RewardId = rewardId,
-                RewardTitle = "Test Reward",
-                Cost = 100,
-                Action = "increment_deaths"
+                rewardId = rewardId,
+                rewardTitle = "Test Reward",
+                cost = 100,
+                action = "increment_deaths"
             };
 
             var mockResponse = Mock.Of<Response<ChannelPointRewardTableEntity>>(r => r.Value == entity);
@@ -85,7 +85,7 @@ namespace OmniForge.Tests
                 It.Is<ChannelPointRewardTableEntity>(e =>
                     e.PartitionKey == "123" &&
                     e.RowKey == "reward-abc" &&
-                    e.RewardTitle == "Test Reward"),
+                    e.rewardTitle == "Test Reward"),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }
@@ -117,9 +117,9 @@ namespace OmniForge.Tests
             {
                 PartitionKey = userId,
                 RowKey = "reward-abc",
-                RewardId = "abc",
-                RewardTitle = "Test Reward",
-                Cost = 100
+                rewardId = "abc",
+                rewardTitle = "Test Reward",
+                cost = 100
             };
 
             var page = Page<ChannelPointRewardTableEntity>.FromValues(new[] { rewardEntity }, null, Mock.Of<Response>());

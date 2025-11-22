@@ -128,6 +128,13 @@ namespace OmniForge.Web.Controllers
             return Redirect("/portal");
         }
 
+        [HttpGet("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return Redirect("/");
+        }
+
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh()
         {

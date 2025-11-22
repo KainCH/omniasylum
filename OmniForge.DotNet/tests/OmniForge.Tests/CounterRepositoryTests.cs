@@ -147,7 +147,7 @@ namespace OmniForge.Tests
                 It.Is<CustomCounterConfigTableEntity>(e =>
                     e.PartitionKey == userId &&
                     e.RowKey == "customCounters" &&
-                    e.CountersConfig.Contains("C1")),
+                    e.countersConfig.Contains("C1")),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }

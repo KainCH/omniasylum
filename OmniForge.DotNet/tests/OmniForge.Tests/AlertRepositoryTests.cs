@@ -45,8 +45,8 @@ namespace OmniForge.Tests
             {
                 PartitionKey = userId,
                 RowKey = alertId,
-                Name = "Test Alert",
-                Type = "sound"
+                name = "Test Alert",
+                type = "sound"
             };
 
             var mockResponse = Mock.Of<Response<AlertTableEntity>>(r => r.Value == entity);
@@ -76,8 +76,8 @@ namespace OmniForge.Tests
             {
                 PartitionKey = userId,
                 RowKey = "abc",
-                Name = "Test Alert",
-                Type = "sound"
+                name = "Test Alert",
+                type = "sound"
             };
 
             var page = Page<AlertTableEntity>.FromValues(new[] { entity }, null, Mock.Of<Response>());
@@ -118,7 +118,7 @@ namespace OmniForge.Tests
                 It.Is<AlertTableEntity>(e =>
                     e.PartitionKey == "123" &&
                     e.RowKey == "abc" &&
-                    e.Name == "Test Alert"),
+                    e.name == "Test Alert"),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }

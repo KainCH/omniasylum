@@ -17,6 +17,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Middleware;
+using OmniForge.Web.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,18 +39,19 @@ if (!string.IsNullOrEmpty(keyVaultName))
     if (!string.IsNullOrEmpty(azureClientId))
     {
         // Use Managed Identity Credential when deployed to Azure with User Assigned Identity
-        builder.Configuration.AddAzureKeyVault(keyVaultUri, new ManagedIdentityCredential(azureClientId));
+        builder.Configuration.AddAzureKeyVault(keyVaultUri, new ManagedIdentityCredential(azureClientId), new LegacyKeyVaultSecretManager());
     }
     else
     {
         // Fallback to DefaultAzureCredential for local development
-        builder.Configuration.AddAzureKeyVault(keyVaultUri, new DefaultAzureCredential());
+        builder.Configuration.AddAzureKeyVault(keyVaultUri, new DefaultAzureCredential(), new LegacyKeyVaultSecretManager());
     }
 }
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddCircuitOptions(options => options.DetailedErrors = true); // Enable detailed errors for debugging
 
 builder.Services.AddControllers();
 
@@ -126,7 +128,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
+app.UseStaticFiles(); // Enable static file serving
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();

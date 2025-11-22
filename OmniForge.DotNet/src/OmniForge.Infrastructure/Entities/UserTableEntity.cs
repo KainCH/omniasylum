@@ -33,6 +33,26 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset createdAt { get; set; }
         public DateTimeOffset lastLogin { get; set; }
 
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true
+        };
+
+        private T DeserializeSafe<T>(string json) where T : new()
+        {
+            if (string.IsNullOrEmpty(json)) return new T();
+            try
+            {
+                return JsonSerializer.Deserialize<T>(json, _jsonOptions) ?? new T();
+            }
+            catch
+            {
+                return new T();
+            }
+        }
+
         public User ToDomain()
         {
             return new User
@@ -46,12 +66,12 @@ namespace OmniForge.Infrastructure.Entities
                 RefreshToken = refreshToken,
                 TokenExpiry = tokenExpiry,
                 Role = role,
-                Features = JsonSerializer.Deserialize<FeatureFlags>(features) ?? new FeatureFlags(),
-                OverlaySettings = JsonSerializer.Deserialize<OverlaySettings>(overlaySettings) ?? new OverlaySettings(),
-                DiscordSettings = JsonSerializer.Deserialize<DiscordSettings>(discordSettings) ?? new DiscordSettings(),
+                Features = DeserializeSafe<FeatureFlags>(features),
+                OverlaySettings = DeserializeSafe<OverlaySettings>(overlaySettings),
+                DiscordSettings = DeserializeSafe<DiscordSettings>(discordSettings),
                 DiscordWebhookUrl = discordWebhookUrl,
                 DiscordInviteLink = discordInviteLink,
-                ManagedStreamers = JsonSerializer.Deserialize<System.Collections.Generic.List<string>>(managedStreamers) ?? new System.Collections.Generic.List<string>(),
+                ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
                 IsActive = isActive,
                 StreamStatus = streamStatus,
                 CreatedAt = createdAt,

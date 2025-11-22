@@ -7,6 +7,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
+using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 
 using TwitchLib.Api.Core.Enums; // Added
 
@@ -48,7 +49,16 @@ namespace OmniForge.Infrastructure.Services
             var api = new TwitchAPI();
             api.Settings.ClientId = clientId;
             api.Settings.AccessToken = accessToken;
+
             await api.Helix.EventSub.CreateEventSubSubscriptionAsync(type, version, condition, method, sessionId);
+        }
+
+        public async Task<GetStreamsResponse> GetStreamsAsync(string clientId, string accessToken, List<string> userIds)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            return await api.Helix.Streams.GetStreamsAsync(userIds: userIds);
         }
 
         private static HelixCustomReward MapToEntity(TwitchLib.Api.Helix.Models.ChannelPoints.CustomReward reward)

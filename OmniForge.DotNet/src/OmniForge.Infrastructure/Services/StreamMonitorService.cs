@@ -14,6 +14,7 @@ using TwitchLib.Api.Core.Enums;
 using TwitchLib.EventSub.Core.EventArgs;
 using TwitchLib.EventSub.Core.EventArgs.Stream;
 using TwitchLib.EventSub.Websockets.Core.EventArgs;
+using TwitchLib.Api.Helix.Models.Streams.GetStreams; // Add this
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -91,13 +92,20 @@ namespace OmniForge.Infrastructure.Services
                 {
                     try
                     {
-                        // Ensure TwitchAPI has credentials
-                        if (string.IsNullOrEmpty(_twitchApi.Settings.AccessToken))
+                        // Use User's Access Token for subscriptions as requested
+                        var accessToken = user.AccessToken;
+                        var clientId = _twitchSettings.ClientId;
+
+                        if (string.IsNullOrEmpty(accessToken))
                         {
-                            _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
-                            _twitchApi.Settings.Secret = _twitchSettings.ClientSecret;
-                            var token = await _twitchApi.Auth.GetAccessTokenAsync();
-                            _twitchApi.Settings.AccessToken = token;
+                            _logger.LogWarning($"User {user.DisplayName} has no access token. Skipping subscription.");
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(clientId))
+                        {
+                             _logger.LogError("Twitch Client ID is not configured.");
+                             continue;
                         }
 
                         var condition = new Dictionary<string, string>
@@ -107,15 +115,15 @@ namespace OmniForge.Infrastructure.Services
 
                         // Subscribe to Stream Online
                         await helixWrapper.CreateEventSubSubscriptionAsync(
-                            _twitchApi.Settings.ClientId,
-                            _twitchApi.Settings.AccessToken,
+                            clientId,
+                            accessToken,
                             "stream.online", "1", condition, EventSubTransportMethod.Websocket,
                             _eventSubClient.SessionId);
 
                         // Subscribe to Stream Offline
                         await helixWrapper.CreateEventSubSubscriptionAsync(
-                            _twitchApi.Settings.ClientId,
-                            _twitchApi.Settings.AccessToken,
+                            clientId,
+                            accessToken,
                             "stream.offline", "1", condition, EventSubTransportMethod.Websocket,
                             _eventSubClient.SessionId);
 
@@ -186,6 +194,7 @@ namespace OmniForge.Infrastructure.Services
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
                 var discordService = scope.ServiceProvider.GetRequiredService<IDiscordService>();
+                var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
 
                 var userId = broadcasterId;
                 var user = await userRepository.GetUserAsync(userId);
@@ -200,10 +209,38 @@ namespace OmniForge.Infrastructure.Services
                         await counterRepository.SaveCountersAsync(counters);
                     }
 
-                    // Send Discord Notification
-                    if (eventData != null)
+                    // Fetch Stream Info
+                    object notificationData = eventData ?? new { };
+                    try
                     {
-                        await discordService.SendNotificationAsync(user, "stream.online", eventData);
+                        if (!string.IsNullOrEmpty(user.AccessToken) && !string.IsNullOrEmpty(_twitchSettings.ClientId))
+                        {
+                            var streams = await helixWrapper.GetStreamsAsync(_twitchSettings.ClientId, user.AccessToken, new List<string> { userId });
+                            if (streams.Streams != null && streams.Streams.Length > 0)
+                            {
+                                var stream = streams.Streams[0];
+                                notificationData = new
+                                {
+                                    title = stream.Title,
+                                    game = stream.GameName,
+                                    thumbnailUrl = stream.ThumbnailUrl.Replace("{width}", "640").Replace("{height}", "360") + $"?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+                                    viewerCount = stream.ViewerCount,
+                                    startedAt = stream.StartedAt,
+                                    broadcasterName = stream.UserName
+                                };
+                                _logger.LogInformation($"Retrieved fresh stream info for {user.DisplayName}: {stream.Title} - {stream.GameName}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, $"Failed to fetch stream info for {user.DisplayName}, using event data fallback.");
+                    }
+
+                    // Send Discord Notification
+                    if (notificationData != null)
+                    {
+                        await discordService.SendNotificationAsync(user, "stream_start", notificationData);
                     }
                 }
             }

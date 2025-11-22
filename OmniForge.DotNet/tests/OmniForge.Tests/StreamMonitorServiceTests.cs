@@ -120,8 +120,8 @@ namespace OmniForge.Tests
             // Arrange
             var users = new List<User>
             {
-                new User { TwitchUserId = "123", DisplayName = "User1" },
-                new User { TwitchUserId = "456", DisplayName = "User2" }
+                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" },
+                new User { TwitchUserId = "456", DisplayName = "User2", AccessToken = "token2" }
             };
             _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
 
@@ -232,7 +232,7 @@ namespace OmniForge.Tests
 
             // Assert
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
-            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream.online", It.IsAny<object>()), Times.Once);
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]
@@ -287,7 +287,7 @@ namespace OmniForge.Tests
             // Arrange
             var users = new List<User>
             {
-                new User { TwitchUserId = "123", DisplayName = "User1" }
+                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" }
             };
             _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
             _mockHelixWrapper.Setup(x => x.CreateEventSubSubscriptionAsync(
@@ -403,8 +403,8 @@ namespace OmniForge.Tests
             // Arrange
             var users = new List<User>
             {
-                new User { TwitchUserId = "123", DisplayName = "User1" },
-                new User { TwitchUserId = "456", DisplayName = "User2" }
+                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" },
+                new User { TwitchUserId = "456", DisplayName = "User2", AccessToken = "token2" }
             };
             _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
 

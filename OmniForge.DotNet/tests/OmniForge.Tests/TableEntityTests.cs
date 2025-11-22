@@ -13,46 +13,46 @@ namespace OmniForge.Tests
             // Arrange
             var entity = new UserTableEntity
             {
-                TwitchUserId = "123",
-                Username = "testuser",
-                DisplayName = "Test User",
-                Email = "test@example.com",
-                ProfileImageUrl = "http://image.url",
-                AccessToken = "access",
-                RefreshToken = "refresh",
-                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
-                Role = "admin",
-                Features = "{\"ChatCommands\":true}",
-                OverlaySettings = "{\"Theme\":{\"BackgroundColor\":\"black\"}}",
-                DiscordWebhookUrl = "http://discord.url",
-                DiscordInviteLink = "http://discord.gg",
-                IsActive = true,
-                StreamStatus = "live",
-                CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
-                LastLogin = DateTimeOffset.UtcNow
+                twitchUserId = "123",
+                username = "testuser",
+                displayName = "Test User",
+                email = "test@example.com",
+                profileImageUrl = "http://image.url",
+                accessToken = "access",
+                refreshToken = "refresh",
+                tokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                role = "admin",
+                features = "{\"ChatCommands\":true}",
+                overlaySettings = "{\"Theme\":{\"BackgroundColor\":\"black\"}}",
+                discordWebhookUrl = "http://discord.url",
+                discordInviteLink = "http://discord.gg",
+                isActive = true,
+                streamStatus = "live",
+                createdAt = DateTimeOffset.UtcNow.AddDays(-1),
+                lastLogin = DateTimeOffset.UtcNow
             };
 
             // Act
             var domain = entity.ToDomain();
 
             // Assert
-            Assert.Equal(entity.TwitchUserId, domain.TwitchUserId);
-            Assert.Equal(entity.Username, domain.Username);
-            Assert.Equal(entity.DisplayName, domain.DisplayName);
-            Assert.Equal(entity.Email, domain.Email);
-            Assert.Equal(entity.ProfileImageUrl, domain.ProfileImageUrl);
-            Assert.Equal(entity.AccessToken, domain.AccessToken);
-            Assert.Equal(entity.RefreshToken, domain.RefreshToken);
-            Assert.Equal(entity.TokenExpiry, domain.TokenExpiry);
-            Assert.Equal(entity.Role, domain.Role);
+            Assert.Equal(entity.twitchUserId, domain.TwitchUserId);
+            Assert.Equal(entity.username, domain.Username);
+            Assert.Equal(entity.displayName, domain.DisplayName);
+            Assert.Equal(entity.email, domain.Email);
+            Assert.Equal(entity.profileImageUrl, domain.ProfileImageUrl);
+            Assert.Equal(entity.accessToken, domain.AccessToken);
+            Assert.Equal(entity.refreshToken, domain.RefreshToken);
+            Assert.Equal(entity.tokenExpiry, domain.TokenExpiry);
+            Assert.Equal(entity.role, domain.Role);
             Assert.True(domain.Features.ChatCommands);
             Assert.Equal("black", domain.OverlaySettings.Theme.BackgroundColor);
-            Assert.Equal(entity.DiscordWebhookUrl, domain.DiscordWebhookUrl);
-            Assert.Equal(entity.DiscordInviteLink, domain.DiscordInviteLink);
-            Assert.Equal(entity.IsActive, domain.IsActive);
-            Assert.Equal(entity.StreamStatus, domain.StreamStatus);
-            Assert.Equal(entity.CreatedAt, domain.CreatedAt);
-            Assert.Equal(entity.LastLogin, domain.LastLogin);
+            Assert.Equal(entity.discordWebhookUrl, domain.DiscordWebhookUrl);
+            Assert.Equal(entity.discordInviteLink, domain.DiscordInviteLink);
+            Assert.Equal(entity.isActive, domain.IsActive);
+            Assert.Equal(entity.streamStatus, domain.StreamStatus);
+            Assert.Equal(entity.createdAt, domain.CreatedAt);
+            Assert.Equal(entity.lastLogin, domain.LastLogin);
         }
 
         [Fact]
@@ -73,10 +73,10 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal("user", entity.PartitionKey);
             Assert.Equal(domain.TwitchUserId, entity.RowKey);
-            Assert.Equal(domain.TwitchUserId, entity.TwitchUserId);
-            Assert.Equal(domain.Username, entity.Username);
-            Assert.Contains("ChatCommands", entity.Features);
-            Assert.Contains("black", entity.OverlaySettings);
+            Assert.Equal(domain.TwitchUserId, entity.twitchUserId);
+            Assert.Equal(domain.Username, entity.username);
+            Assert.Contains("ChatCommands", entity.features);
+            Assert.Contains("black", entity.overlaySettings);
         }
 
         [Fact]
@@ -86,13 +86,13 @@ namespace OmniForge.Tests
             var entity = new CounterTableEntity
             {
                 PartitionKey = "123",
-                Deaths = 5,
-                Swears = 10,
-                Screams = 2,
-                Bits = 100,
-                LastUpdated = DateTimeOffset.UtcNow,
-                StreamStarted = DateTimeOffset.UtcNow.AddHours(-1),
-                LastNotifiedStreamId = "stream1"
+                deaths = 5,
+                swears = 10,
+                screams = 2,
+                bits = 100,
+                lastUpdated = DateTimeOffset.UtcNow,
+                streamStarted = DateTimeOffset.UtcNow.AddHours(-1),
+                lastNotifiedStreamId = "stream1"
             };
 
             // Act
@@ -100,13 +100,13 @@ namespace OmniForge.Tests
 
             // Assert
             Assert.Equal(entity.PartitionKey, domain.TwitchUserId);
-            Assert.Equal(entity.Deaths, domain.Deaths);
-            Assert.Equal(entity.Swears, domain.Swears);
-            Assert.Equal(entity.Screams, domain.Screams);
-            Assert.Equal(entity.Bits, domain.Bits);
-            Assert.Equal(entity.LastUpdated, domain.LastUpdated);
-            Assert.Equal(entity.StreamStarted, domain.StreamStarted);
-            Assert.Equal(entity.LastNotifiedStreamId, domain.LastNotifiedStreamId);
+            Assert.Equal(entity.deaths, domain.Deaths);
+            Assert.Equal(entity.swears, domain.Swears);
+            Assert.Equal(entity.screams, domain.Screams);
+            Assert.Equal(entity.bits, domain.Bits);
+            Assert.Equal(entity.lastUpdated, domain.LastUpdated);
+            Assert.Equal(entity.streamStarted, domain.StreamStarted);
+            Assert.Equal(entity.lastNotifiedStreamId, domain.LastNotifiedStreamId);
         }
 
         [Fact]
@@ -131,13 +131,13 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(domain.TwitchUserId, entity.PartitionKey);
             Assert.Equal("counters", entity.RowKey);
-            Assert.Equal(domain.Deaths, entity.Deaths);
-            Assert.Equal(domain.Swears, entity.Swears);
-            Assert.Equal(domain.Screams, entity.Screams);
-            Assert.Equal(domain.Bits, entity.Bits);
-            Assert.Equal(domain.LastUpdated, entity.LastUpdated);
-            Assert.Equal(domain.StreamStarted, entity.StreamStarted);
-            Assert.Equal(domain.LastNotifiedStreamId, entity.LastNotifiedStreamId);
+            Assert.Equal(domain.Deaths, entity.deaths);
+            Assert.Equal(domain.Swears, entity.swears);
+            Assert.Equal(domain.Screams, entity.screams);
+            Assert.Equal(domain.Bits, entity.bits);
+            Assert.Equal(domain.LastUpdated, entity.lastUpdated);
+            Assert.Equal(domain.StreamStarted, entity.streamStarted);
+            Assert.Equal(domain.LastNotifiedStreamId, entity.lastNotifiedStreamId);
         }
     }
 }

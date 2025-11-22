@@ -28,21 +28,26 @@ namespace OmniForge.Infrastructure.Repositories
                 var counter = new Counter
                 {
                     TwitchUserId = entity.PartitionKey,
-                    Deaths = entity.GetInt32("Deaths") ?? 0,
-                    Swears = entity.GetInt32("Swears") ?? 0,
-                    Screams = entity.GetInt32("Screams") ?? 0,
-                    Bits = entity.GetInt32("Bits") ?? 0,
-                    LastUpdated = entity.GetDateTimeOffset("LastUpdated") ?? DateTimeOffset.UtcNow,
-                    StreamStarted = entity.GetDateTimeOffset("StreamStarted"),
-                    LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId")
+                    Deaths = entity.GetInt32("Deaths") ?? entity.GetInt32("deaths") ?? 0,
+                    Swears = entity.GetInt32("Swears") ?? entity.GetInt32("swears") ?? 0,
+                    Screams = entity.GetInt32("Screams") ?? entity.GetInt32("screams") ?? 0,
+                    Bits = entity.GetInt32("Bits") ?? entity.GetInt32("bits") ?? 0,
+                    LastUpdated = entity.GetDateTimeOffset("LastUpdated") ?? entity.GetDateTimeOffset("lastUpdated") ?? DateTimeOffset.UtcNow,
+                    StreamStarted = entity.GetDateTimeOffset("StreamStarted") ?? entity.GetDateTimeOffset("streamStarted"),
+                    LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
                 };
 
                 // Map custom counters
                 foreach (var key in entity.Keys)
                 {
                     if (key != "PartitionKey" && key != "RowKey" && key != "Timestamp" && key != "odata.etag" &&
-                        key != "Deaths" && key != "Swears" && key != "Screams" && key != "Bits" &&
-                        key != "LastUpdated" && key != "StreamStarted" && key != "LastNotifiedStreamId")
+                        !string.Equals(key, "Deaths", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "Swears", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "Screams", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "Bits", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "LastUpdated", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "StreamStarted", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase))
                     {
                         if (entity[key] is int value)
                         {

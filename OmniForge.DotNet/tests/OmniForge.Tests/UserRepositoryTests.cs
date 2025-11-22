@@ -37,11 +37,11 @@ namespace OmniForge.Tests
             {
                 PartitionKey = "user",
                 RowKey = userId,
-                TwitchUserId = userId,
-                Username = "testuser",
-                DisplayName = "Test User",
-                Role = "streamer",
-                Features = "{}"
+                twitchUserId = userId,
+                username = "testuser",
+                displayName = "Test User",
+                role = "streamer",
+                features = "{}"
             };
 
             var response = Response.FromValue(entity, Mock.Of<Response>());
@@ -82,7 +82,7 @@ namespace OmniForge.Tests
             await _repository.SaveUserAsync(user);
 
             _mockTableClient.Verify(x => x.UpsertEntityAsync(
-                It.Is<UserTableEntity>(e => e.RowKey == "123" && e.Username == "testuser"),
+                It.Is<UserTableEntity>(e => e.RowKey == "123" && e.username == "testuser"),
                 TableUpdateMode.Replace,
                 default), Times.Once);
         }
@@ -102,8 +102,8 @@ namespace OmniForge.Tests
         {
             var entities = new List<UserTableEntity>
             {
-                new UserTableEntity { PartitionKey = "user", RowKey = "1", Username = "user1", Role = "streamer", Features = "{}" },
-                new UserTableEntity { PartitionKey = "user", RowKey = "2", Username = "user2", Role = "streamer", Features = "{}" }
+                new UserTableEntity { PartitionKey = "user", RowKey = "1", username = "user1", role = "streamer", features = "{}" },
+                new UserTableEntity { PartitionKey = "user", RowKey = "2", username = "user2", role = "streamer", features = "{}" }
             };
 
             var page = Page<UserTableEntity>.FromValues(entities, null, Mock.Of<Response>());
@@ -125,7 +125,7 @@ namespace OmniForge.Tests
             {
                 PartitionKey = userId,
                 RowKey = "chatCommands",
-                CommandsConfig = "{\"Commands\":{\"!test\":{\"Response\":\"Response\"}}}"
+                commandsConfig = "{\"Commands\":{\"!test\":{\"Response\":\"Response\"}}}"
             };
 
             var response = Response.FromValue(entity, Mock.Of<Response>());
