@@ -6,13 +6,13 @@
 {
     <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-xl" role="document">
-            <div class="modal-content bg-dark text-white">
-                <div class="modal-header border-secondary">
+            <div class="modal-content">
+                <div class="modal-header">
                     <h5 class="modal-title">
                         <i class="bi bi-person-gear me-2"></i>
                         @(IsNewUser ? "Create User" : $"Edit User: {user.Username}")
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="Close"></button>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
                 </div>
                 <div class="modal-body">
                     @if (isLoading)
@@ -50,17 +50,17 @@
 
                                     <div class="mb-3">
                                         <label class="form-label">Username</label>
-                                        <InputText class="form-control bg-dark text-white border-secondary" @bind-Value="user.Username" disabled="@(!IsNewUser)" />
+                                        <InputText class="form-control" @bind-Value="user.Username" disabled="@(!IsNewUser)" />
                                     </div>
 
                                     <div class="mb-3">
                                         <label class="form-label">Email</label>
-                                        <InputText class="form-control bg-dark text-white border-secondary" @bind-Value="user.Email" />
+                                        <InputText class="form-control" @bind-Value="user.Email" />
                                     </div>
 
                                     <div class="mb-3">
                                         <label class="form-label">Role</label>
-                                        <InputSelect class="form-select bg-dark text-white border-secondary" @bind-Value="user.Role">
+                                        <InputSelect class="form-select" @bind-Value="user.Role">
                                             <option value="streamer">Streamer</option>
                                             <option value="admin">Admin</option>
                                         </InputSelect>

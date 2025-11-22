@@ -1,0 +1,172 @@
+@page "/settings/alert-effects"
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserRepository UserRepository
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+
+<PageTitle>Alert Effects - OmniForge</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-magic text-warning"></i> Alert Effects</h2>
+        <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-warning" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (user == null)
+    {
+        <div class="alert alert-danger">User not found.</div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-@messageType alert-dismissible fade show" role="alert">
+                @message
+                <button type="button" class="btn-close" @onclick="() => message = null"></button>
+            </div>
+        }
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5 class="mb-0">Visual & Audio Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="border-bottom pb-2 mb-3">Global Controls</h6>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.Enabled" id="animEnabled">
+                            <label class="form-check-label" for="animEnabled">Enable All Animations</label>
+                            <div class="form-text">Master switch for all visual effects.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Master Volume: @user.OverlaySettings.Animations.Volume%</label>
+                            <input type="range" class="form-range" min="0" max="100" @bind="user.OverlaySettings.Animations.Volume">
+                        </div>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.EnableSound" id="soundEnabled">
+                            <label class="form-check-label" for="soundEnabled">Enable Sound Effects</label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6 class="border-bottom pb-2 mb-3">Detailed Effects</h6>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.ShowAlerts" id="showAlerts">
+                            <label class="form-check-label" for="showAlerts">Show Alerts</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.CelebrationEffects" id="celebration">
+                            <label class="form-check-label" for="celebration">Celebration Effects</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.EnableParticles" id="particles">
+                            <label class="form-check-label" for="particles">Particle Systems</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.EnableScreenEffects" id="screenEffects">
+                            <label class="form-check-label" for="screenEffects">Screen Effects (Shake/Flash)</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.EnableSVGFilters" id="svgFilters">
+                            <label class="form-check-label" for="svgFilters">SVG Filters (Distortion)</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.OverlaySettings.Animations.EnableTextEffects" id="textEffects">
+                            <label class="form-check-label" for="textEffects">Text Effects (Glitch)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button class="btn btn-warning text-dark" @onclick="SaveSettings" disabled="@isSaving">
+                        @(isSaving ? "Saving..." : "Save Effects Settings")
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="ResetDefaults">
+                        Reset to Defaults
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private User? user;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string? message;
+    private string messageType = "info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst("userId")?.Value;
+
+            if (userId != null)
+            {
+                user = await UserRepository.GetUserAsync(userId);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading user data: {ex.Message}", "danger");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowMessage(string msg, string type)
+    {
+        message = msg;
+        messageType = type;
+        StateHasChanged();
+    }
+
+    private async Task SaveSettings()
+    {
+        if (user == null) return;
+        isSaving = true;
+        try
+        {
+            await UserRepository.SaveUserAsync(user);
+            ShowMessage("Alert effects saved successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving settings: {ex.Message}", "danger");
+        }
+        isSaving = false;
+    }
+
+    private void ResetDefaults()
+    {
+        if (user == null) return;
+        user.OverlaySettings.Animations = new OverlayAnimations();
+        ShowMessage("Settings reset to defaults. Click Save to apply.", "info");
+    }
+}

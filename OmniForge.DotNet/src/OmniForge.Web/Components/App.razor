@@ -21,10 +21,10 @@
     <script>
         window.toggleDarkMode = (isDark) => {
             if (isDark) {
-                document.body.classList.add('dark-mode');
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
                 localStorage.setItem('darkMode', 'true');
             } else {
-                document.body.classList.remove('dark-mode');
+                document.documentElement.setAttribute('data-bs-theme', 'light');
                 localStorage.setItem('darkMode', 'false');
             }
         };
@@ -32,7 +32,9 @@
         window.initDarkMode = () => {
             const isDark = localStorage.getItem('darkMode') === 'true';
             if (isDark) {
-                document.body.classList.add('dark-mode');
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-bs-theme', 'light');
             }
             return isDark;
         };

@@ -74,6 +74,11 @@ body {
   min-height: 100vh;
 }
 
+[data-bs-theme="dark"] body {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+}
+
 .stream-counter-container {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 15px;
@@ -94,90 +99,90 @@ body {
 }
 
 /* Dark Mode Styles */
-body.dark-mode .stream-counter-container {
+[data-bs-theme="dark"] .stream-counter-container {
   background: rgba(30, 30, 30, 0.95);
   color: #fff;
 }
 
-body.dark-mode .stream-counter-container h1 {
+[data-bs-theme="dark"] .stream-counter-container h1 {
   color: #fff;
 }
 
-body.dark-mode .counter-box {
+[data-bs-theme="dark"] .counter-box {
   background: #2d2d2d;
   border-top: 5px solid;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
-body.dark-mode .counter-value {
+[data-bs-theme="dark"] .counter-value {
   color: #fff;
 }
 
-body.dark-mode .counter-label {
+[data-bs-theme="dark"] .counter-label {
   color: #aaa;
 }
 
-body.dark-mode .stat-item {
+[data-bs-theme="dark"] .stat-item {
   background: #2d2d2d;
   border-left: 4px solid #667eea;
 }
 
-body.dark-mode .stat-item span:first-child {
+[data-bs-theme="dark"] .stat-item span:first-child {
   color: #aaa;
 }
 
-body.dark-mode .stats-grid {
+[data-bs-theme="dark"] .stats-grid {
   background: #1a1a1a;
 }
 
-body.dark-mode .card {
+[data-bs-theme="dark"] .card {
   background-color: #2d2d2d;
   color: #fff;
 }
 
-body.dark-mode .table {
+[data-bs-theme="dark"] .table {
   color: #fff;
 }
 
-body.dark-mode .table-striped>tbody>tr:nth-of-type(odd)>* {
+[data-bs-theme="dark"] .table-striped>tbody>tr:nth-of-type(odd)>* {
   color: #fff;
   background-color: rgba(255, 255, 255, 0.05);
 }
 
-body.dark-mode .table-hover>tbody>tr:hover>* {
+[data-bs-theme="dark"] .table-hover>tbody>tr:hover>* {
   color: #fff;
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-body.dark-mode .form-control,
-body.dark-mode .form-select {
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
   background-color: #2d2d2d;
   border-color: #444;
   color: #fff;
 }
 
-body.dark-mode .form-control:focus,
-body.dark-mode .form-select:focus {
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
   background-color: #3d3d3d;
   color: #fff;
 }
 
-body.dark-mode .auth-card {
+[data-bs-theme="dark"] .auth-card {
   background: rgba(30, 30, 30, 0.95);
   color: #fff;
 }
 
-body.dark-mode .auth-header h1 {
+[data-bs-theme="dark"] .auth-header h1 {
   color: #fff;
 }
 
-body.dark-mode .auth-subtitle,
-body.dark-mode .auth-login p,
-body.dark-mode .auth-features li {
+[data-bs-theme="dark"] .auth-subtitle,
+[data-bs-theme="dark"] .auth-login p,
+[data-bs-theme="dark"] .auth-features li {
   color: #aaa;
 }
 
-body.dark-mode .auth-features h3 {
+[data-bs-theme="dark"] .auth-features h3 {
   color: #8b9dc3;
 }
 

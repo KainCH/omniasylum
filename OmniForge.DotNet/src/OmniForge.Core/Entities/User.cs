@@ -95,6 +95,12 @@ namespace OmniForge.Core.Entities
         public bool Enabled { get; set; } = true;
         public bool ShowAlerts { get; set; } = true;
         public bool CelebrationEffects { get; set; } = true;
+        public bool EnableSound { get; set; } = true;
+        public bool EnableParticles { get; set; } = true;
+        public bool EnableScreenEffects { get; set; } = true;
+        public bool EnableSVGFilters { get; set; } = true;
+        public bool EnableTextEffects { get; set; } = true;
+        public int Volume { get; set; } = 70;
     }
 
     public class DiscordSettings

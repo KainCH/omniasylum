@@ -1,0 +1,220 @@
+@page "/settings/series"
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject ISeriesRepository SeriesRepository
+@inject ICounterRepository CounterRepository
+@inject IOverlayNotifier OverlayNotifier
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+
+<PageTitle>Series Manager - OmniForge</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-collection-play text-info"></i> Series Manager</h2>
+        <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-info" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-@messageType alert-dismissible fade show" role="alert">
+                @message
+                <button type="button" class="btn-close" @onclick="() => message = null"></button>
+            </div>
+        }
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Save Current State</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            Save your current death/swear counts as a new series checkpoint.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label">Series Name</label>
+                            <input type="text" class="form-control" @bind="newSeriesName" placeholder="e.g. Elden Ring Run 1" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description (Optional)</label>
+                            <textarea class="form-control" @bind="newSeriesDescription" rows="2"></textarea>
+                        </div>
+                        <button class="btn btn-info text-white w-100" @onclick="SaveSeries" disabled="@(string.IsNullOrWhiteSpace(newSeriesName) || isSaving)">
+                            @(isSaving ? "Saving..." : "Save Series")
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Saved Series</h5>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        @if (seriesList.Any())
+                        {
+                            @foreach (var series in seriesList)
+                            {
+                                <div class="list-group-item p-3">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h5 class="mb-1">@series.Name</h5>
+                                            <p class="mb-1 text-muted">@series.Description</p>
+                                            <small class="text-muted">
+                                                <i class="bi bi-clock"></i> @series.LastUpdated.ToString("g")
+                                                <span class="mx-2">|</span>
+                                                Deaths: @series.Snapshot.Deaths
+                                                <span class="mx-2">|</span>
+                                                Swears: @series.Snapshot.Swears
+                                            </small>
+                                        </div>
+                                        <div class="btn-group">
+                                            <button class="btn btn-outline-primary btn-sm" @onclick="() => LoadSeries(series)" title="Load this series">
+                                                <i class="bi bi-upload"></i> Load
+                                            </button>
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteSeries(series)" title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="list-group-item p-5 text-center text-muted">
+                                <i class="bi bi-inbox display-4 mb-3 d-block"></i>
+                                No saved series found.
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Series> seriesList = new();
+    private string newSeriesName = "";
+    private string newSeriesDescription = "";
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string? message;
+    private string messageType = "info";
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            userId = authState.User.FindFirst("userId")?.Value;
+
+            if (userId != null)
+            {
+                await RefreshList();
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading series: {ex.Message}", "danger");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshList()
+    {
+        if (userId == null) return;
+        seriesList = (await SeriesRepository.GetSeriesAsync(userId)).ToList();
+    }
+
+    private void ShowMessage(string msg, string type)
+    {
+        message = msg;
+        messageType = type;
+        StateHasChanged();
+    }
+
+    private async Task SaveSeries()
+    {
+        if (userId == null) return;
+        isSaving = true;
+        try
+        {
+            var currentCounters = await CounterRepository.GetCountersAsync(userId);
+            var series = new Series
+            {
+                UserId = userId,
+                Name = newSeriesName,
+                Description = newSeriesDescription,
+                Snapshot = currentCounters,
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow
+            };
+
+            await SeriesRepository.CreateSeriesAsync(series);
+            await RefreshList();
+
+            newSeriesName = "";
+            newSeriesDescription = "";
+            ShowMessage("Series saved successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving series: {ex.Message}", "danger");
+        }
+        isSaving = false;
+    }
+
+    private async Task LoadSeries(Series series)
+    {
+        if (userId == null) return;
+        try
+        {
+            // Ensure snapshot belongs to current user
+            series.Snapshot.TwitchUserId = userId;
+            await CounterRepository.SaveCountersAsync(series.Snapshot);
+            await OverlayNotifier.NotifyCounterUpdateAsync(userId, series.Snapshot);
+
+            ShowMessage($"Loaded series '{series.Name}' successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading series: {ex.Message}", "danger");
+        }
+    }
+
+    private async Task DeleteSeries(Series series)
+    {
+        if (userId == null) return;
+        try
+        {
+            await SeriesRepository.DeleteSeriesAsync(userId, series.Id);
+            await RefreshList();
+            ShowMessage("Series deleted.", "info");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error deleting series: {ex.Message}", "danger");
+        }
+    }
+}

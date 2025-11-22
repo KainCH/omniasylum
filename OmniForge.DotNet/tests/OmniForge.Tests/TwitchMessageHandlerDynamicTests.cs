@@ -114,7 +114,7 @@ namespace OmniForge.Tests
                 .ReturnsAsync(config);
 
             var message = CreateMessage(command);
-            string sentMessage = null;
+            string? sentMessage = null;
 
             // Act
             await _handler.HandleMessageAsync(userId, message, (uid, msg) =>
@@ -147,7 +147,7 @@ namespace OmniForge.Tests
 
             var messageViewer = CreateMessage(command, isMod: false);
             var messageMod = CreateMessage(command, isMod: true);
-            string sentMessage = null;
+            string? sentMessage = null;
 
             // Act - Viewer
             await _handler.HandleMessageAsync(userId, messageViewer, (uid, msg) =>

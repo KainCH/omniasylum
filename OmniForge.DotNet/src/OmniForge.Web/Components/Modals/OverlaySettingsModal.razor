@@ -7,10 +7,10 @@
 {
     <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content bg-dark text-white">
-                <div class="modal-header border-secondary">
+            <div class="modal-content">
+                <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-layout-text-window-reverse me-2"></i>Overlay Settings</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="Close"></button>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
                 </div>
                 <div class="modal-body">
                     @if (isLoading)
@@ -37,7 +37,7 @@
 
                                     <div class="mb-3">
                                         <label class="form-label">Position</label>
-                                        <InputSelect class="form-select bg-dark text-white border-secondary" @bind-Value="settings.Position">
+                                        <InputSelect class="form-select" @bind-Value="settings.Position">
                                             <option value="top-left">Top Left</option>
                                             <option value="top-right">Top Right</option>
                                             <option value="bottom-left">Bottom Left</option>
@@ -72,7 +72,7 @@
                                 </div>
                             </div>
 
-                            <hr class="border-secondary" />
+                            <hr />
 
                             <div class="row">
                                 <div class="col-md-6">
@@ -80,12 +80,12 @@
 
                                     <div class="mb-3">
                                         <label class="form-label">Target Amount</label>
-                                        <InputNumber class="form-control bg-dark text-white border-secondary" @bind-Value="settings.BitsGoal.Target" />
+                                        <InputNumber class="form-control" @bind-Value="settings.BitsGoal.Target" />
                                     </div>
 
                                     <div class="mb-3">
                                         <label class="form-label">Current Amount</label>
-                                        <InputNumber class="form-control bg-dark text-white border-secondary" @bind-Value="settings.BitsGoal.Current" />
+                                        <InputNumber class="form-control" @bind-Value="settings.BitsGoal.Current" />
                                     </div>
                                 </div>
 
