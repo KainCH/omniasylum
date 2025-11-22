@@ -1,0 +1,199 @@
+@page "/template-designer"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Template Designer - OmniForge</PageTitle>
+
+<div class="container-fluid h-100">
+    <div class="row h-100">
+        <!-- Sidebar Controls -->
+        <div class="col-md-4 col-lg-3 bg-light border-end p-0 d-flex flex-column" style="height: calc(100vh - 56px); overflow-y: auto;">
+            <div class="p-3 border-bottom bg-white sticky-top">
+                <h4 class="mb-0"><i class="bi bi-palette-fill me-2"></i>Designer</h4>
+            </div>
+
+            <div class="p-4">
+                <h6 class="text-uppercase text-muted mb-3 fw-bold">Colors</h6>
+
+                <div class="mb-3">
+                    <label class="form-label">Background Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" @bind="template.BackgroundColor" @bind:event="oninput" title="Choose background color">
+                        <input type="text" class="form-control" @bind="template.BackgroundColor" @bind:event="oninput">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Text Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" @bind="template.TextColor" @bind:event="oninput" title="Choose text color">
+                        <input type="text" class="form-control" @bind="template.TextColor" @bind:event="oninput">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Border Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" @bind="template.BorderColor" @bind:event="oninput" title="Choose border color">
+                        <input type="text" class="form-control" @bind="template.BorderColor" @bind:event="oninput">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Accent Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" @bind="template.AccentColor" @bind:event="oninput" title="Choose accent color">
+                        <input type="text" class="form-control" @bind="template.AccentColor" @bind:event="oninput">
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <h6 class="text-uppercase text-muted mb-3 fw-bold">Typography & Layout</h6>
+
+                <div class="mb-3">
+                    <label class="form-label">Font Family</label>
+                    <select class="form-select" @bind="template.FontFamily">
+                        <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                        <option value="'Arial', sans-serif">Arial</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                        <option value="'Georgia', serif">Georgia</option>
+                        <option value="'Creepster', cursive">Creepster (Horror)</option>
+                        <option value="'Roboto', sans-serif">Roboto</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Border Radius: @template.BorderRadius px</label>
+                    <input type="range" class="form-range" min="0" max="50" @bind="template.BorderRadius" @bind:event="oninput">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Border Width: @template.BorderWidth px</label>
+                    <input type="range" class="form-range" min="0" max="10" @bind="template.BorderWidth" @bind:event="oninput">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Opacity: @(template.Opacity * 100)%</label>
+                    <input type="range" class="form-range" min="0" max="1" step="0.05" @bind="template.Opacity" @bind:event="oninput">
+                </div>
+
+                <hr class="my-4">
+
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" @onclick="SaveTemplate">
+                        <i class="bi bi-save me-2"></i>Save Template
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="ResetTemplate">
+                        <i class="bi bi-arrow-counterclockwise me-2"></i>Reset to Default
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Area -->
+        <div class="col-md-8 col-lg-9 p-0 bg-dark d-flex flex-column position-relative">
+            <div class="preview-header bg-black text-white p-3 d-flex justify-content-between align-items-center border-bottom border-secondary">
+                <h5 class="mb-0">Live Preview</h5>
+                <span class="badge bg-secondary">1920 x 1080</span>
+            </div>
+
+            <div class="preview-canvas flex-grow-1 d-flex align-items-center justify-content-center"
+                 style="background-image: url('https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80'); background-size: cover; background-position: center;">
+
+                <!-- The Overlay Component Preview -->
+                <div class="overlay-preview p-4 shadow-lg" style="@PreviewStyle">
+                    <div class="overlay-header mb-3 border-bottom pb-2" style="border-color: @template.BorderColor !important;">
+                        <h3 class="m-0" style="font-family: @template.FontFamily">Stream Stats</h3>
+                    </div>
+
+                    <div class="stat-row d-flex align-items-center mb-3">
+                        <i class="bi bi-skull-fill me-3 fs-4" style="color: @template.AccentColor"></i>
+                        <div>
+                            <div class="text-uppercase small opacity-75">Deaths</div>
+                            <div class="fs-2 fw-bold" style="color: @template.AccentColor; font-family: @template.FontFamily">42</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-row d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle-fill me-3 fs-4" style="color: @template.AccentColor"></i>
+                        <div>
+                            <div class="text-uppercase small opacity-75">Swears</div>
+                            <div class="fs-2 fw-bold" style="color: @template.AccentColor; font-family: @template.FontFamily">128</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private TemplateModel template = new();
+
+    protected override void OnInitialized()
+    {
+        // Load default or saved template
+        ResetTemplate();
+    }
+
+    private void ResetTemplate()
+    {
+        template = new TemplateModel
+        {
+            BackgroundColor = "#000000",
+            TextColor = "#ffffff",
+            BorderColor = "#ff0000",
+            AccentColor = "#ff0000",
+            FontFamily = "'Segoe UI', sans-serif",
+            BorderRadius = 8,
+            BorderWidth = 2,
+            Opacity = 0.8f
+        };
+    }
+
+    private async Task SaveTemplate()
+    {
+        // TODO: Implement API call to save template
+        await JSRuntime.InvokeVoidAsync("alert", "Template saved successfully! (Simulation)");
+    }
+
+    private string PreviewStyle => $@"
+        background-color: {HexToRgba(template.BackgroundColor, template.Opacity)};
+        color: {template.TextColor};
+        border: {template.BorderWidth}px solid {template.BorderColor};
+        border-radius: {template.BorderRadius}px;
+        font-family: {template.FontFamily};
+        min-width: 300px;
+        backdrop-filter: blur(5px);
+    ";
+
+    private string HexToRgba(string hex, float opacity)
+    {
+        if (string.IsNullOrEmpty(hex)) return "rgba(0,0,0,1)";
+
+        hex = hex.Replace("#", "");
+        if (hex.Length == 6)
+        {
+            var r = Convert.ToInt32(hex.Substring(0, 2), 16);
+            var g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            var b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            return $"rgba({r}, {g}, {b}, {opacity})";
+        }
+        return hex;
+    }
+
+    public class TemplateModel
+    {
+        public string BackgroundColor { get; set; } = "#000000";
+        public string TextColor { get; set; } = "#ffffff";
+        public string BorderColor { get; set; } = "#ff0000";
+        public string AccentColor { get; set; } = "#ff0000";
+        public string FontFamily { get; set; } = "'Segoe UI', sans-serif";
+        public int BorderRadius { get; set; } = 8;
+        public int BorderWidth { get; set; } = 2;
+        public float Opacity { get; set; } = 0.8f;
+    }
+}

@@ -1,49 +1,84 @@
-@page "/users"
-@using OmniForge.Core.Entities
-@using OmniForge.Core.Interfaces
-@inject IUserRepository UserRepository
-@inject NavigationManager NavigationManager
+@page "/portal"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
 
-<h3>User Management</h3>
+<PageTitle>User Portal - OmniForge</PageTitle>
 
-@if (users == null)
-{
-    <p><em>Loading...</em></p>
-}
-else
-{
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Username</th>
-                <th>Display Name</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var user in users)
-            {
-                <tr>
-                    <td>@user.Username</td>
-                    <td>@user.DisplayName</td>
-                    <td>@user.Role</td>
-                    <td>@(user.IsActive ? "Active" : "Inactive")</td>
-                    <td>
-                        <a href="/users/@user.TwitchUserId" class="btn btn-primary btn-sm">Edit</a>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
+<div class="container mt-4">
+    <AuthorizeView>
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="display-4">Welcome, @context.User.Identity?.Name!</h1>
+                <p class="lead text-muted">Select a tool to get started.</p>
+            </div>
+        </div>
+    </AuthorizeView>
 
-@code {
-    private IEnumerable<User>? users;
+    <div class="row g-4">
+        <!-- Stream Counter Card -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-speedometer2 text-primary" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">Stream Counter</h3>
+                    <p class="card-text text-muted">
+                        Manage your death and swear counters in real-time. Syncs across all devices.
+                    </p>
+                    <a href="dashboard" class="btn btn-primary btn-lg mt-3 stretched-link">
+                        Open Counter
+                    </a>
+                </div>
+            </div>
+        </div>
 
-    protected override async Task OnInitializedAsync()
-    {
-        users = await UserRepository.GetAllUsersAsync();
+        <!-- Overlay Designer Card -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-palette-fill text-success" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">Overlay Designer</h3>
+                    <p class="card-text text-muted">
+                        Customize the look and feel of your stream overlay. Change colors, fonts, and more.
+                    </p>
+                    <a href="template-designer" class="btn btn-success btn-lg mt-3 stretched-link">
+                        Open Designer
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Tools (Conditional) -->
+        <AuthorizeView Roles="admin">
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm hover-card border-danger">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="bi bi-shield-lock-fill text-danger" style="font-size: 4rem;"></i>
+                        </div>
+                        <h3 class="card-title text-danger">Admin Console</h3>
+                        <p class="card-text text-muted">
+                            Manage users, view system logs, and debug webhook integrations.
+                        </p>
+                        <a href="admin/users" class="btn btn-outline-danger btn-lg mt-3 stretched-link">
+                            Access Admin
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </AuthorizeView>
+    </div>
+</div>
+
+<style>
+    .hover-card {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     }
-}
+    .hover-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 1rem 3rem rgba(0,0,0,.175)!important;
+    }
+</style>

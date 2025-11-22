@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace OmniForge.Core.Entities
 {
@@ -17,6 +18,7 @@ namespace OmniForge.Core.Entities
         public OverlaySettings OverlaySettings { get; set; } = new OverlaySettings();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
+        public DiscordSettings DiscordSettings { get; set; } = new DiscordSettings();
         public bool IsActive { get; set; } = true;
         public string StreamStatus { get; set; } = "offline";
         public DateTimeOffset CreatedAt { get; set; }
@@ -76,5 +78,35 @@ namespace OmniForge.Core.Entities
         public bool Enabled { get; set; } = true;
         public bool ShowAlerts { get; set; } = true;
         public bool CelebrationEffects { get; set; } = true;
+    }
+
+    public class DiscordSettings
+    {
+        public string TemplateStyle { get; set; } = "asylum_themed";
+        public DiscordEnabledNotifications EnabledNotifications { get; set; } = new DiscordEnabledNotifications();
+        public DiscordMilestoneThresholds MilestoneThresholds { get; set; } = new DiscordMilestoneThresholds();
+
+        // Legacy/Flat properties for backward compatibility if needed,
+        // but we should prefer the structured ones.
+        public bool EnableChannelNotifications { get; set; } = false;
+    }
+
+    public class DiscordEnabledNotifications
+    {
+        public bool DeathMilestone { get; set; } = true;
+        public bool SwearMilestone { get; set; } = true;
+        public bool ScreamMilestone { get; set; } = true;
+        public bool StreamStart { get; set; } = true;
+        public bool StreamEnd { get; set; } = false;
+        public bool FollowerGoal { get; set; } = false;
+        public bool SubscriberMilestone { get; set; } = false;
+        public bool ChannelPointRedemption { get; set; } = false;
+    }
+
+    public class DiscordMilestoneThresholds
+    {
+        public List<int> Deaths { get; set; } = new List<int> { 10, 25, 50, 100, 250, 500 };
+        public List<int> Swears { get; set; } = new List<int> { 25, 50, 100, 200, 500 };
+        public List<int> Screams { get; set; } = new List<int> { 10, 25, 50, 100 };
     }
 }

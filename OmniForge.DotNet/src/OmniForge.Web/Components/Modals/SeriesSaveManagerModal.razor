@@ -1,0 +1,126 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-save me-2"></i>Series Save Manager</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Manage saved counter states for different game series.
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Current Series</label>
+                            <select class="form-select bg-dark text-white border-secondary" @bind="selectedSeriesId">
+                                <option value="">-- Select a Series --</option>
+                                @foreach (var series in seriesList)
+                                {
+                                    <option value="@series.Id">@series.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(selectedSeriesId))
+                        {
+                            <div class="card bg-secondary bg-opacity-10 border-secondary mb-3">
+                                <div class="card-body">
+                                    <h6>@seriesList.FirstOrDefault(s => s.Id == selectedSeriesId)?.Name</h6>
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <small class="text-muted">Deaths</small>
+                                            <div class="fs-4">@seriesList.FirstOrDefault(s => s.Id == selectedSeriesId)?.Deaths</div>
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted">Swears</small>
+                                            <div class="fs-4">@seriesList.FirstOrDefault(s => s.Id == selectedSeriesId)?.Swears</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="LoadSeries" disabled="@string.IsNullOrEmpty(selectedSeriesId)">Load Series</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public string UserId { get; set; } = "";
+
+    private List<SeriesSave> seriesList = new();
+    private string selectedSeriesId = "";
+    private bool isLoading = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !string.IsNullOrEmpty(UserId) && !isLoading)
+        {
+            await LoadSeriesList();
+        }
+    }
+
+    private async Task LoadSeriesList()
+    {
+        isLoading = true;
+        try
+        {
+            // TODO: Implement actual series loading
+            await Task.Delay(500);
+            seriesList = new List<SeriesSave>
+            {
+                new SeriesSave { Id = "1", Name = "Dark Souls Run", Deaths = 452, Swears = 120 },
+                new SeriesSave { Id = "2", Name = "Elden Ring", Deaths = 890, Swears = 450 }
+            };
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadSeries()
+    {
+        // TODO: Implement logic to apply series counts to current counters
+        await Task.Delay(500);
+        await Close();
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    public class SeriesSave
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int Deaths { get; set; }
+        public int Swears { get; set; }
+    }
+}

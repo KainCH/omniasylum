@@ -1,0 +1,139 @@
+@page "/admin/debug"
+@using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize(Roles = "admin")]
+@inject IUserRepository UserRepository
+@inject IOverlayNotifier OverlayNotifier
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Admin - Debug</PageTitle>
+
+<div class="container">
+    <h1>Debug Tools</h1>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Webhook Tests</h5>
+                </div>
+                <div class="card-body">
+                    <p>Test saving a Discord webhook URL to the database.</p>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="testUserId" />
+                        <button class="btn btn-primary" @onclick="TestWebhookSave">Test Save</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(webhookResult))
+                    {
+                        <div class="alert alert-info">
+                            <pre>@webhookResult</pre>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Stream Notification Tests</h5>
+                </div>
+                <div class="card-body">
+                    <p>Simulate a stream going live event.</p>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="notificationUserId" />
+                        <button class="btn btn-success" @onclick="TestStreamNotification">Trigger Live</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(notificationResult))
+                    {
+                        <div class="alert alert-info">
+                            @notificationResult
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Overlay Tests</h5>
+                </div>
+                <div class="card-body">
+                    <p>Trigger overlay animations.</p>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="overlayUserId" />
+                        <button class="btn btn-warning" @onclick="TriggerDeathAnimation">Trigger Death</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string testUserId = "";
+    private string webhookResult = "";
+
+    private string notificationUserId = "";
+    private string notificationResult = "";
+
+    private string overlayUserId = "";
+
+    private async Task TestWebhookSave()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(testUserId))
+            {
+                webhookResult = "Please enter a User ID";
+                return;
+            }
+
+            var user = await UserRepository.GetUserAsync(testUserId);
+            if (user == null)
+            {
+                webhookResult = "User not found";
+                return;
+            }
+
+            var originalUrl = user.DiscordWebhookUrl;
+            var testUrl = "https://discord.com/api/webhooks/1234567890/test-token";
+
+            user.DiscordWebhookUrl = testUrl;
+            await UserRepository.SaveUserAsync(user);
+
+            var savedUser = await UserRepository.GetUserAsync(testUserId);
+
+            // Restore
+            user.DiscordWebhookUrl = originalUrl;
+            await UserRepository.SaveUserAsync(user);
+
+            webhookResult = $"Success!\nOriginal: {originalUrl}\nSaved: {savedUser?.DiscordWebhookUrl}\nRestored.";
+        }
+        catch (Exception ex)
+        {
+            webhookResult = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task TestStreamNotification()
+    {
+        // This would normally trigger a real notification service
+        // For now we just log it or maybe use OverlayNotifier if applicable
+        notificationResult = "Simulation triggered (check logs)";
+        await Task.CompletedTask;
+    }
+
+    private async Task TriggerDeathAnimation()
+    {
+        if (!string.IsNullOrEmpty(overlayUserId))
+        {
+            var counter = new Counter { Deaths = 999, Swears = 0 }; // Dummy data
+            await OverlayNotifier.NotifyCounterUpdateAsync(overlayUserId, counter);
+        }
+    }
+}

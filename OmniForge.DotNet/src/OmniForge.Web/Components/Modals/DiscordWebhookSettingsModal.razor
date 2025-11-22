@@ -1,0 +1,177 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+@inject IDiscordService DiscordService
+@inject IJSRuntime JSRuntime
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-discord me-2"></i>Discord Integration</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="@webhookUrl" OnValidSubmit="SaveSettings">
+                            <div class="mb-3">
+                                <label class="form-label">Discord Webhook URL</label>
+                                <div class="input-group">
+                                    <InputText class="form-control bg-dark text-white border-secondary" @bind-Value="webhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+                                    <button type="button" class="btn btn-outline-info" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(webhookUrl) || isTesting)">
+                                        @if (isTesting)
+                                        {
+                                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-send-fill"></i>
+                                        }
+                                    </button>
+                                </div>
+                                <div class="form-text text-muted">
+                                    Paste your Discord Webhook URL here to receive notifications when counters update.
+                                </div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3">
+                                <InputCheckbox id="discordEnabled" class="form-check-input" @bind-Value="discordEnabled" />
+                                <label class="form-check-label" for="discordEnabled">Enable Discord Notifications</label>
+                            </div>
+
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                Notifications will be sent when you go live or when counters reach milestones.
+                            </div>
+
+                            <div class="modal-footer border-secondary">
+                                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                                <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                                    @if (isSaving)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        <span>Save Changes</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Save Changes</span>
+                                    }
+                                </button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public string UserId { get; set; } = "";
+
+    private string webhookUrl = "";
+    private bool discordEnabled = false;
+    private bool isLoading = false;
+    private bool isSaving = false;
+    private bool isTesting = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !string.IsNullOrEmpty(UserId) && !isLoading)
+        {
+            await LoadSettings();
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        isLoading = true;
+        try
+        {
+            var user = await UserRepository.GetUserAsync(UserId);
+            if (user != null)
+            {
+                webhookUrl = user.DiscordWebhookUrl;
+                discordEnabled = user.Features.DiscordWebhook;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading discord settings: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        isSaving = true;
+        try
+        {
+            var user = await UserRepository.GetUserAsync(UserId);
+            if (user != null)
+            {
+                user.DiscordWebhookUrl = webhookUrl;
+                user.Features.DiscordWebhook = discordEnabled;
+                await UserRepository.SaveUserAsync(user);
+                await Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving discord settings: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task TestWebhook()
+    {
+        if (string.IsNullOrEmpty(webhookUrl)) return;
+
+        isTesting = true;
+        try
+        {
+            var user = await UserRepository.GetUserAsync(UserId);
+            if (user != null)
+            {
+                // Temporarily update the URL in the user object for the test
+                // but don't save it to DB yet
+                user.DiscordWebhookUrl = webhookUrl;
+                await DiscordService.SendTestNotificationAsync(user);
+                await JSRuntime.InvokeVoidAsync("alert", "Test notification sent successfully!");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send test notification: {ex.Message}");
+        }
+        finally
+        {
+            isTesting = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+}

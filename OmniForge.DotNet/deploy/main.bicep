@@ -146,6 +146,10 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: userAssignedIdentity.properties.clientId
             }
             {
+              name: 'AzureStorage__AccountName'
+              value: storageAccountName
+            }
+            {
               name: 'Authentication__Twitch__CallbackPath'
               value: '/auth/twitch/callback'
             }

@@ -18,6 +18,28 @@
     <script src="_framework/blazor.web.js"></script>
     <script src="js/asylum-effects.js"></script>
     <script src="js/overlay-interop.js"></script>
+    <script>
+        window.toggleDarkMode = (isDark) => {
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('darkMode', 'false');
+            }
+        };
+
+        window.initDarkMode = () => {
+            const isDark = localStorage.getItem('darkMode') === 'true';
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+            }
+            return isDark;
+        };
+
+        // Run immediately
+        window.initDarkMode();
+    </script>
 </body>
 
 </html>

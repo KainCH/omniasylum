@@ -2,7 +2,7 @@ param(
     [string]$ResourceGroup = "Streamer-Tools-RG",
     [string]$AcrName = "omniforgeacr",
     [string]$ImageName = "omniforge-dotnet",
-    [string]$ImageTag = "latest",
+    [string]$ImageTag = "$(Get-Date -Format 'yyyyMMdd-HHmmss')",
     [string]$Environment = "dev"
 )
 

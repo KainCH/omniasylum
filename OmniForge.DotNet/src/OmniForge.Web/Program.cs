@@ -5,9 +5,18 @@ using OmniForge.Web.Services;
 using OmniForge.Core.Interfaces;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.WebUtilities;
 using AspNet.Security.OAuth.Twitch;
 using Azure.Identity;
+using Azure.Core;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using OmniForge.Infrastructure.Configuration;
+using OmniForge.Web.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,45 +53,52 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddControllers();
 
+// Configure Data Protection
+var storageAccountName = builder.Configuration["AzureStorage:AccountName"];
+if (!string.IsNullOrEmpty(storageAccountName))
+{
+    var blobUri = new Uri($"https://{storageAccountName}.blob.core.windows.net/dataprotection-keys/keys.xml");
+    var azureClientId = builder.Configuration["AZURE_CLIENT_ID"];
+    TokenCredential credential;
+
+    if (!string.IsNullOrEmpty(azureClientId))
+    {
+        credential = new ManagedIdentityCredential(azureClientId);
+    }
+    else
+    {
+        credential = new DefaultAzureCredential();
+    }
+
+    builder.Services.AddDataProtection()
+        .PersistKeysToAzureBlobStorage(blobUri, credential)
+        .SetApplicationName("OmniForgeStream");
+}
+
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = TwitchAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
-.AddCookie(options =>
+.AddJwtBearer(options =>
 {
-    options.LoginPath = "/";
-    options.ExpireTimeSpan = TimeSpan.FromDays(30);
-})
-.AddTwitch(options =>
-{
-    var clientId = builder.Configuration["Authentication:Twitch:ClientId"];
-    if (string.IsNullOrEmpty(clientId))
+    var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
+    if (jwtSettings == null) throw new InvalidOperationException("Jwt settings not found.");
+    var key = Encoding.ASCII.GetBytes(jwtSettings.Secret);
+
+    options.RequireHttpsMetadata = false; // Set to true in production
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        clientId = builder.Configuration["TWITCH-CLIENT-ID"];
-    }
-
-    var clientSecret = builder.Configuration["Authentication:Twitch:ClientSecret"];
-    if (string.IsNullOrEmpty(clientSecret))
-    {
-        clientSecret = builder.Configuration["TWITCH-CLIENT-SECRET"];
-    }
-
-    options.ClientId = !string.IsNullOrEmpty(clientId) ? clientId : throw new InvalidOperationException("Twitch ClientId not found.");
-    options.ClientSecret = !string.IsNullOrEmpty(clientSecret) ? clientSecret : throw new InvalidOperationException("Twitch ClientSecret not found.");
-
-    options.CallbackPath = "/auth/twitch/callback";
-    options.Scope.Add("user:read:email");
-    options.Scope.Add("chat:read");
-    options.Scope.Add("chat:edit");
-    options.Scope.Add("channel:manage:broadcast");
-    options.Scope.Add("user:manage:whispers");
-    options.Scope.Add("channel:read:subscriptions");
-    options.Scope.Add("channel:read:redemptions");
-    options.Scope.Add("moderator:read:followers");
-    options.Scope.Add("bits:read");
-    options.Scope.Add("clips:edit");
-    options.SaveTokens = true;
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings.Issuer,
+        ValidateAudience = true,
+        ValidAudience = jwtSettings.Audience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
 });
 
 builder.Services.AddSignalR();
@@ -108,6 +124,7 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<UserStatusMiddleware>();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

@@ -1,0 +1,202 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+@inject IJSRuntime JSRuntime
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-layout-text-window-reverse me-2"></i>Overlay Settings</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="@settings" OnValidSubmit="SaveSettings">
+                            <DataAnnotationsValidator />
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-uppercase text-muted mb-3">General</h6>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <InputCheckbox id="overlayEnabled" class="form-check-input" @bind-Value="settings.Enabled" />
+                                        <label class="form-check-label" for="overlayEnabled">Enable Overlay</label>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Position</label>
+                                        <InputSelect class="form-select bg-dark text-white border-secondary" @bind-Value="settings.Position">
+                                            <option value="top-left">Top Left</option>
+                                            <option value="top-right">Top Right</option>
+                                            <option value="bottom-left">Bottom Left</option>
+                                            <option value="bottom-right">Bottom Right</option>
+                                            <option value="custom">Custom</option>
+                                        </InputSelect>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <h6 class="text-uppercase text-muted mb-3">Visible Counters</h6>
+
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox id="showDeaths" class="form-check-input" @bind-Value="settings.Counters.Deaths" />
+                                        <label class="form-check-label" for="showDeaths">Deaths</label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox id="showSwears" class="form-check-input" @bind-Value="settings.Counters.Swears" />
+                                        <label class="form-check-label" for="showSwears">Swears</label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox id="showScreams" class="form-check-input" @bind-Value="settings.Counters.Screams" />
+                                        <label class="form-check-label" for="showScreams">Screams</label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox id="showBits" class="form-check-input" @bind-Value="settings.Counters.Bits" />
+                                        <label class="form-check-label" for="showBits">Bits</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr class="border-secondary" />
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-uppercase text-muted mb-3">Bits Goal</h6>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Target Amount</label>
+                                        <InputNumber class="form-control bg-dark text-white border-secondary" @bind-Value="settings.BitsGoal.Target" />
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Current Amount</label>
+                                        <InputNumber class="form-control bg-dark text-white border-secondary" @bind-Value="settings.BitsGoal.Current" />
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <h6 class="text-uppercase text-muted mb-3">Animations</h6>
+
+                                    <div class="form-check form-switch mb-2">
+                                        <InputCheckbox id="animEnabled" class="form-check-input" @bind-Value="settings.Animations.Enabled" />
+                                        <label class="form-check-label" for="animEnabled">Enable Animations</label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-2">
+                                        <InputCheckbox id="animAlerts" class="form-check-input" @bind-Value="settings.Animations.ShowAlerts" />
+                                        <label class="form-check-label" for="animAlerts">Show Alerts</label>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-2">
+                                        <InputCheckbox id="animCeleb" class="form-check-input" @bind-Value="settings.Animations.CelebrationEffects" />
+                                        <label class="form-check-label" for="animCeleb">Celebration Effects</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer border-secondary">
+                                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                                <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                                    @if (isSaving)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        <span>Saving...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Save Changes</span>
+                                    }
+                                </button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public string UserId { get; set; } = "";
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private OverlaySettings settings = new();
+    private bool isLoading = false;
+    private bool isSaving = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !string.IsNullOrEmpty(UserId) && !isLoading)
+        {
+            await LoadSettings();
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        isLoading = true;
+        try
+        {
+            var user = await UserRepository.GetUserAsync(UserId);
+            if (user != null)
+            {
+                settings = user.OverlaySettings ?? new OverlaySettings();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading overlay settings: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        isSaving = true;
+        try
+        {
+            var user = await UserRepository.GetUserAsync(UserId);
+            if (user != null)
+            {
+                user.OverlaySettings = settings;
+                await UserRepository.SaveUserAsync(user);
+                await OnSaved.InvokeAsync();
+                await Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving overlay settings: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+}

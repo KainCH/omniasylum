@@ -17,7 +17,20 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyCounterUpdateAsync(string userId, Counter counter)
         {
-            await _hubContext.Clients.Group($"user:{userId}").SendAsync("ReceiveCounterUpdate", counter);
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("counterUpdate", counter);
+        }
+
+        public async Task NotifyMilestoneReachedAsync(string userId, string counterType, int milestone, int newValue, int previousMilestone)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("milestoneReached", new
+            {
+                userId,
+                counterType,
+                milestone,
+                newValue,
+                previousMilestone,
+                timestamp = System.DateTime.UtcNow
+            });
         }
     }
 }

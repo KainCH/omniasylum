@@ -41,5 +41,53 @@ namespace OmniForge.Infrastructure.Repositories
             var entity = CounterTableEntity.FromDomain(counter);
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
         }
+
+        public async Task<Counter> IncrementCounterAsync(string userId, string counterType)
+        {
+            var counter = await GetCountersAsync(userId);
+
+            switch (counterType.ToLower())
+            {
+                case "deaths":
+                    counter.Deaths++;
+                    break;
+                case "swears":
+                    counter.Swears++;
+                    break;
+                case "screams":
+                    counter.Screams++;
+                    break;
+                default:
+                    throw new ArgumentException("Invalid counter type", nameof(counterType));
+            }
+
+            counter.LastUpdated = DateTimeOffset.UtcNow;
+            await SaveCountersAsync(counter);
+            return counter;
+        }
+
+        public async Task<Counter> DecrementCounterAsync(string userId, string counterType)
+        {
+            var counter = await GetCountersAsync(userId);
+
+            switch (counterType.ToLower())
+            {
+                case "deaths":
+                    counter.Deaths = Math.Max(0, counter.Deaths - 1);
+                    break;
+                case "swears":
+                    counter.Swears = Math.Max(0, counter.Swears - 1);
+                    break;
+                case "screams":
+                    counter.Screams = Math.Max(0, counter.Screams - 1);
+                    break;
+                default:
+                    throw new ArgumentException("Invalid counter type", nameof(counterType));
+            }
+
+            counter.LastUpdated = DateTimeOffset.UtcNow;
+            await SaveCountersAsync(counter);
+            return counter;
+        }
     }
 }

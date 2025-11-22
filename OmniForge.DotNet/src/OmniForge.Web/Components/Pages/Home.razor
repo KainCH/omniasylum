@@ -1,5 +1,7 @@
 ﻿@page "/"
 @using Microsoft.AspNetCore.Components.Authorization
+@using OmniForge.Web.Components.Layout
+@layout EmptyLayout
 
 <PageTitle>OmniAsylum Stream Tools</PageTitle>
 
@@ -13,8 +15,8 @@
                 </div>
                 <div class="auth-content">
                     <div class="auth-login">
-                        <a href="dashboard" class="twitch-login-btn" style="text-decoration: none; justify-content: center;">
-                            Go to Dashboard
+                        <a href="portal" class="twitch-login-btn" style="text-decoration: none; justify-content: center;">
+                            Go to User Portal
                         </a>
                         <div style="margin-top: 15px;">
                             <a href="auth/logout" class="btn btn-outline-danger">Logout</a>
@@ -46,7 +48,7 @@
 
                     <div class="auth-login">
                         <p>Connect with your Twitch account to get started:</p>
-                        <a href="auth/login?returnUrl=/dashboard" class="twitch-login-btn" style="text-decoration: none; color: white;">
+                        <a href="auth/login?returnUrl=/portal" class="twitch-login-btn" style="text-decoration: none; color: white;">
                             <span class="twitch-icon">🟣</span>
                             Login with Twitch
                         </a>
@@ -68,34 +70,32 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 80vh; /* Adjusted for layout */
+        min-height: 100vh;
         padding: 20px;
     }
 
     .auth-card {
-        background: linear-gradient(135deg, rgba(139, 69, 19, 0.1), rgba(212, 175, 55, 0.1));
-        border: 2px solid rgba(139, 69, 19, 0.3);
+        background: rgba(255, 255, 255, 0.95);
+        border: none;
         border-radius: 20px;
         padding: 40px;
         max-width: 500px;
         width: 100%;
         text-align: center;
-        -webkit-backdrop-filter: blur(10px);
-        backdrop-filter: blur(10px);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     }
 
     .auth-header h1 {
         margin: 0 0 10px 0;
         font-size: 2.5rem;
-        background: linear-gradient(135deg, #8b4513, #d4af37);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #333;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        background: none;
+        -webkit-text-fill-color: initial;
     }
 
     .auth-subtitle {
-        color: #8b4513;
+        color: #666;
         font-size: 1.2rem;
         margin-bottom: 30px;
         opacity: 0.8;
@@ -107,7 +107,7 @@
     }
 
     .auth-features h3 {
-        color: #d4af37;
+        color: #667eea;
         margin-bottom: 15px;
         text-align: center;
     }
@@ -119,7 +119,7 @@
 
     .auth-features li {
         padding: 5px 0;
-        color: #8b4513;
+        color: #555;
     }
 
     .auth-login {
@@ -127,7 +127,7 @@
     }
 
     .auth-login p {
-        color: #8b4513;
+        color: #666;
         margin-bottom: 20px;
     }
 
@@ -155,7 +155,7 @@
 
     .privacy-note {
         font-size: 0.9rem;
-        color: #8b4513;
+        color: #888;
         opacity: 0.7;
         margin-top: 20px;
     }

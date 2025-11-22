@@ -24,6 +24,7 @@ namespace OmniForge.Infrastructure.Entities
         public string Role { get; set; } = "streamer";
         public string Features { get; set; } = "{}";
         public string OverlaySettings { get; set; } = "{}";
+        public string DiscordSettings { get; set; } = "{}";
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
@@ -46,6 +47,7 @@ namespace OmniForge.Infrastructure.Entities
                 Role = Role,
                 Features = JsonSerializer.Deserialize<FeatureFlags>(Features) ?? new FeatureFlags(),
                 OverlaySettings = JsonSerializer.Deserialize<OverlaySettings>(OverlaySettings) ?? new OverlaySettings(),
+                DiscordSettings = JsonSerializer.Deserialize<DiscordSettings>(DiscordSettings) ?? new DiscordSettings(),
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 DiscordInviteLink = DiscordInviteLink,
                 IsActive = IsActive,
@@ -72,6 +74,7 @@ namespace OmniForge.Infrastructure.Entities
                 Role = user.Role,
                 Features = JsonSerializer.Serialize(user.Features),
                 OverlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
+                DiscordSettings = JsonSerializer.Serialize(user.DiscordSettings),
                 DiscordWebhookUrl = user.DiscordWebhookUrl,
                 DiscordInviteLink = user.DiscordInviteLink,
                 IsActive = user.IsActive,

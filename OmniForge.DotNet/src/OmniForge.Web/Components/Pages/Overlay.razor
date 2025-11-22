@@ -5,71 +5,110 @@
 @using OmniForge.Core.Interfaces
 @inject NavigationManager NavigationManager
 @inject ICounterRepository CounterRepository
+@inject IUserRepository UserRepository
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
-<div class="overlay-container">
-    @if (counter == null)
-    {
-        <div class="loading">Loading...</div>
-    }
-    else
-    {
-        <div class="counter-box">
-            <div class="counter-item deaths">
-                <span class="label">DEATHS</span>
-                <span class="value">@counter.Deaths</span>
+<link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+
+@if (user == null || counter == null)
+{
+    <div class="loading">Loading...</div>
+}
+else if (!user.Features.StreamOverlay)
+{
+    <div class="error">Stream overlay not enabled for this user</div>
+}
+else
+{
+    <div class="counter-overlay" style="@GetPositionStyle()">
+        @if (user.OverlaySettings.Counters.Deaths)
+        {
+            <div class="counter-item deaths" style="@GetItemStyle()">
+                <div class="counter-icon">💀</div>
+                <div class="counter-info">
+                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">DEATHS</div>
+                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Deaths</div>
+                </div>
             </div>
-            <div class="counter-item swears">
-                <span class="label">SWEARS</span>
-                <span class="value">@counter.Swears</span>
+        }
+
+        @if (user.OverlaySettings.Counters.Swears)
+        {
+            <div class="counter-item swears" style="@GetItemStyle()">
+                <div class="counter-icon">🤬</div>
+                <div class="counter-info">
+                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">SWEARS</div>
+                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Swears</div>
+                </div>
             </div>
-        </div>
-    }
-</div>
+        }
+
+        @if (user.OverlaySettings.Counters.Screams)
+        {
+            <div class="counter-item screams" style="@GetItemStyle()">
+                <div class="counter-icon">😱</div>
+                <div class="counter-info">
+                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">SCREAMS</div>
+                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Screams</div>
+                </div>
+            </div>
+        }
+    </div>
+}
 
 <style>
     body {
         background-color: transparent !important;
         margin: 0;
-        padding: 0;
+        padding: 20px;
+        font-family: 'Arial', sans-serif;
         overflow: hidden;
     }
 
-    .overlay-container {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    .counter-box {
-        background-color: rgba(0, 0, 0, 0.7);
-        border: 2px solid #d4af37;
-        border-radius: 10px;
-        padding: 15px;
-        color: white;
+    .counter-overlay {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        min-width: 150px;
+        gap: 15px;
+        position: fixed;
     }
 
     .counter-item {
+        padding: 15px 25px;
+        border-radius: 10px;
+        backdrop-filter: blur(5px);
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        font-size: 24px;
+        gap: 15px;
+        min-width: 200px;
+        transition: all 0.3s ease;
+    }
+
+    .counter-item:hover {
+        transform: scale(1.05);
+    }
+
+    .counter-icon {
+        font-size: 2rem;
+        width: 40px;
+        text-align: center;
+    }
+
+    .counter-info {
+        flex: 1;
+    }
+
+    .counter-label {
+        font-size: 1rem;
+        margin-bottom: 5px;
         font-weight: bold;
     }
 
-    .label {
-        color: #d4af37;
-        margin-right: 15px;
-    }
-
-    .value {
-        color: white;
+    .counter-value {
+        font-size: 2rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        font-family: 'Creepster', cursive;
     }
 </style>
 
@@ -79,49 +118,61 @@
 
     private HubConnection? hubConnection;
     private OmniForge.Core.Entities.Counter? counter;
+    private OmniForge.Core.Entities.User? user;
 
     protected override async Task OnInitializedAsync()
     {
-        // Load initial state
-        counter = await CounterRepository.GetCountersAsync(TwitchUserId);
-
-        // Connect to SignalR
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(NavigationManager.ToAbsoluteUri("/overlayHub"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        hubConnection.On<OmniForge.Core.Entities.Counter>("ReceiveCounterUpdate", async (updatedCounter) =>
+        // Load user and counters
+        user = await UserRepository.GetUserAsync(TwitchUserId);
+        if (user != null)
         {
-            if (counter != null)
+            counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+
+            // Connect to SignalR
+            hubConnection = new HubConnectionBuilder()
+                .WithUrl(NavigationManager.ToAbsoluteUri("/overlayHub"))
+                .WithAutomaticReconnect()
+                .Build();
+
+            hubConnection.On<OmniForge.Core.Entities.Counter>("ReceiveCounterUpdate", async (updatedCounter) =>
             {
-                if (updatedCounter.Deaths > counter.Deaths)
+                if (counter != null)
                 {
-                    await JSRuntime.InvokeVoidAsync("overlayInterop.triggerDeath", updatedCounter.Deaths);
-                }
-                else if (updatedCounter.Swears > counter.Swears)
-                {
-                    await JSRuntime.InvokeVoidAsync("overlayInterop.triggerSwear", updatedCounter.Swears);
-                }
-            }
+                    bool deathIncreased = updatedCounter.Deaths > counter.Deaths;
+                    counter = updatedCounter;
+                    await InvokeAsync(StateHasChanged);
 
-            counter = updatedCounter;
-            await InvokeAsync(StateHasChanged);
-        });
+                    if (deathIncreased && user.OverlaySettings.Animations.Enabled)
+                    {
+                        await JSRuntime.InvokeVoidAsync("overlayInterop.triggerDeath", updatedCounter.Deaths);
+                    }
+                }
+            });
 
-        await hubConnection.StartAsync();
-        await hubConnection.InvokeAsync("JoinGroup", TwitchUserId);
+            await hubConnection.StartAsync();
+            await hubConnection.SendAsync("JoinGroup", $"user:{TwitchUserId}");
+        }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private string GetPositionStyle()
     {
-        if (firstRender)
-        {
-            // Initialize the Asylum Effects system
-            await JSRuntime.InvokeVoidAsync("overlayInterop.init");
-            // Create the global instance if it doesn't exist (handled by the script usually, but let's ensure)
-            await JSRuntime.InvokeVoidAsync("eval", "if (!window.asylumEffects) { window.asylumEffects = new AsylumEffects(); }");
-        }
+        if (user == null) return "";
+
+        var style = "";
+        var pos = user.OverlaySettings.Position;
+
+        style += pos.Contains("top") ? "top: 20px;" : "bottom: 20px;";
+        style += pos.Contains("right") ? "right: 20px;" : "left: 20px;";
+
+        return style;
+    }
+
+    private string GetItemStyle()
+    {
+        if (user == null) return "";
+
+        var theme = user.OverlaySettings.Theme;
+        return $"background: {theme.BackgroundColor}; border: 2px solid {theme.BorderColor};";
     }
 
     public async ValueTask DisposeAsync()

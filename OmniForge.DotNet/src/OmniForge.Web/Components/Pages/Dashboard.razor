@@ -3,6 +3,7 @@
 @using System.Security.Claims
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Modals
 @attribute [Authorize]
 @inject ICounterRepository CounterRepository
 @inject IOverlayNotifier OverlayNotifier
@@ -10,55 +11,72 @@
 
 <PageTitle>Dashboard</PageTitle>
 
-<h1>Streamer Dashboard</h1>
+<div class="stream-counter-container">
+    <h1>Stream Counter</h1>
 
-<AuthorizeView>
-    <Authorized>
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Welcome, @context.User.Identity?.Name!</h5>
-                <p class="card-text">
-                    <strong>Twitch User ID:</strong> @TwitchUserId <br />
-                    <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a>
-                </p>
-            </div>
-        </div>
+    <AuthorizeView>
+        <Authorized>
+            @if (counter == null)
+            {
+                <p><em>Loading counters...</em></p>
+            }
+            else
+            {
+                <div class="counters-grid">
+                    <div class="counter-box deaths">
+                        <div class="counter-label">Deaths</div>
+                        <div class="counter-value">@counter.Deaths</div>
+                        <button class="btn-increment" @onclick="() => UpdateCounter(c => c.Deaths++)">+</button>
+                        <button class="btn-decrement" @onclick="() => UpdateCounter(c => c.Deaths--)">−</button>
+                    </div>
 
-        @if (counter == null)
-        {
-            <p><em>Loading counters...</em></p>
-        }
-        else
-        {
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="card text-center mb-3">
-                        <div class="card-header">Deaths</div>
-                        <div class="card-body">
-                            <h2 class="display-4">@counter.Deaths</h2>
-                            <div class="btn-group" role="group">
-                                <button class="btn btn-danger" @onclick="() => UpdateCounter(c => c.Deaths--)">-</button>
-                                <button class="btn btn-success" @onclick="() => UpdateCounter(c => c.Deaths++)">+</button>
-                            </div>
-                        </div>
+                    <div class="counter-box swears">
+                        <div class="counter-label">Swears</div>
+                        <div class="counter-value">@counter.Swears</div>
+                        <button class="btn-increment" @onclick="() => UpdateCounter(c => c.Swears++)">+</button>
+                        <button class="btn-decrement" @onclick="() => UpdateCounter(c => c.Swears--)">−</button>
                     </div>
                 </div>
-                <div class="col-md-6">
-                    <div class="card text-center mb-3">
-                        <div class="card-header">Swears</div>
-                        <div class="card-body">
-                            <h2 class="display-4">@counter.Swears</h2>
-                            <div class="btn-group" role="group">
-                                <button class="btn btn-danger" @onclick="() => UpdateCounter(c => c.Swears--)">-</button>
-                                <button class="btn btn-success" @onclick="() => UpdateCounter(c => c.Swears++)">+</button>
-                            </div>
-                        </div>
+
+                <div class="controls-section">
+                    <button class="btn-custom btn-reset" @onclick="ResetCounters">Reset All</button>
+                    <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
+                    <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
+                        <i class="bi bi-gear-fill"></i> Settings
+                    </button>
+                    <button class="btn-custom btn-info" @onclick="() => showAlertEffects = true">
+                        <i class="bi bi-magic"></i> Effects
+                    </button>
+                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true" style="background-color: #5865F2; color: white;">
+                        <i class="bi bi-discord"></i> Discord
+                    </button>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span>Total Events:</span>
+                        <span>@(counter.Deaths + counter.Swears)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Last Updated:</span>
+                        <span>@(counter.LastUpdated.ToLocalTime().ToString("g"))</span>
                     </div>
                 </div>
-            </div>
-        }
-    </Authorized>
-</AuthorizeView>
+
+                <div class="mt-4 text-center">
+                     <p>
+                        <strong>Twitch User ID:</strong> @TwitchUserId <br />
+                        <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a>
+                    </p>
+                </div>
+
+                <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+                <AlertEffectsModal @bind-Show="showAlertEffects" />
+                <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
+            }
+        </Authorized>
+    </AuthorizeView>
+</div>
 
 @code {
     [CascadingParameter]
@@ -67,6 +85,9 @@
     private OmniForge.Core.Entities.Counter? counter;
     private string? TwitchUserId;
     private string? OverlayUrl;
+    private bool showOverlaySettings = false;
+    private bool showAlertEffects = false;
+    private bool showDiscordSettings = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,7 +115,34 @@
         if (counter != null && !string.IsNullOrEmpty(TwitchUserId))
         {
             updateAction(counter);
+            counter.LastUpdated = DateTime.UtcNow;
             await CounterRepository.SaveCountersAsync(counter);
+            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
+        }
+    }
+
+    private async Task ResetCounters()
+    {
+        if (counter != null && !string.IsNullOrEmpty(TwitchUserId))
+        {
+            counter.Deaths = 0;
+            counter.Swears = 0;
+            counter.LastUpdated = DateTime.UtcNow;
+            await CounterRepository.SaveCountersAsync(counter);
+            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
+        }
+    }
+
+    private void ExportData()
+    {
+        // TODO: Implement export functionality
+    }
+
+    private async Task OnSettingsSaved()
+    {
+        // Notify overlay of setting changes if needed
+        if (!string.IsNullOrEmpty(TwitchUserId) && counter != null)
+        {
             await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
         }
     }

@@ -1,6 +1,8 @@
 @page "/users/{TwitchUserId}"
+@using Microsoft.AspNetCore.Authorization
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@attribute [Authorize(Roles = "admin")]
 @inject IUserRepository UserRepository
 @inject NavigationManager NavigationManager
 
