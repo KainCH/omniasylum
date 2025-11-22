@@ -13,19 +13,19 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string CommandsConfig { get; set; } = "{}";
+        public string commandsConfig { get; set; } = "{}";
         public DateTimeOffset LastUpdated { get; set; }
 
         public ChatCommandConfiguration ToConfiguration()
         {
-            if (string.IsNullOrEmpty(CommandsConfig))
+            if (string.IsNullOrEmpty(commandsConfig))
             {
                 return new ChatCommandConfiguration();
             }
 
             try
             {
-                return JsonSerializer.Deserialize<ChatCommandConfiguration>(CommandsConfig) ?? new ChatCommandConfiguration();
+                return JsonSerializer.Deserialize<ChatCommandConfiguration>(commandsConfig) ?? new ChatCommandConfiguration();
             }
             catch
             {
@@ -38,7 +38,7 @@ namespace OmniForge.Infrastructure.Entities
             return new ChatCommandConfigTableEntity
             {
                 PartitionKey = userId,
-                CommandsConfig = JsonSerializer.Serialize(config),
+                commandsConfig = JsonSerializer.Serialize(config),
                 LastUpdated = DateTimeOffset.UtcNow
             };
         }

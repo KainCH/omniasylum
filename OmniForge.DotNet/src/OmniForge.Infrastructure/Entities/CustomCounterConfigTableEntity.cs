@@ -13,19 +13,19 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string CountersConfig { get; set; } = "{}";
-        public DateTimeOffset LastUpdated { get; set; }
+        public string countersConfig { get; set; } = "{}";
+        public DateTimeOffset lastUpdated { get; set; }
 
         public CustomCounterConfiguration ToConfiguration()
         {
-            if (string.IsNullOrEmpty(CountersConfig))
+            if (string.IsNullOrEmpty(countersConfig))
             {
                 return new CustomCounterConfiguration();
             }
 
             try
             {
-                return JsonSerializer.Deserialize<CustomCounterConfiguration>(CountersConfig) ?? new CustomCounterConfiguration();
+                return JsonSerializer.Deserialize<CustomCounterConfiguration>(countersConfig) ?? new CustomCounterConfiguration();
             }
             catch
             {
@@ -38,8 +38,8 @@ namespace OmniForge.Infrastructure.Entities
             return new CustomCounterConfigTableEntity
             {
                 PartitionKey = userId,
-                CountersConfig = JsonSerializer.Serialize(config),
-                LastUpdated = DateTimeOffset.UtcNow
+                countersConfig = JsonSerializer.Serialize(config),
+                lastUpdated = DateTimeOffset.UtcNow
             };
         }
     }

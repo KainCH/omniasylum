@@ -7,7 +7,7 @@ using OmniForge.Core.Interfaces;
 
 namespace OmniForge.Web.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = "Bearer,Cookies")]
     [ApiController]
     [Route("api/stream")]
     public class StreamController : ControllerBase

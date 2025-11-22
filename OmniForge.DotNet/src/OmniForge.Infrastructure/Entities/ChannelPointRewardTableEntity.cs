@@ -12,24 +12,24 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string RewardId { get; set; } = string.Empty;
-        public string RewardTitle { get; set; } = string.Empty;
-        public int Cost { get; set; }
-        public string Action { get; set; } = string.Empty;
-        public bool IsEnabled { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
+        public string rewardId { get; set; } = string.Empty;
+        public string rewardTitle { get; set; } = string.Empty;
+        public int cost { get; set; }
+        public string action { get; set; } = string.Empty;
+        public bool isEnabled { get; set; }
+        public DateTimeOffset createdAt { get; set; }
 
         public ChannelPointReward ToChannelPointReward()
         {
             return new ChannelPointReward
             {
                 UserId = PartitionKey,
-                RewardId = RewardId,
-                RewardTitle = RewardTitle,
-                Cost = Cost,
-                Action = Action,
-                IsEnabled = IsEnabled,
-                CreatedAt = CreatedAt
+                RewardId = rewardId,
+                RewardTitle = rewardTitle,
+                Cost = cost,
+                Action = action,
+                IsEnabled = isEnabled,
+                CreatedAt = createdAt
             };
         }
 
@@ -39,12 +39,12 @@ namespace OmniForge.Infrastructure.Entities
             {
                 PartitionKey = reward.UserId,
                 RowKey = $"reward-{reward.RewardId}",
-                RewardId = reward.RewardId,
-                RewardTitle = reward.RewardTitle,
-                Cost = reward.Cost,
-                Action = reward.Action,
-                IsEnabled = reward.IsEnabled,
-                CreatedAt = reward.CreatedAt
+                rewardId = reward.RewardId,
+                rewardTitle = reward.RewardTitle,
+                cost = reward.Cost,
+                action = reward.Action,
+                isEnabled = reward.IsEnabled,
+                createdAt = reward.CreatedAt
             };
         }
     }

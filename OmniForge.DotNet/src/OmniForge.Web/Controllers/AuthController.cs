@@ -6,6 +6,10 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using System.Security.Claims;
+using System.Collections.Generic;
 
 namespace OmniForge.Web.Controllers
 {
@@ -78,8 +82,7 @@ namespace OmniForge.Web.Controllers
 
             if (!user.IsActive)
             {
-                 var frontendUrl = _configuration["FrontendUrl"] ?? "http://localhost:5500";
-                 return Redirect($"{frontendUrl}/?error=account_deactivated&username={userInfo.Login}");
+                 return Redirect($"/?error=account_deactivated&username={userInfo.Login}");
             }
 
             // Update user info
@@ -92,20 +95,31 @@ namespace OmniForge.Web.Controllers
             user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
             user.LastLogin = DateTimeOffset.UtcNow;
 
-            // Admin check (hardcoded in legacy)
-            if (user.Username.ToLower() == "riress")
-            {
-                user.Role = "admin";
-            }
-
             await _userRepository.SaveUserAsync(user);
 
-            // Generate JWT
-            var jwtToken = _jwtService.GenerateToken(user);
+            // Create ClaimsPrincipal for Cookie Auth
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.NameIdentifier, user.TwitchUserId),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim("userId", user.TwitchUserId)
+            };
 
-            // Redirect to frontend
-            var frontendUrlBase = _configuration["FrontendUrl"] ?? "http://localhost:5500";
-            return Redirect($"{frontendUrlBase}?token={jwtToken}&role={user.Role}");
+            var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            var authProperties = new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTime.UtcNow.AddDays(30)
+            };
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(claimsIdentity),
+                authProperties);
+
+            // Redirect to Portal
+            return Redirect("/portal");
         }
 
         [HttpPost("refresh")]

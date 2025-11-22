@@ -9,7 +9,7 @@ namespace OmniForge.Web.Controllers
 {
     [Route("api/user")]
     [ApiController]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = "Bearer,Cookies")]
     public class UserController : ControllerBase
     {
         private readonly IUserRepository _userRepository;

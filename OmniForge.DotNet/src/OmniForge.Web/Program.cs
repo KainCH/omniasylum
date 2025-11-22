@@ -77,8 +77,13 @@ if (!string.IsNullOrEmpty(storageAccountName))
 
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+})
+.AddCookie(options =>
+{
+    options.LoginPath = "/auth/twitch";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
 })
 .AddJwtBearer(options =>
 {

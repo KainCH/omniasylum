@@ -12,21 +12,21 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string Type { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string VisualCue { get; set; } = string.Empty;
-        public string Sound { get; set; } = string.Empty;
-        public string SoundDescription { get; set; } = string.Empty;
-        public string TextPrompt { get; set; } = string.Empty;
-        public int Duration { get; set; }
-        public string BackgroundColor { get; set; } = string.Empty;
-        public string TextColor { get; set; } = string.Empty;
-        public string BorderColor { get; set; } = string.Empty;
-        public string Effects { get; set; } = string.Empty;
-        public bool IsEnabled { get; set; }
-        public bool IsDefault { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-        public DateTimeOffset UpdatedAt { get; set; }
+        public string type { get; set; } = string.Empty;
+        public string name { get; set; } = string.Empty;
+        public string visualCue { get; set; } = string.Empty;
+        public string sound { get; set; } = string.Empty;
+        public string soundDescription { get; set; } = string.Empty;
+        public string textPrompt { get; set; } = string.Empty;
+        public int duration { get; set; }
+        public string backgroundColor { get; set; } = string.Empty;
+        public string textColor { get; set; } = string.Empty;
+        public string borderColor { get; set; } = string.Empty;
+        public string effects { get; set; } = string.Empty;
+        public bool isEnabled { get; set; }
+        public bool isDefault { get; set; }
+        public DateTimeOffset createdAt { get; set; }
+        public DateTimeOffset updatedAt { get; set; }
 
         public Alert ToAlert()
         {
@@ -34,21 +34,21 @@ namespace OmniForge.Infrastructure.Entities
             {
                 Id = RowKey,
                 UserId = PartitionKey,
-                Type = Type,
-                Name = Name,
-                VisualCue = VisualCue,
-                Sound = Sound,
-                SoundDescription = SoundDescription,
-                TextPrompt = TextPrompt,
-                Duration = Duration,
-                BackgroundColor = BackgroundColor,
-                TextColor = TextColor,
-                BorderColor = BorderColor,
-                Effects = Effects,
-                IsEnabled = IsEnabled,
-                IsDefault = IsDefault,
-                CreatedAt = CreatedAt,
-                UpdatedAt = UpdatedAt
+                Type = type,
+                Name = name,
+                VisualCue = visualCue,
+                Sound = sound,
+                SoundDescription = soundDescription,
+                TextPrompt = textPrompt,
+                Duration = duration,
+                BackgroundColor = backgroundColor,
+                TextColor = textColor,
+                BorderColor = borderColor,
+                Effects = effects,
+                IsEnabled = isEnabled,
+                IsDefault = isDefault,
+                CreatedAt = createdAt,
+                UpdatedAt = updatedAt
             };
         }
 
@@ -58,21 +58,21 @@ namespace OmniForge.Infrastructure.Entities
             {
                 PartitionKey = alert.UserId,
                 RowKey = alert.Id,
-                Type = alert.Type,
-                Name = alert.Name,
-                VisualCue = alert.VisualCue,
-                Sound = alert.Sound,
-                SoundDescription = alert.SoundDescription,
-                TextPrompt = alert.TextPrompt,
-                Duration = alert.Duration,
-                BackgroundColor = alert.BackgroundColor,
-                TextColor = alert.TextColor,
-                BorderColor = alert.BorderColor,
-                Effects = alert.Effects,
-                IsEnabled = alert.IsEnabled,
-                IsDefault = alert.IsDefault,
-                CreatedAt = alert.CreatedAt,
-                UpdatedAt = alert.UpdatedAt
+                type = alert.Type,
+                name = alert.Name,
+                visualCue = alert.VisualCue,
+                sound = alert.Sound,
+                soundDescription = alert.SoundDescription,
+                textPrompt = alert.TextPrompt,
+                duration = alert.Duration,
+                backgroundColor = alert.BackgroundColor,
+                textColor = alert.TextColor,
+                borderColor = alert.BorderColor,
+                effects = alert.Effects,
+                isEnabled = alert.IsEnabled,
+                isDefault = alert.IsDefault,
+                createdAt = alert.CreatedAt,
+                updatedAt = alert.UpdatedAt
             };
         }
     }

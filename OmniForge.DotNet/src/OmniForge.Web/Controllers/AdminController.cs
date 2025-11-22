@@ -10,7 +10,7 @@ using OmniForge.Core.Interfaces;
 
 namespace OmniForge.Web.Controllers
 {
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin", AuthenticationSchemes = "Bearer,Cookies")]
     [ApiController]
     [Route("api/admin")]
     public class AdminController : ControllerBase

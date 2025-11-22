@@ -8,7 +8,7 @@ namespace OmniForge.Web.Controllers
 {
     [Route("api/counters")]
     [ApiController]
-    [Authorize]
+    [Authorize(AuthenticationSchemes = "Bearer,Cookies")]
     public class CounterController : ControllerBase
     {
         private readonly ICounterRepository _counterRepository;

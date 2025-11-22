@@ -65,7 +65,7 @@ namespace OmniForge.Infrastructure.Repositories
 
         private Series MapToSeries(TableEntity entity)
         {
-            var snapshotJson = entity.GetString("Snapshot");
+            var snapshotJson = entity.GetString("snapshot");
             var snapshot = string.IsNullOrEmpty(snapshotJson)
                 ? new Counter()
                 : JsonSerializer.Deserialize<Counter>(snapshotJson) ?? new Counter();
@@ -74,12 +74,12 @@ namespace OmniForge.Infrastructure.Repositories
             {
                 UserId = entity.PartitionKey,
                 Id = entity.RowKey,
-                Name = entity.GetString("Name") ?? string.Empty,
-                Description = entity.GetString("Description") ?? string.Empty,
+                Name = entity.GetString("name") ?? string.Empty,
+                Description = entity.GetString("description") ?? string.Empty,
                 Snapshot = snapshot,
-                CreatedAt = entity.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
-                LastUpdated = entity.GetDateTimeOffset("LastUpdated") ?? DateTimeOffset.UtcNow,
-                IsActive = entity.GetBoolean("IsActive") ?? false
+                CreatedAt = entity.GetDateTimeOffset("createdAt") ?? DateTimeOffset.UtcNow,
+                LastUpdated = entity.GetDateTimeOffset("lastUpdated") ?? DateTimeOffset.UtcNow,
+                IsActive = entity.GetBoolean("isActive") ?? false
             };
         }
 
@@ -87,12 +87,12 @@ namespace OmniForge.Infrastructure.Repositories
         {
             return new TableEntity(series.UserId, series.Id)
             {
-                { "Name", series.Name },
-                { "Description", series.Description },
-                { "Snapshot", JsonSerializer.Serialize(series.Snapshot) },
-                { "CreatedAt", series.CreatedAt },
-                { "LastUpdated", series.LastUpdated },
-                { "IsActive", series.IsActive }
+                { "name", series.Name },
+                { "description", series.Description },
+                { "snapshot", JsonSerializer.Serialize(series.Snapshot) },
+                { "createdAt", series.CreatedAt },
+                { "lastUpdated", series.LastUpdated },
+                { "isActive", series.IsActive }
             };
         }
     }

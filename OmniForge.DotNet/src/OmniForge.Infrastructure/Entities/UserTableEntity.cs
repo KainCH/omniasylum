@@ -13,49 +13,49 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string TwitchUserId { get; set; } = string.Empty;
-        public string Username { get; set; } = string.Empty;
-        public string DisplayName { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-        public string ProfileImageUrl { get; set; } = string.Empty;
-        public string AccessToken { get; set; } = string.Empty;
-        public string RefreshToken { get; set; } = string.Empty;
-        public DateTimeOffset TokenExpiry { get; set; }
-        public string Role { get; set; } = "streamer";
-        public string Features { get; set; } = "{}";
-        public string OverlaySettings { get; set; } = "{}";
-        public string DiscordSettings { get; set; } = "{}";
-        public string DiscordWebhookUrl { get; set; } = string.Empty;
-        public string DiscordInviteLink { get; set; } = string.Empty;
-        public string ManagedStreamers { get; set; } = "[]";
-        public bool IsActive { get; set; } = true;
-        public string StreamStatus { get; set; } = "offline";
-        public DateTimeOffset CreatedAt { get; set; }
-        public DateTimeOffset LastLogin { get; set; }
+        public string twitchUserId { get; set; } = string.Empty;
+        public string username { get; set; } = string.Empty;
+        public string displayName { get; set; } = string.Empty;
+        public string email { get; set; } = string.Empty;
+        public string profileImageUrl { get; set; } = string.Empty;
+        public string accessToken { get; set; } = string.Empty;
+        public string refreshToken { get; set; } = string.Empty;
+        public DateTimeOffset tokenExpiry { get; set; }
+        public string role { get; set; } = "streamer";
+        public string features { get; set; } = "{}";
+        public string overlaySettings { get; set; } = "{}";
+        public string discordSettings { get; set; } = "{}";
+        public string discordWebhookUrl { get; set; } = string.Empty;
+        public string discordInviteLink { get; set; } = string.Empty;
+        public string managedStreamers { get; set; } = "[]";
+        public bool isActive { get; set; } = true;
+        public string streamStatus { get; set; } = "offline";
+        public DateTimeOffset createdAt { get; set; }
+        public DateTimeOffset lastLogin { get; set; }
 
         public User ToDomain()
         {
             return new User
             {
-                TwitchUserId = TwitchUserId,
-                Username = Username,
-                DisplayName = DisplayName,
-                Email = Email,
-                ProfileImageUrl = ProfileImageUrl,
-                AccessToken = AccessToken,
-                RefreshToken = RefreshToken,
-                TokenExpiry = TokenExpiry,
-                Role = Role,
-                Features = JsonSerializer.Deserialize<FeatureFlags>(Features) ?? new FeatureFlags(),
-                OverlaySettings = JsonSerializer.Deserialize<OverlaySettings>(OverlaySettings) ?? new OverlaySettings(),
-                DiscordSettings = JsonSerializer.Deserialize<DiscordSettings>(DiscordSettings) ?? new DiscordSettings(),
-                DiscordWebhookUrl = DiscordWebhookUrl,
-                DiscordInviteLink = DiscordInviteLink,
-                ManagedStreamers = JsonSerializer.Deserialize<System.Collections.Generic.List<string>>(ManagedStreamers) ?? new System.Collections.Generic.List<string>(),
-                IsActive = IsActive,
-                StreamStatus = StreamStatus,
-                CreatedAt = CreatedAt,
-                LastLogin = LastLogin
+                TwitchUserId = twitchUserId,
+                Username = username,
+                DisplayName = displayName,
+                Email = email,
+                ProfileImageUrl = profileImageUrl,
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                TokenExpiry = tokenExpiry,
+                Role = role,
+                Features = JsonSerializer.Deserialize<FeatureFlags>(features) ?? new FeatureFlags(),
+                OverlaySettings = JsonSerializer.Deserialize<OverlaySettings>(overlaySettings) ?? new OverlaySettings(),
+                DiscordSettings = JsonSerializer.Deserialize<DiscordSettings>(discordSettings) ?? new DiscordSettings(),
+                DiscordWebhookUrl = discordWebhookUrl,
+                DiscordInviteLink = discordInviteLink,
+                ManagedStreamers = JsonSerializer.Deserialize<System.Collections.Generic.List<string>>(managedStreamers) ?? new System.Collections.Generic.List<string>(),
+                IsActive = isActive,
+                StreamStatus = streamStatus,
+                CreatedAt = createdAt,
+                LastLogin = lastLogin
             };
         }
 
@@ -65,25 +65,25 @@ namespace OmniForge.Infrastructure.Entities
             {
                 PartitionKey = "user",
                 RowKey = user.TwitchUserId,
-                TwitchUserId = user.TwitchUserId,
-                Username = user.Username,
-                DisplayName = user.DisplayName,
-                Email = user.Email,
-                ProfileImageUrl = user.ProfileImageUrl,
-                AccessToken = user.AccessToken,
-                RefreshToken = user.RefreshToken,
-                TokenExpiry = user.TokenExpiry,
-                Role = user.Role,
-                Features = JsonSerializer.Serialize(user.Features),
-                OverlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
-                DiscordSettings = JsonSerializer.Serialize(user.DiscordSettings),
-                DiscordWebhookUrl = user.DiscordWebhookUrl,
-                DiscordInviteLink = user.DiscordInviteLink,
-                ManagedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
-                IsActive = user.IsActive,
-                StreamStatus = user.StreamStatus,
-                CreatedAt = user.CreatedAt,
-                LastLogin = user.LastLogin
+                twitchUserId = user.TwitchUserId,
+                username = user.Username,
+                displayName = user.DisplayName,
+                email = user.Email,
+                profileImageUrl = user.ProfileImageUrl,
+                accessToken = user.AccessToken,
+                refreshToken = user.RefreshToken,
+                tokenExpiry = user.TokenExpiry,
+                role = user.Role,
+                features = JsonSerializer.Serialize(user.Features),
+                overlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
+                discordSettings = JsonSerializer.Serialize(user.DiscordSettings),
+                discordWebhookUrl = user.DiscordWebhookUrl,
+                discordInviteLink = user.DiscordInviteLink,
+                managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
+                isActive = user.IsActive,
+                streamStatus = user.StreamStatus,
+                createdAt = user.CreatedAt,
+                lastLogin = user.LastLogin
             };
         }
     }

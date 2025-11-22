@@ -12,26 +12,26 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public int Deaths { get; set; }
-        public int Swears { get; set; }
-        public int Screams { get; set; }
-        public int Bits { get; set; }
-        public DateTimeOffset LastUpdated { get; set; }
-        public DateTimeOffset? StreamStarted { get; set; }
-        public string? LastNotifiedStreamId { get; set; }
+        public int deaths { get; set; }
+        public int swears { get; set; }
+        public int screams { get; set; }
+        public int bits { get; set; }
+        public DateTimeOffset lastUpdated { get; set; }
+        public DateTimeOffset? streamStarted { get; set; }
+        public string? lastNotifiedStreamId { get; set; }
 
         public Counter ToDomain()
         {
             return new Counter
             {
                 TwitchUserId = PartitionKey,
-                Deaths = Deaths,
-                Swears = Swears,
-                Screams = Screams,
-                Bits = Bits,
-                LastUpdated = LastUpdated,
-                StreamStarted = StreamStarted,
-                LastNotifiedStreamId = LastNotifiedStreamId
+                Deaths = deaths,
+                Swears = swears,
+                Screams = screams,
+                Bits = bits,
+                LastUpdated = lastUpdated,
+                StreamStarted = streamStarted,
+                LastNotifiedStreamId = lastNotifiedStreamId
             };
         }
 
@@ -41,13 +41,13 @@ namespace OmniForge.Infrastructure.Entities
             {
                 PartitionKey = counter.TwitchUserId,
                 RowKey = "counters",
-                Deaths = counter.Deaths,
-                Swears = counter.Swears,
-                Screams = counter.Screams,
-                Bits = counter.Bits,
-                LastUpdated = counter.LastUpdated,
-                StreamStarted = counter.StreamStarted,
-                LastNotifiedStreamId = counter.LastNotifiedStreamId
+                deaths = counter.Deaths,
+                swears = counter.Swears,
+                screams = counter.Screams,
+                bits = counter.Bits,
+                lastUpdated = counter.LastUpdated,
+                streamStarted = counter.StreamStarted,
+                lastNotifiedStreamId = counter.LastNotifiedStreamId
             };
         }
     }
