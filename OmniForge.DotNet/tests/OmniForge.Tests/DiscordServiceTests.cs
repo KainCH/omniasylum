@@ -1,0 +1,167 @@
+using System;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Moq.Protected;
+using OmniForge.Core.Entities;
+using OmniForge.Infrastructure.Services;
+using Xunit;
+
+namespace OmniForge.Tests
+{
+    public class DiscordServiceTests
+    {
+        private readonly Mock<HttpMessageHandler> _mockHttpMessageHandler;
+        private readonly Mock<ILogger<DiscordService>> _mockLogger;
+        private readonly DiscordService _service;
+        private readonly HttpClient _httpClient;
+
+        public DiscordServiceTests()
+        {
+            _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            _mockLogger = new Mock<ILogger<DiscordService>>();
+
+            _httpClient = new HttpClient(_mockHttpMessageHandler.Object);
+            _service = new DiscordService(_httpClient, _mockLogger.Object);
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
+            };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>()
+                )
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK
+                });
+
+            // Act
+            await _service.SendTestNotificationAsync(user);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Once(),
+                ItExpr.Is<HttpRequestMessage>(req =>
+                    req.Method == HttpMethod.Post &&
+                    req.RequestUri != null &&
+                    req.RequestUri.ToString() == user.DiscordWebhookUrl),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldNotSend_WhenUrlMissing()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DiscordWebhookUrl = string.Empty
+            };
+
+            // Act
+            await _service.SendTestNotificationAsync(user);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldSendDeathMilestone_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications
+                    {
+                        DeathMilestone = true
+                    }
+                }
+            };
+
+            var eventData = new { count = 100, previousMilestone = 90 };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>()
+                )
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK
+                });
+
+            // Act
+            await _service.SendNotificationAsync(user, "death_milestone", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Once(),
+                ItExpr.Is<HttpRequestMessage>(req =>
+                    req.Method == HttpMethod.Post &&
+                    req.RequestUri != null &&
+                    req.RequestUri.ToString() == user.DiscordWebhookUrl),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldNotSend_WhenDisabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications
+                    {
+                        DeathMilestone = false
+                    }
+                }
+            };
+
+            var eventData = new { count = 100 };
+
+            // Act
+            await _service.SendNotificationAsync(user, "death_milestone", eventData);
+
+            // Assert
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+    }
+}
