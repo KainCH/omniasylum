@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
@@ -105,6 +106,40 @@ namespace OmniForge.Tests
                 $"reward-{rewardId}",
                 default,
                 It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetRewardsAsync_ShouldReturnRewards_WhenExist()
+        {
+            // Arrange
+            var userId = "123";
+            var rewardEntity = new ChannelPointRewardTableEntity
+            {
+                PartitionKey = userId,
+                RowKey = "reward-abc",
+                RewardId = "abc",
+                RewardTitle = "Test Reward",
+                Cost = 100
+            };
+
+            var page = Page<ChannelPointRewardTableEntity>.FromValues(new[] { rewardEntity }, null, Mock.Of<Response>());
+            var asyncPageable = AsyncPageable<ChannelPointRewardTableEntity>.FromPages(new[] { page });
+
+            _mockTableClient.Setup(x => x.QueryAsync<ChannelPointRewardTableEntity>(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .Returns(asyncPageable);
+
+            // Act
+            var result = await _repository.GetRewardsAsync(userId);
+
+            // Assert
+            Assert.Single(result);
+            var reward = result.First(); // Requires System.Linq
+            Assert.Equal("abc", reward.RewardId);
+            Assert.Equal("Test Reward", reward.RewardTitle);
         }
     }
 }

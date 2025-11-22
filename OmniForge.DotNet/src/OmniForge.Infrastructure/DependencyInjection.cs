@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Repositories;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Api;
@@ -60,6 +61,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
             services.AddScoped<ISeriesRepository, SeriesRepository>();
+            services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddHttpClient<IDiscordService, DiscordService>();

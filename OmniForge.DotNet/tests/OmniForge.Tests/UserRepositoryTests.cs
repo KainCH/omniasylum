@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
@@ -13,99 +15,164 @@ namespace OmniForge.Tests
 {
     public class UserRepositoryTests
     {
-        private readonly Mock<TableServiceClient> _mockTableServiceClient;
+        private readonly Mock<TableServiceClient> _mockServiceClient;
         private readonly Mock<TableClient> _mockTableClient;
         private readonly UserRepository _repository;
 
         public UserRepositoryTests()
         {
-            _mockTableServiceClient = new Mock<TableServiceClient>();
+            _mockServiceClient = new Mock<TableServiceClient>();
             _mockTableClient = new Mock<TableClient>();
 
-            _mockTableServiceClient.Setup(x => x.GetTableClient(It.IsAny<string>()))
-                .Returns(_mockTableClient.Object);
+            _mockServiceClient.Setup(x => x.GetTableClient("users")).Returns(_mockTableClient.Object);
 
-            _repository = new UserRepository(_mockTableServiceClient.Object);
+            _repository = new UserRepository(_mockServiceClient.Object);
         }
 
         [Fact]
-        public async Task GetUserAsync_ShouldReturnUser_WhenUserExists()
+        public async Task GetUserAsync_ShouldReturnUser_WhenExists()
         {
-            // Arrange
             var userId = "123";
-            var userEntity = new UserTableEntity
+            var entity = new UserTableEntity
             {
                 PartitionKey = "user",
                 RowKey = userId,
                 TwitchUserId = userId,
                 Username = "testuser",
-                Features = "{}",
-                OverlaySettings = "{}"
+                DisplayName = "Test User",
+                Role = "streamer",
+                Features = "{}"
             };
 
-            var mockResponse = Mock.Of<Response<UserTableEntity>>(r => r.Value == userEntity);
+            var response = Response.FromValue(entity, Mock.Of<Response>());
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>(
-                "user",
-                userId,
-                It.IsAny<IEnumerable<string>>(),
-                It.IsAny<CancellationToken>()))
-                .ReturnsAsync(mockResponse);
+            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>("user", userId, null, default))
+                .ReturnsAsync(response);
 
-            // Act
             var result = await _repository.GetUserAsync(userId);
 
-            // Assert
             Assert.NotNull(result);
             Assert.Equal(userId, result.TwitchUserId);
             Assert.Equal("testuser", result.Username);
         }
 
         [Fact]
-        public async Task GetUserAsync_ShouldReturnNull_WhenUserNotFound()
+        public async Task GetUserAsync_ShouldReturnNull_WhenNotFound()
         {
-            // Arrange
-            var userId = "unknown";
-            var exception = new RequestFailedException(404, "Not Found", "ResourceNotFound", null);
+            var userId = "123";
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>(
-                "user",
-                userId,
-                It.IsAny<IEnumerable<string>>(),
-                It.IsAny<CancellationToken>()))
-                .ThrowsAsync(exception);
+            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>("user", userId, null, default))
+                .ThrowsAsync(new RequestFailedException(404, "Not Found"));
 
-            // Act
             var result = await _repository.GetUserAsync(userId);
 
-            // Assert
             Assert.Null(result);
         }
 
         [Fact]
         public async Task SaveUserAsync_ShouldUpsertEntity()
         {
-            // Arrange
             var user = new User
             {
                 TwitchUserId = "123",
-                Username = "testuser"
+                Username = "testuser",
+                Role = "streamer"
             };
 
-            _mockTableClient.Setup(x => x.UpsertEntityAsync(
-                It.IsAny<UserTableEntity>(),
-                TableUpdateMode.Replace,
-                It.IsAny<CancellationToken>()))
-                .ReturnsAsync(Mock.Of<Response>());
-
-            // Act
             await _repository.SaveUserAsync(user);
 
-            // Assert
             _mockTableClient.Verify(x => x.UpsertEntityAsync(
-                It.Is<UserTableEntity>(e => e.TwitchUserId == "123" && e.Username == "testuser"),
+                It.Is<UserTableEntity>(e => e.RowKey == "123" && e.Username == "testuser"),
                 TableUpdateMode.Replace,
-                It.IsAny<CancellationToken>()), Times.Once);
+                default), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_ShouldDeleteEntity()
+        {
+            var userId = "123";
+
+            await _repository.DeleteUserAsync(userId);
+
+            _mockTableClient.Verify(x => x.DeleteEntityAsync("user", userId, default, default), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetAllUsersAsync_ShouldReturnAllUsers()
+        {
+            var entities = new List<UserTableEntity>
+            {
+                new UserTableEntity { PartitionKey = "user", RowKey = "1", Username = "user1", Role = "streamer", Features = "{}" },
+                new UserTableEntity { PartitionKey = "user", RowKey = "2", Username = "user2", Role = "streamer", Features = "{}" }
+            };
+
+            var page = Page<UserTableEntity>.FromValues(entities, null, Mock.Of<Response>());
+            var pages = AsyncPageable<UserTableEntity>.FromPages(new[] { page });
+
+            _mockTableClient.Setup(x => x.QueryAsync<UserTableEntity>(It.IsAny<string>(), null, null, default))
+                .Returns(pages);
+
+            var result = await _repository.GetAllUsersAsync();
+
+            Assert.Equal(2, result.Count());
+        }
+
+        [Fact]
+        public async Task GetChatCommandsConfigAsync_ShouldReturnConfig_WhenExists()
+        {
+            var userId = "123";
+            var entity = new ChatCommandConfigTableEntity
+            {
+                PartitionKey = userId,
+                RowKey = "chatCommands",
+                CommandsConfig = "{\"Commands\":{\"!test\":{\"Response\":\"Response\"}}}"
+            };
+
+            var response = Response.FromValue(entity, Mock.Of<Response>());
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<ChatCommandConfigTableEntity>(userId, "chatCommands", null, default))
+                .ReturnsAsync(response);
+
+            var result = await _repository.GetChatCommandsConfigAsync(userId);
+
+            Assert.NotNull(result);
+            Assert.Single(result.Commands);
+            Assert.True(result.Commands.ContainsKey("!test"));
+            Assert.Equal("Response", result.Commands["!test"].Response);
+        }
+
+        [Fact]
+        public async Task GetChatCommandsConfigAsync_ShouldReturnEmpty_WhenNotFound()
+        {
+            var userId = "123";
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<ChatCommandConfigTableEntity>(userId, "chatCommands", null, default))
+                .ThrowsAsync(new RequestFailedException(404, "Not Found"));
+
+            var result = await _repository.GetChatCommandsConfigAsync(userId);
+
+            Assert.NotNull(result);
+            Assert.Empty(result.Commands);
+        }
+
+        [Fact]
+        public async Task SaveChatCommandsConfigAsync_ShouldUpsertEntity()
+        {
+            var userId = "123";
+            var config = new ChatCommandConfiguration
+            {
+                Commands = new Dictionary<string, ChatCommandDefinition>
+                {
+                    { "!test", new ChatCommandDefinition { Response = "Response" } }
+                }
+            };
+
+            await _repository.SaveChatCommandsConfigAsync(userId, config);
+
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<ChatCommandConfigTableEntity>(e => e.PartitionKey == userId && e.RowKey == "chatCommands"),
+                TableUpdateMode.Replace,
+                default), Times.Once);
         }
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
@@ -17,21 +18,24 @@ namespace OmniForge.Infrastructure.Services
         private readonly IUserRepository _userRepository;
         private readonly ITwitchAuthService _authService;
         private readonly IConfiguration _configuration;
+        private readonly ITwitchHelixWrapper _helixWrapper;
         private readonly ILogger<TwitchApiService> _logger;
 
         public TwitchApiService(
             IUserRepository userRepository,
             ITwitchAuthService authService,
             IConfiguration configuration,
+            ITwitchHelixWrapper helixWrapper,
             ILogger<TwitchApiService> logger)
         {
             _userRepository = userRepository;
             _authService = authService;
             _configuration = configuration;
+            _helixWrapper = helixWrapper;
             _logger = logger;
         }
 
-        private async Task<TwitchAPI> GetApiForUserAsync(string userId)
+        private async Task<User> EnsureUserTokenValidAsync(string userId)
         {
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) throw new Exception("User not found");
@@ -55,22 +59,18 @@ namespace OmniForge.Infrastructure.Services
                 }
             }
 
-            var api = new TwitchAPI();
-            api.Settings.ClientId = _configuration["Twitch:ClientId"];
-            api.Settings.AccessToken = user.AccessToken;
-
-            return api;
+            return user;
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
         {
-            var api = await GetApiForUserAsync(userId);
-            var user = await _userRepository.GetUserAsync(userId);
-            if (user == null) throw new Exception("User not found");
+            var user = await EnsureUserTokenValidAsync(userId);
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-            var rewards = await api.Helix.ChannelPoints.GetCustomRewardAsync(user.TwitchUserId);
+            var rewards = await _helixWrapper.GetCustomRewardsAsync(clientId, user.AccessToken, user.TwitchUserId);
 
-            return rewards.Data.Select(r => new TwitchCustomReward
+            return rewards.Select(r => new TwitchCustomReward
             {
                 Id = r.Id,
                 Title = r.Title,
@@ -87,9 +87,9 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchCustomReward> CreateCustomRewardAsync(string userId, CreateRewardRequest request)
         {
-            var api = await GetApiForUserAsync(userId);
-            var user = await _userRepository.GetUserAsync(userId);
-            if (user == null) throw new Exception("User not found");
+            var user = await EnsureUserTokenValidAsync(userId);
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
             var createRequest = new CreateCustomRewardsRequest
             {
@@ -108,8 +108,10 @@ namespace OmniForge.Infrastructure.Services
                 GlobalCooldownSeconds = request.GlobalCooldownSeconds ?? 0
             };
 
-            var response = await api.Helix.ChannelPoints.CreateCustomRewardsAsync(user.TwitchUserId, createRequest);
-            var r = response.Data[0];
+            var response = await _helixWrapper.CreateCustomRewardAsync(clientId, user.AccessToken, user.TwitchUserId, createRequest);
+            var r = response.FirstOrDefault();
+
+            if (r == null) throw new Exception("Failed to create custom reward");
 
             return new TwitchCustomReward
             {
@@ -128,11 +130,11 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task DeleteCustomRewardAsync(string userId, string rewardId)
         {
-            var api = await GetApiForUserAsync(userId);
-            var user = await _userRepository.GetUserAsync(userId);
-            if (user == null) throw new Exception("User not found");
+            var user = await EnsureUserTokenValidAsync(userId);
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-            await api.Helix.ChannelPoints.DeleteCustomRewardAsync(user.TwitchUserId, rewardId);
+            await _helixWrapper.DeleteCustomRewardAsync(clientId, user.AccessToken, user.TwitchUserId, rewardId);
         }
     }
 }

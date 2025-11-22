@@ -151,5 +151,91 @@ namespace OmniForge.Tests
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }
+
+        [Fact]
+        public async Task IncrementCounterAsync_ShouldIncrementStandardCounter_WhenExists()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["Deaths"] = 5
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
+                userId,
+                "counters",
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.IncrementCounterAsync(userId, "deaths", 2);
+
+            // Assert
+            Assert.Equal(7, result.Deaths);
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<TableEntity>(e => (int)e["Deaths"] == 7),
+                TableUpdateMode.Replace,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task IncrementCounterAsync_ShouldIncrementCustomCounter_WhenExists()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["custom1"] = 10
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
+                userId,
+                "counters",
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.IncrementCounterAsync(userId, "custom1", 5);
+
+            // Assert
+            Assert.True(result.CustomCounters.ContainsKey("custom1"));
+            Assert.Equal(15, result.CustomCounters["custom1"]);
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<TableEntity>(e => (int)e["custom1"] == 15),
+                TableUpdateMode.Replace,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task IncrementCounterAsync_ShouldCreateAndIncrement_WhenNotExists()
+        {
+            // Arrange
+            var userId = "123";
+            var exception = new RequestFailedException(404, "Not Found", "NotFound", null);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
+                userId,
+                "counters",
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .ThrowsAsync(exception);
+
+            // Act
+            var result = await _repository.IncrementCounterAsync(userId, "deaths", 1);
+
+            // Assert
+            Assert.Equal(1, result.Deaths);
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<TableEntity>(e => (int)e["Deaths"] == 1),
+                TableUpdateMode.Replace,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
     }
 }
