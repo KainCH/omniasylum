@@ -1,0 +1,101 @@
+@page "/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize]
+@inject ICounterRepository CounterRepository
+@inject IOverlayNotifier OverlayNotifier
+@inject NavigationManager NavigationManager
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1>Streamer Dashboard</h1>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Welcome, @context.User.Identity?.Name!</h5>
+                <p class="card-text">
+                    <strong>Twitch User ID:</strong> @TwitchUserId <br />
+                    <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a>
+                </p>
+            </div>
+        </div>
+
+        @if (counter == null)
+        {
+            <p><em>Loading counters...</em></p>
+        }
+        else
+        {
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card text-center mb-3">
+                        <div class="card-header">Deaths</div>
+                        <div class="card-body">
+                            <h2 class="display-4">@counter.Deaths</h2>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-danger" @onclick="() => UpdateCounter(c => c.Deaths--)">-</button>
+                                <button class="btn btn-success" @onclick="() => UpdateCounter(c => c.Deaths++)">+</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card text-center mb-3">
+                        <div class="card-header">Swears</div>
+                        <div class="card-body">
+                            <h2 class="display-4">@counter.Swears</h2>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-danger" @onclick="() => UpdateCounter(c => c.Swears--)">-</button>
+                                <button class="btn btn-success" @onclick="() => UpdateCounter(c => c.Swears++)">+</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    private OmniForge.Core.Entities.Counter? counter;
+    private string? TwitchUserId;
+    private string? OverlayUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                // Twitch OAuth maps the ID to NameIdentifier by default
+                TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                if (!string.IsNullOrEmpty(TwitchUserId))
+                {
+                    counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+                    OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay/{TwitchUserId}").ToString();
+                }
+            }
+        }
+    }
+
+    private async Task UpdateCounter(Action<OmniForge.Core.Entities.Counter> updateAction)
+    {
+        if (counter != null && !string.IsNullOrEmpty(TwitchUserId))
+        {
+            updateAction(counter);
+            await CounterRepository.SaveCountersAsync(counter);
+            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
+        }
+    }
+}

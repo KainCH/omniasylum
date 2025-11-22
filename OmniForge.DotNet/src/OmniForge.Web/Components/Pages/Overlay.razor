@@ -1,0 +1,134 @@
+@page "/overlay/{TwitchUserId}"
+@layout OmniForge.Web.Components.Layout.OverlayLayout
+@using Microsoft.AspNetCore.SignalR.Client
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject NavigationManager NavigationManager
+@inject ICounterRepository CounterRepository
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div class="overlay-container">
+    @if (counter == null)
+    {
+        <div class="loading">Loading...</div>
+    }
+    else
+    {
+        <div class="counter-box">
+            <div class="counter-item deaths">
+                <span class="label">DEATHS</span>
+                <span class="value">@counter.Deaths</span>
+            </div>
+            <div class="counter-item swears">
+                <span class="label">SWEARS</span>
+                <span class="value">@counter.Swears</span>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    body {
+        background-color: transparent !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .overlay-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .counter-box {
+        background-color: rgba(0, 0, 0, 0.7);
+        border: 2px solid #d4af37;
+        border-radius: 10px;
+        padding: 15px;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 150px;
+    }
+
+    .counter-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 24px;
+        font-weight: bold;
+    }
+
+    .label {
+        color: #d4af37;
+        margin-right: 15px;
+    }
+
+    .value {
+        color: white;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public string TwitchUserId { get; set; } = string.Empty;
+
+    private HubConnection? hubConnection;
+    private OmniForge.Core.Entities.Counter? counter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load initial state
+        counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+
+        // Connect to SignalR
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/overlayHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<OmniForge.Core.Entities.Counter>("ReceiveCounterUpdate", async (updatedCounter) =>
+        {
+            if (counter != null)
+            {
+                if (updatedCounter.Deaths > counter.Deaths)
+                {
+                    await JSRuntime.InvokeVoidAsync("overlayInterop.triggerDeath", updatedCounter.Deaths);
+                }
+                else if (updatedCounter.Swears > counter.Swears)
+                {
+                    await JSRuntime.InvokeVoidAsync("overlayInterop.triggerSwear", updatedCounter.Swears);
+                }
+            }
+
+            counter = updatedCounter;
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+        await hubConnection.InvokeAsync("JoinGroup", TwitchUserId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Initialize the Asylum Effects system
+            await JSRuntime.InvokeVoidAsync("overlayInterop.init");
+            // Create the global instance if it doesn't exist (handled by the script usually, but let's ensure)
+            await JSRuntime.InvokeVoidAsync("eval", "if (!window.asylumEffects) { window.asylumEffects = new AsylumEffects(); }");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

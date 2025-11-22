@@ -2,6 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Deploy .NET to Azure (Dev)",
+      "type": "shell",
+      "command": ".\\deploy.ps1 -Environment \"dev\"",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Install API Dependencies",
       "type": "shell",
       "command": "npm install",
