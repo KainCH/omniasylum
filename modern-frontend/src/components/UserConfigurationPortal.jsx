@@ -9,6 +9,8 @@ function UserConfigurationPortal({ user, onClose }) {
   const [userAlerts, setUserAlerts] = useState([])
   const [userDiscordSettings, setUserDiscordSettings] = useState(null)
   const [userOverlaySettings, setUserOverlaySettings] = useState(null)
+  const [features, setFeatures] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
 
   const { loading, withLoading } = useLoading()
@@ -33,6 +35,7 @@ function UserConfigurationPortal({ user, onClose }) {
         if (userResponse.ok) {
           const userData = await userResponse.json()
           setUserData(userData.user)
+          setFeatures(userData.user.features || {})
           setUserCounters(userData.counters)
         }
 
@@ -239,6 +242,73 @@ function UserConfigurationPortal({ user, onClose }) {
     </FormSection>
   )
 
+  const handleFeatureToggle = (featureKey) => {
+    setFeatures(prev => ({
+      ...prev,
+      [featureKey]: !prev[featureKey]
+    }))
+  }
+
+  const saveFeatures = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`/api/admin/users/${user.userId}/features`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ features })
+      })
+
+      if (response.ok) {
+        addToast('Features updated successfully', 'success')
+        loadUserConfiguration()
+      } else {
+        addToast('Failed to update features', 'error')
+      }
+    } catch (error) {
+      console.error('Error saving features:', error)
+      addToast('Error saving features', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const renderFeaturesTab = () => (
+    <FormSection title="✨ Feature Management">
+      <div className="features-grid">
+        {Object.entries(features).map(([key, value]) => (
+          <div key={key} className="feature-item">
+            <div className="feature-info">
+              <span className="feature-name">
+                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+              </span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={value}
+                onChange={() => handleFeatureToggle(key)}
+              />
+              <span className="slider round"></span>
+            </label>
+          </div>
+        ))}
+      </div>
+      <div className="section-actions" style={{ marginTop: '20px' }}>
+        <ActionButton
+          variant="primary"
+          onClick={saveFeatures}
+          loading={isSaving}
+        >
+          💾 Save Features
+        </ActionButton>
+      </div>
+    </FormSection>
+  )
+
   if (!user) {
     return null
   }
@@ -282,6 +352,12 @@ function UserConfigurationPortal({ user, onClose }) {
           🎨 Alerts
         </button>
         <button
+          className={`tab-button ${activeTab === 'features' ? 'active' : ''}`}
+          onClick={() => setActiveTab('features')}
+        >
+          ✨ Features
+        </button>
+        <button
           className={`tab-button ${activeTab === 'discord' ? 'active' : ''}`}
           onClick={() => setActiveTab('discord')}
         >
@@ -299,7 +375,9 @@ function UserConfigurationPortal({ user, onClose }) {
             {activeTab === 'overview' && renderOverviewTab()}
             {activeTab === 'counters' && renderCountersTab()}
             {activeTab === 'alerts' && renderAlertsTab()}
+            {activeTab === 'features' && renderFeaturesTab()}
             {activeTab === 'discord' && renderDiscordTab()}
+            {activeTab === 'features' && renderFeaturesTab()}
           </>
         )}
       </div>
