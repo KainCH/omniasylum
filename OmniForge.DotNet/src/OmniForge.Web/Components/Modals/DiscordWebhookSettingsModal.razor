@@ -1,5 +1,6 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Components.Forms
 @inject IUserRepository UserRepository
 @inject IDiscordService DiscordService
 @inject IJSRuntime JSRuntime
@@ -7,10 +8,10 @@
 @if (Show)
 {
     <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-discord me-2"></i>Discord Integration</h5>
+                    <h5 class="modal-title"><i class="bi bi-discord me-2"></i>Discord Settings</h5>
                     <button type="button" class="btn-close" @onclick="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -24,38 +25,193 @@
                     }
                     else
                     {
-                        <EditForm Model="@webhookUrl" OnValidSubmit="SaveSettings">
-                            <div class="mb-3">
-                                <label class="form-label">Discord Webhook URL</label>
-                                <div class="input-group">
-                                    <InputText class="form-control" @bind-Value="webhookUrl" placeholder="https://discord.com/api/webhooks/..." />
-                                    <button type="button" class="btn btn-outline-info" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(webhookUrl) || isTesting)">
-                                        @if (isTesting)
-                                        {
-                                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                        }
-                                        else
-                                        {
-                                            <i class="bi bi-send-fill"></i>
-                                        }
-                                    </button>
+                        <ul class="nav nav-tabs mb-3">
+                            <li class="nav-item">
+                                <a class="nav-link @(activeTab == "notifications" ? "active" : "")" @onclick='() => activeTab = "notifications"' style="cursor: pointer;">
+                                    📢 Notifications
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link @(activeTab == "counters" ? "active" : "")" @onclick='() => activeTab = "counters"' style="cursor: pointer;">
+                                    🎯 Counters & Milestones
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link @(activeTab == "configuration" ? "active" : "")" @onclick='() => activeTab = "configuration"' style="cursor: pointer;">
+                                    ⚙️ Configuration
+                                </a>
+                            </li>
+                        </ul>
+
+                        <EditForm Model="@user" OnValidSubmit="SaveSettings">
+                            @if (activeTab == "notifications")
+                            {
+                                <div class="mb-4">
+                                    <h6 class="border-bottom pb-2">🔔 Basic Notification Types</h6>
+                                    <p class="text-muted small">Choose which types of notifications you want to receive from your stream!</p>
+
+                                    <div class="card mb-3">
+                                        <div class="card-body d-flex align-items-center">
+                                            <div class="me-3 fs-2">🔔</div>
+                                            <div>
+                                                <h6 class="mb-0">Discord Notifications</h6>
+                                                <small class="text-muted">Automatically enabled when webhook URL is configured in Configuration tab</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card mb-3 @(user.DiscordSettings.EnableChannelNotifications ? "border-primary" : "")">
+                                        <div class="card-body d-flex align-items-center justify-content-between">
+                                            <div class="d-flex align-items-center">
+                                                <div class="me-3 fs-2">💬</div>
+                                                <div>
+                                                    <h6 class="mb-0">Twitch Chat Notifications</h6>
+                                                    <small class="text-muted">Announce milestones and events in your Twitch chat</small>
+                                                </div>
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="user.DiscordSettings.EnableChannelNotifications" />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="form-text text-muted">
-                                    Paste your Discord Webhook URL here to receive notifications when counters update.
+                            }
+                            else if (activeTab == "counters")
+                            {
+                                <div class="mb-4">
+                                    <h6 class="border-bottom pb-2">🎯 Milestone Notifications</h6>
+
+                                    <div class="alert alert-warning d-flex align-items-center">
+                                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                        <div>
+                                            <strong>Milestone notifications are temporarily disabled:</strong>
+                                            The template system is being updated. Milestone notifications will be re-enabled once the template system is working properly.
+                                        </div>
+                                    </div>
+
+                                    <div class="card mb-3">
+                                        <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                            <div class="d-flex align-items-center">
+                                                <span class="me-2 fs-4">💀</span>
+                                                <div>
+                                                    <h6 class="mb-0">Death Count Milestones</h6>
+                                                    <small class="text-muted">Temporarily disabled</small>
+                                                </div>
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="user.DiscordSettings.EnabledNotifications.DeathMilestone" disabled />
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <label class="form-label small">Milestone Thresholds</label>
+                                            <InputText class="form-control" @bind-Value="deathThresholdsString" placeholder="10,25,50,100,250,500" disabled />
+                                            <div class="form-text">Comma-separated list of values</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card mb-3">
+                                        <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                            <div class="d-flex align-items-center">
+                                                <span class="me-2 fs-4">🤬</span>
+                                                <div>
+                                                    <h6 class="mb-0">Swear Count Milestones</h6>
+                                                    <small class="text-muted">Temporarily disabled</small>
+                                                </div>
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="user.DiscordSettings.EnabledNotifications.SwearMilestone" disabled />
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <label class="form-label small">Milestone Thresholds</label>
+                                            <InputText class="form-control" @bind-Value="swearThresholdsString" placeholder="25,50,100,200,500" disabled />
+                                            <div class="form-text">Comma-separated list of values</div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            }
+                            else if (activeTab == "configuration")
+                            {
+                                <div class="mb-4">
+                                    <h6 class="border-bottom pb-2">🔧 Webhook Setup</h6>
+                                    <p class="text-muted small">Connect your Discord server to receive stream notifications!</p>
 
-                            <div class="form-check form-switch mb-3">
-                                <InputCheckbox id="discordEnabled" class="form-check-input" @bind-Value="discordEnabled" />
-                                <label class="form-check-label" for="discordEnabled">Enable Discord Notifications</label>
-                            </div>
+                                    @if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                                    {
+                                        <div class="alert alert-success py-2 px-3 mb-3 small">
+                                            <i class="bi bi-check-circle-fill me-2"></i>
+                                            Existing webhook configuration detected
+                                        </div>
+                                    }
 
-                            <div class="alert alert-info">
-                                <i class="bi bi-info-circle-fill me-2"></i>
-                                Notifications will be sent when you go live or when counters reach milestones.
-                            </div>
+                                    <div class="card bg-light mb-3">
+                                        <div class="card-body py-2">
+                                            <small>
+                                                <strong>Setup Instructions:</strong>
+                                                <ol class="mb-0 ps-3">
+                                                    <li>Go to your Discord server settings</li>
+                                                    <li>Click "Integrations" → "Webhooks"</li>
+                                                    <li>Click "New Webhook" or select an existing one</li>
+                                                    <li>Copy the webhook URL and paste it below</li>
+                                                </ol>
+                                            </small>
+                                        </div>
+                                    </div>
 
-                            <div class="modal-footer border-secondary">
+                                    <div class="mb-3">
+                                        <label class="form-label">
+                                            Discord Webhook URL
+                                            @if (user.Features.DiscordWebhook)
+                                            {
+                                                <span class="text-success ms-2">(✅ Enabled)</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-danger ms-2">(❌ Disabled)</span>
+                                            }
+                                        </label>
+                                        <InputText class="form-control font-monospace" @bind-Value="user.DiscordWebhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+                                    </div>
+
+                                    <div class="d-flex gap-2 mb-4">
+                                        <button type="button" class="btn btn-secondary" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(user.DiscordWebhookUrl) || isTesting)">
+                                            @if (isTesting)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                                <span>Sending...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>🧪 Send Test</span>
+                                            }
+                                        </button>
+                                    </div>
+
+                                    <h6 class="border-bottom pb-2 mt-4">🎮 Discord Server Invite</h6>
+                                    <div class="mb-3">
+                                        <label class="form-label">Discord Server Invite URL</label>
+                                        <InputText class="form-control font-monospace" @bind-Value="user.DiscordInviteLink" placeholder="https://discord.gg/YOUR_INVITE_CODE" />
+                                    </div>
+
+                                    @if (!string.IsNullOrEmpty(user.DiscordInviteLink))
+                                    {
+                                        <div class="alert alert-success bg-opacity-10 border-success text-success">
+                                            <div class="d-flex align-items-center mb-1">
+                                                <span class="fs-5 me-2">🎉</span>
+                                                <strong>Invite Link Active!</strong>
+                                            </div>
+                                            <p class="mb-1 small">
+                                                Viewers can use <code class="bg-dark text-light px-1 rounded">!discord</code> in chat to get your server invite.
+                                            </p>
+                                            <p class="mb-0 small opacity-75 font-monospace">
+                                                Current invite: @user.DiscordInviteLink
+                                            </p>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="modal-footer border-top-0 px-0">
                                 <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
                                 <button type="submit" class="btn btn-primary" disabled="@isSaving">
                                     @if (isSaving)
@@ -65,7 +221,7 @@
                                     }
                                     else
                                     {
-                                        <span>Save Changes</span>
+                                        <span>💾 Save Changes</span>
                                     }
                                 </button>
                             </div>
@@ -82,11 +238,24 @@
     [Parameter] public EventCallback<bool> ShowChanged { get; set; }
     [Parameter] public string UserId { get; set; } = "";
 
-    private string webhookUrl = "";
-    private bool discordEnabled = false;
+    private User user = new User();
     private bool isLoading = false;
     private bool isSaving = false;
     private bool isTesting = false;
+    private string activeTab = "notifications";
+
+    // Helper properties for comma-separated lists
+    private string deathThresholdsString
+    {
+        get => string.Join(",", user.DiscordSettings.MilestoneThresholds.Deaths);
+        set => user.DiscordSettings.MilestoneThresholds.Deaths = ParseIntList(value);
+    }
+
+    private string swearThresholdsString
+    {
+        get => string.Join(",", user.DiscordSettings.MilestoneThresholds.Swears);
+        set => user.DiscordSettings.MilestoneThresholds.Swears = ParseIntList(value);
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -101,11 +270,15 @@
         isLoading = true;
         try
         {
-            var user = await UserRepository.GetUserAsync(UserId);
-            if (user != null)
+            var loadedUser = await UserRepository.GetUserAsync(UserId);
+            if (loadedUser != null)
             {
-                webhookUrl = user.DiscordWebhookUrl;
-                discordEnabled = user.Features.DiscordWebhook;
+                user = loadedUser;
+
+                // Ensure nested objects are initialized
+                if (user.DiscordSettings == null) user.DiscordSettings = new DiscordSettings();
+                if (user.DiscordSettings.EnabledNotifications == null) user.DiscordSettings.EnabledNotifications = new DiscordEnabledNotifications();
+                if (user.DiscordSettings.MilestoneThresholds == null) user.DiscordSettings.MilestoneThresholds = new DiscordMilestoneThresholds();
             }
         }
         catch (Exception ex)
@@ -123,18 +296,23 @@
         isSaving = true;
         try
         {
-            var user = await UserRepository.GetUserAsync(UserId);
-            if (user != null)
+            // Auto-enable webhook feature if URL is present
+            if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                user.DiscordWebhookUrl = webhookUrl;
-                user.Features.DiscordWebhook = discordEnabled;
-                await UserRepository.SaveUserAsync(user);
-                await Close();
+                user.Features.DiscordWebhook = true;
             }
+            else
+            {
+                user.Features.DiscordWebhook = false;
+            }
+
+            await UserRepository.SaveUserAsync(user);
+            await Close();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error saving discord settings: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", "Failed to save settings. Please try again.");
         }
         finally
         {
@@ -144,20 +322,13 @@
 
     private async Task TestWebhook()
     {
-        if (string.IsNullOrEmpty(webhookUrl)) return;
+        if (string.IsNullOrEmpty(user.DiscordWebhookUrl)) return;
 
         isTesting = true;
         try
         {
-            var user = await UserRepository.GetUserAsync(UserId);
-            if (user != null)
-            {
-                // Temporarily update the URL in the user object for the test
-                // but don't save it to DB yet
-                user.DiscordWebhookUrl = webhookUrl;
-                await DiscordService.SendTestNotificationAsync(user);
-                await JSRuntime.InvokeVoidAsync("alert", "Test notification sent successfully!");
-            }
+            await DiscordService.SendTestNotificationAsync(user);
+            await JSRuntime.InvokeVoidAsync("alert", "Test notification sent successfully!");
         }
         catch (Exception ex)
         {
@@ -167,6 +338,18 @@
         {
             isTesting = false;
         }
+    }
+
+    private List<int> ParseIntList(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new List<int>();
+
+        return value.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => int.TryParse(s, out _))
+            .Select(int.Parse)
+            .OrderBy(i => i)
+            .ToList();
     }
 
     private async Task Close()

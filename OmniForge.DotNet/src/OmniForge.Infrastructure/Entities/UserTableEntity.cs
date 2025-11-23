@@ -63,7 +63,7 @@ namespace OmniForge.Infrastructure.Entities
 
         public User ToDomain()
         {
-            return new User
+            var user = new User
             {
                 TwitchUserId = twitchUserId,
                 Username = username,
@@ -85,6 +85,18 @@ namespace OmniForge.Infrastructure.Entities
                 CreatedAt = ParseDateTimeOffset(createdAt),
                 LastLogin = ParseDateTimeOffset(lastLogin)
             };
+
+            // Ensure nested properties are not null (deserialization might leave them null if JSON has explicit nulls)
+            if (user.OverlaySettings.Counters == null) user.OverlaySettings.Counters = new OverlayCounters();
+            if (user.OverlaySettings.Theme == null) user.OverlaySettings.Theme = new OverlayTheme();
+            if (user.OverlaySettings.Animations == null) user.OverlaySettings.Animations = new OverlayAnimations();
+            if (user.OverlaySettings.BitsGoal == null) user.OverlaySettings.BitsGoal = new BitsGoal();
+            if (user.OverlaySettings.Position == null) user.OverlaySettings.Position = "top-right";
+
+            if (user.DiscordSettings.EnabledNotifications == null) user.DiscordSettings.EnabledNotifications = new DiscordEnabledNotifications();
+            if (user.DiscordSettings.MilestoneThresholds == null) user.DiscordSettings.MilestoneThresholds = new DiscordMilestoneThresholds();
+
+            return user;
         }
 
         public static UserTableEntity FromDomain(User user)

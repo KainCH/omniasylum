@@ -9,43 +9,38 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
+using OmniForge.Infrastructure.Models.EventSub;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
-using TwitchLib.EventSub.Core.EventArgs;
-using TwitchLib.EventSub.Core.EventArgs.Stream;
-using TwitchLib.EventSub.Websockets.Core.EventArgs;
-using TwitchLib.Api.Helix.Models.Streams.GetStreams; // Add this
+using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 
 namespace OmniForge.Infrastructure.Services
 {
     public class StreamMonitorService : IHostedService
     {
-        private readonly IEventSubWebsocketClientWrapper _eventSubClient;
+        private readonly INativeEventSubService _eventSubService;
         private readonly TwitchAPI _twitchApi;
         private readonly ILogger<StreamMonitorService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly TwitchSettings _twitchSettings;
+        private Timer? _connectionWatchdog;
 
         public StreamMonitorService(
-            IEventSubWebsocketClientWrapper eventSubClient,
+            INativeEventSubService eventSubService,
             TwitchAPI twitchApi,
             ILogger<StreamMonitorService> logger,
             IServiceScopeFactory scopeFactory,
             IOptions<TwitchSettings> twitchSettings)
         {
-            _eventSubClient = eventSubClient;
+            _eventSubService = eventSubService;
             _twitchApi = twitchApi;
             _logger = logger;
             _scopeFactory = scopeFactory;
             _twitchSettings = twitchSettings.Value;
 
-            _eventSubClient.WebsocketConnected += OnWebsocketConnected;
-            _eventSubClient.WebsocketDisconnected += OnWebsocketDisconnected;
-            _eventSubClient.WebsocketReconnected += OnWebsocketReconnected;
-            _eventSubClient.ErrorOccurred += OnErrorOccurred;
-
-            _eventSubClient.StreamOnline += OnStreamOnline;
-            _eventSubClient.StreamOffline += OnStreamOffline;
+            _eventSubService.OnSessionWelcome += OnSessionWelcome;
+            _eventSubService.OnNotification += OnNotification;
+            _eventSubService.OnDisconnected += OnDisconnected;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -53,8 +48,10 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("Starting StreamMonitorService...");
             try
             {
-                await _eventSubClient.ConnectAsync();
-                _logger.LogInformation("StreamMonitorService connected to EventSub.");
+                await _eventSubService.ConnectAsync();
+
+                // Start watchdog to ensure connection stays alive
+                _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             }
             catch (Exception ex)
             {
@@ -65,9 +62,10 @@ namespace OmniForge.Infrastructure.Services
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Stopping StreamMonitorService...");
+            _connectionWatchdog?.Dispose();
             try
             {
-                await _eventSubClient.DisconnectAsync();
+                await _eventSubService.DisconnectAsync();
             }
             catch (Exception ex)
             {
@@ -75,11 +73,9 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task OnWebsocketConnected(object? sender, WebsocketConnectedArgs e)
+        private async Task OnSessionWelcome(string sessionId)
         {
-            _logger.LogInformation($"Websocket connected. Session ID: {_eventSubClient.SessionId}");
-
-            if (e.IsRequestedReconnect) return;
+            _logger.LogInformation($"EventSub Session Welcome. ID: {sessionId}");
 
             // Subscribe to events for all users
             using (var scope = _scopeFactory.CreateScope())
@@ -92,7 +88,6 @@ namespace OmniForge.Infrastructure.Services
                 {
                     try
                     {
-                        // Use User's Access Token for subscriptions as requested
                         var accessToken = user.AccessToken;
                         var clientId = _twitchSettings.ClientId;
 
@@ -118,14 +113,14 @@ namespace OmniForge.Infrastructure.Services
                             clientId,
                             accessToken,
                             "stream.online", "1", condition, EventSubTransportMethod.Websocket,
-                            _eventSubClient.SessionId);
+                            sessionId);
 
                         // Subscribe to Stream Offline
                         await helixWrapper.CreateEventSubSubscriptionAsync(
                             clientId,
                             accessToken,
                             "stream.offline", "1", condition, EventSubTransportMethod.Websocket,
-                            _eventSubClient.SessionId);
+                            sessionId);
 
                         _logger.LogInformation($"Subscribed to Stream Online/Offline for user: {user.DisplayName} ({user.TwitchUserId})");
                     }
@@ -137,55 +132,84 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task OnWebsocketDisconnected(object? sender, WebsocketDisconnectedArgs e)
+        private async Task OnDisconnected()
         {
-            _logger.LogWarning("Websocket disconnected");
+            _logger.LogWarning("EventSub Disconnected.");
             await Task.CompletedTask;
         }
 
-        private async Task OnWebsocketReconnected(object? sender, WebsocketReconnectedArgs e)
+        private async void CheckConnection(object? state)
         {
-            _logger.LogInformation("Websocket reconnected");
-            await Task.CompletedTask;
+            if (!_eventSubService.IsConnected)
+            {
+                _logger.LogWarning("Watchdog detected disconnected state. Attempting to reconnect...");
+                try
+                {
+                    await _eventSubService.ConnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Watchdog reconnection failed.");
+                }
+            }
+            else
+            {
+                // Check keepalive
+                var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
+                if (timeSinceLastKeepalive.TotalSeconds > 30) // Assuming default keepalive is ~10s
+                {
+                    _logger.LogWarning($"No keepalive received for {timeSinceLastKeepalive.TotalSeconds:F1}s. Reconnecting...");
+                    try
+                    {
+                        await _eventSubService.DisconnectAsync();
+                        await _eventSubService.ConnectAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Keepalive reconnection failed.");
+                    }
+                }
+            }
         }
 
-        private async Task OnErrorOccurred(object? sender, ErrorOccuredArgs e)
+        private async Task OnNotification(EventSubMessage message)
         {
-            _logger.LogError(e.Exception, $"Websocket error: {e.Message}");
-            await Task.CompletedTask;
+            try
+            {
+                var subscriptionType = message.Payload.Subscription?.Type;
+                var eventData = message.Payload.Event;
+
+                if (subscriptionType == "stream.online")
+                {
+                    await HandleStreamOnline(eventData);
+                }
+                else if (subscriptionType == "stream.offline")
+                {
+                    await HandleStreamOffline(eventData);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing notification.");
+            }
         }
 
-        private async Task OnStreamOnline(object? sender, StreamOnlineArgs e)
+        private async Task HandleStreamOnline(System.Text.Json.JsonElement eventData)
         {
-            dynamic dynamicArgs = e;
             string? broadcasterId = null;
             string? broadcasterName = null;
-            object? eventData = null;
 
             try
             {
-                if (IsPropertyExist(dynamicArgs, "Event"))
-                {
-                    eventData = dynamicArgs.Event;
-                    broadcasterId = dynamicArgs.Event.BroadcasterUserId;
-                    broadcasterName = dynamicArgs.Event.BroadcasterUserName;
-                }
-                else if (IsPropertyExist(dynamicArgs, "Notification"))
-                {
-                     eventData = dynamicArgs.Notification.Payload.Event;
-                     broadcasterId = dynamicArgs.Notification.Payload.Event.BroadcasterUserId;
-                     broadcasterName = dynamicArgs.Notification.Payload.Event.BroadcasterUserName;
-                }
-            }
-            catch
-            {
-            }
+                if (eventData.TryGetProperty("broadcaster_user_id", out var idProp))
+                    broadcasterId = idProp.GetString();
 
-            if (broadcasterId == null)
-            {
-                 _logger.LogWarning("Could not extract broadcaster ID from StreamOnlineArgs");
-                 return;
+                if (eventData.TryGetProperty("broadcaster_user_name", out var nameProp))
+                    broadcasterName = nameProp.GetString();
             }
+            catch {}
+
+            if (broadcasterId == null) return;
 
             _logger.LogInformation($"Stream Online: {broadcasterName} ({broadcasterId})");
 
@@ -195,6 +219,7 @@ namespace OmniForge.Infrastructure.Services
                 var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
                 var discordService = scope.ServiceProvider.GetRequiredService<IDiscordService>();
                 var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>(); // Optional service
 
                 var userId = broadcasterId;
                 var user = await userRepository.GetUserAsync(userId);
@@ -209,8 +234,14 @@ namespace OmniForge.Infrastructure.Services
                         await counterRepository.SaveCountersAsync(counters);
                     }
 
+                    // Notify Overlay
+                    if (overlayNotifier != null && counters != null)
+                    {
+                        await overlayNotifier.NotifyStreamStartedAsync(userId, counters);
+                    }
+
                     // Fetch Stream Info
-                    object notificationData = eventData ?? new { };
+                    object notificationData = new { };
                     try
                     {
                         if (!string.IsNullOrEmpty(user.AccessToken) && !string.IsNullOrEmpty(_twitchSettings.ClientId))
@@ -246,28 +277,20 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task OnStreamOffline(object? sender, StreamOfflineArgs e)
+        private async Task HandleStreamOffline(System.Text.Json.JsonElement eventData)
         {
-            dynamic dynamicArgs = e;
             string? broadcasterId = null;
             string? broadcasterName = null;
 
             try
             {
-                if (IsPropertyExist(dynamicArgs, "Event"))
-                {
-                    broadcasterId = dynamicArgs.Event.BroadcasterUserId;
-                    broadcasterName = dynamicArgs.Event.BroadcasterUserName;
-                }
-                else if (IsPropertyExist(dynamicArgs, "Notification"))
-                {
-                     broadcasterId = dynamicArgs.Notification.Payload.Event.BroadcasterUserId;
-                     broadcasterName = dynamicArgs.Notification.Payload.Event.BroadcasterUserName;
-                }
+                if (eventData.TryGetProperty("broadcaster_user_id", out var idProp))
+                    broadcasterId = idProp.GetString();
+
+                if (eventData.TryGetProperty("broadcaster_user_name", out var nameProp))
+                    broadcasterName = nameProp.GetString();
             }
-            catch
-            {
-            }
+            catch {}
 
             if (broadcasterId == null) return;
 
@@ -277,6 +300,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
 
                 var userId = broadcasterId;
                 var user = await userRepository.GetUserAsync(userId);
@@ -290,16 +314,14 @@ namespace OmniForge.Infrastructure.Services
                         counters.StreamStarted = null;
                         await counterRepository.SaveCountersAsync(counters);
                     }
+
+                    // Notify Overlay
+                    if (overlayNotifier != null && counters != null)
+                    {
+                        await overlayNotifier.NotifyStreamEndedAsync(userId, counters);
+                    }
                 }
             }
-        }
-
-        private bool IsPropertyExist(dynamic settings, string name)
-        {
-            if (settings is System.Dynamic.ExpandoObject)
-                return ((IDictionary<string, object>)settings).ContainsKey(name);
-
-            return settings.GetType().GetProperty(name) != null;
         }
     }
 }

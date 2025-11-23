@@ -70,8 +70,7 @@ namespace OmniForge.Infrastructure
             services.AddHostedService<TwitchConnectionService>();
 
             // Twitch EventSub
-            services.AddTwitchLibEventSubWebsockets();
-            services.AddSingleton<IEventSubWebsocketClientWrapper, EventSubWebsocketClientWrapper>();
+            services.AddSingleton<INativeEventSubService, NativeEventSubService>();
             services.AddSingleton<TwitchAPI>();
             services.AddHostedService<StreamMonitorService>();
 

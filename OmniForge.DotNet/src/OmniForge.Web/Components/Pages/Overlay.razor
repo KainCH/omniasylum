@@ -12,7 +12,11 @@
 
 <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
 
-@if (user == null || counter == null)
+@if (errorMessage != null)
+{
+    <div class="error">@errorMessage</div>
+}
+else if (user == null || counter == null)
 {
     <div class="loading">Loading...</div>
 }
@@ -23,44 +27,80 @@ else if (!user.Features.StreamOverlay)
 else
 {
     <div class="counter-overlay" style="@GetPositionStyle()">
-        @if (user.OverlaySettings.Counters.Deaths)
+        @if (user.OverlaySettings?.Counters?.Deaths == true)
         {
             <div class="counter-item deaths" style="@GetItemStyle()">
                 <div class="counter-icon">💀</div>
                 <div class="counter-info">
-                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">DEATHS</div>
-                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Deaths</div>
+                    <div class="counter-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">DEATHS</div>
+                    <div class="counter-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">@counter.Deaths</div>
                 </div>
             </div>
         }
 
-        @if (user.OverlaySettings.Counters.Swears)
+        @if (user.OverlaySettings?.Counters?.Swears == true)
         {
             <div class="counter-item swears" style="@GetItemStyle()">
                 <div class="counter-icon">🤬</div>
                 <div class="counter-info">
-                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">SWEARS</div>
-                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Swears</div>
+                    <div class="counter-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">SWEARS</div>
+                    <div class="counter-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">@counter.Swears</div>
                 </div>
             </div>
         }
 
-        @if (user.OverlaySettings.Counters.Screams)
+        @if (user.OverlaySettings?.Counters?.Screams == true)
         {
             <div class="counter-item screams" style="@GetItemStyle()">
                 <div class="counter-icon">😱</div>
                 <div class="counter-info">
-                    <div class="counter-label" style="color: @user.OverlaySettings.Theme.BorderColor">SCREAMS</div>
-                    <div class="counter-value" style="color: @user.OverlaySettings.Theme.TextColor">@counter.Screams</div>
+                    <div class="counter-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">SCREAMS</div>
+                    <div class="counter-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">@counter.Screams</div>
+                </div>
+            </div>
+        }
+
+        @if (user.OverlaySettings?.Counters?.Bits == true)
+        {
+            <div class="counter-item bits" style="@GetItemStyle()">
+                <div class="counter-icon">💎</div>
+                <div class="counter-info">
+                    <div class="counter-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">STREAM BITS</div>
+                    <div class="counter-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">@counter.Bits</div>
+                    @if (user.OverlaySettings?.BitsGoal != null && user.OverlaySettings.BitsGoal.Target > 0)
+                    {
+                        <div class="bits-goal-progress">
+                            <div class="goal-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">
+                                Goal: @user.OverlaySettings.BitsGoal.Current / @user.OverlaySettings.BitsGoal.Target
+                            </div>
+                            <div class="goal-bar">
+                                <div class="goal-fill" style="width: @(Math.Min(100, ((double)user.OverlaySettings.BitsGoal.Current / user.OverlaySettings.BitsGoal.Target) * 100))%"></div>
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
         }
     </div>
+
+    <!-- Alert popup -->
+    <div class="counter-alert" id="alert-popup"></div>
+
+    <!-- Bits celebration container -->
+    <div class="bits-celebration" id="bits-celebration"></div>
+
+    <!-- Subscriber celebration container -->
+    <div class="sub-celebration" id="sub-celebration"></div>
+
+    <!-- Subscriber banner -->
+    <div class="sub-banner" id="sub-banner"></div>
 }
 
 <style>
-    body {
+    html, body {
+        background: transparent !important;
         background-color: transparent !important;
+        background-image: none !important;
         margin: 0;
         padding: 20px;
         font-family: 'Arial', sans-serif;
@@ -111,6 +151,165 @@ else
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         font-family: 'Creepster', cursive;
     }
+
+    /* Bits Goal Progress */
+    .bits-goal-progress {
+        margin-top: 8px;
+    }
+
+    .goal-label {
+        font-size: 0.8rem;
+        margin-bottom: 4px;
+        opacity: 0.9;
+    }
+
+    .goal-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .goal-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #9146ff, #772ce8);
+        border-radius: 3px;
+        transition: width 0.3s ease;
+        box-shadow: 0 0 8px rgba(145, 70, 255, 0.5);
+    }
+
+    /* Alert animations */
+    .counter-alert {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #8b4513, #d4af37);
+        color: white;
+        padding: 30px 50px;
+        border-radius: 20px;
+        font-size: 3rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.5);
+        transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .counter-alert.show {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    .counter-alert.hide {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    /* Pulse animation for counter updates */
+    .counter-pulse {
+        animation: pulse 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @@keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
+    }
+
+    /* Bits celebration effect */
+    .bits-celebration {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 999;
+    }
+
+    .bit-particle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: #d4af37;
+        border-radius: 50%;
+        animation: bitsFall 3s linear forwards;
+    }
+
+    @@keyframes bitsFall {
+        0% {
+            transform: translateY(-20px) rotate(0deg);
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(100vh) rotate(360deg);
+            opacity: 0;
+        }
+    }
+
+    /* Subscriber celebration effects */
+    .sub-celebration {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1001;
+    }
+
+    .sub-heart {
+        position: absolute;
+        font-size: 2rem;
+        color: #9146ff;
+        animation: subHeartFloat 4s ease-out forwards;
+    }
+
+    @@keyframes subHeartFloat {
+        0% {
+            transform: translateY(100vh) scale(0);
+            opacity: 1;
+        }
+        20% {
+            transform: translateY(70vh) scale(1.2);
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(-20vh) scale(0.8);
+            opacity: 0;
+        }
+    }
+
+    .sub-banner {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #9146ff, #ff6b6b);
+        color: white;
+        padding: 20px 40px;
+        border-radius: 15px;
+        font-size: 1.5rem;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        z-index: 1002;
+        opacity: 0;
+        transform: translateX(-50%) translateY(-100px) scale(0.5);
+        transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    .sub-banner.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+
+    .sub-banner.hide {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-100px) scale(0.5);
+    }
 </style>
 
 @code {
@@ -122,15 +321,28 @@ else
     private string StreamStatus { get; set; } = "offline";
     private List<Alert> alerts = new();
     private IJSObjectReference? jsModule;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        user = await UserRepository.GetUserAsync(TwitchUserId);
-        if (user != null)
+        try
         {
-            counter = await CounterRepository.GetCountersAsync(TwitchUserId);
-            StreamStatus = user.StreamStatus;
-            alerts = (await AlertRepository.GetAlertsAsync(TwitchUserId)).ToList();
+            user = await UserRepository.GetUserAsync(TwitchUserId);
+            if (user != null)
+            {
+                counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+                StreamStatus = user.StreamStatus;
+                alerts = (await AlertRepository.GetAlertsAsync(TwitchUserId)).ToList();
+            }
+            else
+            {
+                errorMessage = "User not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading overlay data: {ex.Message}";
+            Console.WriteLine($"[Overlay] Error in OnInitializedAsync: {ex}");
         }
     }
 
@@ -138,12 +350,19 @@ else
     {
         if (firstRender && user != null && user.Features.StreamOverlay)
         {
-            await JSRuntime.InvokeVoidAsync("overlayInterop.init");
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("overlayInterop.init");
 
-            // Initialize WebSocket connection via JS
-            var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
-            jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
-            await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+                // Initialize WebSocket connection via JS
+                var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
+                jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
+                await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Overlay] Error in OnAfterRenderAsync: {ex}");
+            }
         }
     }
 
@@ -228,26 +447,60 @@ else
 
     private string GetPositionStyle()
     {
-        if (user == null) return "";
+        if (user?.OverlaySettings == null) return "";
 
+        var pos = user.OverlaySettings.Position ?? "top-right";
         var style = "";
-        var pos = user.OverlaySettings.Position;
 
-        style += pos.Contains("top") ? "top: 20px;" : "bottom: 20px;";
-        style += pos.Contains("right") ? "right: 20px;" : "left: 20px;";
-        style += StreamStatus == "live" ? "opacity: 1;" : "opacity: 0;";
+        // Check for standard presets
+        switch (pos.ToLower())
+        {
+            case "top-right":
+                style = "top: 20px; right: 20px;";
+                break;
+            case "top-left":
+                style = "top: 20px; left: 20px;";
+                break;
+            case "bottom-right":
+                style = "bottom: 20px; right: 20px;";
+                break;
+            case "bottom-left":
+                style = "bottom: 20px; left: 20px;";
+                break;
+            case "top-center":
+                style = "top: 20px; left: 50%; transform: translateX(-50%);";
+                break;
+            case "bottom-center":
+                style = "bottom: 20px; left: 50%; transform: translateX(-50%);";
+                break;
+            default:
+                // If it contains CSS syntax (colon or semicolon), treat as custom CSS
+                if (pos.Contains(":") || pos.Contains(";"))
+                {
+                    style = pos;
+                }
+                else
+                {
+                    // Fallback to legacy logic for unknown simple strings
+                    style += pos.Contains("top") ? "top: 20px;" : "bottom: 20px;";
+                    style += pos.Contains("right") ? "right: 20px;" : "left: 20px;";
+                }
+                break;
+        }
+
+        style += StreamStatus == "live" ? " opacity: 1;" : " opacity: 0;";
 
         return style;
     }
 
     private string GetItemStyle()
     {
-        if (user == null) return "";
+        if (user?.OverlaySettings?.Theme == null) return "";
 
         var theme = user.OverlaySettings.Theme;
-        var style = $"background: {theme.BackgroundColor}; border: 2px solid {theme.BorderColor};";
+        var style = $"background: {theme.BackgroundColor ?? "rgba(0, 0, 0, 0.7)"}; border: 2px solid {theme.BorderColor ?? "#d4af37"};";
 
-        if (user.OverlaySettings.Animations.Enabled)
+        if (user.OverlaySettings.Animations?.Enabled == true)
         {
             style += " transition: all 0.3s ease;";
         }
@@ -259,7 +512,18 @@ else
     {
         if (jsModule != null)
         {
-            await jsModule.DisposeAsync();
+            try
+            {
+                await jsModule.DisposeAsync();
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException)
+            {
+                // Ignore, circuit is already dead
+            }
+            catch (Exception)
+            {
+                // Ignore other disposal errors
+            }
         }
     }
 }

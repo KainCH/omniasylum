@@ -35,6 +35,10 @@ namespace OmniForge.Web.Services
                     }
                 }
             }
+            catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
+            {
+                _logger.LogInformation("WebSocket closed prematurely for user {UserId}", userId);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "WebSocket error for user {UserId}", userId);

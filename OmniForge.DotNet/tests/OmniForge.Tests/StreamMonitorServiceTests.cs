@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,34 +11,17 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
+using OmniForge.Infrastructure.Models.EventSub;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
-using TwitchLib.EventSub.Core.EventArgs.Stream;
-using TwitchLib.EventSub.Websockets.Core.EventArgs;
 using Xunit;
 
 namespace OmniForge.Tests
 {
-    public class TestStreamOnlineArgs : StreamOnlineArgs
-    {
-        public object? Event { get; set; }
-    }
-
-    public class TestStreamOfflineArgs : StreamOfflineArgs
-    {
-        public object? Event { get; set; }
-    }
-
-    public class TestEventData
-    {
-        public string BroadcasterUserId { get; set; } = string.Empty;
-        public string BroadcasterUserName { get; set; } = string.Empty;
-    }
-
     public class StreamMonitorServiceTests
     {
-        private readonly Mock<IEventSubWebsocketClientWrapper> _mockEventSubClient;
+        private readonly Mock<INativeEventSubService> _mockEventSubService;
         private readonly Mock<TwitchAPI> _mockTwitchApi;
         private readonly Mock<ILogger<StreamMonitorService>> _mockLogger;
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
@@ -67,9 +51,9 @@ namespace OmniForge.Tests
             // Setup TwitchAPI mock
             _mockTwitchApi = new Mock<TwitchAPI>(MockBehavior.Loose, null!, null!, _mockApiSettings.Object, null!);
 
-            // Setup EventSub Client mock
-            _mockEventSubClient = new Mock<IEventSubWebsocketClientWrapper>();
-            _mockEventSubClient.Setup(x => x.SessionId).Returns("test_session_id");
+            // Setup EventSub Service mock
+            _mockEventSubService = new Mock<INativeEventSubService>();
+            _mockEventSubService.Setup(x => x.SessionId).Returns("test_session_id");
 
             // Setup Settings
             _mockTwitchSettings.Setup(x => x.Value).Returns(new TwitchSettings
@@ -87,7 +71,7 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchHelixWrapper))).Returns(_mockHelixWrapper.Object);
 
             _service = new StreamMonitorService(
-                _mockEventSubClient.Object,
+                _mockEventSubService.Object,
                 _mockTwitchApi.Object,
                 _mockLogger.Object,
                 _mockScopeFactory.Object,
@@ -101,7 +85,7 @@ namespace OmniForge.Tests
             await _service.StartAsync(CancellationToken.None);
 
             // Assert
-            _mockEventSubClient.Verify(x => x.ConnectAsync(null), Times.Once);
+            _mockEventSubService.Verify(x => x.ConnectAsync(), Times.Once);
         }
 
         [Fact]
@@ -111,11 +95,11 @@ namespace OmniForge.Tests
             await _service.StopAsync(CancellationToken.None);
 
             // Assert
-            _mockEventSubClient.Verify(x => x.DisconnectAsync(), Times.Once);
+            _mockEventSubService.Verify(x => x.DisconnectAsync(), Times.Once);
         }
 
         [Fact]
-        public void OnWebsocketConnected_ShouldSubscribeToEvents()
+        public void OnSessionWelcome_ShouldSubscribeToEvents()
         {
             // Arrange
             var users = new List<User>
@@ -126,7 +110,7 @@ namespace OmniForge.Tests
             _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
 
             // Act
-            _mockEventSubClient.Raise(x => x.WebsocketConnected += null, new WebsocketConnectedArgs());
+            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
 
             // Assert
             _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
@@ -143,60 +127,18 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void OnWebsocketDisconnected_ShouldLogWarning()
+        public void OnDisconnected_ShouldLogWarning()
         {
             // Act
-            _mockEventSubClient.Raise(x => x.WebsocketDisconnected += null, new WebsocketDisconnectedArgs());
+            _mockEventSubService.Raise(x => x.OnDisconnected += null);
 
             // Assert
             _mockLogger.Verify(
                 x => x.Log(
                     LogLevel.Warning,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Websocket disconnected")),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("EventSub Disconnected")),
                     null,
-                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-                Times.Once);
-        }
-
-        [Fact]
-        public void OnWebsocketReconnected_ShouldLogInformation()
-        {
-            // Act
-            _mockEventSubClient.Raise(x => x.WebsocketReconnected += null, new WebsocketReconnectedArgs());
-
-            // Assert
-            _mockLogger.Verify(
-                x => x.Log(
-                    LogLevel.Information,
-                    It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Websocket reconnected")),
-                    null,
-                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-                Times.Once);
-        }
-
-        [Fact]
-        public void OnErrorOccurred_ShouldLogError()
-        {
-            // Arrange
-            var exception = new Exception("Test exception");
-#pragma warning disable SYSLIB0050 // Type or member is obsolete
-            var args = (ErrorOccuredArgs)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(ErrorOccuredArgs));
-#pragma warning restore SYSLIB0050 // Type or member is obsolete
-            typeof(ErrorOccuredArgs).GetProperty("Exception")?.SetValue(args, exception);
-            typeof(ErrorOccuredArgs).GetProperty("Message")?.SetValue(args, "Test error");
-
-            // Act
-            _mockEventSubClient.Raise(x => x.ErrorOccurred += null, args);
-
-            // Assert
-            _mockLogger.Verify(
-                x => x.Log(
-                    LogLevel.Error,
-                    It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Websocket error: Test error")),
-                    exception,
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
         }
@@ -208,15 +150,22 @@ namespace OmniForge.Tests
             var userId = "123";
             var userName = "TestUser";
 
-            var eventData = new TestEventData
+            var eventData = new
             {
-                BroadcasterUserId = userId,
-                BroadcasterUserName = userName
+                broadcaster_user_id = userId,
+                broadcaster_user_name = userName,
+                type = "live",
+                started_at = DateTime.UtcNow
             };
 
-            var args = new TestStreamOnlineArgs
+            var message = new EventSubMessage
             {
-                Event = eventData
+                Metadata = new EventSubMetadata { MessageType = "notification" },
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "stream.online" },
+                    Event = JsonSerializer.SerializeToElement(eventData)
+                }
             };
 
             // Mock User Repository
@@ -228,7 +177,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
 
             // Act
-            _mockEventSubClient.Raise(x => x.StreamOnline += null, args);
+            _mockEventSubService.Raise(x => x.OnNotification += null, message);
 
             // Assert
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
@@ -242,15 +191,20 @@ namespace OmniForge.Tests
             var userId = "123";
             var userName = "TestUser";
 
-            var eventData = new TestEventData
+            var eventData = new
             {
-                BroadcasterUserId = userId,
-                BroadcasterUserName = userName
+                broadcaster_user_id = userId,
+                broadcaster_user_name = userName
             };
 
-            var args = new TestStreamOfflineArgs
+            var message = new EventSubMessage
             {
-                Event = eventData
+                Metadata = new EventSubMetadata { MessageType = "notification" },
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "stream.offline" },
+                    Event = JsonSerializer.SerializeToElement(eventData)
+                }
             };
 
             // Mock User Repository
@@ -262,27 +216,14 @@ namespace OmniForge.Tests
             _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
 
             // Act
-            _mockEventSubClient.Raise(x => x.StreamOffline += null, args);
+            _mockEventSubService.Raise(x => x.OnNotification += null, message);
 
             // Assert
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null)), Times.Once);
         }
 
         [Fact]
-        public void OnWebsocketConnected_ShouldNotSubscribe_WhenReconnectRequested()
-        {
-            // Arrange
-            var args = new WebsocketConnectedArgs { IsRequestedReconnect = true };
-
-            // Act
-            _mockEventSubClient.Raise(x => x.WebsocketConnected += null, args);
-
-            // Assert
-            _mockUserRepository.Verify(x => x.GetAllUsersAsync(), Times.Never);
-        }
-
-        [Fact]
-        public void OnWebsocketConnected_ShouldLogError_WhenSubscriptionFails()
+        public void OnSessionWelcome_ShouldLogError_WhenSubscriptionFails()
         {
             // Arrange
             var users = new List<User>
@@ -296,7 +237,7 @@ namespace OmniForge.Tests
                 .ThrowsAsync(new Exception("Subscription failed"));
 
             // Act
-            _mockEventSubClient.Raise(x => x.WebsocketConnected += null, new WebsocketConnectedArgs());
+            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
 
             // Assert
             _mockLogger.Verify(
@@ -310,95 +251,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void OnStreamOnline_ShouldHandleNotificationPayload()
-        {
-            // Arrange
-            var userId = "123";
-            var userName = "TestUser";
-
-            dynamic eventData = new System.Dynamic.ExpandoObject();
-            eventData.BroadcasterUserId = userId;
-            eventData.BroadcasterUserName = userName;
-
-            dynamic payload = new System.Dynamic.ExpandoObject();
-            payload.Event = eventData;
-
-            dynamic notification = new System.Dynamic.ExpandoObject();
-            notification.Payload = payload;
-
-            var args = new TestStreamOnlineArgsWithNotification
-            {
-                Notification = notification
-            };
-
-            // Mock User Repository
-            var user = new User { TwitchUserId = userId, DisplayName = userName };
-            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
-            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(new Counter { TwitchUserId = userId });
-
-            // Act
-            _mockEventSubClient.Raise(x => x.StreamOnline += null, args);
-
-            // Assert
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
-        }
-
-        [Fact]
-        public void OnStreamOffline_ShouldHandleNotificationPayload()
-        {
-            // Arrange
-            var userId = "123";
-            var userName = "TestUser";
-
-            dynamic eventData = new System.Dynamic.ExpandoObject();
-            eventData.BroadcasterUserId = userId;
-            eventData.BroadcasterUserName = userName;
-
-            dynamic payload = new System.Dynamic.ExpandoObject();
-            payload.Event = eventData;
-
-            dynamic notification = new System.Dynamic.ExpandoObject();
-            notification.Payload = payload;
-
-            var args = new TestStreamOfflineArgsWithNotification
-            {
-                Notification = notification
-            };
-
-            // Mock User Repository
-            var user = new User { TwitchUserId = userId, DisplayName = userName };
-            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
-            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(new Counter { TwitchUserId = userId, StreamStarted = DateTimeOffset.UtcNow });
-
-            // Act
-            _mockEventSubClient.Raise(x => x.StreamOffline += null, args);
-
-            // Assert
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null)), Times.Once);
-        }
-
-        [Fact]
-        public void OnStreamOnline_ShouldLogWarning_WhenBroadcasterIdMissing()
-        {
-            // Arrange
-            var args = new TestStreamOnlineArgs(); // No Event or Notification set
-
-            // Act
-            _mockEventSubClient.Raise(x => x.StreamOnline += null, args);
-
-            // Assert
-            _mockLogger.Verify(
-                x => x.Log(
-                    LogLevel.Warning,
-                    It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Could not extract broadcaster ID")),
-                    null,
-                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-                Times.Once);
-        }
-
-        [Fact]
-        public void OnWebsocketConnected_ShouldContinue_WhenSubscriptionFailsForOneUser()
+        public void OnSessionWelcome_ShouldContinue_WhenSubscriptionFailsForOneUser()
         {
             // Arrange
             var users = new List<User>
@@ -423,7 +276,7 @@ namespace OmniForge.Tests
                 .Returns(Task.CompletedTask);
 
             // Act
-            _mockEventSubClient.Raise(x => x.WebsocketConnected += null, new WebsocketConnectedArgs());
+            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
 
             // Assert
             // Should log error for User1
@@ -442,15 +295,5 @@ namespace OmniForge.Tests
                 It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "456"),
                 EventSubTransportMethod.Websocket, "test_session_id"), Times.Once);
         }
-    }
-
-    public class TestStreamOnlineArgsWithNotification : StreamOnlineArgs
-    {
-        public object? Notification { get; set; }
-    }
-
-    public class TestStreamOfflineArgsWithNotification : StreamOfflineArgs
-    {
-        public object? Notification { get; set; }
     }
 }

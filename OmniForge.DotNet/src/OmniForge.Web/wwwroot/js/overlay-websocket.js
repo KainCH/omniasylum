@@ -12,14 +12,21 @@ export function connect(url, dotNetHelper) {
             const data = message.data;
 
             if (method === "counterUpdate") {
-                dotNetHelper.invokeMethodAsync("OnCounterUpdate", data);
+                // Update DOM directly to avoid Blazor Circuit dependency
+                updateCounter("deaths", data.deaths);
+                updateCounter("swears", data.swears);
+                updateCounter("screams", data.screams);
+                // Also update Blazor state if connected, but don't crash if not
+                try { dotNetHelper.invokeMethodAsync("OnCounterUpdate", data); } catch (e) {}
             } else if (method === "streamStatusUpdate") {
-                dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", data.streamStatus);
+                updateStreamStatus(data.streamStatus);
+                try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", data.streamStatus); } catch (e) {}
             } else if (method === "customAlert") {
-                dotNetHelper.invokeMethodAsync("OnCustomAlert", data.alertType, data.data);
+                // Trigger alert directly via JS
+                triggerAlert(data.alertType, data.data, dotNetHelper);
             } else {
-                // Assume it's a standard alert type like "newFollower", "newSubscriber" etc.
-                dotNetHelper.invokeMethodAsync("OnAlert", method, data);
+                // Standard alerts
+                triggerAlert(method, data, dotNetHelper);
             }
         } catch (e) {
             console.error("[WebSocket] Error parsing message", e);
@@ -39,4 +46,29 @@ export function connect(url, dotNetHelper) {
     socket.onerror = function(error) {
         console.log(`[WebSocket] Error: ${error.message}`);
     };
+}
+
+function updateCounter(type, value) {
+    const element = document.querySelector(`.counter-item.${type} .counter-value`);
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+function updateStreamStatus(status) {
+    const overlay = document.querySelector('.counter-overlay');
+    if (overlay) {
+        overlay.style.opacity = status === 'live' ? '1' : '0';
+    }
+}
+
+async function triggerAlert(type, data, dotNetHelper) {
+    // Try to use Blazor to get full alert config if possible, as it has the DB data
+    try {
+        await dotNetHelper.invokeMethodAsync("OnAlert", type, data);
+    } catch (e) {
+        console.warn("[WebSocket] Blazor circuit disconnected, cannot trigger complex alert via server. Fallback needed if we want offline alerts.");
+        // If we wanted fully offline alerts, we'd need to pass the full alert config in the WebSocket message
+        // or cache it on the client side. For now, we rely on Blazor for the config lookup.
+    }
 }
