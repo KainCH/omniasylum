@@ -1,6 +1,8 @@
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -20,6 +22,8 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IJwtService> _mockJwtService;
         private readonly Mock<IConfiguration> _mockConfiguration;
+        private readonly Mock<IAuthenticationService> _mockAuthService;
+        private readonly Mock<IServiceProvider> _mockServiceProvider;
         private readonly AuthController _controller;
 
         public AuthControllerTests()
@@ -28,11 +32,17 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockJwtService = new Mock<IJwtService>();
             _mockConfiguration = new Mock<IConfiguration>();
+            _mockAuthService = new Mock<IAuthenticationService>();
+            _mockServiceProvider = new Mock<IServiceProvider>();
 
             var twitchSettings = Options.Create(new TwitchSettings { ClientId = "client-id" });
 
             _mockConfiguration.Setup(x => x["Twitch:RedirectUri"]).Returns("http://localhost/callback");
             _mockConfiguration.Setup(x => x["FrontendUrl"]).Returns("http://localhost:5500");
+
+            _mockServiceProvider
+                .Setup(x => x.GetService(typeof(IAuthenticationService)))
+                .Returns(_mockAuthService.Object);
 
             _controller = new AuthController(
                 _mockTwitchAuthService.Object,
@@ -43,7 +53,10 @@ namespace OmniForge.Tests
 
             _controller.ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = new DefaultHttpContext
+                {
+                    RequestServices = _mockServiceProvider.Object
+                }
             };
         }
 
@@ -105,8 +118,13 @@ namespace OmniForge.Tests
             var result = await _controller.Callback("code");
 
             var redirectResult = Assert.IsType<RedirectResult>(result);
-            Assert.Contains("token=jwt-token", redirectResult.Url);
+            Assert.Equal("/portal", redirectResult.Url);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.IsAny<User>()), Times.Once);
+            _mockAuthService.Verify(x => x.SignInAsync(
+                It.IsAny<HttpContext>(),
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                It.IsAny<ClaimsPrincipal>(),
+                It.IsAny<AuthenticationProperties>()), Times.Once);
         }
 
         [Fact]

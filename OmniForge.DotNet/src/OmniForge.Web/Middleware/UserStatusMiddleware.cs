@@ -21,6 +21,7 @@ namespace OmniForge.Web.Middleware
                 context.Request.Path.StartsWithSegments("/_framework") ||
                 context.WebSockets.IsWebSocketRequest)
             {
+                // Console.WriteLine($"[UserStatusMiddleware] Bypassing for {context.Request.Path}");
                 await _next(context);
                 return;
             }

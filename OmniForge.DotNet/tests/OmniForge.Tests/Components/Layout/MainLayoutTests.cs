@@ -78,7 +78,7 @@ public class MainLayoutTests : BunitContext
                             <span class=""bi bi-moon-fill"" aria-hidden=""true""></span>
                             Dark Mode
                         </button>
-                        <a href=""Auth/login"">Log in with Twitch</a>
+                        <a href=""auth/twitch"">Log in with Twitch</a>
                         <a href=""https://learn.microsoft.com/aspnet/core/"" target=""_blank"" class=""ms-3"">About</a>
                     </div>
                     <article class=""content px-4"">

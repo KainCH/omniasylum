@@ -18,6 +18,7 @@ using System.Text;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -108,7 +109,13 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(hubOptions =>
+{
+    hubOptions.MaximumReceiveMessageSize = 102400; // 100KB
+    hubOptions.EnableDetailedErrors = true;
+});
+builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
+
 builder.Services.AddSingleton<IOverlayNotifier, SignalROverlayNotifier>();
 builder.Services.AddSingleton<IHubConnectionFactory, HubConnectionFactory>();
 

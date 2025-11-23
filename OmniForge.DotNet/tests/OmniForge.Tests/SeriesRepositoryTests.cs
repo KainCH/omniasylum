@@ -37,12 +37,12 @@ namespace OmniForge.Tests
             var userId = "123";
             var entity = new TableEntity(userId, "abc")
             {
-                ["Name"] = "Test Series",
-                ["Description"] = "Test Description",
-                ["Snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 10 }),
-                ["CreatedAt"] = DateTimeOffset.UtcNow,
-                ["LastUpdated"] = DateTimeOffset.UtcNow,
-                ["IsActive"] = true
+                ["name"] = "Test Series",
+                ["description"] = "Test Description",
+                ["snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 10 }),
+                ["createdAt"] = DateTimeOffset.UtcNow,
+                ["lastUpdated"] = DateTimeOffset.UtcNow,
+                ["isActive"] = true
             };
 
             var page = Page<TableEntity>.FromValues(new[] { entity }, null, Mock.Of<Response>());
@@ -74,8 +74,8 @@ namespace OmniForge.Tests
             var seriesId = "abc";
             var entity = new TableEntity(userId, seriesId)
             {
-                ["Name"] = "Test Series",
-                ["Snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 10 })
+                ["name"] = "Test Series",
+                ["snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 10 })
             };
 
             var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == entity);
@@ -116,7 +116,7 @@ namespace OmniForge.Tests
                 It.Is<TableEntity>(e =>
                     e.PartitionKey == "123" &&
                     e.RowKey == "abc" &&
-                    (string)e["Name"] == "Test Series"),
+                    (string)e["name"] == "Test Series"),
                 default), Times.Once);
         }
 
@@ -140,7 +140,7 @@ namespace OmniForge.Tests
                 It.Is<TableEntity>(e =>
                     e.PartitionKey == "123" &&
                     e.RowKey == "abc" &&
-                    (string)e["Name"] == "Test Series"),
+                    (string)e["name"] == "Test Series"),
                 TableUpdateMode.Replace,
                 default), Times.Once);
         }
