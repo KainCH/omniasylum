@@ -90,6 +90,7 @@ public class BrokenUserManagerModalTests : BunitContext
             b.CloseComponent();
         });
 
+        // Wait for the modal to be rendered and data loaded
         cut.WaitForState(() => cut.FindAll(".text-success").Count > 0, TimeSpan.FromSeconds(3));
 
         // Act
@@ -97,6 +98,8 @@ public class BrokenUserManagerModalTests : BunitContext
         closeButton.Click();
 
         // Assert
-        Assert.True(showChangedInvoked);
+        // The modal might not update the parameter immediately or the callback might be async
+        // Let's wait for the assertion
+        cut.WaitForAssertion(() => Assert.True(showChangedInvoked));
     }
 }

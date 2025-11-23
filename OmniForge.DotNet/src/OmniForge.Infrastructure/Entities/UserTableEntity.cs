@@ -20,7 +20,7 @@ namespace OmniForge.Infrastructure.Entities
         public string profileImageUrl { get; set; } = string.Empty;
         public string accessToken { get; set; } = string.Empty;
         public string refreshToken { get; set; } = string.Empty;
-        public DateTimeOffset tokenExpiry { get; set; }
+        public object? tokenExpiry { get; set; }
         public string role { get; set; } = "streamer";
         public string features { get; set; } = "{}";
         public string overlaySettings { get; set; } = "{}";
@@ -30,8 +30,8 @@ namespace OmniForge.Infrastructure.Entities
         public string managedStreamers { get; set; } = "[]";
         public bool isActive { get; set; } = true;
         public string streamStatus { get; set; } = "offline";
-        public DateTimeOffset createdAt { get; set; }
-        public DateTimeOffset lastLogin { get; set; }
+        public object? createdAt { get; set; }
+        public object? lastLogin { get; set; }
 
         private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {
@@ -53,6 +53,14 @@ namespace OmniForge.Infrastructure.Entities
             }
         }
 
+        private DateTimeOffset ParseDateTimeOffset(object? value)
+        {
+            if (value is DateTimeOffset dto) return dto;
+            if (value is DateTime dt) return new DateTimeOffset(dt);
+            if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
+            return default;
+        }
+
         public User ToDomain()
         {
             return new User
@@ -64,7 +72,7 @@ namespace OmniForge.Infrastructure.Entities
                 ProfileImageUrl = profileImageUrl,
                 AccessToken = accessToken,
                 RefreshToken = refreshToken,
-                TokenExpiry = tokenExpiry,
+                TokenExpiry = ParseDateTimeOffset(tokenExpiry),
                 Role = role,
                 Features = DeserializeSafe<FeatureFlags>(features),
                 OverlaySettings = DeserializeSafe<OverlaySettings>(overlaySettings),
@@ -74,8 +82,8 @@ namespace OmniForge.Infrastructure.Entities
                 ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
                 IsActive = isActive,
                 StreamStatus = streamStatus,
-                CreatedAt = createdAt,
-                LastLogin = lastLogin
+                CreatedAt = ParseDateTimeOffset(createdAt),
+                LastLogin = ParseDateTimeOffset(lastLogin)
             };
         }
 

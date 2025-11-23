@@ -25,8 +25,16 @@ namespace OmniForge.Infrastructure.Entities
         public string effects { get; set; } = string.Empty;
         public bool isEnabled { get; set; }
         public bool isDefault { get; set; }
-        public DateTimeOffset createdAt { get; set; }
-        public DateTimeOffset updatedAt { get; set; }
+        public object? createdAt { get; set; }
+        public object? updatedAt { get; set; }
+
+        private DateTimeOffset ParseDateTimeOffset(object? value)
+        {
+            if (value is DateTimeOffset dto) return dto;
+            if (value is DateTime dt) return new DateTimeOffset(dt);
+            if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
+            return default;
+        }
 
         public Alert ToAlert()
         {
@@ -47,8 +55,8 @@ namespace OmniForge.Infrastructure.Entities
                 Effects = effects,
                 IsEnabled = isEnabled,
                 IsDefault = isDefault,
-                CreatedAt = createdAt,
-                UpdatedAt = updatedAt
+                CreatedAt = ParseDateTimeOffset(createdAt),
+                UpdatedAt = ParseDateTimeOffset(updatedAt)
             };
         }
 

@@ -19,6 +19,8 @@ namespace OmniForge.Web.Middleware
             // This prevents interference with the SignalR handshake and heartbeat
             if (context.Request.Path.StartsWithSegments("/_blazor") ||
                 context.Request.Path.StartsWithSegments("/_framework") ||
+                context.Request.Path.StartsWithSegments("/overlayHub") ||
+                context.Request.Path.StartsWithSegments("/ws/overlay") ||
                 context.WebSockets.IsWebSocketRequest)
             {
                 // Console.WriteLine($"[UserStatusMiddleware] Bypassing for {context.Request.Path}");

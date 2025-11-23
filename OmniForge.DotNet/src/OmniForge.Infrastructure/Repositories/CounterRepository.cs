@@ -36,8 +36,8 @@ namespace OmniForge.Infrastructure.Repositories
                     Swears = entity.GetInt32("Swears") ?? entity.GetInt32("swears") ?? 0,
                     Screams = entity.GetInt32("Screams") ?? entity.GetInt32("screams") ?? 0,
                     Bits = entity.GetInt32("Bits") ?? entity.GetInt32("bits") ?? 0,
-                    LastUpdated = entity.GetDateTimeOffset("LastUpdated") ?? entity.GetDateTimeOffset("lastUpdated") ?? DateTimeOffset.UtcNow,
-                    StreamStarted = entity.GetDateTimeOffset("StreamStarted") ?? entity.GetDateTimeOffset("streamStarted"),
+                    LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
+                    StreamStarted = GetDateTimeOffsetSafe(entity, "StreamStarted") ?? GetDateTimeOffsetSafe(entity, "streamStarted"),
                     LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
                 };
 
@@ -96,6 +96,26 @@ namespace OmniForge.Infrastructure.Repositories
             }
 
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        }
+
+        private DateTimeOffset? GetDateTimeOffsetSafe(TableEntity entity, string key)
+        {
+            if (entity.TryGetValue(key, out var value))
+            {
+                if (value is DateTimeOffset dto)
+                {
+                    return dto;
+                }
+                if (value is DateTime dt)
+                {
+                    return new DateTimeOffset(dt);
+                }
+                if (value is string s && DateTimeOffset.TryParse(s, out var parsedDto))
+                {
+                    return parsedDto;
+                }
+            }
+            return null;
         }
 
         public async Task<Counter> IncrementCounterAsync(string userId, string counterType, int amount = 1)

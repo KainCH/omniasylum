@@ -1,6 +1,5 @@
 @page "/overlay/{TwitchUserId}"
 @layout OmniForge.Web.Components.Layout.OverlayLayout
-@using Microsoft.AspNetCore.SignalR.Client
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using System.Text.Json
@@ -9,7 +8,6 @@
 @inject IUserRepository UserRepository
 @inject IAlertRepository AlertRepository
 @inject IJSRuntime JSRuntime
-@inject OmniForge.Web.Services.IHubConnectionFactory HubConnectionFactory
 @implements IAsyncDisposable
 
 <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
@@ -119,11 +117,11 @@ else
     [Parameter]
     public string TwitchUserId { get; set; } = string.Empty;
 
-    private OmniForge.Web.Services.IHubConnection? hubConnection;
     private OmniForge.Core.Entities.Counter? counter;
     private OmniForge.Core.Entities.User? user;
     private string StreamStatus { get; set; } = "offline";
     private List<Alert> alerts = new();
+    private IJSObjectReference? jsModule;
 
     protected override async Task OnInitializedAsync()
     {
@@ -138,49 +136,41 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (user != null && user.Features.StreamOverlay && hubConnection == null)
+        if (firstRender && user != null && user.Features.StreamOverlay)
         {
             await JSRuntime.InvokeVoidAsync("overlayInterop.init");
 
-            hubConnection = HubConnectionFactory.CreateConnection(NavigationManager.ToAbsoluteUri("/overlayHub"));
-
-            hubConnection.On<OmniForge.Core.Entities.Counter>("counterUpdate", (updatedCounter) =>
-            {
-                counter = updatedCounter;
-                InvokeAsync(StateHasChanged);
-            });
-
-            hubConnection.On<object>("streamStatusUpdate", (data) =>
-            {
-                var json = JsonSerializer.Serialize(data);
-                var obj = JsonSerializer.Deserialize<JsonElement>(json);
-                if (obj.TryGetProperty("streamStatus", out var statusProp))
-                {
-                    StreamStatus = statusProp.GetString() ?? "offline";
-                    InvokeAsync(StateHasChanged);
-                }
-            });
-
-            hubConnection.On<object>("newFollower", async (data) => await TriggerAlert("follow", data));
-            hubConnection.On<object>("newSubscriber", async (data) => await TriggerAlert("subscription", data));
-            hubConnection.On<object>("resub", async (data) => await TriggerAlert("resub", data));
-            hubConnection.On<object>("giftSub", async (data) => await TriggerAlert("giftsub", data));
-            hubConnection.On<object>("bitsReceived", async (data) => await TriggerAlert("bits", data));
-            hubConnection.On<object>("raidReceived", async (data) => await TriggerAlert("raid", data));
-
-            hubConnection.On<object>("customAlert", async (data) =>
-            {
-                var json = JsonSerializer.Serialize(data);
-                var obj = JsonSerializer.Deserialize<JsonElement>(json);
-                if (obj.TryGetProperty("alertType", out var typeProp) && obj.TryGetProperty("data", out var payloadProp))
-                {
-                    await TriggerAlert(typeProp.GetString() ?? "custom", payloadProp);
-                }
-            });
-
-            await hubConnection.StartAsync();
-            await hubConnection.InvokeAsync("JoinGroup", TwitchUserId);
+            // Initialize WebSocket connection via JS
+            var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
+            jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
+            await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
         }
+    }
+
+    [JSInvokable]
+    public void OnCounterUpdate(OmniForge.Core.Entities.Counter updatedCounter)
+    {
+        counter = updatedCounter;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnStreamStatusUpdate(string status)
+    {
+        StreamStatus = status;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnAlert(string type, object data)
+    {
+        await TriggerAlert(type, data);
+    }
+
+    [JSInvokable]
+    public async Task OnCustomAlert(string type, object data)
+    {
+        await TriggerAlert(type, data);
     }
 
     private async Task TriggerAlert(string type, object data)
@@ -216,17 +206,21 @@ else
         }
         catch {}
 
-        var json = JsonSerializer.Serialize(data);
-        var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-        if (dataDict != null)
+        // Merge data into payload
+        if (data is JsonElement jsonElement)
         {
-            foreach (var kvp in dataDict)
-            {
-                if (!payload.ContainsKey(kvp.Key))
-                {
-                    payload[kvp.Key] = kvp.Value;
-                }
-            }
+             var json = jsonElement.GetRawText();
+             var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+             if (dataDict != null)
+             {
+                 foreach (var kvp in dataDict)
+                 {
+                     if (!payload.ContainsKey(kvp.Key))
+                     {
+                         payload[kvp.Key] = kvp.Value;
+                     }
+                 }
+             }
         }
 
         await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
@@ -263,9 +257,9 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        if (hubConnection is not null)
+        if (jsModule != null)
         {
-            await hubConnection.DisposeAsync();
+            await jsModule.DisposeAsync();
         }
     }
 }

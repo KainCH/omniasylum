@@ -81,10 +81,21 @@ namespace OmniForge.Infrastructure.Repositories
                 Name = entity.GetString("name") ?? string.Empty,
                 Description = entity.GetString("description") ?? string.Empty,
                 Snapshot = snapshot,
-                CreatedAt = entity.GetDateTimeOffset("createdAt") ?? DateTimeOffset.UtcNow,
-                LastUpdated = entity.GetDateTimeOffset("lastUpdated") ?? DateTimeOffset.UtcNow,
+                CreatedAt = GetDateTimeOffsetSafe(entity, "createdAt") ?? DateTimeOffset.UtcNow,
+                LastUpdated = GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                 IsActive = entity.GetBoolean("isActive") ?? false
             };
+        }
+
+        private DateTimeOffset? GetDateTimeOffsetSafe(TableEntity entity, string key)
+        {
+            if (entity.TryGetValue(key, out var value))
+            {
+                if (value is DateTimeOffset dto) return dto;
+                if (value is DateTime dt) return new DateTimeOffset(dt);
+                if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
+            }
+            return null;
         }
 
         private TableEntity MapToEntity(Series series)

@@ -298,40 +298,18 @@ namespace OmniForge.Tests.Components.Pages
             _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>())).ReturnsAsync(initialCounter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
             JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var module = JSInterop.SetupModule("./js/overlay-websocket.js");
+            module.SetupVoid("connect", _ => true).SetVoidResult();
 
-            // Capture the handler
-            Action<Counter>? counterUpdateHandler = null;
-            var mockHubConnection = new Mock<IHubConnection>();
-            mockHubConnection.Setup(h => h.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-
-            mockHubConnection.Setup(h => h.On<Counter>("counterUpdate", It.IsAny<Action<Counter>>()))
-                .Callback<string, Action<Counter>>((name, handler) => counterUpdateHandler = handler)
-                .Returns(Mock.Of<IDisposable>());
-
-            // We need to setup other On calls to avoid loose mock errors if strict, or just to be safe
-            mockHubConnection.Setup(h => h.On(It.IsAny<string>(), It.IsAny<Func<object, Task>>()))
-                .Returns(Mock.Of<IDisposable>());
-             mockHubConnection.Setup(h => h.On(It.IsAny<string>(), It.IsAny<Action<object>>()))
-                .Returns(Mock.Of<IDisposable>());
-
-            _mockHubConnectionFactory.Setup(f => f.CreateConnection(It.IsAny<Uri>()))
-                .Returns(mockHubConnection.Object);
-
-            var cut = Render(b =>
-            {
-                b.OpenComponent<Overlay>(0);
-                b.AddAttribute(1, "TwitchUserId", "testuser");
-                b.CloseComponent();
-            });
-
-            cut.WaitForAssertion(() => _mockHubConnectionFactory.Verify(f => f.CreateConnection(It.IsAny<Uri>()), Times.Once));
+            var cut = Render<Overlay>(parameters => parameters
+                .Add(p => p.TwitchUserId, "testuser")
+            );
 
             // Act
-            // Simulate SignalR message
-            Assert.NotNull(counterUpdateHandler);
+            // Simulate WebSocket message via JS Interop
             var updatedCounter = new Counter { TwitchUserId = "testuser", Deaths = 11 };
-
-            cut.InvokeAsync(() => counterUpdateHandler(updatedCounter));
+            // cut.Instance is the Overlay component
+            cut.InvokeAsync(() => cut.Instance.OnCounterUpdate(updatedCounter));
 
             // Assert
             var deaths = cut.Find(".deaths .counter-value");

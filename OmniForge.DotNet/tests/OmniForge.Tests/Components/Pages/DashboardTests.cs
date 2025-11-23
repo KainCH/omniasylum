@@ -53,6 +53,7 @@ namespace OmniForge.Tests.Components.Pages
             ComponentFactories.AddStub<OverlaySettingsModal>();
             ComponentFactories.AddStub<AlertEffectsModal>();
             ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
+            ComponentFactories.AddStub<AlertsManagerModal>();
         }
 
         private IRenderedComponent<Dashboard> RenderDashboard()

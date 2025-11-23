@@ -17,7 +17,15 @@ namespace OmniForge.Infrastructure.Entities
         public int cost { get; set; }
         public string action { get; set; } = string.Empty;
         public bool isEnabled { get; set; }
-        public DateTimeOffset createdAt { get; set; }
+        public object? createdAt { get; set; }
+
+        private DateTimeOffset ParseDateTimeOffset(object? value)
+        {
+            if (value is DateTimeOffset dto) return dto;
+            if (value is DateTime dt) return new DateTimeOffset(dt);
+            if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
+            return default;
+        }
 
         public ChannelPointReward ToChannelPointReward()
         {
@@ -29,7 +37,7 @@ namespace OmniForge.Infrastructure.Entities
                 Cost = cost,
                 Action = action,
                 IsEnabled = isEnabled,
-                CreatedAt = createdAt
+                CreatedAt = ParseDateTimeOffset(createdAt)
             };
         }
 

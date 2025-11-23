@@ -44,6 +44,9 @@
                     <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
+                    <button class="btn-custom btn-warning" @onclick="() => showAlertsManager = true" style="background-color: #fd7e14; color: white;">
+                        <i class="bi bi-bell-fill"></i> Alerts
+                    </button>
                     <button class="btn-custom btn-info" @onclick="() => showAlertEffects = true">
                         <i class="bi bi-magic"></i> Effects
                     </button>
@@ -71,6 +74,7 @@
                 </div>
 
                 <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+                <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
                 <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
             }
@@ -86,6 +90,7 @@
     private string? TwitchUserId;
     private string? OverlayUrl;
     private bool showOverlaySettings = false;
+    private bool showAlertsManager = false;
     private bool showAlertEffects = false;
     private bool showDiscordSettings = false;
 

@@ -116,8 +116,8 @@ builder.Services.AddSignalR(hubOptions =>
 });
 builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 
-builder.Services.AddSingleton<IOverlayNotifier, SignalROverlayNotifier>();
-builder.Services.AddSingleton<IHubConnectionFactory, HubConnectionFactory>();
+builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
+builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -162,13 +162,15 @@ app.UseStaticFiles(); // Enable static file serving
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseWebSockets(); // Enable WebSockets
 app.UseMiddleware<UserStatusMiddleware>();
+app.UseMiddleware<WebSocketOverlayMiddleware>();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapControllers();
-app.MapHub<OverlayHub>("/overlayHub");
+// app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
 
 app.Run();
