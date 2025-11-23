@@ -17,11 +17,13 @@ namespace OmniForge.Web.Middleware
 
         public async Task InvokeAsync(HttpContext context, IUserRepository userRepository)
         {
-            // Skip middleware for Blazor SignalR requests, framework files, and WebSocket connections
+            // Skip middleware for Blazor SignalR requests, framework files, WebSocket connections, AND the overlay page itself
+            // The overlay should always be treated as anonymous to ensure consistent rendering behavior
             if (context.Request.Path.StartsWithSegments("/_blazor") ||
                 context.Request.Path.StartsWithSegments("/_framework") ||
                 context.Request.Path.StartsWithSegments("/overlayHub") ||
                 context.Request.Path.StartsWithSegments("/ws/overlay") ||
+                context.Request.Path.StartsWithSegments("/overlay") ||
                 context.WebSockets.IsWebSocketRequest)
             {
                 await _next(context);

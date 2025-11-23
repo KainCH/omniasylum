@@ -58,7 +58,8 @@ namespace OmniForge.Infrastructure.Entities
             if (value is DateTimeOffset dto) return dto;
             if (value is DateTime dt) return new DateTimeOffset(dt);
             if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
-            return default;
+            // Return a safe default for Azure Table Storage (Unix Epoch)
+            return new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
         }
 
         public User ToDomain()
@@ -101,6 +102,8 @@ namespace OmniForge.Infrastructure.Entities
 
         public static UserTableEntity FromDomain(User user)
         {
+            var minAzureDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
             return new UserTableEntity
             {
                 PartitionKey = "user",
@@ -112,7 +115,7 @@ namespace OmniForge.Infrastructure.Entities
                 profileImageUrl = user.ProfileImageUrl,
                 accessToken = user.AccessToken,
                 refreshToken = user.RefreshToken,
-                tokenExpiry = user.TokenExpiry,
+                tokenExpiry = user.TokenExpiry < minAzureDate ? minAzureDate : user.TokenExpiry,
                 role = user.Role,
                 features = JsonSerializer.Serialize(user.Features),
                 overlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
@@ -122,8 +125,8 @@ namespace OmniForge.Infrastructure.Entities
                 managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
                 isActive = user.IsActive,
                 streamStatus = user.StreamStatus,
-                createdAt = user.CreatedAt,
-                lastLogin = user.LastLogin
+                createdAt = user.CreatedAt < minAzureDate ? minAzureDate : user.CreatedAt,
+                lastLogin = user.LastLogin < minAzureDate ? minAzureDate : user.LastLogin
             };
         }
     }

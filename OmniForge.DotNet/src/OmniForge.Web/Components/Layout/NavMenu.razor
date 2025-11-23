@@ -26,15 +26,15 @@
                         <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
                     </NavLink>
                 </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="template-designer">
-                        <span class="bi bi-palette-fill-nav-menu" aria-hidden="true"></span> Overlay Designer
-                    </NavLink>
-                </div>
             </Authorized>
         </AuthorizeView>
 
         <AuthorizeView Roles="admin">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="template-designer">
+                    <span class="bi bi-palette-fill-nav-menu" aria-hidden="true"></span> Overlay Designer
+                </NavLink>
+            </div>
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="admin" Match="NavLinkMatch.All">
                     <span class="bi bi-shield-lock-fill-nav-menu" aria-hidden="true"></span> Admin Portal

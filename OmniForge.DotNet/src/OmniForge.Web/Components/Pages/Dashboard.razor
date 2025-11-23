@@ -8,6 +8,7 @@
 @inject ICounterRepository CounterRepository
 @inject IOverlayNotifier OverlayNotifier
 @inject NavigationManager NavigationManager
+@inject IStreamMonitorService StreamMonitorService
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -39,6 +40,9 @@
                 </div>
 
                 <div class="controls-section">
+                    <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
+                        <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
+                    </button>
                     <button class="btn-custom btn-reset" @onclick="ResetCounters">Reset All</button>
                     <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
                     <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
@@ -93,6 +97,7 @@
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
     private bool showDiscordSettings = false;
+    private bool isMonitoring = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,9 +114,27 @@
                 if (!string.IsNullOrEmpty(TwitchUserId))
                 {
                     counter = await CounterRepository.GetCountersAsync(TwitchUserId);
-                    OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay/{TwitchUserId}").ToString();
+                    // Use the static HTML overlay instead of the Blazor page
+                    OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
+                    isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
                 }
             }
+        }
+    }
+
+    private async Task ToggleMonitoring()
+    {
+        if (string.IsNullOrEmpty(TwitchUserId)) return;
+
+        if (isMonitoring)
+        {
+            await StreamMonitorService.UnsubscribeFromUserAsync(TwitchUserId);
+            isMonitoring = false;
+        }
+        else
+        {
+            await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
+            isMonitoring = true;
         }
     }
 

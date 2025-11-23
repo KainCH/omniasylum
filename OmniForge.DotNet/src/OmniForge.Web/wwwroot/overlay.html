@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniForge Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/overlay.css">
+  <style>
+    /* Basic Reset & Overlay Styles */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: transparent;
+      /* Crucial for OBS */
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .counter-overlay {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: opacity 0.5s ease;
+      opacity: 1;
+      /* Default visible, JS can toggle */
+    }
+
+    .counter-item {
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #d4af37;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: white;
+      min-width: 150px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .counter-icon {
+      font-size: 24px;
+      margin-right: 10px;
+    }
+
+    .counter-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .counter-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #d4af37;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .counter-value {
+      font-size: 24px;
+      font-weight: bold;
+      line-height: 1.2;
+    }
+
+    /* Alert Popup Styles */
+    .counter-alert {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.5);
+      background: rgba(0, 0, 0, 0.9);
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      padding: 20px;
+      text-align: center;
+      opacity: 0;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 1000;
+      pointer-events: none;
+      min-width: 300px;
+    }
+
+    .counter-alert.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .alert-title {
+      font-family: 'Creepster', cursive;
+      font-size: 36px;
+      color: #d4af37;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    .alert-message {
+      font-size: 24px;
+      color: white;
+    }
+
+    /* Celebration Containers */
+    .bits-celebration,
+    .sub-celebration {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 900;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="overlay-container" class="counter-overlay" style="top: 20px; right: 20px;">
+    <!-- Counters will be injected here -->
+  </div>
+
+  <div class="counter-alert" id="alert-popup">
+    <div class="alert-title" id="alert-title">ALERT</div>
+    <div class="alert-message" id="alert-message">Message</div>
+  </div>
+
+  <div class="bits-celebration" id="bits-celebration"></div>
+  <div class="sub-celebration" id="sub-celebration"></div>
+
+  <!-- Scripts -->
+  <script src="/js/asylum-effects.js"></script>
+  <script src="/js/notification-audio.js"></script>
+  <script src="/js/overlay-interop.js"></script>
+  <script>
+    // Main Overlay Logic
+    (function () {
+      const urlParams = new URLSearchParams(window.location.search);
+      const userId = urlParams.get('userId');
+
+      if (!userId) {
+        document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
+        return;
+      }
+
+      // Initial Data Load
+      fetch(`/api/counters/${userId}`) // Assuming this endpoint exists or similar
+        .then(response => response.json())
+        .then(data => {
+          updateCounters(data);
+        })
+        .catch(err => console.error("Error loading initial data:", err));
+
+      // WebSocket Connection
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/overlay?userId=${userId}`;
+
+      let socket;
+
+      function connect() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function () {
+          console.log("Connected to Overlay WebSocket");
+        };
+
+        socket.onmessage = function (event) {
+          try {
+            const msg = JSON.parse(event.data);
+            handleMessage(msg);
+          } catch (e) {
+            console.error("Error parsing WS message:", e);
+          }
+        };
+
+        socket.onclose = function () {
+          console.log("WebSocket closed. Reconnecting in 5s...");
+          setTimeout(connect, 5000);
+        };
+
+        socket.onerror = function (err) {
+          console.error("WebSocket error:", err);
+          socket.close();
+        };
+      }
+
+      connect();
+
+      function handleMessage(msg) {
+        const { method, data } = msg;
+
+        switch (method) {
+          case 'counterUpdate':
+            updateCounters(data);
+            break;
+          case 'streamStatusUpdate':
+            // Toggle visibility based on stream status if needed
+            break;
+          default:
+            // Handle alerts
+            if (window.overlayInterop) {
+              // Map WS message structure to what overlayInterop expects
+              // overlayInterop.triggerAlert(type, payload)
+              // The WS message might be method="follow", data={...}
+              window.overlayInterop.triggerAlert(method, data);
+            }
+            break;
+        }
+      }
+
+      function updateCounters(data) {
+        const container = document.getElementById('overlay-container');
+        container.innerHTML = ''; // Clear current
+
+        if (data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
+        if (data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
+        if (data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
+        if (data.bits !== undefined) createCounterItem(container, 'BITS', data.bits, '💎');
+      }
+
+      function createCounterItem(container, label, value, icon) {
+        const div = document.createElement('div');
+        div.className = 'counter-item';
+        div.innerHTML = `
+                    <div class="counter-icon">${icon}</div>
+                    <div class="counter-info">
+                        <div class="counter-label">${label}</div>
+                        <div class="counter-value">${value}</div>
+                    </div>
+                `;
+        container.appendChild(div);
+      }
+
+      // Initialize Interop
+      if (window.overlayInterop) {
+        window.overlayInterop.init();
+      }
+    })();
+  </script>
+</body>
+
+</html>

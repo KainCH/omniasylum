@@ -352,12 +352,37 @@ else
         {
             try
             {
-                await JSRuntime.InvokeVoidAsync("overlayInterop.init");
+                // Retry logic for overlayInterop.init
+                int retries = 0;
+                while (retries < 10)
+                {
+                    try
+                    {
+                        await JSRuntime.InvokeVoidAsync("overlayInterop.init");
+                        break;
+                    }
+                    catch (JSException)
+                    {
+                        retries++;
+                        if (retries >= 10) throw;
+                        await Task.Delay(200);
+                    }
+                }
 
                 // Initialize WebSocket connection via JS
                 var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
-                jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
-                await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+
+                // Use a try-catch block specifically for the module import to handle potential network issues or file not found errors
+                try
+                {
+                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
+                    await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+                }
+                catch (JSException jsEx)
+                {
+                     Console.WriteLine($"[Overlay] JS Import Error: {jsEx.Message}");
+                     // Fallback or retry logic could go here if needed
+                }
             }
             catch (Exception ex)
             {

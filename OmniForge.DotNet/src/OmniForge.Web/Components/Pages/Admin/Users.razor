@@ -46,34 +46,34 @@
     {
         <div class="row mb-4">
             <div class="col-md-3">
-                <div class="card bg-light shadow-sm">
+                <div class="card bg-body-secondary shadow-sm">
                     <div class="card-body text-center">
                         <h3 class="display-6">@users.Count()</h3>
-                        <div class="text-muted">Total Users</div>
+                        <div class="text-body-secondary">Total Users</div>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card bg-light shadow-sm">
+                <div class="card bg-body-secondary shadow-sm">
                     <div class="card-body text-center">
                         <h3 class="display-6 text-success">@users.Count(u => u.IsActive)</h3>
-                        <div class="text-muted">Active Users</div>
+                        <div class="text-body-secondary">Active Users</div>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card bg-light shadow-sm">
+                <div class="card bg-body-secondary shadow-sm">
                     <div class="card-body text-center">
                         <h3 class="display-6 text-danger">@users.Count(u => u.StreamStatus == "live")</h3>
-                        <div class="text-muted">Live Streams</div>
+                        <div class="text-body-secondary">Live Streams</div>
                     </div>
                 </div>
             </div>
              <div class="col-md-3">
-                <div class="card bg-light shadow-sm">
+                <div class="card bg-body-secondary shadow-sm">
                     <div class="card-body text-center">
                         <h3 class="display-6 text-primary">@users.Count(u => u.Role == "admin")</h3>
-                        <div class="text-muted">Admins</div>
+                        <div class="text-body-secondary">Admins</div>
                     </div>
                 </div>
             </div>
@@ -130,19 +130,19 @@
                             <td>@user.LastLogin.ToLocalTime().ToString("g")</td>
                             <td>
                                 <div class="btn-group">
-                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditUser(user)" title="Edit User">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => EditUser(user)" title="Edit User">
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenOverlaySettings(user)" title="Overlay Settings">
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenOverlaySettings(user)" title="Overlay Settings">
                                         <i class="bi bi-layout-text-window-reverse"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenAlertSettings(user)" title="Alert Settings">
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenAlertSettings(user)" title="Alert Settings">
                                         <i class="bi bi-megaphone"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenDiscordSettings(user)" title="Discord Settings">
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenDiscordSettings(user)" title="Discord Settings">
                                         <i class="bi bi-discord"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenSeriesSettings(user)" title="Series Saves">
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenSeriesSettings(user)" title="Series Saves">
                                         <i class="bi bi-save"></i>
                                     </button>
                                 </div>

@@ -144,60 +144,9 @@ namespace OmniForge.Infrastructure.Services
         {
             _logger.LogInformation($"EventSub Session Welcome. ID: {sessionId}");
 
-            // Subscribe to events for all users
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-                var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
-                var users = await userRepository.GetAllUsersAsync();
-
-                foreach (var user in users)
-                {
-                    try
-                    {
-                        var accessToken = user.AccessToken;
-                        var clientId = _twitchSettings.ClientId;
-
-                        if (string.IsNullOrEmpty(accessToken))
-                        {
-                            _logger.LogWarning($"User {user.DisplayName} has no access token. Skipping subscription.");
-                            continue;
-                        }
-
-                        if (string.IsNullOrEmpty(clientId))
-                        {
-                             _logger.LogError("Twitch Client ID is not configured.");
-                             continue;
-                        }
-
-                        var condition = new Dictionary<string, string>
-                        {
-                            { "broadcaster_user_id", user.TwitchUserId }
-                        };
-
-                        // Subscribe to Stream Online
-                        await helixWrapper.CreateEventSubSubscriptionAsync(
-                            clientId,
-                            accessToken,
-                            "stream.online", "1", condition, EventSubTransportMethod.Websocket,
-                            sessionId);
-
-                        // Subscribe to Stream Offline
-                        await helixWrapper.CreateEventSubSubscriptionAsync(
-                            clientId,
-                            accessToken,
-                            "stream.offline", "1", condition, EventSubTransportMethod.Websocket,
-                            sessionId);
-
-                        _subscribedUsers.TryAdd(user.TwitchUserId, true);
-                        _logger.LogInformation($"Subscribed to Stream Online/Offline for user: {user.DisplayName} ({user.TwitchUserId})");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, $"Failed to subscribe to events for user {user.DisplayName}");
-                    }
-                }
-            }
+            // Auto-subscription is disabled. Users must manually start monitoring.
+            // This prevents unauthorized or unwanted subscriptions on startup.
+            await Task.CompletedTask;
         }
 
         private async Task OnDisconnected()

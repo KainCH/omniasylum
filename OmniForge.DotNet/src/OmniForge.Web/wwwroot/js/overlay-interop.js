@@ -200,7 +200,7 @@ window.overlayInterop = {
     triggerDeath: function(newCount) {
         if (window.asylumEffects) {
             window.asylumEffects.triggerEffect({
-                textPrompt: \`DEATH COUNT: \${newCount}\`,
+                textPrompt: `DEATH COUNT: ${newCount}`,
                 backgroundColor: '#3e1a1a',
                 textColor: '#ff0000',
                 duration: 5000,
@@ -216,7 +216,7 @@ window.overlayInterop = {
     triggerSwear: function(newCount) {
         if (window.asylumEffects) {
             window.asylumEffects.triggerEffect({
-                textPrompt: \`SWEAR JAR: \${newCount}\`,
+                textPrompt: `SWEAR JAR: ${newCount}`,
                 backgroundColor: '#1a1a3e',
                 textColor: '#00ffff',
                 duration: 4000,

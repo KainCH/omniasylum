@@ -10,16 +10,21 @@ class NotificationAudioManager {
             bits: 'electroshock.wav',
             milestone: 'alarm.wav'
         };
-        // Auto-init if window is loaded, otherwise wait
-        if (document.readyState === 'complete') {
-            this.init();
-        } else {
-            window.addEventListener('load', () => this.init());
+        // Auto-init ONLY if we are on the overlay page
+        if (window.location.pathname.includes('/overlay/')) {
+            if (document.readyState === 'complete') {
+                this.init();
+            } else {
+                window.addEventListener('load', () => this.init());
+            }
         }
     }
 
     async init() {
-        console.log('OBS Audio Manager initializing...');
+        if (this.initialized) return;
+        this.initialized = true;
+
+        console.log('OBS Audio Manager initializing for Overlay...');
 
         // Try to restore from cache first
         const restored = this.restoreNotificationCacheState();
