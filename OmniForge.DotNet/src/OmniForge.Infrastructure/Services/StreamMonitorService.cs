@@ -16,7 +16,7 @@ using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 
 namespace OmniForge.Infrastructure.Services
 {
-    public class StreamMonitorService : IHostedService
+    public class StreamMonitorService : IHostedService, IStreamMonitorService
     {
         private readonly INativeEventSubService _eventSubService;
         private readonly TwitchAPI _twitchApi;
@@ -24,6 +24,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly TwitchSettings _twitchSettings;
         private Timer? _connectionWatchdog;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
 
         public StreamMonitorService(
             INativeEventSubService eventSubService,
@@ -41,6 +42,72 @@ namespace OmniForge.Infrastructure.Services
             _eventSubService.OnSessionWelcome += OnSessionWelcome;
             _eventSubService.OnNotification += OnNotification;
             _eventSubService.OnDisconnected += OnDisconnected;
+        }
+
+        public async Task<bool> SubscribeToUserAsync(string userId)
+        {
+            if (!_eventSubService.IsConnected) return false;
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
+                var user = await userRepository.GetUserAsync(userId);
+
+                if (user == null || string.IsNullOrEmpty(user.AccessToken)) return false;
+
+                try
+                {
+                    var condition = new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId } };
+                    var sessionId = _eventSubService.SessionId;
+
+                    if (string.IsNullOrEmpty(sessionId)) return false;
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    _subscribedUsers.TryAdd(userId, true);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to subscribe user {UserId}", userId);
+                    return false;
+                }
+            }
+        }
+
+        public async Task UnsubscribeFromUserAsync(string userId)
+        {
+            // Note: Helix doesn't easily support "unsubscribe by user" without tracking subscription IDs.
+            // For now, we'll just mark as unsubscribed in our local tracking.
+            // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
+            _subscribedUsers.TryRemove(userId, out _);
+            await Task.CompletedTask;
+        }
+
+        public async Task<bool> ForceReconnectUserAsync(string userId)
+        {
+            // Re-subscribe
+            return await SubscribeToUserAsync(userId);
+        }
+
+        public StreamMonitorStatus GetUserConnectionStatus(string userId)
+        {
+            return new StreamMonitorStatus
+            {
+                Connected = _eventSubService.IsConnected,
+                Subscriptions = _subscribedUsers.ContainsKey(userId) ? new[] { "stream.online", "stream.offline" } : Array.Empty<string>(),
+                LastConnected = _eventSubService.IsConnected ? DateTimeOffset.UtcNow : null // Approximate
+            };
+        }
+
+        public bool IsUserSubscribed(string userId)
+        {
+            return _subscribedUsers.ContainsKey(userId);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -122,6 +189,7 @@ namespace OmniForge.Infrastructure.Services
                             "stream.offline", "1", condition, EventSubTransportMethod.Websocket,
                             sessionId);
 
+                        _subscribedUsers.TryAdd(user.TwitchUserId, true);
                         _logger.LogInformation($"Subscribed to Stream Online/Offline for user: {user.DisplayName} ({user.TwitchUserId})");
                     }
                     catch (Exception ex)

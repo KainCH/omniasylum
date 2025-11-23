@@ -72,7 +72,9 @@ namespace OmniForge.Infrastructure
             // Twitch EventSub
             services.AddSingleton<INativeEventSubService, NativeEventSubService>();
             services.AddSingleton<TwitchAPI>();
-            services.AddHostedService<StreamMonitorService>();
+            services.AddSingleton<StreamMonitorService>();
+            services.AddHostedService(sp => sp.GetRequiredService<StreamMonitorService>());
+            services.AddSingleton<IStreamMonitorService>(sp => sp.GetRequiredService<StreamMonitorService>());
 
             return services;
         }

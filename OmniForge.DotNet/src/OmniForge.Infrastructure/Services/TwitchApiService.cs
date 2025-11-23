@@ -136,5 +136,55 @@ namespace OmniForge.Infrastructure.Services
 
             await _helixWrapper.DeleteCustomRewardAsync(clientId, user.AccessToken, user.TwitchUserId, rewardId);
         }
+
+        public async Task<StreamInfo?> GetStreamInfoAsync(string userId)
+        {
+            var user = await EnsureUserTokenValidAsync(userId);
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            var response = await _helixWrapper.GetStreamsAsync(clientId, user.AccessToken, new List<string> { user.TwitchUserId });
+            var stream = response.Streams.FirstOrDefault();
+
+            if (stream == null)
+            {
+                return new StreamInfo { IsLive = false };
+            }
+
+            return new StreamInfo
+            {
+                IsLive = true,
+                Title = stream.Title,
+                Game = stream.GameName,
+                Viewers = stream.ViewerCount,
+                StartedAt = stream.StartedAt
+            };
+        }
+
+        public async Task<ClipInfo?> CreateClipAsync(string userId)
+        {
+            var user = await EnsureUserTokenValidAsync(userId);
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            try
+            {
+                var response = await _helixWrapper.CreateClipAsync(clientId, user.AccessToken, user.TwitchUserId);
+                var clip = response.CreatedClips.FirstOrDefault();
+
+                if (clip == null) return null;
+
+                return new ClipInfo
+                {
+                    Id = clip.Id,
+                    EditUrl = clip.EditUrl
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating clip for user {UserId}", userId);
+                return null;
+            }
+        }
     }
 }

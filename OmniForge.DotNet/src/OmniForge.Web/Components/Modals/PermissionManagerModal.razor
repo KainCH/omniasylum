@@ -1,0 +1,145 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Permission Manager</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        Manage which users can manage other streamers.
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <h6>Select Manager</h6>
+                            <select class="form-select" @bind="selectedManagerId">
+                                <option value="">-- Select User --</option>
+                                @if (users != null)
+                                {
+                                    foreach (var user in users)
+                                    {
+                                        <option value="@user.TwitchUserId">@user.DisplayName (@user.Role)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(selectedManagerId))
+                    {
+                        var manager = users?.FirstOrDefault(u => u.TwitchUserId == selectedManagerId);
+                        if (manager != null)
+                        {
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    Managed Streamers for @manager.DisplayName
+                                </div>
+                                <ul class="list-group list-group-flush">
+                                    @if (manager.ManagedStreamers != null && manager.ManagedStreamers.Any())
+                                    {
+                                        foreach (var streamerId in manager.ManagedStreamers)
+                                        {
+                                            var streamer = users?.FirstOrDefault(u => u.TwitchUserId == streamerId);
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>@(streamer?.DisplayName ?? streamerId)</span>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => RevokeAccess(manager, streamerId)">Revoke</button>
+                                            </li>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <li class="list-group-item text-muted">No managed streamers</li>
+                                    }
+                                </ul>
+                                <div class="card-footer">
+                                    <div class="input-group">
+                                        <select class="form-select" @bind="streamerToAddId">
+                                            <option value="">-- Add Streamer --</option>
+                                            @if (users != null)
+                                            {
+                                                foreach (var user in users.Where(u => u.TwitchUserId != selectedManagerId && !(manager.ManagedStreamers?.Contains(u.TwitchUserId) ?? false)))
+                                                {
+                                                    <option value="@user.TwitchUserId">@user.DisplayName</option>
+                                                }
+                                            }
+                                        </select>
+                                        <button class="btn btn-success" @onclick="() => GrantAccess(manager)" disabled="@string.IsNullOrEmpty(streamerToAddId)">Grant Access</button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowChanged { get; set; }
+
+    [Parameter]
+    public IEnumerable<User>? Users { get; set; }
+
+    private IEnumerable<User>? users;
+    private string selectedManagerId = "";
+    private string streamerToAddId = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show)
+        {
+            if (Users == null)
+            {
+                users = await UserRepository.GetAllUsersAsync();
+            }
+            else
+            {
+                users = Users;
+            }
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    private async Task GrantAccess(User manager)
+    {
+        if (string.IsNullOrEmpty(streamerToAddId)) return;
+
+        if (manager.ManagedStreamers == null) manager.ManagedStreamers = new List<string>();
+
+        if (!manager.ManagedStreamers.Contains(streamerToAddId))
+        {
+            manager.ManagedStreamers.Add(streamerToAddId);
+            await UserRepository.SaveUserAsync(manager);
+            streamerToAddId = ""; // Reset selection
+        }
+    }
+
+    private async Task RevokeAccess(User manager, string streamerId)
+    {
+        if (manager.ManagedStreamers != null && manager.ManagedStreamers.Contains(streamerId))
+        {
+            manager.ManagedStreamers.Remove(streamerId);
+            await UserRepository.SaveUserAsync(manager);
+        }
+    }
+}

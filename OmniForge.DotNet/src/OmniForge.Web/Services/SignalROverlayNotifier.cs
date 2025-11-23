@@ -95,5 +95,10 @@ namespace OmniForge.Web.Services
         {
             await _hubContext.Clients.Group($"user:{userId}").SendAsync("customAlert", new { alertType, data });
         }
+
+        public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("templateChanged", new { templateStyle, template });
+        }
     }
 }

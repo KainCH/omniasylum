@@ -219,5 +219,66 @@ namespace OmniForge.Tests
             var statusCodeResult = Assert.IsType<ObjectResult>(result);
             Assert.Equal(500, statusCodeResult.StatusCode);
         }
+
+        [Fact]
+        public async Task GetRedemptionHistory_ShouldReturnOk_WhenFeaturesEnabled()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Features = new FeatureFlags { ChannelPoints = true, Analytics = true }
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.GetRedemptionHistory();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
+
+        [Fact]
+        public async Task GetRedemptionHistory_ShouldReturnForbid_WhenAnalyticsDisabled()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Features = new FeatureFlags { ChannelPoints = true, Analytics = false }
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.GetRedemptionHistory();
+
+            var forbidResult = Assert.IsType<ForbidResult>(result);
+            Assert.Equal("Analytics feature required for redemption history", forbidResult.AuthenticationSchemes[0]);
+        }
+
+        [Fact]
+        public async Task GetAllRewardsAdmin_ShouldReturnOk_WhenAdmin()
+        {
+            // Setup admin user context
+            var adminUser = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
+            {
+                new Claim("userId", "admin1"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = adminUser }
+            };
+
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "user1", Username = "User1", Features = new FeatureFlags { ChannelPoints = true } },
+                new User { TwitchUserId = "user2", Username = "User2", Features = new FeatureFlags { ChannelPoints = false } }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+            _mockChannelPointRepository.Setup(x => x.GetRewardsAsync("user1")).ReturnsAsync(new List<ChannelPointReward>());
+
+            var result = await _controller.GetAllRewardsAdmin();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
     }
 }

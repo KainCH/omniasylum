@@ -1,15 +1,12 @@
 using System.Collections.Generic;
 using System.Security.Claims;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Controllers;
-using OmniForge.Web.Hubs;
 using Xunit;
 
 namespace OmniForge.Tests
@@ -18,29 +15,18 @@ namespace OmniForge.Tests
     {
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
-        private readonly Mock<IHubContext<OverlayHub>> _mockHubContext;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
-        private readonly Mock<IClientProxy> _mockClientProxy;
-        private readonly Mock<IHubClients> _mockHubClients;
         private readonly CustomCounterController _controller;
 
         public CustomCounterControllerTests()
         {
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
-            _mockHubContext = new Mock<IHubContext<OverlayHub>>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
-            _mockClientProxy = new Mock<IClientProxy>();
-            _mockHubClients = new Mock<IHubClients>();
-
-            // Setup Hub Context Mocks
-            _mockHubContext.Setup(x => x.Clients).Returns(_mockHubClients.Object);
-            _mockHubClients.Setup(x => x.Group(It.IsAny<string>())).Returns(_mockClientProxy.Object);
 
             _controller = new CustomCounterController(
                 _mockCounterRepository.Object,
                 _mockUserRepository.Object,
-                _mockHubContext.Object,
                 _mockOverlayNotifier.Object);
 
             // Setup User Context
@@ -83,7 +69,7 @@ namespace OmniForge.Tests
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockCounterRepository.Verify(x => x.SaveCustomCountersConfigAsync("12345", config), Times.Once);
-            _mockClientProxy.Verify(x => x.SendCoreAsync("customCountersUpdated", It.IsAny<object[]>(), default), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "customCountersUpdated", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]
@@ -108,7 +94,7 @@ namespace OmniForge.Tests
             var result = await _controller.IncrementCounter("c1");
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", counter), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "customCounterUpdate", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]
@@ -125,13 +111,15 @@ namespace OmniForge.Tests
                 .ReturnsAsync(config);
 
             var counter = new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 3 } } };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 4 } } });
             _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "c1", 1))
                 .ReturnsAsync(counter);
 
             var result = await _controller.DecrementCounter("c1");
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", counter), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "customCounterUpdate", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]
@@ -148,13 +136,15 @@ namespace OmniForge.Tests
                 .ReturnsAsync(config);
 
             var counter = new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 0 } } };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 5 } } });
             _mockCounterRepository.Setup(x => x.ResetCounterAsync("12345", "c1"))
                 .ReturnsAsync(counter);
 
             var result = await _controller.ResetCounter("c1");
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", counter), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "customCounterUpdate", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]
@@ -316,7 +306,7 @@ namespace OmniForge.Tests
 
             await _controller.IncrementCounter("c1");
 
-            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "milestone", It.Is<object>(o => o != null && o.ToString()!.Contains("custom_milestone"))), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "customMilestoneReached", It.Is<object>(o => o != null && o.ToString()!.Contains("milestone"))), Times.Once);
         }
 
         [Fact]
@@ -333,6 +323,8 @@ namespace OmniForge.Tests
                 .ReturnsAsync(config);
 
             var counter = new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 5 } } };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 10 } } });
             _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "c1", 5)) // Should use 5
                 .ReturnsAsync(counter);
 
@@ -355,6 +347,8 @@ namespace OmniForge.Tests
                 .ReturnsAsync(config);
 
             var counter = new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 9 } } };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(new Counter { CustomCounters = new Dictionary<string, int> { { "c1", 10 } } });
             _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "c1", 1)) // Should use 1
                 .ReturnsAsync(counter);
 

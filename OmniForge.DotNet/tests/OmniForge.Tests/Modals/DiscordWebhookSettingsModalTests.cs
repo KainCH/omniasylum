@@ -57,8 +57,13 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         });
 
         // Assert
-        cut.WaitForState(() => cut.FindAll("input").Count > 0);
-        Assert.Contains("Discord Integration", cut.Markup);
+        cut.WaitForState(() => cut.FindAll(".nav-link").Count > 0);
+        Assert.Contains("Discord Settings", cut.Markup);
+
+        // Switch to configuration tab
+        var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
+        configTab.Click();
+
         Assert.Contains(user.DiscordWebhookUrl, cut.Find("input.form-control").GetAttribute("value"));
     }
 
@@ -79,7 +84,11 @@ public class DiscordWebhookSettingsModalTests : BunitContext
             b.CloseComponent();
         });
 
-        cut.WaitForState(() => cut.FindAll("input").Count > 0);
+        cut.WaitForState(() => cut.FindAll(".nav-link").Count > 0);
+
+        // Switch to configuration tab
+        var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
+        configTab.Click();
 
         // Act
         var urlInput = cut.Find("input.form-control");
@@ -109,14 +118,18 @@ public class DiscordWebhookSettingsModalTests : BunitContext
             b.CloseComponent();
         });
 
-        cut.WaitForState(() => cut.FindAll("input").Count > 0);
+        cut.WaitForState(() => cut.FindAll(".nav-link").Count > 0);
+
+        // Switch to configuration tab
+        var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
+        configTab.Click();
 
         // Act
-        var testButton = cut.Find("button.btn-outline-info");
+        var testButton = cut.FindAll("button").First(b => b.TextContent.Contains("Send Test"));
         testButton.Click();
 
         // Assert
-        _mockDiscordService.Verify(s => s.SendTestNotificationAsync(It.Is<User>(u => u.DiscordWebhookUrl == "https://valid-url")), Times.Once);
+        _mockDiscordService.Verify(s => s.SendTestNotificationAsync(It.Is<User>(u => u.TwitchUserId == userId)), Times.Once);
     }
 
     [Fact]

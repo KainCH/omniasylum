@@ -76,5 +76,10 @@ namespace OmniForge.Web.Services
         {
             await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data });
         }
+
+        public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
+        {
+            await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
+        }
     }
 }

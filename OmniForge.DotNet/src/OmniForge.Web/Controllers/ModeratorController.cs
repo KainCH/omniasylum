@@ -1,301 +1,658 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using System.Security.Claims;
 
 namespace OmniForge.Web.Controllers
 {
-    [Authorize]
-    [ApiController]
     [Route("api/moderator")]
+    [ApiController]
+    [Authorize]
     public class ModeratorController : ControllerBase
     {
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
+        private readonly ISeriesRepository _seriesRepository;
+        private readonly IOverlayNotifier _overlayNotifier;
+        private readonly ILogger<ModeratorController> _logger;
 
-        public ModeratorController(IUserRepository userRepository, ICounterRepository counterRepository)
+        public ModeratorController(
+            IUserRepository userRepository,
+            ICounterRepository counterRepository,
+            ISeriesRepository seriesRepository,
+            IOverlayNotifier overlayNotifier,
+            ILogger<ModeratorController> logger)
         {
             _userRepository = userRepository;
             _counterRepository = counterRepository;
+            _seriesRepository = seriesRepository;
+            _overlayNotifier = overlayNotifier;
+            _logger = logger;
+        }
+
+        private string GetCurrentUserId()
+        {
+            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        }
+
+        private string GetCurrentUsername()
+        {
+            return User.FindFirst(ClaimTypes.Name)?.Value ?? "Unknown";
+        }
+
+        private async Task<bool> CanModeratorManageUserAsync(string moderatorId, string streamerId)
+        {
+            var moderator = await _userRepository.GetUserAsync(moderatorId);
+            return moderator != null && moderator.ManagedStreamers.Contains(streamerId);
         }
 
         [HttpGet("my-moderators")]
         public async Task<IActionResult> GetMyModerators()
         {
-            var streamerId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(streamerId)) return Unauthorized();
-
-            var allUsers = await _userRepository.GetAllUsersAsync();
-            var myModerators = allUsers.Where(u =>
-                u.Role == "mod" &&
-                u.ManagedStreamers.Contains(streamerId)
-            ).Select(mod => new
+            try
             {
-                userId = mod.TwitchUserId,
-                username = mod.Username,
-                displayName = mod.DisplayName,
-                profileImageUrl = mod.ProfileImageUrl,
-                lastLogin = mod.LastLogin,
-                isActive = mod.IsActive,
-                grantedAt = mod.CreatedAt // Placeholder
-            });
+                var userId = GetCurrentUserId();
+                var allUsers = await _userRepository.GetAllUsersAsync();
 
-            return Ok(new
+                var moderators = allUsers
+                    .Where(u => u.ManagedStreamers.Contains(userId))
+                    .Select(u => new
+                    {
+                        u.TwitchUserId,
+                        u.Username,
+                        u.DisplayName,
+                        u.ProfileImageUrl
+                    })
+                    .ToList();
+
+                _logger.LogInformation("📋 User {Username} listed their moderators", GetCurrentUsername());
+
+                return Ok(new { moderators });
+            }
+            catch (Exception ex)
             {
-                moderators = myModerators,
-                total = myModerators.Count(),
-                streamerId
-            });
+                _logger.LogError(ex, "❌ Error fetching moderators");
+                return StatusCode(500, new { error = "Failed to fetch moderators" });
+            }
         }
 
         [HttpPost("grant-access")]
         public async Task<IActionResult> GrantAccess([FromBody] GrantAccessRequest request)
         {
-            var streamerId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(streamerId)) return Unauthorized();
-
-            if (string.IsNullOrEmpty(request.ModeratorUserId))
+            try
             {
-                return BadRequest("Moderator user ID is required");
-            }
+                var userId = GetCurrentUserId();
+                var moderatorId = request.ModeratorId;
 
-            if (request.ModeratorUserId == streamerId)
-            {
-                return BadRequest("Cannot grant moderator access to yourself");
-            }
-
-            var moderatorUser = await _userRepository.GetUserAsync(request.ModeratorUserId);
-            if (moderatorUser == null)
-            {
-                return NotFound("Moderator user not found");
-            }
-
-            if (moderatorUser.Role != "mod")
-            {
-                if (moderatorUser.Role == "streamer")
+                if (string.IsNullOrEmpty(moderatorId))
                 {
-                    moderatorUser.Role = "mod";
+                    return BadRequest(new { error = "Moderator ID is required" });
                 }
-                else if (moderatorUser.Role == "admin")
-                {
-                    return BadRequest("Cannot grant moderator access to admin users");
-                }
-            }
 
-            if (!moderatorUser.ManagedStreamers.Contains(streamerId))
-            {
-                moderatorUser.ManagedStreamers.Add(streamerId);
-                await _userRepository.SaveUserAsync(moderatorUser);
-            }
-            else
-            {
-                return Conflict("User already has moderator access to your settings");
-            }
-
-            return Ok(new
-            {
-                message = "Moderator access granted successfully",
-                moderator = new
+                if (userId == moderatorId)
                 {
-                    userId = moderatorUser.TwitchUserId,
-                    username = moderatorUser.Username,
-                    displayName = moderatorUser.DisplayName,
-                    role = moderatorUser.Role
-                },
-                streamer = new
-                {
-                    userId = streamerId,
-                    username = User.FindFirst("username")?.Value
+                    return BadRequest(new { error = "You cannot add yourself as a moderator" });
                 }
-            });
+
+                var moderator = await _userRepository.GetUserAsync(moderatorId);
+                if (moderator == null)
+                {
+                    return NotFound(new { error = "User not found" });
+                }
+
+                if (!moderator.ManagedStreamers.Contains(userId))
+                {
+                    moderator.ManagedStreamers.Add(userId);
+                    await _userRepository.SaveUserAsync(moderator);
+                }
+
+                _logger.LogInformation("✅ User {Username} granted moderator access to {ModeratorUsername}", GetCurrentUsername(), moderator.Username);
+
+                return Ok(new
+                {
+                    message = "Moderator access granted",
+                    moderator = new
+                    {
+                        moderator.TwitchUserId,
+                        moderator.Username,
+                        moderator.DisplayName,
+                        moderator.ProfileImageUrl
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error granting moderator access");
+                return StatusCode(500, new { error = "Failed to grant moderator access" });
+            }
         }
 
-        [HttpDelete("revoke-access/{moderatorUserId}")]
-        public async Task<IActionResult> RevokeAccess(string moderatorUserId)
+        [HttpPost("revoke-access")]
+        public async Task<IActionResult> RevokeAccess([FromBody] RevokeAccessRequest request)
         {
-            var streamerId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(streamerId)) return Unauthorized();
-
-            var moderatorUser = await _userRepository.GetUserAsync(moderatorUserId);
-            if (moderatorUser == null)
+            try
             {
-                return NotFound("Moderator user not found");
-            }
+                var userId = GetCurrentUserId();
+                var moderatorId = request.ModeratorId;
 
-            if (moderatorUser.ManagedStreamers.Contains(streamerId))
-            {
-                moderatorUser.ManagedStreamers.Remove(streamerId);
-
-                // Downgrade to streamer if no more managed streamers
-                if (moderatorUser.ManagedStreamers.Count == 0 && moderatorUser.Role == "mod")
+                if (string.IsNullOrEmpty(moderatorId))
                 {
-                    moderatorUser.Role = "streamer";
+                    return BadRequest(new { error = "Moderator ID is required" });
                 }
 
-                await _userRepository.SaveUserAsync(moderatorUser);
-            }
-            else
-            {
-                return NotFound("User does not have moderator access to your settings");
-            }
-
-            return Ok(new
-            {
-                message = "Moderator access revoked successfully",
-                moderator = new
+                var moderator = await _userRepository.GetUserAsync(moderatorId);
+                if (moderator == null)
                 {
-                    userId = moderatorUser.TwitchUserId,
-                    username = moderatorUser.Username,
-                    displayName = moderatorUser.DisplayName,
-                    role = moderatorUser.Role
-                },
-                streamer = new
-                {
-                    userId = streamerId,
-                    username = User.FindFirst("username")?.Value
+                    return NotFound(new { error = "User not found" });
                 }
-            });
+
+                if (moderator.ManagedStreamers.Contains(userId))
+                {
+                    moderator.ManagedStreamers.Remove(userId);
+                    await _userRepository.SaveUserAsync(moderator);
+                }
+
+                _logger.LogInformation("🚫 User {Username} revoked moderator access from {ModeratorUsername}", GetCurrentUsername(), moderator.Username);
+
+                return Ok(new { message = "Moderator access revoked" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error revoking moderator access");
+                return StatusCode(500, new { error = "Failed to revoke moderator access" });
+            }
         }
 
         [HttpGet("search-users")]
-        public async Task<IActionResult> SearchUsers([FromQuery] string q)
+        public async Task<IActionResult> SearchUsers([FromQuery] string query)
         {
-            var streamerId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(streamerId)) return Unauthorized();
-
-            if (string.IsNullOrEmpty(q) || q.Length < 2)
+            try
             {
-                return BadRequest("Search query must be at least 2 characters");
-            }
-
-            var allUsers = await _userRepository.GetAllUsersAsync();
-            var searchResults = allUsers
-                .Where(u =>
-                    u.TwitchUserId != streamerId &&
-                    u.Role != "admin" &&
-                    u.IsActive &&
-                    (u.Username.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                     u.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase))
-                )
-                .Take(10)
-                .Select(u => new
+                if (string.IsNullOrEmpty(query) || query.Length < 2)
                 {
-                    userId = u.TwitchUserId,
-                    username = u.Username,
-                    displayName = u.DisplayName,
-                    profileImageUrl = u.ProfileImageUrl,
-                    role = u.Role,
-                    isAlreadyModerator = u.ManagedStreamers.Contains(streamerId)
-                });
+                    return BadRequest(new { error = "Search query must be at least 2 characters" });
+                }
 
-            return Ok(new
+                var allUsers = await _userRepository.GetAllUsersAsync();
+                var users = allUsers
+                    .Where(u => u.Username.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                u.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .Take(10)
+                    .Select(u => new
+                    {
+                        u.TwitchUserId,
+                        u.Username,
+                        u.DisplayName,
+                        u.ProfileImageUrl
+                    })
+                    .ToList();
+
+                return Ok(new { users });
+            }
+            catch (Exception ex)
             {
-                results = searchResults,
-                query = q,
-                total = searchResults.Count()
-            });
+                _logger.LogError(ex, "❌ Error searching users");
+                return StatusCode(500, new { error = "Failed to search users" });
+            }
         }
 
         [HttpGet("managed-streamers")]
         public async Task<IActionResult> GetManagedStreamers()
         {
-            var moderatorId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(moderatorId)) return Unauthorized();
-
-            var moderator = await _userRepository.GetUserAsync(moderatorId);
-            if (moderator == null) return NotFound("User not found");
-
-            // Check if user is actually a mod or admin (admins can manage everyone, but this endpoint is for specific assignments)
-            // Legacy code checks requireModAccess which allows mod or admin.
-            // But logic relies on managedStreamers list.
-
-            var streamers = new List<object>();
-            foreach (var streamerId in moderator.ManagedStreamers)
+            try
             {
-                var streamer = await _userRepository.GetUserAsync(streamerId);
-                if (streamer != null)
+                var userId = GetCurrentUserId();
+                var user = await _userRepository.GetUserAsync(userId);
+
+                if (user == null)
                 {
-                    var counters = await _counterRepository.GetCountersAsync(streamerId);
-                    streamers.Add(new
-                    {
-                        userId = streamer.TwitchUserId,
-                        username = streamer.Username,
-                        displayName = streamer.DisplayName,
-                        profileImageUrl = streamer.ProfileImageUrl,
-                        isActive = streamer.IsActive,
-                        lastLogin = streamer.LastLogin,
-                        streamStatus = streamer.StreamStatus ?? "offline",
-                        counters = new
-                        {
-                            deaths = counters?.Deaths ?? 0,
-                            swears = counters?.Swears ?? 0,
-                            screams = counters?.Screams ?? 0,
-                            bits = counters?.Bits ?? 0
-                        }
-                    });
+                    return NotFound(new { error = "User not found" });
                 }
-            }
 
-            return Ok(new
+                var managedStreamers = new List<object>();
+                foreach (var streamerId in user.ManagedStreamers)
+                {
+                    var streamer = await _userRepository.GetUserAsync(streamerId);
+                    if (streamer != null)
+                    {
+                        managedStreamers.Add(new
+                        {
+                            streamer.TwitchUserId,
+                            streamer.Username,
+                            streamer.DisplayName,
+                            streamer.ProfileImageUrl,
+                            streamer.StreamStatus
+                        });
+                    }
+                }
+
+                _logger.LogInformation("📋 Moderator {Username} listed managed streamers", GetCurrentUsername());
+
+                return Ok(new { streamers = managedStreamers });
+            }
+            catch (Exception ex)
             {
-                streamers,
-                total = streamers.Count,
-                moderatorId
-            });
+                _logger.LogError(ex, "❌ Error fetching managed streamers");
+                return StatusCode(500, new { error = "Failed to fetch managed streamers" });
+            }
         }
 
-        [HttpGet("streamers/{streamerId}")]
-        public async Task<IActionResult> GetStreamerDetails(string streamerId)
+        [HttpGet("streamers/{streamerId}/features")]
+        public async Task<IActionResult> GetStreamerFeatures(string streamerId)
         {
-            var moderatorId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(moderatorId)) return Unauthorized();
-
-            var moderator = await _userRepository.GetUserAsync(moderatorId);
-            if (moderator == null) return NotFound("User not found");
-
-            // Check permission
-            // Admin can access all, Mod only managed
-            var isAdmin = User.IsInRole("admin");
-            if (!isAdmin && !moderator.ManagedStreamers.Contains(streamerId))
+            try
             {
-                return Forbid("You do not have permission to manage this streamer");
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                _logger.LogInformation("👀 Moderator {Username} viewed features for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    features = streamer.Features,
+                    streamer = new { userId = streamerId, username = streamer.Username }
+                });
             }
-
-            var streamer = await _userRepository.GetUserAsync(streamerId);
-            if (streamer == null) return NotFound("Streamer not found");
-
-            var counters = await _counterRepository.GetCountersAsync(streamerId);
-
-            return Ok(new
+            catch (Exception ex)
             {
-                streamer = new
-                {
-                    userId = streamer.TwitchUserId,
-                    username = streamer.Username,
-                    displayName = streamer.DisplayName,
-                    profileImageUrl = streamer.ProfileImageUrl,
-                    isActive = streamer.IsActive,
-                    lastLogin = streamer.LastLogin,
-                    streamStatus = streamer.StreamStatus ?? "offline"
-                },
-                counters = new
-                {
-                    deaths = counters?.Deaths ?? 0,
-                    swears = counters?.Swears ?? 0,
-                    screams = counters?.Screams ?? 0,
-                    bits = counters?.Bits ?? 0
-                },
-                settings = streamer.Features.StreamSettings
-            });
+                _logger.LogError(ex, "❌ Error fetching streamer features");
+                return StatusCode(500, new { error = "Failed to fetch features" });
+            }
         }
-    }
 
-    public class GrantAccessRequest
-    {
-        public string ModeratorUserId { get; set; } = string.Empty;
+        [HttpPut("streamers/{streamerId}/features")]
+        public async Task<IActionResult> UpdateStreamerFeatures(string streamerId, [FromBody] FeatureFlags features)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                streamer.Features = features;
+                await _userRepository.SaveUserAsync(streamer);
+
+                _logger.LogInformation("✅ Moderator {Username} updated features for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Features updated successfully",
+                    features = streamer.Features,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error updating streamer features");
+                return StatusCode(500, new { error = "Failed to update features" });
+            }
+        }
+
+        [HttpGet("streamers/{streamerId}/overlay")]
+        public async Task<IActionResult> GetStreamerOverlay(string streamerId)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                _logger.LogInformation("👀 Moderator {Username} viewed overlay settings for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    overlay = streamer.OverlaySettings,
+                    streamer = new { userId = streamerId, username = streamer.Username }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error fetching streamer overlay");
+                return StatusCode(500, new { error = "Failed to fetch overlay settings" });
+            }
+        }
+
+        [HttpPut("streamers/{streamerId}/overlay")]
+        public async Task<IActionResult> UpdateStreamerOverlay(string streamerId, [FromBody] OverlaySettings overlay)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                streamer.OverlaySettings = overlay;
+                await _userRepository.SaveUserAsync(streamer);
+
+                // Notify overlay clients
+                await _overlayNotifier.NotifySettingsUpdateAsync(streamerId, overlay);
+
+                _logger.LogInformation("✅ Moderator {Username} updated overlay settings for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Overlay settings updated successfully",
+                    overlay = streamer.OverlaySettings,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error updating streamer overlay");
+                return StatusCode(500, new { error = "Failed to update overlay settings" });
+            }
+        }
+
+        [HttpGet("streamers/{streamerId}/discord-webhook")]
+        public async Task<IActionResult> GetStreamerDiscordWebhook(string streamerId)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                _logger.LogInformation("👀 Moderator {Username} viewed Discord webhook for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    webhookUrl = streamer.DiscordWebhookUrl,
+                    enabled = streamer.Features.DiscordNotifications,
+                    streamer = new { userId = streamerId, username = streamer.Username }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error fetching streamer Discord webhook");
+                return StatusCode(500, new { error = "Failed to fetch Discord webhook" });
+            }
+        }
+
+        [HttpPut("streamers/{streamerId}/discord-webhook")]
+        public async Task<IActionResult> UpdateStreamerDiscordWebhook(string streamerId, [FromBody] UpdateDiscordWebhookRequest request)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                streamer.DiscordWebhookUrl = request.WebhookUrl;
+                streamer.Features.DiscordNotifications = request.Enabled;
+                await _userRepository.SaveUserAsync(streamer);
+
+                _logger.LogInformation("✅ Moderator {Username} updated Discord webhook for streamer {StreamerUsername}", GetCurrentUsername(), streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Discord webhook updated successfully",
+                    webhookUrl = streamer.DiscordWebhookUrl,
+                    enabled = streamer.Features.DiscordNotifications,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error updating streamer Discord webhook");
+                return StatusCode(500, new { error = "Failed to update Discord webhook" });
+            }
+        }
+
+        [HttpGet("streamers/{streamerId}/series-saves")]
+        public async Task<IActionResult> GetStreamerSeriesSaves(string streamerId)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                var seriesSaves = await _seriesRepository.GetSeriesAsync(streamerId);
+
+                _logger.LogInformation("📋 Moderator {Username} listed {Count} series saves for streamer {StreamerUsername}", GetCurrentUsername(), seriesSaves.Count(), streamer.Username);
+
+                return Ok(new
+                {
+                    seriesSaves,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error fetching streamer series saves");
+                return StatusCode(500, new { error = "Failed to fetch series saves" });
+            }
+        }
+
+        [HttpPost("streamers/{streamerId}/series-saves")]
+        public async Task<IActionResult> CreateStreamerSeriesSave(string streamerId, [FromBody] CreateSeriesRequest request)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                if (string.IsNullOrWhiteSpace(request.SeriesName))
+                {
+                    return BadRequest(new { error = "Series name is required" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                var currentCounters = await _counterRepository.GetCountersAsync(streamerId);
+
+                var series = new Series
+                {
+                    UserId = streamerId,
+                    Name = request.SeriesName.Trim(),
+                    Description = request.Description ?? "",
+                    Snapshot = new Counter
+                    {
+                        Deaths = currentCounters.Deaths,
+                        Swears = currentCounters.Swears,
+                        Screams = currentCounters.Screams,
+                        Bits = currentCounters.Bits
+                    },
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+
+                await _seriesRepository.CreateSeriesAsync(series);
+
+                _logger.LogInformation("✅ Moderator {Username} created series save \"{SeriesName}\" for streamer {StreamerUsername}", GetCurrentUsername(), series.Name, streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Series save created successfully",
+                    seriesSave = series,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error creating series save");
+                return StatusCode(500, new { error = "Failed to create series save" });
+            }
+        }
+
+        [HttpPost("streamers/{streamerId}/series-saves/{seriesId}/load")]
+        public async Task<IActionResult> LoadStreamerSeriesSave(string streamerId, string seriesId)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                var series = await _seriesRepository.GetSeriesByIdAsync(streamerId, seriesId);
+                if (series == null)
+                {
+                    return NotFound(new { error = "Series save not found" });
+                }
+
+                // Load the series (update current counters)
+                var counters = await _counterRepository.GetCountersAsync(streamerId);
+                counters.Deaths = series.Snapshot.Deaths;
+                counters.Swears = series.Snapshot.Swears;
+                counters.Screams = series.Snapshot.Screams;
+                counters.Bits = series.Snapshot.Bits;
+
+                await _counterRepository.SaveCountersAsync(counters);
+
+                // Broadcast update
+                await _overlayNotifier.NotifyCounterUpdateAsync(streamerId, counters);
+
+                _logger.LogInformation("🔄 Moderator {Username} loaded series save {SeriesId} for streamer {StreamerUsername}", GetCurrentUsername(), seriesId, streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Series save loaded successfully",
+                    counters,
+                    seriesId,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error loading series save");
+                return StatusCode(500, new { error = "Failed to load series save" });
+            }
+        }
+
+        [HttpDelete("streamers/{streamerId}/series-saves/{seriesId}")]
+        public async Task<IActionResult> DeleteStreamerSeriesSave(string streamerId, string seriesId)
+        {
+            try
+            {
+                var moderatorId = GetCurrentUserId();
+                if (!await CanModeratorManageUserAsync(moderatorId, streamerId))
+                {
+                    return StatusCode(403, new { error = "You do not have permission to manage this streamer" });
+                }
+
+                var streamer = await _userRepository.GetUserAsync(streamerId);
+                if (streamer == null)
+                {
+                    return NotFound(new { error = "Streamer not found" });
+                }
+
+                await _seriesRepository.DeleteSeriesAsync(streamerId, seriesId);
+
+                _logger.LogInformation("🗑️ Moderator {Username} deleted series save {SeriesId} for streamer {StreamerUsername}", GetCurrentUsername(), seriesId, streamer.Username);
+
+                return Ok(new
+                {
+                    message = "Series save deleted successfully",
+                    seriesId,
+                    streamer = new { userId = streamerId, username = streamer.Username },
+                    moderator = GetCurrentUsername()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error deleting series save");
+                return StatusCode(500, new { error = "Failed to delete series save" });
+            }
+        }
+
+        public class GrantAccessRequest
+        {
+            public string ModeratorId { get; set; } = string.Empty;
+        }
+
+        public class RevokeAccessRequest
+        {
+            public string ModeratorId { get; set; } = string.Empty;
+        }
+
+        public class UpdateDiscordWebhookRequest
+        {
+            public string WebhookUrl { get; set; } = string.Empty;
+            public bool Enabled { get; set; }
+        }
+
+        public class CreateSeriesRequest
+        {
+            public string SeriesName { get; set; } = string.Empty;
+            public string Description { get; set; } = string.Empty;
+        }
     }
 }

@@ -141,13 +141,30 @@ namespace OmniForge.Tests
         [Fact]
         public async Task GetDiscordSettings_ShouldReturnOk()
         {
-            var user = new User { TwitchUserId = "12345", DiscordSettings = new DiscordSettings() };
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnableChannelNotifications = true,
+                    TemplateStyle = "asylum_themed"
+                }
+            };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.GetDiscordSettings();
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            Assert.Equal(user.DiscordSettings, okResult.Value);
+
+            // Use reflection to verify properties of the anonymous object
+            var value = okResult.Value;
+            var type = value.GetType();
+
+            Assert.Equal(user.DiscordWebhookUrl, type.GetProperty("webhookUrl").GetValue(value));
+            Assert.True((bool)type.GetProperty("enabled").GetValue(value));
+            Assert.Equal("asylum_themed", type.GetProperty("templateStyle").GetValue(value));
+            Assert.True((bool)type.GetProperty("enableChannelNotifications").GetValue(value));
         }
 
         [Fact]
@@ -156,8 +173,8 @@ namespace OmniForge.Tests
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
-            var settings = new DiscordSettings { EnableChannelNotifications = true };
-            var result = await _controller.UpdateDiscordSettings(settings);
+            var request = new UpdateDiscordSettingsRequest { EnableChannelNotifications = true };
+            var result = await _controller.UpdateDiscordSettings(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordSettings.EnableChannelNotifications == true)), Times.Once);

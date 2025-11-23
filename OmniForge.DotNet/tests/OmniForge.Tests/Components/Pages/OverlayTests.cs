@@ -53,7 +53,10 @@ namespace OmniForge.Tests.Components.Pages
         {
             // Arrange
             _mockUserRepository.Setup(r => r.GetUserAsync(It.IsAny<string>()))
-                .ReturnsAsync((User?)null);
+                .ReturnsAsync(new User { TwitchUserId = "testuser", Features = new FeatureFlags { StreamOverlay = true } });
+
+            _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>()))
+                .ReturnsAsync((Counter?)null);
 
             // Act
             var cut = Render(b =>

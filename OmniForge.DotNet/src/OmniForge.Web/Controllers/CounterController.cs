@@ -90,6 +90,131 @@ namespace OmniForge.Web.Controllers
             }
         }
 
+        [HttpPost("reset")]
+        public async Task<IActionResult> ResetCounters()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            counters.Deaths = 0;
+            counters.Swears = 0;
+            counters.Screams = 0;
+            // Bits are preserved
+
+            counters.LastUpdated = DateTimeOffset.UtcNow;
+            await _counterRepository.SaveCountersAsync(counters);
+
+            await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
+
+            return Ok(counters);
+        }
+
+        [HttpGet("export")]
+        public async Task<IActionResult> ExportData()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            var user = await _userRepository.GetUserAsync(userId);
+
+            return Ok(new
+            {
+                deaths = counters.Deaths,
+                swears = counters.Swears,
+                screams = counters.Screams,
+                bits = counters.Bits,
+                customCounters = counters.CustomCounters,
+                lastUpdated = counters.LastUpdated,
+                username = user?.Username,
+                exportedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        [HttpPost("overlay/bits-progress")]
+        public async Task<IActionResult> UpdateBitsProgress([FromBody] BitsProgressRequest request)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            if (request.Amount <= 0) return BadRequest("Valid amount is required");
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (user.OverlaySettings?.BitsGoal == null) return BadRequest("Bits goal not configured");
+
+            var currentSettings = user.OverlaySettings;
+            var newCurrent = Math.Min(currentSettings.BitsGoal.Current + request.Amount, currentSettings.BitsGoal.Target);
+
+            currentSettings.BitsGoal.Current = newCurrent;
+            user.OverlaySettings = currentSettings;
+
+            await _userRepository.SaveUserAsync(user);
+
+            // Notify overlay
+            await _overlayNotifier.NotifySettingsUpdateAsync(userId, currentSettings);
+
+            bool goalReached = newCurrent >= currentSettings.BitsGoal.Target;
+
+            return Ok(new
+            {
+                message = "Bits goal progress updated",
+                bitsGoal = currentSettings.BitsGoal,
+                goalReached = goalReached,
+                progress = (int)Math.Round((double)newCurrent / currentSettings.BitsGoal.Target * 100)
+            });
+        }
+
+        [HttpGet("overlay/settings")]
+        public async Task<IActionResult> GetOverlaySettings()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (!user.Features.StreamOverlay)
+            {
+                return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
+            }
+
+            return Ok(user.OverlaySettings ?? new Core.Entities.OverlaySettings());
+        }
+
+        [HttpPut("overlay/settings")]
+        public async Task<IActionResult> UpdateOverlaySettings([FromBody] Core.Entities.OverlaySettings request)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (!user.Features.StreamOverlay)
+            {
+                return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
+            }
+
+            // Validate position
+            var validPositions = new[] { "top-left", "top-right", "bottom-left", "bottom-right" };
+            if (!string.IsNullOrEmpty(request.Position) && !System.Linq.Enumerable.Contains(validPositions, request.Position))
+            {
+                return BadRequest(new { error = "Invalid position. Must be one of: " + string.Join(", ", validPositions) });
+            }
+
+            user.OverlaySettings = request;
+            await _userRepository.SaveUserAsync(user);
+
+            return Ok(new
+            {
+                message = "Overlay settings updated successfully",
+                settings = user.OverlaySettings
+            });
+        }
+
         private int GetValueByType(Core.Entities.Counter counter, string type)
         {
             return type.ToLower() switch
@@ -101,5 +226,10 @@ namespace OmniForge.Web.Controllers
                 _ => 0
             };
         }
+    }
+
+    public class BitsProgressRequest
+    {
+        public int Amount { get; set; }
     }
 }

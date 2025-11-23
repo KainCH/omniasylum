@@ -16,6 +16,7 @@ export function connect(url, dotNetHelper) {
                 updateCounter("deaths", data.deaths);
                 updateCounter("swears", data.swears);
                 updateCounter("screams", data.screams);
+                updateCounter("bits", data.bits);
                 // Also update Blazor state if connected, but don't crash if not
                 try { dotNetHelper.invokeMethodAsync("OnCounterUpdate", data); } catch (e) {}
             } else if (method === "streamStatusUpdate") {
@@ -24,6 +25,19 @@ export function connect(url, dotNetHelper) {
             } else if (method === "customAlert") {
                 // Trigger alert directly via JS
                 triggerAlert(data.alertType, data.data, dotNetHelper);
+            } else if (method === "bitsGoalUpdate") {
+                try { dotNetHelper.invokeMethodAsync("OnBitsGoalUpdate", data); } catch (e) {}
+            } else if (method === "bitsGoalComplete") {
+                try { dotNetHelper.invokeMethodAsync("OnBitsGoalComplete", data); } catch (e) {}
+                if (window.overlayInterop) window.overlayInterop.triggerBitsGoalCelebration();
+            } else if (method === "milestoneReached") {
+                try { dotNetHelper.invokeMethodAsync("OnMilestoneReached", data); } catch (e) {}
+                if (window.overlayInterop) window.overlayInterop.triggerAlert('milestone', data);
+            } else if (method === "streamStarted") {
+                try { dotNetHelper.invokeMethodAsync("OnStreamStarted", data); } catch (e) {}
+            } else if (method === "overlaySettingsUpdate") {
+                try { dotNetHelper.invokeMethodAsync("OnOverlaySettingsUpdate", data); } catch (e) {}
+                if (window.overlayInterop) window.overlayInterop.updateOverlaySettings(data);
             } else {
                 // Standard alerts
                 triggerAlert(method, data, dotNetHelper);

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace OmniForge.Web.Controllers
@@ -43,7 +45,7 @@ namespace OmniForge.Web.Controllers
             });
         }
 
-        [HttpPut("overlay-settings")]
+        [HttpPut("~/api/overlay-settings")]
         public async Task<IActionResult> UpdateOverlaySettings([FromBody] OverlaySettings newSettings)
         {
             var userId = User.FindFirst("userId")?.Value;
@@ -73,7 +75,7 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 webhookUrl = user.DiscordWebhookUrl,
-                enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl) // Simplified logic
+                enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl)
             });
         }
 
@@ -86,24 +88,24 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
+            // Handle backward compatibility
+            string actualWebhookUrl = request.WebhookUrl ?? request.DiscordWebhookUrl ?? string.Empty;
+
             // Basic validation
-            if (!string.IsNullOrEmpty(request.WebhookUrl) && !request.WebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
+            if (!string.IsNullOrEmpty(actualWebhookUrl) && !actualWebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
             {
                 return BadRequest(new { error = "Invalid Discord webhook URL format" });
             }
 
-            user.DiscordWebhookUrl = request.WebhookUrl ?? string.Empty;
-            // Note: 'enabled' flag is often derived from presence of URL in this simple model,
-            // but if we want explicit enable/disable without clearing URL, we need a field in User entity.
-            // The User entity has FeatureFlags.DiscordWebhook, maybe use that?
-            // For now, we'll just save the URL.
+            user.DiscordWebhookUrl = actualWebhookUrl;
 
             await _userRepository.SaveUserAsync(user);
 
             return Ok(new
             {
                 message = "Discord webhook updated successfully",
-                webhookUrl = user.DiscordWebhookUrl
+                webhookUrl = user.DiscordWebhookUrl,
+                verified = new { webhookUrl = user.DiscordWebhookUrl, enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl) }
             });
         }
 
@@ -141,11 +143,45 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            return Ok(user.DiscordSettings);
+            var ds = user.DiscordSettings;
+            var defaultSettings = new DiscordSettings(); // To get defaults if needed
+
+            // Map to flat structure for frontend compatibility
+            var response = new
+            {
+                webhookUrl = user.DiscordWebhookUrl,
+                enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl),
+                templateStyle = user.Features.TemplateStyle ?? ds.TemplateStyle ?? "asylum_themed",
+
+                enableChannelNotifications = ds.EnableChannelNotifications,
+                deathMilestoneEnabled = ds.EnabledNotifications.DeathMilestone,
+                swearMilestoneEnabled = ds.EnabledNotifications.SwearMilestone,
+
+                deathThresholds = string.Join(",", ds.MilestoneThresholds.Deaths),
+                swearThresholds = string.Join(",", ds.MilestoneThresholds.Swears),
+
+                enabledNotifications = new
+                {
+                    death_milestone = ds.EnabledNotifications.DeathMilestone,
+                    swear_milestone = ds.EnabledNotifications.SwearMilestone,
+                    stream_start = ds.EnabledNotifications.StreamStart,
+                    stream_end = ds.EnabledNotifications.StreamEnd,
+                    follower_goal = ds.EnabledNotifications.FollowerGoal,
+                    subscriber_milestone = ds.EnabledNotifications.SubscriberMilestone,
+                    channel_point_redemption = ds.EnabledNotifications.ChannelPointRedemption
+                },
+                milestoneThresholds = new
+                {
+                    deaths = ds.MilestoneThresholds.Deaths,
+                    swears = ds.MilestoneThresholds.Swears
+                }
+            };
+
+            return Ok(response);
         }
 
         [HttpPut("discord-settings")]
-        public async Task<IActionResult> UpdateDiscordSettings([FromBody] DiscordSettings settings)
+        public async Task<IActionResult> UpdateDiscordSettings([FromBody] UpdateDiscordSettingsRequest request)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -153,10 +189,74 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            user.DiscordSettings = settings;
+            // Update Template Style
+            if (!string.IsNullOrEmpty(request.TemplateStyle))
+            {
+                user.Features.TemplateStyle = request.TemplateStyle;
+                user.DiscordSettings.TemplateStyle = request.TemplateStyle;
+            }
+
+            // Update Enabled Notifications
+            if (request.EnabledNotifications != null)
+            {
+                user.DiscordSettings.EnabledNotifications.DeathMilestone = request.EnabledNotifications.DeathMilestone ?? request.DeathMilestoneEnabled ?? user.DiscordSettings.EnabledNotifications.DeathMilestone;
+                user.DiscordSettings.EnabledNotifications.SwearMilestone = request.EnabledNotifications.SwearMilestone ?? request.SwearMilestoneEnabled ?? user.DiscordSettings.EnabledNotifications.SwearMilestone;
+                user.DiscordSettings.EnabledNotifications.StreamStart = request.EnabledNotifications.StreamStart ?? user.DiscordSettings.EnabledNotifications.StreamStart;
+                user.DiscordSettings.EnabledNotifications.StreamEnd = request.EnabledNotifications.StreamEnd ?? user.DiscordSettings.EnabledNotifications.StreamEnd;
+                user.DiscordSettings.EnabledNotifications.FollowerGoal = request.EnabledNotifications.FollowerGoal ?? user.DiscordSettings.EnabledNotifications.FollowerGoal;
+                user.DiscordSettings.EnabledNotifications.SubscriberMilestone = request.EnabledNotifications.SubscriberMilestone ?? user.DiscordSettings.EnabledNotifications.SubscriberMilestone;
+                user.DiscordSettings.EnabledNotifications.ChannelPointRedemption = request.EnabledNotifications.ChannelPointRedemption ?? user.DiscordSettings.EnabledNotifications.ChannelPointRedemption;
+            }
+            else
+            {
+                // Fallback to flat properties if structured object is missing
+                if (request.DeathMilestoneEnabled.HasValue) user.DiscordSettings.EnabledNotifications.DeathMilestone = request.DeathMilestoneEnabled.Value;
+                if (request.SwearMilestoneEnabled.HasValue) user.DiscordSettings.EnabledNotifications.SwearMilestone = request.SwearMilestoneEnabled.Value;
+            }
+
+            // Update Thresholds
+            if (!string.IsNullOrEmpty(request.DeathThresholds))
+            {
+                user.DiscordSettings.MilestoneThresholds.Deaths = ParseThresholds(request.DeathThresholds);
+            }
+            else if (request.MilestoneThresholds?.Deaths != null)
+            {
+                user.DiscordSettings.MilestoneThresholds.Deaths = request.MilestoneThresholds.Deaths;
+            }
+
+            if (!string.IsNullOrEmpty(request.SwearThresholds))
+            {
+                user.DiscordSettings.MilestoneThresholds.Swears = ParseThresholds(request.SwearThresholds);
+            }
+            else if (request.MilestoneThresholds?.Swears != null)
+            {
+                user.DiscordSettings.MilestoneThresholds.Swears = request.MilestoneThresholds.Swears;
+            }
+
+            // Legacy
+            if (request.EnableChannelNotifications.HasValue)
+            {
+                user.DiscordSettings.EnableChannelNotifications = request.EnableChannelNotifications.Value;
+            }
+
             await _userRepository.SaveUserAsync(user);
 
-            return Ok(new { message = "Discord notification settings updated successfully", settings });
+            // Return structured format
+            return Ok(new { message = "Discord notification settings updated successfully", settings = user.DiscordSettings });
+        }
+
+        private List<int> ParseThresholds(string thresholds)
+        {
+            if (string.IsNullOrWhiteSpace(thresholds)) return new List<int>();
+            var result = new List<int>();
+            foreach (var s in thresholds.Split(','))
+            {
+                if (int.TryParse(s.Trim(), out int n))
+                {
+                    result.Add(n);
+                }
+            }
+            return result;
         }
 
         [HttpGet("discord-invite")]
@@ -222,6 +322,7 @@ namespace OmniForge.Web.Controllers
     public class UpdateWebhookRequest
     {
         public string? WebhookUrl { get; set; }
+        public string? DiscordWebhookUrl { get; set; }
         public bool Enabled { get; set; }
     }
 
@@ -233,5 +334,36 @@ namespace OmniForge.Web.Controllers
     public class TemplateStyleRequest
     {
         public string TemplateStyle { get; set; } = string.Empty;
+    }
+
+    public class UpdateDiscordSettingsRequest
+    {
+        public string? TemplateStyle { get; set; }
+        public UpdateDiscordNotificationsRequest? EnabledNotifications { get; set; }
+        public UpdateMilestoneThresholdsRequest? MilestoneThresholds { get; set; }
+
+        // Flat properties
+        public bool? EnableChannelNotifications { get; set; }
+        public bool? DeathMilestoneEnabled { get; set; }
+        public bool? SwearMilestoneEnabled { get; set; }
+        public string? DeathThresholds { get; set; }
+        public string? SwearThresholds { get; set; }
+    }
+
+    public class UpdateDiscordNotificationsRequest
+    {
+        public bool? DeathMilestone { get; set; }
+        public bool? SwearMilestone { get; set; }
+        public bool? StreamStart { get; set; }
+        public bool? StreamEnd { get; set; }
+        public bool? FollowerGoal { get; set; }
+        public bool? SubscriberMilestone { get; set; }
+        public bool? ChannelPointRedemption { get; set; }
+    }
+
+    public class UpdateMilestoneThresholdsRequest
+    {
+        public List<int>? Deaths { get; set; }
+        public List<int>? Swears { get; set; }
     }
 }

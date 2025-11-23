@@ -71,10 +71,10 @@ else
                     {
                         <div class="bits-goal-progress">
                             <div class="goal-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">
-                                Goal: @user.OverlaySettings.BitsGoal.Current / @user.OverlaySettings.BitsGoal.Target
+                                Goal: @user.OverlaySettings!.BitsGoal.Current / @user.OverlaySettings!.BitsGoal.Target
                             </div>
                             <div class="goal-bar">
-                                <div class="goal-fill" style="width: @(Math.Min(100, ((double)user.OverlaySettings.BitsGoal.Current / user.OverlaySettings.BitsGoal.Target) * 100))%"></div>
+                                <div class="goal-fill" style="width: @(Math.Min(100, ((double)user.OverlaySettings!.BitsGoal.Current / user.OverlaySettings!.BitsGoal.Target) * 100))%"></div>
                             </div>
                         </div>
                     }
@@ -390,6 +390,49 @@ else
     public async Task OnCustomAlert(string type, object data)
     {
         await TriggerAlert(type, data);
+    }
+
+    [JSInvokable]
+    public void OnBitsGoalUpdate(OmniForge.Core.Entities.BitsGoal goal)
+    {
+        if (user?.OverlaySettings != null)
+        {
+            user.OverlaySettings.BitsGoal = goal;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnBitsGoalComplete(OmniForge.Core.Entities.BitsGoal goal)
+    {
+        if (user?.OverlaySettings != null)
+        {
+            user.OverlaySettings.BitsGoal = goal;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnMilestoneReached(object data)
+    {
+        // Handled by JS mostly, but we could log or update state if needed
+    }
+
+    [JSInvokable]
+    public void OnStreamStarted(object data)
+    {
+        StreamStatus = "live";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnOverlaySettingsUpdate(OmniForge.Core.Entities.OverlaySettings settings)
+    {
+        if (user != null)
+        {
+            user.OverlaySettings = settings;
+            StateHasChanged();
+        }
     }
 
     private async Task TriggerAlert(string type, object data)

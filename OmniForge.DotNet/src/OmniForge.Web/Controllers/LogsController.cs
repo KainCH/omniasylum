@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Interfaces;
 
 namespace OmniForge.Web.Controllers
 {
@@ -13,33 +15,34 @@ namespace OmniForge.Web.Controllers
     {
         private readonly ILogger<LogsController> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly IUserRepository _userRepository;
 
-        public LogsController(ILogger<LogsController> logger, IWebHostEnvironment environment)
+        public LogsController(ILogger<LogsController> logger, IWebHostEnvironment environment, IUserRepository userRepository)
         {
             _logger = logger;
             _environment = environment;
+            _userRepository = userRepository;
         }
 
         [HttpGet("status")]
         public IActionResult GetStatus()
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("📊 Log status requested by user {UserId}", userId);
+            _logger.LogInformation("📊 Log status requested by {UserId}", userId);
 
             var process = Process.GetCurrentProcess();
-
             var status = new
             {
                 status = "active",
-                logLevel = "INFO", // In .NET this is dynamic, but we can hardcode or retrieve from config
+                logLevel = "INFO", // In .NET this is dynamic, but hardcoding for parity
                 categories = new[] { "MAIN", "API", "AUTH", "TWITCH", "DATABASE" },
                 output = "console (Azure Log Analytics)",
                 uptime = (DateTime.Now - process.StartTime).TotalSeconds,
                 memoryUsage = new
                 {
                     rss = process.WorkingSet64,
-                    heapTotal = GC.GetTotalMemory(false),
-                    heapUsed = GC.GetTotalMemory(false), // Approximation
+                    heapTotal = process.PrivateMemorySize64,
+                    heapUsed = process.PagedMemorySize64,
                     external = 0
                 },
                 environment = _environment.EnvironmentName
@@ -54,21 +57,144 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("test")]
-        public IActionResult TestLog()
+        public IActionResult TestLogs()
         {
             var userId = User.FindFirst("userId")?.Value;
+            var username = User.FindFirst("username")?.Value ?? "Unknown";
             var testId = Guid.NewGuid().ToString().Substring(0, 8);
 
-            _logger.LogInformation("🧪 TEST LOG: Info level test {TestId} User: {UserId}", testId, userId);
-            _logger.LogWarning("🧪 TEST LOG: Warning level test {TestId} User: {UserId}", testId, userId);
-            _logger.LogError("🧪 TEST LOG: Error level test {TestId} User: {UserId}", testId, userId);
+            _logger.LogInformation("🧪 Log test initiated by {Username} ({UserId}) - TestId: {TestId}", username, userId, testId);
+
+            // Test different log levels
+            _logger.LogError("Test error log [TestId: {TestId}]", testId);
+            _logger.LogWarning("Test warning log [TestId: {TestId}]", testId);
+            _logger.LogInformation("Test info log [TestId: {TestId}]", testId);
+            _logger.LogDebug("Test debug log [TestId: {TestId}]", testId);
+
+            // Simulate specialized logging
+            _logger.LogInformation("🔐 AUTH: test-login for {UserId} [Success: True] [TestId: {TestId}]", userId, testId);
+            _logger.LogInformation("📺 TWITCH: test-event for {UserId} [Type: follow] [TestId: {TestId}]", userId, testId);
+            _logger.LogInformation("💾 DATABASE: test-query on users [Success: True] [Duration: 42ms] [TestId: {TestId}]", testId);
+            _logger.LogInformation("⏱️ PERFORMANCE: test-operation [Duration: 1500ms] [TestId: {TestId}]", testId);
 
             return Ok(new
             {
                 success = true,
-                message = "Test logs generated",
-                testId,
-                timestamp = DateTimeOffset.UtcNow
+                testId = testId,
+                message = "Test logs generated successfully",
+                logs = new[]
+                {
+                    "Error level test log",
+                    "Warning level test log",
+                    "Info level test log",
+                    "Debug level test log",
+                    "Auth event test log",
+                    "Twitch event test log",
+                    "Database operation test log",
+                    "Performance monitoring test log"
+                },
+                queryInstructions = "Use Azure Log Analytics workspace to query these logs with KQL"
+            });
+        }
+
+        [HttpGet("queries")]
+        public IActionResult GetQueries()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            var username = User.FindFirst("username")?.Value ?? "Unknown";
+
+            _logger.LogInformation("📋 KQL queries requested by {UserId}", userId);
+
+            var queries = new Dictionary<string, object>
+            {
+                { "Find Test Logs", new {
+                    description = "Find logs generated by the test endpoint",
+                    query = @"AppTraces
+| where TimeGenerated > ago(10m)
+| where Message contains ""🧪 Log test""
+| project TimeGenerated, Message, Properties
+| order by TimeGenerated desc"
+                }},
+                { "User Activity", new {
+                    description = "Track specific user's activity in logs",
+                    query = $@"AppTraces
+| where TimeGenerated > ago(1h)
+| where Properties contains ""{userId}"" or Message contains ""{username}""
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc
+| limit 50"
+                }},
+                { "Recent Errors", new {
+                    description = "Find recent error logs",
+                    query = @"AppTraces
+| where TimeGenerated > ago(30m)
+| where Message contains ""❌"" or SeverityLevel >= 3
+| project TimeGenerated, Message, Properties
+| order by TimeGenerated desc
+| limit 20"
+                }},
+                { "Performance Issues", new {
+                    description = "Find slow operations and performance warnings",
+                    query = @"AppTraces
+| where TimeGenerated > ago(1h)
+| where Message contains ""⏱️"" or Message contains ""Slow""
+| project TimeGenerated, Message, SeverityLevel
+| order by TimeGenerated desc"
+                }}
+            };
+
+            return Ok(new
+            {
+                success = true,
+                message = "KQL queries for Azure Log Analytics workspace",
+                userContext = new
+                {
+                    userId = userId,
+                    username = username
+                },
+                queries = queries,
+                instructions = new[]
+                {
+                    "Copy queries to Azure Log Analytics workspace",
+                    "Adjust time ranges as needed (ago(1h), ago(30m), etc.)",
+                    "Add specific search terms with: | where Message contains \"search-term\"",
+                    "Use limit N to control number of results"
+                }
+            });
+        }
+
+        [HttpGet("stats")]
+        [Authorize(Roles = "admin")]
+        public IActionResult GetStats()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            _logger.LogInformation("📈 Admin log statistics requested by {UserId}", userId);
+
+            var process = Process.GetCurrentProcess();
+            var stats = new
+            {
+                logLevel = "INFO",
+                uptime = (DateTime.Now - process.StartTime).TotalSeconds,
+                memoryUsage = new
+                {
+                    rss = process.WorkingSet64,
+                    heapTotal = process.PrivateMemorySize64,
+                    heapUsed = process.PagedMemorySize64
+                },
+                cpuUsage = new { user = process.UserProcessorTime.TotalMilliseconds, system = process.PrivilegedProcessorTime.TotalMilliseconds },
+                platform = Environment.OSVersion.Platform.ToString(),
+                nodeVersion = Environment.Version.ToString(), // .NET Version
+                environment = _environment.EnvironmentName,
+                logCategories = new[] { "MAIN", "API", "AUTH", "TWITCH", "DATABASE" },
+                outputMethod = "Console (captured by Azure Log Analytics)"
+            };
+
+            return Ok(new
+            {
+                success = true,
+                statistics = stats,
+                message = "System logging statistics retrieved",
+                recommendation = "Use Azure Log Analytics workspace for detailed log analysis"
             });
         }
     }

@@ -71,6 +71,27 @@
                 </div>
             </div>
         </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Stream Status Tools</h5>
+                </div>
+                <div class="card-body">
+                    <p>Force a user's stream status to offline.</p>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="offlineUserId" />
+                        <button class="btn btn-danger" @onclick="ForceOffline">Force Offline</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(offlineResult))
+                    {
+                        <div class="alert alert-info">
+                            @offlineResult
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -82,6 +103,9 @@
     private string notificationResult = "";
 
     private string overlayUserId = "";
+
+    private string offlineUserId = "";
+    private string offlineResult = "";
 
     private async Task TestWebhookSave()
     {
@@ -134,6 +158,37 @@
         {
             var counter = new Counter { Deaths = 999, Swears = 0 }; // Dummy data
             await OverlayNotifier.NotifyCounterUpdateAsync(overlayUserId, counter);
+        }
+    }
+
+    private async Task ForceOffline()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(offlineUserId))
+            {
+                offlineResult = "Please enter a User ID";
+                return;
+            }
+
+            var user = await UserRepository.GetUserAsync(offlineUserId);
+            if (user == null)
+            {
+                offlineResult = "User not found";
+                return;
+            }
+
+            user.StreamStatus = "offline";
+            await UserRepository.SaveUserAsync(user);
+
+            // Notify clients via SignalR/Socket if possible
+            // For now, just DB update
+
+            offlineResult = $"Successfully forced {user.DisplayName} offline.";
+        }
+        catch (Exception ex)
+        {
+            offlineResult = $"Error: {ex.Message}";
         }
     }
 }

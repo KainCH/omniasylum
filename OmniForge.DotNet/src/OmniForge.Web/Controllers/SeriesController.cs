@@ -59,14 +59,17 @@ namespace OmniForge.Web.Controllers
             return Ok(new { message = "Series saved successfully", series });
         }
 
-        [HttpPost("{seriesId}/load")]
-        public async Task<IActionResult> LoadSeries(string seriesId)
+        [HttpPost("load")]
+        public async Task<IActionResult> LoadSeries([FromBody] LoadSeriesRequest request)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var series = await _seriesRepository.GetSeriesByIdAsync(userId, seriesId);
-            if (series == null) return NotFound("Series not found");
+            if (string.IsNullOrEmpty(request.SeriesId))
+                return BadRequest("Series ID is required");
+
+            var series = await _seriesRepository.GetSeriesByIdAsync(userId, request.SeriesId);
+            if (series == null) return NotFound("Series save not found");
 
             // Ensure the snapshot belongs to the current user
             series.Snapshot.TwitchUserId = userId;
@@ -94,5 +97,10 @@ namespace OmniForge.Web.Controllers
     {
         public string SeriesName { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+    }
+
+    public class LoadSeriesRequest
+    {
+        public string SeriesId { get; set; } = string.Empty;
     }
 }

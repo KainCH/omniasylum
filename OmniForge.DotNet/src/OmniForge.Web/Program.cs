@@ -163,7 +163,7 @@ app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseWebSockets(); // Enable WebSockets
-app.UseMiddleware<UserStatusMiddleware>();
+app.UseMiddleware<AuthMiddleware>();
 app.UseMiddleware<WebSocketOverlayMiddleware>();
 
 app.MapStaticAssets();

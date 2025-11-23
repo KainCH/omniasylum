@@ -15,15 +15,21 @@ namespace OmniForge.Web.Controllers
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IOverlayNotifier _overlayNotifier;
+        private readonly IStreamMonitorService _streamMonitorService;
+        private readonly ITwitchClientManager _twitchClientManager;
 
         public StreamController(
             IUserRepository userRepository,
             ICounterRepository counterRepository,
-            IOverlayNotifier overlayNotifier)
+            IOverlayNotifier overlayNotifier,
+            IStreamMonitorService streamMonitorService,
+            ITwitchClientManager twitchClientManager)
         {
             _userRepository = userRepository;
             _counterRepository = counterRepository;
             _overlayNotifier = overlayNotifier;
+            _streamMonitorService = streamMonitorService;
+            _twitchClientManager = twitchClientManager;
         }
 
         [HttpPost("status")]
@@ -168,6 +174,248 @@ namespace OmniForge.Web.Controllers
             return Ok(user.Features.StreamSettings);
         }
 
+        [HttpPost("reset-bits")]
+        public async Task<IActionResult> ResetBits()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            if (counters == null) return NotFound("Counters not found");
+
+            int previousBits = counters.Bits;
+            counters.Bits = 0;
+            await _counterRepository.SaveCountersAsync(counters);
+
+            // Notify overlay
+            // Note: Node.js sends a 'counterUpdate' with a 'change' object.
+            // The current IOverlayNotifier.NotifyCounterUpdateAsync sends the whole counter object.
+            // We might need to enhance IOverlayNotifier if the frontend relies on 'change' for bits specifically.
+            // For now, sending the updated counter is consistent with other methods.
+            await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
+
+            return Ok(new
+            {
+                message = "Bits counter reset successfully",
+                counters = counters
+            });
+        }
+
+        [HttpGet("monitor/status")]
+        public async Task<IActionResult> GetMonitorStatus()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var status = _streamMonitorService.GetUserConnectionStatus(userId);
+            var botStatus = _twitchClientManager.GetUserBotStatus(userId);
+
+            return Ok(new
+            {
+                connected = status.Connected,
+                subscriptions = status.Subscriptions,
+                lastConnected = status.LastConnected,
+                currentUserMonitored = _streamMonitorService.IsUserSubscribed(userId),
+                twitchBot = botStatus
+            });
+        }
+
+        [HttpPost("monitor/subscribe")]
+        [HttpPost("monitor/start")]
+        public async Task<IActionResult> SubscribeMonitor()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var success = await _streamMonitorService.SubscribeToUserAsync(userId);
+
+            if (success)
+            {
+                // Start Twitch bot if eligible
+                var user = await _userRepository.GetUserAsync(userId);
+                if (user != null && user.Features.ChatCommands && !string.IsNullOrEmpty(user.AccessToken))
+                {
+                    await _twitchClientManager.ConnectUserAsync(userId);
+                }
+
+                return Ok(new { message = "Successfully subscribed to stream monitoring", userId });
+            }
+
+            return BadRequest(new { error = "Failed to subscribe to stream monitoring" });
+        }
+
+        [HttpPost("monitor/unsubscribe")]
+        [HttpPost("monitor/stop")]
+        public async Task<IActionResult> UnsubscribeMonitor()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            await _streamMonitorService.UnsubscribeFromUserAsync(userId);
+            await _twitchClientManager.DisconnectUserAsync(userId);
+
+            return Ok(new { message = "Successfully unsubscribed from stream monitoring", userId });
+        }
+
+        [HttpPost("monitor/reconnect")]
+        public async Task<IActionResult> ReconnectMonitor()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var success = await _streamMonitorService.ForceReconnectUserAsync(userId);
+
+            if (success)
+            {
+                return Ok(new { message = "Successfully reconnected EventSub WebSocket", userId, status = "connected" });
+            }
+
+            return StatusCode(500, new { error = "Failed to reconnect EventSub WebSocket", userId, status = "failed" });
+        }
+
+        [HttpGet("eventsub-status")]
+        public async Task<IActionResult> GetEventSubStatus()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            var status = _streamMonitorService.GetUserConnectionStatus(userId);
+            var subscriptionsEnabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl);
+
+            return Ok(new
+            {
+                userId,
+                username = user.Username,
+                connectionStatus = new
+                {
+                    connected = status.Connected,
+                    subscriptions = status.Subscriptions,
+                    lastConnected = status.LastConnected
+                },
+                notificationSettings = user.DiscordSettings,
+                discordWebhook = !string.IsNullOrEmpty(user.DiscordWebhookUrl),
+                subscriptionsEnabled,
+                timestamp = DateTimeOffset.UtcNow
+            });
+        }
+
+        [HttpGet("bot/status")]
+        public async Task<IActionResult> GetBotStatus()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            var botStatus = _twitchClientManager.GetUserBotStatus(userId);
+            var hasTokens = !string.IsNullOrEmpty(user.AccessToken);
+
+            return Ok(new
+            {
+                userId,
+                username = user.Username,
+                bot = new
+                {
+                    connected = botStatus.Connected,
+                    error = botStatus.Error,
+                    reason = botStatus.Reason,
+                    eligible = user.Features.ChatCommands && hasTokens,
+                    chatCommandsEnabled = user.Features.ChatCommands,
+                    hasTokens
+                },
+                timestamp = DateTimeOffset.UtcNow
+            });
+        }
+
+        [HttpPost("bot/toggle")]
+        public async Task<IActionResult> ToggleBot([FromBody] ToggleBotRequest request)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (request.Action == "start")
+            {
+                if (!user.Features.ChatCommands) return BadRequest(new { error = "Chat commands feature not enabled" });
+                if (string.IsNullOrEmpty(user.AccessToken)) return BadRequest(new { error = "Missing Twitch access tokens" });
+
+                await _twitchClientManager.ConnectUserAsync(userId);
+            }
+            else if (request.Action == "stop")
+            {
+                await _twitchClientManager.DisconnectUserAsync(userId);
+            }
+            else
+            {
+                return BadRequest(new { error = "Invalid action" });
+            }
+
+            var botStatus = _twitchClientManager.GetUserBotStatus(userId);
+
+            return Ok(new
+            {
+                success = true,
+                message = request.Action == "start" ? "Twitch bot started" : "Twitch bot stopped",
+                action = request.Action,
+                bot = botStatus,
+                timestamp = DateTimeOffset.UtcNow
+            });
+        }
+
+        // Phase 1 Endpoints
+        [HttpGet("status")]
+        public async Task<IActionResult> GetStatus()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            var counters = await _counterRepository.GetCountersAsync(userId);
+
+            return Ok(new
+            {
+                userId,
+                username = user.Username,
+                displayName = user.DisplayName,
+                streamStatus = user.StreamStatus ?? "offline",
+                isActive = user.IsActive,
+                counters = counters,
+                lastUpdated = DateTimeOffset.UtcNow
+            });
+        }
+
+        [HttpPost("prep")]
+        public async Task<IActionResult> PrepStream()
+        {
+            return await UpdateStatus(new UpdateStatusRequest { Action = "prep" });
+        }
+
+        [HttpPost("go-live")]
+        public async Task<IActionResult> GoLive()
+        {
+            return await UpdateStatus(new UpdateStatusRequest { Action = "go-live" });
+        }
+
+        [HttpPost("end-stream")]
+        public async Task<IActionResult> EndStreamPhase1()
+        {
+            return await UpdateStatus(new UpdateStatusRequest { Action = "end-stream" });
+        }
+
+        [HttpPost("cancel-prep")]
+        public async Task<IActionResult> CancelPrep()
+        {
+            return await UpdateStatus(new UpdateStatusRequest { Action = "cancel-prep" });
+        }
+
         private async Task<Counter> StartStreamInternal(string userId)
         {
             var counters = await _counterRepository.GetCountersAsync(userId);
@@ -204,6 +452,11 @@ namespace OmniForge.Web.Controllers
     }
 
     public class UpdateStatusRequest
+    {
+        public string Action { get; set; } = string.Empty;
+    }
+
+    public class ToggleBotRequest
     {
         public string Action { get; set; } = string.Empty;
     }

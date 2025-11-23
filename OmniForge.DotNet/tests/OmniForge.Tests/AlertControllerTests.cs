@@ -9,6 +9,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Controllers;
 using Xunit;
+using System.Text.Json;
 
 namespace OmniForge.Tests
 {
@@ -155,14 +156,72 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task UpdateEventMappings_ShouldReturnOk()
+        public async Task UpdateEventMappings_ShouldReturnOk_WhenValid()
         {
-            var mappings = new Dictionary<string, string> { { "follow", "alert1" } };
+            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { StreamAlerts = true } };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
-            var result = await _controller.UpdateEventMappings(mappings);
+            // Mock existing alerts so validation passes
+            var alerts = new List<Alert> { new Alert { Type = "custom_alert", IsDefault = false } };
+            _mockAlertRepository.Setup(x => x.GetAlertsAsync("12345")).ReturnsAsync(alerts);
+
+            // "channel.follow" is a valid event. "custom_alert" is a valid alert type (mocked above).
+            var mappings = new Dictionary<string, string> { { "channel.follow", "custom_alert" } };
+            var json = JsonSerializer.Serialize(mappings);
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+
+            var result = await _controller.UpdateEventMappings(jsonElement);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockAlertRepository.Verify(x => x.SaveEventMappingsAsync("12345", mappings), Times.Once);
+            _mockAlertRepository.Verify(x => x.SaveEventMappingsAsync("12345", It.Is<Dictionary<string, string>>(m => m["channel.follow"] == "custom_alert")), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateEventMappings_ShouldReturnBadRequest_WhenInvalidEvent()
+        {
+            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { StreamAlerts = true } };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var mappings = new Dictionary<string, string> { { "invalid_event", "none" } };
+            var json = JsonSerializer.Serialize(mappings);
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+
+            var result = await _controller.UpdateEventMappings(jsonElement);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateEventMappings_ShouldReturnBadRequest_WhenInvalidAlertType()
+        {
+            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { StreamAlerts = true } };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+            _mockAlertRepository.Setup(x => x.GetAlertsAsync("12345")).ReturnsAsync(new List<Alert>());
+
+            var mappings = new Dictionary<string, string> { { "channel.follow", "non_existent_alert" } };
+            var json = JsonSerializer.Serialize(mappings);
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+
+            var result = await _controller.UpdateEventMappings(jsonElement);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateEventMappings_ShouldReturnOk_WhenWrappedFormat()
+        {
+            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { StreamAlerts = true } };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+            _mockAlertRepository.Setup(x => x.GetAlertsAsync("12345")).ReturnsAsync(new List<Alert>());
+
+            var wrapper = new { mappings = new Dictionary<string, string> { { "channel.follow", "none" } } };
+            var json = JsonSerializer.Serialize(wrapper);
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+
+            var result = await _controller.UpdateEventMappings(jsonElement);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockAlertRepository.Verify(x => x.SaveEventMappingsAsync("12345", It.Is<Dictionary<string, string>>(m => m["channel.follow"] == "none")), Times.Once);
         }
     }
 }

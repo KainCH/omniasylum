@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using OmniForge.Core.Constants;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using System.Text.Json;
 
 namespace OmniForge.Web.Controllers
 {
@@ -248,10 +249,69 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPut("event-mappings")]
-        public async Task<IActionResult> UpdateEventMappings([FromBody] Dictionary<string, string> mappings)
+        public async Task<IActionResult> UpdateEventMappings([FromBody] JsonElement requestBody)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null || !user.Features.StreamAlerts) return Forbid("Stream alerts feature not enabled");
+
+            Dictionary<string, string> mappings;
+
+            try
+            {
+                if (requestBody.ValueKind == JsonValueKind.Object)
+                {
+                    if (requestBody.TryGetProperty("mappings", out var mappingsProp) && mappingsProp.ValueKind == JsonValueKind.Object)
+                    {
+                        mappings = JsonSerializer.Deserialize<Dictionary<string, string>>(mappingsProp.GetRawText()) ?? new Dictionary<string, string>();
+                    }
+                    else
+                    {
+                        mappings = JsonSerializer.Deserialize<Dictionary<string, string>>(requestBody.GetRawText()) ?? new Dictionary<string, string>();
+                    }
+                }
+                else
+                {
+                    return BadRequest(new { error = "Invalid mappings format" });
+                }
+            }
+            catch (JsonException)
+            {
+                return BadRequest(new { error = "Invalid mappings format" });
+            }
+
+            // Validate that all event types are valid
+            var validEvents = AlertTemplates.GetAllAvailableEvents();
+            foreach (var eventType in mappings.Keys)
+            {
+                if (!validEvents.Contains(eventType))
+                {
+                    return BadRequest(new { error = $"Invalid event type: {eventType}" });
+                }
+            }
+
+            // Validate that all alert types exist for this user (including defaults and "none")
+            var userAlerts = await _alertRepository.GetAlertsAsync(userId);
+            var defaultTemplates = AlertTemplates.GetDefaultTemplates();
+
+            var validAlertTypes = new HashSet<string> { "none" };
+            foreach (var t in defaultTemplates) validAlertTypes.Add(t.Type);
+            foreach (var a in userAlerts.Where(x => !x.IsDefault)) validAlertTypes.Add(a.Type);
+
+            foreach (var alertType in mappings.Values)
+            {
+                if (!string.IsNullOrEmpty(alertType) && !validAlertTypes.Contains(alertType))
+                {
+                    return BadRequest(new
+                    {
+                        error = $"No alert found with type: {alertType}. Use \"none\" to disable alerts for an event.",
+                        availableTypes = validAlertTypes,
+                        disableOption = "none"
+                    });
+                }
+            }
 
             await _alertRepository.SaveEventMappingsAsync(userId, mappings);
             return Ok(new { message = "Event mappings updated successfully", mappings });

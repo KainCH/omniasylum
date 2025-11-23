@@ -4,10 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
-using OmniForge.Web.Hubs;
 
 namespace OmniForge.Web.Controllers
 {
@@ -18,18 +16,15 @@ namespace OmniForge.Web.Controllers
     {
         private readonly ICounterRepository _counterRepository;
         private readonly IUserRepository _userRepository;
-        private readonly IHubContext<OverlayHub> _hubContext;
         private readonly IOverlayNotifier _overlayNotifier;
 
         public CustomCounterController(
             ICounterRepository counterRepository,
             IUserRepository userRepository,
-            IHubContext<OverlayHub> hubContext,
             IOverlayNotifier overlayNotifier)
         {
             _counterRepository = counterRepository;
             _userRepository = userRepository;
-            _hubContext = hubContext;
             _overlayNotifier = overlayNotifier;
         }
 
@@ -66,7 +61,7 @@ namespace OmniForge.Web.Controllers
             await _counterRepository.SaveCustomCountersConfigAsync(userId, config);
 
             // Emit update via SignalR
-            await _hubContext.Clients.Group($"user:{userId}").SendAsync("customCountersUpdated", new { counters = config.Counters });
+            await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCountersUpdated", new { counters = config.Counters });
 
             return Ok(new { success = true, counters = config.Counters });
         }
@@ -95,6 +90,7 @@ namespace OmniForge.Web.Controllers
             // Increment
             var updatedCounter = await _counterRepository.IncrementCounterAsync(userId, counterId, counterDef.IncrementBy);
             int newValue = updatedCounter.CustomCounters[counterId];
+            int change = counterDef.IncrementBy;
 
             // Check milestones
             if (counterDef.Milestones != null && counterDef.Milestones.Any())
@@ -103,21 +99,26 @@ namespace OmniForge.Web.Controllers
                 foreach (var milestone in crossedMilestones)
                 {
                     // Send overlay notification
-                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "milestone", new
+                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "customMilestoneReached", new
                     {
-                        type = "custom_milestone",
                         counterId = counterId,
                         counterName = counterDef.Name,
-                        count = milestone,
+                        milestone = milestone,
+                        newValue = newValue,
                         icon = counterDef.Icon
                     });
                 }
             }
 
             // Send update to overlay
-            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounter);
+            await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCounterUpdate", new
+            {
+                counterId = counterId,
+                value = newValue,
+                change = change
+            });
 
-            return Ok(new { success = true, value = newValue });
+            return Ok(new { counterId = counterId, value = newValue, change = change });
         }
 
         [HttpPost("{counterId}/decrement")]
@@ -136,13 +137,23 @@ namespace OmniForge.Web.Controllers
             int decrementBy = counterDef.DecrementBy > 0 ? counterDef.DecrementBy : counterDef.IncrementBy;
             if (decrementBy <= 0) decrementBy = 1;
 
+            // Get previous value to calculate actual change (can't go below 0)
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            int previousValue = counters.CustomCounters.ContainsKey(counterId) ? counters.CustomCounters[counterId] : 0;
+
             var updatedCounter = await _counterRepository.DecrementCounterAsync(userId, counterId, decrementBy);
             int newValue = updatedCounter.CustomCounters.ContainsKey(counterId) ? updatedCounter.CustomCounters[counterId] : 0;
+            int change = newValue - previousValue;
 
             // Send update to overlay
-            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounter);
+            await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCounterUpdate", new
+            {
+                counterId = counterId,
+                value = newValue,
+                change = change
+            });
 
-            return Ok(new { success = true, value = newValue });
+            return Ok(new { counterId = counterId, value = newValue, change = change });
         }
 
         [HttpPost("{counterId}/reset")]
@@ -158,12 +169,22 @@ namespace OmniForge.Web.Controllers
                 return NotFound(new { error = "Custom counter not found" });
             }
 
+            // Get previous value
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            int previousValue = counters.CustomCounters.ContainsKey(counterId) ? counters.CustomCounters[counterId] : 0;
+
             var updatedCounter = await _counterRepository.ResetCounterAsync(userId, counterId);
+            int change = -previousValue;
 
             // Send update to overlay
-            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounter);
+            await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCounterUpdate", new
+            {
+                counterId = counterId,
+                value = 0,
+                change = change
+            });
 
-            return Ok(new { success = true, value = 0 });
+            return Ok(new { counterId = counterId, value = 0, change = change });
         }
     }
 }

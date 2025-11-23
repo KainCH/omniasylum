@@ -139,5 +139,71 @@ namespace OmniForge.Web.Controllers
                 return StatusCode(500, new { error = "Failed to delete channel point reward", details = ex.Message });
             }
         }
+
+        [HttpGet("history")]
+        public async Task<IActionResult> GetRedemptionHistory()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (!user.Features.ChannelPoints)
+            {
+                return Forbid("Channel points feature not enabled");
+            }
+
+            if (!user.Features.Analytics)
+            {
+                return Forbid("Analytics feature required for redemption history");
+            }
+
+            // TODO: Implement redemption history tracking
+            return Ok(new
+            {
+                redemptions = new object[] { },
+                message = "Redemption history tracking not yet implemented"
+            });
+        }
+
+        [HttpGet("admin/all")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> GetAllRewardsAdmin()
+        {
+            try
+            {
+                var users = await _userRepository.GetAllUsersAsync();
+                var allRewards = new System.Collections.Generic.List<object>();
+
+                foreach (var user in users)
+                {
+                    if (string.IsNullOrEmpty(user.TwitchUserId)) continue;
+
+                    if (user.Features.ChannelPoints)
+                    {
+                        var rewards = await _channelPointRepository.GetRewardsAsync(user.TwitchUserId);
+                        allRewards.Add(new
+                        {
+                            userId = user.TwitchUserId,
+                            username = user.Username,
+                            displayName = user.DisplayName,
+                            rewards = rewards
+                        });
+                    }
+                }
+
+                return Ok(new
+                {
+                    users = allRewards,
+                    totalUsers = allRewards.Count,
+                    totalRewards = allRewards.Sum(u => ((dynamic)u).rewards.Count)
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to get all rewards", details = ex.Message });
+            }
+        }
     }
 }

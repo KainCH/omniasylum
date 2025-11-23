@@ -16,6 +16,8 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
+        private readonly Mock<ITwitchClientManager> _mockTwitchClientManager;
         private readonly StreamController _controller;
 
         public StreamControllerTests()
@@ -23,11 +25,15 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockStreamMonitorService = new Mock<IStreamMonitorService>();
+            _mockTwitchClientManager = new Mock<ITwitchClientManager>();
 
             _controller = new StreamController(
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
-                _mockOverlayNotifier.Object);
+                _mockOverlayNotifier.Object,
+                _mockStreamMonitorService.Object,
+                _mockTwitchClientManager.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
             {

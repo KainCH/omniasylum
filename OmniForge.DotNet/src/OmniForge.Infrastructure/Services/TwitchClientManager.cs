@@ -91,6 +91,16 @@ namespace OmniForge.Infrastructure.Services
             return Task.CompletedTask;
         }
 
+        public BotStatus GetUserBotStatus(string userId)
+        {
+            bool connected = _clients.ContainsKey(userId) && _clients[userId].IsConnected;
+            return new BotStatus
+            {
+                Connected = connected,
+                Reason = connected ? "Connected" : "Not connected"
+            };
+        }
+
         private async void HandleMessage(string userId, TwitchLib.Client.Models.ChatMessage chatMessage)
         {
             await _messageHandler.HandleMessageAsync(userId, chatMessage, SendMessageAsync);

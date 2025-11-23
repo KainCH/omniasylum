@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using OmniForge.Core.Entities;
@@ -9,6 +10,23 @@ namespace OmniForge.Core.Interfaces
         Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId);
         Task<TwitchCustomReward> CreateCustomRewardAsync(string userId, CreateRewardRequest request);
         Task DeleteCustomRewardAsync(string userId, string rewardId);
+        Task<StreamInfo?> GetStreamInfoAsync(string userId);
+        Task<ClipInfo?> CreateClipAsync(string userId);
+    }
+
+    public class StreamInfo
+    {
+        public bool IsLive { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Game { get; set; } = string.Empty;
+        public int Viewers { get; set; }
+        public DateTimeOffset? StartedAt { get; set; }
+    }
+
+    public class ClipInfo
+    {
+        public string Id { get; set; } = string.Empty;
+        public string EditUrl { get; set; } = string.Empty;
     }
 
     public class CreateRewardRequest

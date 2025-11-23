@@ -91,7 +91,8 @@ namespace OmniForge.Tests
             _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
                 .ReturnsAsync(series);
 
-            var result = await _controller.LoadSeries(seriesId);
+            var request = new LoadSeriesRequest { SeriesId = seriesId };
+            var result = await _controller.LoadSeries(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Deaths == 50 && c.TwitchUserId == "12345")), Times.Once);
@@ -105,7 +106,8 @@ namespace OmniForge.Tests
             _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
                 .ReturnsAsync((Series?)null);
 
-            var result = await _controller.LoadSeries(seriesId);
+            var request = new LoadSeriesRequest { SeriesId = seriesId };
+            var result = await _controller.LoadSeries(request);
 
             Assert.IsType<NotFoundObjectResult>(result);
         }
