@@ -5,6 +5,7 @@ namespace OmniForge.Core.Interfaces
 {
     public interface ICounterRepository
     {
+        Task InitializeAsync();
         Task<Counter> GetCountersAsync(string userId);
         Task SaveCountersAsync(Counter counter);
         Task<Counter> IncrementCounterAsync(string userId, string counterType, int amount = 1);

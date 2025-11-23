@@ -18,11 +18,13 @@ namespace OmniForge.Infrastructure.Repositories
         public AlertRepository(TableServiceClient tableServiceClient)
         {
             _alertsClient = tableServiceClient.GetTableClient("alerts");
-            _alertsClient.CreateIfNotExists();
-
             _usersClient = tableServiceClient.GetTableClient("users");
-            // Users table should already exist via UserRepository, but safe to ensure
-            _usersClient.CreateIfNotExists();
+        }
+
+        public async Task InitializeAsync()
+        {
+            await _alertsClient.CreateIfNotExistsAsync();
+            await _usersClient.CreateIfNotExistsAsync();
         }
 
         public async Task<Alert?> GetAlertAsync(string userId, string alertId)

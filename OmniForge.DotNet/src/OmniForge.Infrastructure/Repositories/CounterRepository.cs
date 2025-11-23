@@ -15,7 +15,11 @@ namespace OmniForge.Infrastructure.Repositories
         public CounterRepository(TableServiceClient tableServiceClient)
         {
             _tableClient = tableServiceClient.GetTableClient("counters");
-            _tableClient.CreateIfNotExists();
+        }
+
+        public async Task InitializeAsync()
+        {
+            await _tableClient.CreateIfNotExistsAsync();
         }
 
         public async Task<Counter> GetCountersAsync(string twitchUserId)

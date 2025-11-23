@@ -17,7 +17,11 @@ namespace OmniForge.Infrastructure.Repositories
         public UserRepository(TableServiceClient tableServiceClient)
         {
             _tableClient = tableServiceClient.GetTableClient("users");
-            _tableClient.CreateIfNotExists();
+        }
+
+        public async Task InitializeAsync()
+        {
+            await _tableClient.CreateIfNotExistsAsync();
         }
 
         public async Task<User?> GetUserAsync(string twitchUserId)

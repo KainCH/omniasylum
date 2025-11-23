@@ -21,7 +21,7 @@
       }
     },
     {
-      "label": "Fullstack Deploy",
+      "label": "Fullstack Deploy (Legacy NodeJS)",
       "type": "shell",
       "command": ".\\deploy-with-cleanup.ps1",
       "options": {
@@ -35,7 +35,7 @@
       }
     },
     {
-      "label": "Backend Deploy",
+      "label": "Backend Deploy (Legacy NodeJS)",
       "type": "shell",
       "command": ".\\deploy-with-cleanup.ps1 -SkipFrontend",
       "options": {

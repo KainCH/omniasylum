@@ -6,6 +6,7 @@ namespace OmniForge.Core.Interfaces
 {
     public interface IAlertRepository
     {
+        Task InitializeAsync();
         Task<Alert?> GetAlertAsync(string userId, string alertId);
         Task<IEnumerable<Alert>> GetAlertsAsync(string userId);
         Task SaveAlertAsync(Alert alert);

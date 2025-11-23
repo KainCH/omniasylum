@@ -116,6 +116,29 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
+// Initialize Database Tables
+using (var scope = app.Services.CreateScope())
+{
+    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+    var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
+    var alertRepository = scope.ServiceProvider.GetRequiredService<IAlertRepository>();
+    var channelPointRepository = scope.ServiceProvider.GetRequiredService<IChannelPointRepository>();
+    var seriesRepository = scope.ServiceProvider.GetRequiredService<ISeriesRepository>();
+
+    try
+    {
+        await userRepository.InitializeAsync();
+        await counterRepository.InitializeAsync();
+        await alertRepository.InitializeAsync();
+        await channelPointRepository.InitializeAsync();
+        await seriesRepository.InitializeAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error initializing database: {ex.Message}");
+    }
+}
+
 app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.

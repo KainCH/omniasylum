@@ -4,8 +4,10 @@
 @using OmniForge.Core.Interfaces
 @using OmniForge.Web.Components.Modals
 @attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
 @inject IUserRepository UserRepository
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Admin - Users</PageTitle>
 
@@ -26,6 +28,11 @@
                 <i class="bi bi-arrow-clockwise"></i> Refresh
             </button>
         </div>
+    </div>
+
+    <div class="alert alert-info">
+        <strong>Debug:</strong>
+        <button class="btn btn-sm btn-primary" @onclick="IncrementCount">Test Interactivity: @currentCount</button>
     </div>
 
     @if (users == null)
@@ -74,9 +81,12 @@
                             </td>
                             <td>
                                 <div class="small">
-                                    @if (user.Features.StreamOverlay) { <span class="badge bg-info me-1">Overlay</span> }
-                                    @if (user.Features.ChatCommands) { <span class="badge bg-info me-1">Chat</span> }
-                                    @if (user.Features.DiscordNotifications) { <span class="badge bg-info me-1">Discord</span> }
+                                    @if (user.Features != null)
+                                    {
+                                        @if (user.Features.StreamOverlay) { <span class="badge bg-info me-1">Overlay</span> }
+                                        @if (user.Features.ChatCommands) { <span class="badge bg-info me-1">Chat</span> }
+                                        @if (user.Features.DiscordNotifications) { <span class="badge bg-info me-1">Discord</span> }
+                                    }
                                 </div>
                             </td>
                             <td>@user.LastLogin.ToLocalTime().ToString("g")</td>
@@ -101,6 +111,12 @@
     private bool showUserRequestsModal = false;
     private bool showBrokenUserModal = false;
     private string? selectedUserId;
+    private int currentCount = 0;
+
+    private void IncrementCount()
+    {
+        currentCount++;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -130,11 +146,21 @@
     {
         selectedUserId = null;
         showUserModal = true;
+        StateHasChanged();
     }
 
     private void EditUser(User user)
     {
-        selectedUserId = user.TwitchUserId;
-        showUserModal = true;
+        try
+        {
+            Console.WriteLine($"Opening edit modal for user: {user.Username}");
+            selectedUserId = user.TwitchUserId;
+            showUserModal = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening edit modal: {ex}");
+        }
     }
 }

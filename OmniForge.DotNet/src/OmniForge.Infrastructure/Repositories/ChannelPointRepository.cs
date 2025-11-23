@@ -17,7 +17,11 @@ namespace OmniForge.Infrastructure.Repositories
         public ChannelPointRepository(TableServiceClient tableServiceClient)
         {
             _tableClient = tableServiceClient.GetTableClient("counters");
-            _tableClient.CreateIfNotExists();
+        }
+
+        public async Task InitializeAsync()
+        {
+            await _tableClient.CreateIfNotExistsAsync();
         }
 
         public async Task<IEnumerable<ChannelPointReward>> GetRewardsAsync(string userId)

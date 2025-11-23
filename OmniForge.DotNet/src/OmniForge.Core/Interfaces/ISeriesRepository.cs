@@ -6,6 +6,7 @@ namespace OmniForge.Core.Interfaces
 {
     public interface ISeriesRepository
     {
+        Task InitializeAsync();
         Task<IEnumerable<Series>> GetSeriesAsync(string userId);
         Task<Series?> GetSeriesByIdAsync(string userId, string seriesId);
         Task CreateSeriesAsync(Series series);
