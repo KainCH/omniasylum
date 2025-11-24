@@ -89,7 +89,7 @@ namespace OmniForge.Infrastructure.Services
                 if (user.TokenExpiry.AddMinutes(-5) < DateTimeOffset.UtcNow)
                 {
                     _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", userId);
-                    
+
                     if (!string.IsNullOrEmpty(user.RefreshToken))
                     {
                         var newToken = await authService.RefreshTokenAsync(user.RefreshToken);
@@ -98,7 +98,7 @@ namespace OmniForge.Infrastructure.Services
                             user.AccessToken = newToken.AccessToken;
                             user.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
                             user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
-                            
+
                             await userRepository.SaveUserAsync(user);
                             _logger.LogInformation("Successfully refreshed access token for user {UserId}.", userId);
                         }
@@ -248,6 +248,10 @@ namespace OmniForge.Infrastructure.Services
         private async Task OnDisconnected()
         {
             _logger.LogWarning("EventSub Disconnected.");
+            
+            // Clear subscriptions on disconnect so UI reflects state
+            _subscribedUsers.Clear();
+            
             await Task.CompletedTask;
         }
 
