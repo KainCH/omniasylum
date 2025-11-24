@@ -44,32 +44,32 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyFollowerAsync(string userId, string displayName)
         {
-            await _webSocketManager.SendToUserAsync(userId, "newFollower", new { displayName });
+            await _webSocketManager.SendToUserAsync(userId, "follow", new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" });
         }
 
         public async Task NotifySubscriberAsync(string userId, string displayName, string tier, bool isGift)
         {
-            await _webSocketManager.SendToUserAsync(userId, "newSubscriber", new { displayName, tier, isGift });
+            await _webSocketManager.SendToUserAsync(userId, "subscription", new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" });
         }
 
         public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
         {
-            await _webSocketManager.SendToUserAsync(userId, "resub", new { displayName, months, tier, message });
+            await _webSocketManager.SendToUserAsync(userId, "resub", new { name = displayName, displayName, months, tier, message, textPrompt = $"{displayName} Resubscribed x{months}" });
         }
 
         public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
         {
-            await _webSocketManager.SendToUserAsync(userId, "giftSub", new { gifterName, recipientName, tier, totalGifts });
+            await _webSocketManager.SendToUserAsync(userId, "giftsub", new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" });
         }
 
         public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
         {
-            await _webSocketManager.SendToUserAsync(userId, "bitsReceived", new { displayName, amount, message, totalBits });
+            await _webSocketManager.SendToUserAsync(userId, "bits", new { name = displayName, displayName, amount, message, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" });
         }
 
         public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)
         {
-            await _webSocketManager.SendToUserAsync(userId, "raidReceived", new { raiderName, viewers });
+            await _webSocketManager.SendToUserAsync(userId, "raid", new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" });
         }
 
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)

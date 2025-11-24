@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +34,7 @@ namespace OmniForge.Tests
         private readonly Mock<IOptions<TwitchSettings>> _mockTwitchSettings;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<TwitchLib.Api.Core.Interfaces.IApiSettings> _mockApiSettings;
+        private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly StreamMonitorService _service;
 
         public StreamMonitorServiceTests()
@@ -47,6 +49,7 @@ namespace OmniForge.Tests
             _mockTwitchSettings = new Mock<IOptions<TwitchSettings>>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockApiSettings = new Mock<TwitchLib.Api.Core.Interfaces.IApiSettings>();
+            _mockHttpClientFactory = new Mock<IHttpClientFactory>();
 
             // Setup TwitchAPI mock
             _mockTwitchApi = new Mock<TwitchAPI>(MockBehavior.Loose, null!, null!, _mockApiSettings.Object, null!);
@@ -62,6 +65,12 @@ namespace OmniForge.Tests
                 ClientSecret = "test_secret"
             });
 
+            // Setup HttpClientFactory
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            // We need to mock SendAsync if we were testing the chat message sending, but for now just returning a client is enough for constructor
+            var client = new HttpClient(mockHttpMessageHandler.Object);
+            _mockHttpClientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(client);
+
             // Setup DI
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
@@ -73,6 +82,7 @@ namespace OmniForge.Tests
             _service = new StreamMonitorService(
                 _mockEventSubService.Object,
                 _mockTwitchApi.Object,
+                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
                 _mockScopeFactory.Object,
                 _mockTwitchSettings.Object);

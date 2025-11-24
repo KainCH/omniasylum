@@ -509,6 +509,7 @@ namespace OmniForge.Web.Controllers
                 }
 
                 var currentCounters = await _counterRepository.GetCountersAsync(streamerId);
+                if (currentCounters == null) return NotFound(new { error = "Counters not found" });
 
                 var series = new Series
                 {
@@ -569,6 +570,8 @@ namespace OmniForge.Web.Controllers
 
                 // Load the series (update current counters)
                 var counters = await _counterRepository.GetCountersAsync(streamerId);
+                if (counters == null) return NotFound(new { error = "Counters not found" });
+
                 counters.Deaths = series.Snapshot.Deaths;
                 counters.Swears = series.Snapshot.Swears;
                 counters.Screams = series.Snapshot.Screams;

@@ -53,7 +53,8 @@ namespace OmniForge.Tests
             var result = await _repository.GetCountersAsync(userId);
 
             // Assert
-            Assert.Equal(5, result.Deaths);
+            Assert.NotNull(result);
+            Assert.Equal(5, result!.Deaths);
             Assert.Equal(10, result.Swears);
         }
 
@@ -75,7 +76,8 @@ namespace OmniForge.Tests
             var result = await _repository.GetCountersAsync(userId);
 
             // Assert
-            Assert.Equal(0, result.Deaths);
+            Assert.NotNull(result);
+            Assert.Equal(0, result!.Deaths);
             Assert.Equal(userId, result.TwitchUserId);
         }
 
@@ -459,7 +461,8 @@ namespace OmniForge.Tests
             var result = await _repository.GetCountersAsync(userId);
 
             // Assert
-            Assert.True(result.CustomCounters.ContainsKey("customLong"));
+            Assert.NotNull(result);
+            Assert.True(result!.CustomCounters.ContainsKey("customLong"));
             Assert.Equal(100, result.CustomCounters["customLong"]);
         }
     }

@@ -70,6 +70,59 @@
                     </div>
                 </div>
 
+                @if (monitorStatus != null)
+                {
+                    <div class="monitor-status-card mt-4 p-3 border rounded bg-light">
+                        <h5><i class="bi bi-activity"></i> Monitor Status</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p>
+                                    <strong>Status:</strong>
+                                    <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
+                                        @(monitorStatus.Connected ? "Connected" : "Disconnected")
+                                    </span>
+                                </p>
+                                <p>
+                                    <strong>Monitoring You:</strong>
+                                    <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
+                                        @(isMonitoring ? "Yes" : "No")
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="col-md-6">
+                                <p>
+                                    <strong>Subscriptions:</strong>
+                                    @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
+                                    {
+                                        @foreach (var sub in monitorStatus.Subscriptions)
+                                        {
+                                            <span class="badge bg-info text-dark me-1">@sub</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">None</span>
+                                    }
+                                </p>
+                                <p>
+                                    <strong>Last Discord Notification:</strong>
+                                    @if (monitorStatus.LastDiscordNotification.HasValue)
+                                    {
+                                        <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
+                                            @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
+                                            <i class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Never</span>
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                }
+
                 <div class="mt-4 text-center">
                      <p>
                         <strong>Twitch User ID:</strong> @TwitchUserId <br />
@@ -98,6 +151,7 @@
     private bool showAlertEffects = false;
     private bool showDiscordSettings = false;
     private bool isMonitoring = false;
+    private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
 
     protected override async Task OnInitializedAsync()
     {
@@ -117,6 +171,7 @@
                     // Use the static HTML overlay instead of the Blazor page
                     OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
                     isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
+                    monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
                 }
             }
         }
@@ -136,6 +191,8 @@
             await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
             isMonitoring = true;
         }
+
+        monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
     }
 
     private async Task UpdateCounter(Action<OmniForge.Core.Entities.Counter> updateAction)
@@ -155,23 +212,24 @@
         {
             counter.Deaths = 0;
             counter.Swears = 0;
+            counter.Screams = 0;
             counter.LastUpdated = DateTime.UtcNow;
             await CounterRepository.SaveCountersAsync(counter);
             await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
         }
     }
 
-    private void ExportData()
+    private void OnSettingsSaved()
     {
-        // TODO: Implement export functionality
+        // Refresh settings if needed
     }
 
-    private async Task OnSettingsSaved()
+    private async Task ExportData()
     {
-        // Notify overlay of setting changes if needed
-        if (!string.IsNullOrEmpty(TwitchUserId) && counter != null)
+        if (!string.IsNullOrEmpty(TwitchUserId))
         {
-            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
+            NavigationManager.NavigateTo($"/api/counters/export", true);
         }
+        await Task.CompletedTask;
     }
 }

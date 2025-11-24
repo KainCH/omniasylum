@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,21 +23,25 @@ namespace OmniForge.Infrastructure.Services
     {
         private readonly INativeEventSubService _eventSubService;
         private readonly TwitchAPI _twitchApi;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<StreamMonitorService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly TwitchSettings _twitchSettings;
         private Timer? _connectionWatchdog;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Time, bool Success)> _lastDiscordNotifications = new();
 
         public StreamMonitorService(
             INativeEventSubService eventSubService,
             TwitchAPI twitchApi,
+            IHttpClientFactory httpClientFactory,
             ILogger<StreamMonitorService> logger,
             IServiceScopeFactory scopeFactory,
             IOptions<TwitchSettings> twitchSettings)
         {
             _eventSubService = eventSubService;
             _twitchApi = twitchApi;
+            _httpClientFactory = httpClientFactory;
             _logger = logger;
             _scopeFactory = scopeFactory;
             _twitchSettings = twitchSettings.Value;
@@ -69,6 +76,31 @@ namespace OmniForge.Infrastructure.Services
                     await helixWrapper.CreateEventSubSubscriptionAsync(
                         _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
 
+                    // Add Channel Events
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.subscribe", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.subscription.gift", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.subscription.message", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.cheer", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.raid", "1", new Dictionary<string, string> { { "to_broadcaster_user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId }, { "user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
+
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId }, { "user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
+
                     _subscribedUsers.TryAdd(userId, true);
                     return true;
                 }
@@ -97,11 +129,15 @@ namespace OmniForge.Infrastructure.Services
 
         public StreamMonitorStatus GetUserConnectionStatus(string userId)
         {
+            var discordStatus = _lastDiscordNotifications.TryGetValue(userId, out var status) ? status : (Time: (DateTimeOffset?)null, Success: false);
+
             return new StreamMonitorStatus
             {
                 Connected = _eventSubService.IsConnected,
                 Subscriptions = _subscribedUsers.ContainsKey(userId) ? new[] { "stream.online", "stream.offline" } : Array.Empty<string>(),
-                LastConnected = _eventSubService.IsConnected ? DateTimeOffset.UtcNow : null // Approximate
+                LastConnected = _eventSubService.IsConnected ? DateTimeOffset.UtcNow : null, // Approximate
+                LastDiscordNotification = discordStatus.Time,
+                LastDiscordNotificationSuccess = discordStatus.Success
             };
         }
 
@@ -204,6 +240,38 @@ namespace OmniForge.Infrastructure.Services
                 {
                     await HandleStreamOffline(eventData);
                 }
+                else if (subscriptionType == "channel.follow")
+                {
+                    await HandleFollow(eventData);
+                }
+                else if (subscriptionType == "channel.subscribe")
+                {
+                    await HandleSubscribe(eventData);
+                }
+                else if (subscriptionType == "channel.subscription.gift")
+                {
+                    await HandleSubscriptionGift(eventData);
+                }
+                else if (subscriptionType == "channel.subscription.message")
+                {
+                    await HandleSubscriptionMessage(eventData);
+                }
+                else if (subscriptionType == "channel.cheer")
+                {
+                    await HandleCheer(eventData);
+                }
+                else if (subscriptionType == "channel.raid")
+                {
+                    await HandleRaid(eventData);
+                }
+                else if (subscriptionType == "channel.chat.message")
+                {
+                    await HandleChatMessage(eventData);
+                }
+                else if (subscriptionType == "channel.chat.notification")
+                {
+                    await HandleChatNotification(eventData);
+                }
             }
             catch (Exception ex)
             {
@@ -278,6 +346,26 @@ namespace OmniForge.Infrastructure.Services
                                 };
                                 _logger.LogInformation($"Retrieved fresh stream info for {user.DisplayName}: {stream.Title} - {stream.GameName}");
                             }
+                            else
+                            {
+                                // Fallback to Channel Information if stream data is not yet available
+                                _logger.LogInformation($"Stream info not available yet for {user.DisplayName}, fetching channel info...");
+                                var channelInfo = await helixWrapper.GetChannelInformationAsync(_twitchSettings.ClientId, user.AccessToken, userId);
+                                if (channelInfo.Data != null && channelInfo.Data.Length > 0)
+                                {
+                                    var info = channelInfo.Data[0];
+                                    notificationData = new
+                                    {
+                                        title = info.Title,
+                                        game = info.GameName,
+                                        thumbnailUrl = user.ProfileImageUrl, // Fallback to profile image since stream thumbnail isn't ready
+                                        viewerCount = 0,
+                                        startedAt = DateTime.UtcNow,
+                                        broadcasterName = info.BroadcasterName
+                                    };
+                                    _logger.LogInformation($"Retrieved channel info for {user.DisplayName}: {info.Title} - {info.GameName}");
+                                }
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -288,7 +376,16 @@ namespace OmniForge.Infrastructure.Services
                     // Send Discord Notification
                     if (notificationData != null)
                     {
-                        await discordService.SendNotificationAsync(user, "stream_start", notificationData);
+                        try
+                        {
+                            await discordService.SendNotificationAsync(user, "stream_start", notificationData);
+                            _lastDiscordNotifications[userId] = (DateTimeOffset.UtcNow, true);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to send Discord notification for user {UserId}", userId);
+                            _lastDiscordNotifications[userId] = (DateTimeOffset.UtcNow, false);
+                        }
                     }
                 }
             }
@@ -339,6 +436,396 @@ namespace OmniForge.Infrastructure.Services
                     }
                 }
             }
+        }
+
+        private async Task HandleFollow(System.Text.Json.JsonElement eventData)
+        {
+            if (!TryGetBroadcasterId(eventData, out var broadcasterId)) return;
+
+            string displayName = "Someone";
+            if (eventData.TryGetProperty("user_name", out var nameProp)) displayName = nameProp.GetString() ?? "Someone";
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    await overlayNotifier.NotifyFollowerAsync(broadcasterId!, displayName);
+                }
+            }
+        }
+
+        private string GetReadableTier(string tier)
+        {
+            return tier switch
+            {
+                "1000" => "Tier 1",
+                "2000" => "Tier 2",
+                "3000" => "Tier 3",
+                "Prime" => "Prime",
+                _ => tier
+            };
+        }
+
+        private async Task HandleSubscribe(System.Text.Json.JsonElement eventData)
+        {
+            if (!TryGetBroadcasterId(eventData, out var broadcasterId)) return;
+
+            string displayName = "Someone";
+            if (eventData.TryGetProperty("user_name", out var nameProp)) displayName = nameProp.GetString() ?? "Someone";
+
+            string tier = "1000";
+            if (eventData.TryGetProperty("tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+            tier = GetReadableTier(tier);
+
+            bool isGift = false;
+            if (eventData.TryGetProperty("is_gift", out var giftProp)) isGift = giftProp.GetBoolean();
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    await overlayNotifier.NotifySubscriberAsync(broadcasterId!, displayName, tier, isGift);
+                }
+            }
+        }
+
+        private async Task HandleSubscriptionGift(System.Text.Json.JsonElement eventData)
+        {
+            if (!TryGetBroadcasterId(eventData, out var broadcasterId)) return;
+
+            string gifterName = "Anonymous";
+            if (eventData.TryGetProperty("user_name", out var nameProp) && nameProp.ValueKind != System.Text.Json.JsonValueKind.Null)
+                gifterName = nameProp.GetString() ?? "Anonymous";
+            else if (eventData.TryGetProperty("is_anonymous", out var anonProp) && anonProp.GetBoolean())
+                gifterName = "Anonymous";
+
+            int total = 1;
+            if (eventData.TryGetProperty("total", out var totalProp)) total = totalProp.GetInt32();
+
+            string tier = "1000";
+            if (eventData.TryGetProperty("tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+            tier = GetReadableTier(tier);
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    // NotifyGiftSubAsync expects recipientName, but this event is for the BATCH of gifts.
+                    // We'll use "Community" or similar as recipient for the batch alert.
+                    await overlayNotifier.NotifyGiftSubAsync(broadcasterId!, gifterName, "Community", tier, total);
+                }
+            }
+        }
+
+        private async Task HandleSubscriptionMessage(System.Text.Json.JsonElement eventData)
+        {
+            if (!TryGetBroadcasterId(eventData, out var broadcasterId)) return;
+
+            string displayName = "Someone";
+            if (eventData.TryGetProperty("user_name", out var nameProp)) displayName = nameProp.GetString() ?? "Someone";
+
+            string message = "";
+            if (eventData.TryGetProperty("message", out var msgProp) && msgProp.TryGetProperty("text", out var textProp))
+                message = textProp.GetString() ?? "";
+
+            // Check for Discord keywords in resub message
+            if (!string.IsNullOrEmpty(message) &&
+                (message.Contains("!discord", StringComparison.OrdinalIgnoreCase) ||
+                 message.Contains("discord link", StringComparison.OrdinalIgnoreCase)))
+            {
+                await SendDiscordInvite(broadcasterId!);
+            }
+
+            int months = 1;
+            if (eventData.TryGetProperty("cumulative_months", out var monthsProp)) months = monthsProp.GetInt32();
+
+            string tier = "1000";
+            if (eventData.TryGetProperty("tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+            tier = GetReadableTier(tier);
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    await overlayNotifier.NotifyResubAsync(broadcasterId!, displayName, months, tier, message);
+                }
+            }
+        }
+
+        private async Task HandleCheer(System.Text.Json.JsonElement eventData)
+        {
+            if (!TryGetBroadcasterId(eventData, out var broadcasterId)) return;
+
+            string displayName = "Anonymous";
+            if (eventData.TryGetProperty("user_name", out var nameProp) && nameProp.ValueKind != System.Text.Json.JsonValueKind.Null)
+                displayName = nameProp.GetString() ?? "Anonymous";
+            else if (eventData.TryGetProperty("is_anonymous", out var anonProp) && anonProp.GetBoolean())
+                displayName = "Anonymous";
+
+            int bits = 0;
+            if (eventData.TryGetProperty("bits", out var bitsProp)) bits = bitsProp.GetInt32();
+
+            string message = "";
+            if (eventData.TryGetProperty("message", out var msgProp)) message = msgProp.GetString() ?? "";
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    await overlayNotifier.NotifyBitsAsync(broadcasterId!, displayName, bits, message, 0); // totalBits unknown from this event
+                }
+            }
+        }
+
+        private async Task HandleRaid(System.Text.Json.JsonElement eventData)
+        {
+            // Raid event has "to_broadcaster_user_id" as the target (us)
+            string? broadcasterId = null;
+            if (eventData.TryGetProperty("to_broadcaster_user_id", out var idProp))
+                broadcasterId = idProp.GetString();
+
+            if (broadcasterId == null) return;
+
+            string raiderName = "Someone";
+            if (eventData.TryGetProperty("from_broadcaster_user_name", out var nameProp)) raiderName = nameProp.GetString() ?? "Someone";
+
+            int viewers = 0;
+            if (eventData.TryGetProperty("viewers", out var viewersProp)) viewers = viewersProp.GetInt32();
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                if (overlayNotifier != null)
+                {
+                    await overlayNotifier.NotifyRaidAsync(broadcasterId!, raiderName, viewers);
+                }
+            }
+        }
+
+        private async Task HandleChatMessage(System.Text.Json.JsonElement eventData)
+        {
+            try
+            {
+                if (!TryGetBroadcasterId(eventData, out var broadcasterId) || broadcasterId == null) return;
+
+                if (eventData.TryGetProperty("message", out var messageProp) &&
+                    messageProp.TryGetProperty("text", out var textProp))
+                {
+                    var messageText = textProp.GetString();
+                    if (string.IsNullOrEmpty(messageText)) return;
+
+                    // Check for Discord keywords
+                    if (messageText.Contains("!discord", StringComparison.OrdinalIgnoreCase) ||
+                        messageText.Contains("discord link", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendDiscordInvite(broadcasterId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling chat message.");
+            }
+        }
+
+        private async Task HandleChatNotification(System.Text.Json.JsonElement eventData)
+        {
+            try
+            {
+                if (!TryGetBroadcasterId(eventData, out var broadcasterId) || broadcasterId == null) return;
+
+                string noticeType = "";
+                if (eventData.TryGetProperty("notice_type", out var noticeProp))
+                    noticeType = noticeProp.GetString() ?? "";
+
+                _logger.LogInformation($"Chat Notification: {noticeType} for {broadcasterId}");
+
+                // Check for Discord keywords in the message if present
+                if (eventData.TryGetProperty("message", out var messageProp) &&
+                    messageProp.TryGetProperty("text", out var textProp))
+                {
+                    var messageText = textProp.GetString();
+                    if (!string.IsNullOrEmpty(messageText) &&
+                        (messageText.Contains("!discord", StringComparison.OrdinalIgnoreCase) ||
+                         messageText.Contains("discord link", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        await SendDiscordInvite(broadcasterId);
+                    }
+                }
+
+                string chatterName = "Someone";
+                if (eventData.TryGetProperty("chatter_user_name", out var chatterProp))
+                    chatterName = chatterProp.GetString() ?? "Someone";
+
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                    if (overlayNotifier == null) return;
+
+                    switch (noticeType)
+                    {
+                        case "sub":
+                            if (eventData.TryGetProperty("sub", out var subProp))
+                            {
+                                string tier = "1000";
+                                if (subProp.TryGetProperty("sub_tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+                                tier = GetReadableTier(tier);
+                                bool isPrime = false;
+                                if (subProp.TryGetProperty("is_prime", out var primeProp)) isPrime = primeProp.GetBoolean();
+
+                                await overlayNotifier.NotifySubscriberAsync(broadcasterId, chatterName, tier, false);
+                            }
+                            break;
+
+                        case "resub":
+                            if (eventData.TryGetProperty("resub", out var resubProp))
+                            {
+                                int months = 1;
+                                if (resubProp.TryGetProperty("cumulative_months", out var monthsProp)) months = monthsProp.GetInt32();
+                                string tier = "1000";
+                                if (resubProp.TryGetProperty("sub_tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+                                tier = GetReadableTier(tier);
+
+                                string message = "";
+                                if (eventData.TryGetProperty("message", out var msgProp) && msgProp.TryGetProperty("text", out var txtProp))
+                                    message = txtProp.GetString() ?? "";
+
+                                await overlayNotifier.NotifyResubAsync(broadcasterId, chatterName, months, tier, message);
+                            }
+                            break;
+
+                        case "sub_gift":
+                            if (eventData.TryGetProperty("sub_gift", out var giftProp))
+                            {
+                                int duration = 1;
+                                if (giftProp.TryGetProperty("duration_months", out var durProp)) duration = durProp.GetInt32();
+                                string tier = "1000";
+                                if (giftProp.TryGetProperty("sub_tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+                                tier = GetReadableTier(tier);
+                                string recipientName = "Someone";
+                                if (giftProp.TryGetProperty("recipient_user_name", out var recProp)) recipientName = recProp.GetString() ?? "Someone";
+
+                                // NotifyGiftSubAsync(userId, gifterName, recipientName, tier, totalGifts)
+                                // This is a single gift, so totalGifts = 1
+                                await overlayNotifier.NotifyGiftSubAsync(broadcasterId, chatterName, recipientName, tier, 1);
+                            }
+                            break;
+
+                        case "community_sub_gift":
+                            if (eventData.TryGetProperty("community_sub_gift", out var commGiftProp))
+                            {
+                                int total = 1;
+                                if (commGiftProp.TryGetProperty("total", out var totalProp)) total = totalProp.GetInt32();
+                                string tier = "1000";
+                                if (commGiftProp.TryGetProperty("sub_tier", out var tierProp)) tier = tierProp.GetString() ?? "1000";
+                                tier = GetReadableTier(tier);
+
+                                // For community gifts, recipient is "Community" or similar
+                                await overlayNotifier.NotifyGiftSubAsync(broadcasterId, chatterName, "Community", tier, total);
+                            }
+                            break;
+
+                        case "raid":
+                            if (eventData.TryGetProperty("raid", out var raidProp))
+                            {
+                                int viewers = 0;
+                                if (raidProp.TryGetProperty("viewer_count", out var viewProp)) viewers = viewProp.GetInt32();
+                                string raiderName = chatterName; // The chatter is the raider
+
+                                await overlayNotifier.NotifyRaidAsync(broadcasterId, raiderName, viewers);
+                            }
+                            break;
+
+                        case "announcement":
+                            // Optional: Handle announcements
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling chat notification.");
+            }
+        }
+
+        private async Task SendDiscordInvite(string broadcasterId)
+        {
+            // Check throttle (5 minutes)
+            if (_lastDiscordNotifications.TryGetValue(broadcasterId, out var lastStatus))
+            {
+                if ((DateTimeOffset.UtcNow - lastStatus.Time).TotalMinutes < 5)
+                {
+                    return; // Throttled
+                }
+            }
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var user = await userRepository.GetUserAsync(broadcasterId);
+
+                if (user == null || string.IsNullOrEmpty(user.AccessToken)) return;
+
+                try
+                {
+                    string discordInviteLink = !string.IsNullOrEmpty(user.DiscordInviteLink)
+                        ? user.DiscordInviteLink
+                        : "https://discord.gg/omniasylum"; // Fallback
+
+                    string message = $"Join our Discord community! {discordInviteLink}";
+
+                    // Send message to chat
+                    var client = _httpClientFactory.CreateClient();
+                    var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
+                    request.Headers.Add("Client-Id", _twitchSettings.ClientId);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", user.AccessToken);
+
+                    var payload = new
+                    {
+                        broadcaster_id = broadcasterId,
+                        sender_id = broadcasterId,
+                        message = message
+                    };
+
+                    request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                    var response = await client.SendAsync(request);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        _logger.LogError($"Failed to send chat message. Status: {response.StatusCode}, Error: {errorContent}");
+                        throw new Exception($"Failed to send chat message: {response.StatusCode}");
+                    }
+
+                    // Update throttle
+                    _lastDiscordNotifications.AddOrUpdate(broadcasterId,
+                        (DateTimeOffset.UtcNow, true),
+                        (key, old) => (DateTimeOffset.UtcNow, true));
+
+                    _logger.LogInformation($"Sent Discord invite to channel {broadcasterId}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send Discord invite.");
+                    _lastDiscordNotifications.AddOrUpdate(broadcasterId,
+                        (DateTimeOffset.UtcNow, false),
+                        (key, old) => (DateTimeOffset.UtcNow, false));
+                }
+            }
+        }
+
+        private bool TryGetBroadcasterId(System.Text.Json.JsonElement eventData, out string? broadcasterId)
+        {
+            broadcasterId = null;
+            if (eventData.TryGetProperty("broadcaster_user_id", out var idProp))
+                broadcasterId = idProp.GetString();
+            return broadcasterId != null;
         }
     }
 }

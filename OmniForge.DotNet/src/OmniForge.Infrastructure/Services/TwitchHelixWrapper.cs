@@ -69,6 +69,14 @@ namespace OmniForge.Infrastructure.Services
             return await api.Helix.Clips.CreateClipAsync(broadcasterId);
         }
 
+        public async Task<TwitchLib.Api.Helix.Models.Channels.GetChannelInformation.GetChannelInformationResponse> GetChannelInformationAsync(string clientId, string accessToken, string broadcasterId)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            return await api.Helix.Channels.GetChannelInformationAsync(broadcasterId);
+        }
+
         private static HelixCustomReward MapToEntity(TwitchLib.Api.Helix.Models.ChannelPoints.CustomReward reward)
         {
             return new HelixCustomReward

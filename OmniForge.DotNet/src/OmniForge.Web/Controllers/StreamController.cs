@@ -202,7 +202,7 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpGet("monitor/status")]
-        public async Task<IActionResult> GetMonitorStatus()
+        public IActionResult GetMonitorStatus()
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -215,6 +215,8 @@ namespace OmniForge.Web.Controllers
                 connected = status.Connected,
                 subscriptions = status.Subscriptions,
                 lastConnected = status.LastConnected,
+                lastDiscordNotification = status.LastDiscordNotification,
+                lastDiscordNotificationSuccess = status.LastDiscordNotificationSuccess,
                 currentUserMonitored = _streamMonitorService.IsUserSubscribed(userId),
                 twitchBot = botStatus
             });

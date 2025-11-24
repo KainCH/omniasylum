@@ -166,7 +166,7 @@
                 UserId = userId,
                 Name = newSeriesName,
                 Description = newSeriesDescription,
-                Snapshot = currentCounters,
+                Snapshot = currentCounters ?? new Counter { TwitchUserId = userId },
                 CreatedAt = DateTimeOffset.UtcNow,
                 LastUpdated = DateTimeOffset.UtcNow
             };

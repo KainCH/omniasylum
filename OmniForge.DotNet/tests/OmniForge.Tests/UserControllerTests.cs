@@ -159,12 +159,13 @@ namespace OmniForge.Tests
 
             // Use reflection to verify properties of the anonymous object
             var value = okResult.Value;
+            Assert.NotNull(value);
             var type = value.GetType();
 
-            Assert.Equal(user.DiscordWebhookUrl, type.GetProperty("webhookUrl").GetValue(value));
-            Assert.True((bool)type.GetProperty("enabled").GetValue(value));
-            Assert.Equal("asylum_themed", type.GetProperty("templateStyle").GetValue(value));
-            Assert.True((bool)type.GetProperty("enableChannelNotifications").GetValue(value));
+            Assert.Equal(user.DiscordWebhookUrl, type.GetProperty("webhookUrl")!.GetValue(value));
+            Assert.True((bool)type.GetProperty("enabled")!.GetValue(value)!);
+            Assert.Equal("asylum_themed", type.GetProperty("templateStyle")!.GetValue(value));
+            Assert.True((bool)type.GetProperty("enableChannelNotifications")!.GetValue(value)!);
         }
 
         [Fact]

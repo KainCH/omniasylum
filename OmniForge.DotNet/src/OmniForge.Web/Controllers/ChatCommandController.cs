@@ -217,6 +217,8 @@ namespace OmniForge.Web.Controllers
             {
                 var key = match.Groups[1].Value.ToLowerInvariant();
 
+                if (counters == null) return "0";
+
                 // Check standard counters
                 if (key == "deaths") return counters.Deaths.ToString();
                 if (key == "swears") return counters.Swears.ToString();

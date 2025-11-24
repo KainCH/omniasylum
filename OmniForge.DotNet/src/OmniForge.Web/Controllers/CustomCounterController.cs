@@ -82,7 +82,7 @@ namespace OmniForge.Web.Controllers
             // Get current value to check milestones
             var counters = await _counterRepository.GetCountersAsync(userId);
             int previousValue = 0;
-            if (counters.CustomCounters.TryGetValue(counterId, out int val))
+            if (counters != null && counters.CustomCounters.TryGetValue(counterId, out int val))
             {
                 previousValue = val;
             }
@@ -139,7 +139,7 @@ namespace OmniForge.Web.Controllers
 
             // Get previous value to calculate actual change (can't go below 0)
             var counters = await _counterRepository.GetCountersAsync(userId);
-            int previousValue = counters.CustomCounters.ContainsKey(counterId) ? counters.CustomCounters[counterId] : 0;
+            int previousValue = (counters != null && counters.CustomCounters.ContainsKey(counterId)) ? counters.CustomCounters[counterId] : 0;
 
             var updatedCounter = await _counterRepository.DecrementCounterAsync(userId, counterId, decrementBy);
             int newValue = updatedCounter.CustomCounters.ContainsKey(counterId) ? updatedCounter.CustomCounters[counterId] : 0;
@@ -171,7 +171,7 @@ namespace OmniForge.Web.Controllers
 
             // Get previous value
             var counters = await _counterRepository.GetCountersAsync(userId);
-            int previousValue = counters.CustomCounters.ContainsKey(counterId) ? counters.CustomCounters[counterId] : 0;
+            int previousValue = (counters != null && counters.CustomCounters.ContainsKey(counterId)) ? counters.CustomCounters[counterId] : 0;
 
             var updatedCounter = await _counterRepository.ResetCounterAsync(userId, counterId);
             int change = -previousValue;

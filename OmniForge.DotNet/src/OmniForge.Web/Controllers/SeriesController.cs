@@ -49,7 +49,7 @@ namespace OmniForge.Web.Controllers
                 UserId = userId,
                 Name = request.SeriesName,
                 Description = request.Description,
-                Snapshot = currentCounters,
+                Snapshot = currentCounters ?? new Counter { TwitchUserId = userId },
                 CreatedAt = DateTimeOffset.UtcNow,
                 LastUpdated = DateTimeOffset.UtcNow
             };

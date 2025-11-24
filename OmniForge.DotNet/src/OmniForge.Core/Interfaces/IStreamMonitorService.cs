@@ -17,5 +17,7 @@ namespace OmniForge.Core.Interfaces
         public bool Connected { get; set; }
         public string[] Subscriptions { get; set; } = Array.Empty<string>();
         public DateTimeOffset? LastConnected { get; set; }
+        public DateTimeOffset? LastDiscordNotification { get; set; }
+        public bool LastDiscordNotificationSuccess { get; set; }
     }
 }

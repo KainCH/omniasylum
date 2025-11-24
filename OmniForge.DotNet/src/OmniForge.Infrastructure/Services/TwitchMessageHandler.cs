@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using TwitchLib.Client.Models;
 
@@ -46,7 +47,7 @@ namespace OmniForge.Infrastructure.Services
                 {
                     var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
                     var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-                    var counters = await counterRepository.GetCountersAsync(userId);
+                    var counters = await counterRepository.GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId };
                     var user = await userRepository.GetUserAsync(userId);
 
                     var previousDeaths = counters.Deaths;

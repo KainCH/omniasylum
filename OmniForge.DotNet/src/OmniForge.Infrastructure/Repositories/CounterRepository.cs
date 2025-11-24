@@ -22,7 +22,7 @@ namespace OmniForge.Infrastructure.Repositories
             await _tableClient.CreateIfNotExistsAsync();
         }
 
-        public async Task<Counter> GetCountersAsync(string twitchUserId)
+        public async Task<Counter?> GetCountersAsync(string twitchUserId)
         {
             try
             {
@@ -120,7 +120,7 @@ namespace OmniForge.Infrastructure.Repositories
 
         public async Task<Counter> IncrementCounterAsync(string userId, string counterType, int amount = 1)
         {
-            var counter = await GetCountersAsync(userId);
+            var counter = await GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId, LastUpdated = DateTimeOffset.UtcNow };
 
             switch (counterType.ToLower())
             {
@@ -152,7 +152,7 @@ namespace OmniForge.Infrastructure.Repositories
 
         public async Task<Counter> DecrementCounterAsync(string userId, string counterType, int amount = 1)
         {
-            var counter = await GetCountersAsync(userId);
+            var counter = await GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId, LastUpdated = DateTimeOffset.UtcNow };
 
             switch (counterType.ToLower())
             {
@@ -180,7 +180,7 @@ namespace OmniForge.Infrastructure.Repositories
 
         public async Task<Counter> ResetCounterAsync(string userId, string counterType)
         {
-            var counter = await GetCountersAsync(userId);
+            var counter = await GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId, LastUpdated = DateTimeOffset.UtcNow };
 
             switch (counterType.ToLower())
             {

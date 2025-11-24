@@ -97,6 +97,8 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var counters = await _counterRepository.GetCountersAsync(userId);
+            if (counters == null) return NotFound("Counters not found");
+
             counters.Deaths = 0;
             counters.Swears = 0;
             counters.Screams = 0;
@@ -117,6 +119,8 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var counters = await _counterRepository.GetCountersAsync(userId);
+            if (counters == null) return NotFound("Counters not found");
+
             var user = await _userRepository.GetUserAsync(userId);
 
             return Ok(new
@@ -211,6 +215,29 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 message = "Overlay settings updated successfully",
+                settings = user.OverlaySettings
+            });
+        }
+
+        [HttpGet("{userId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicCounters(string userId)
+        {
+            var counters = await _counterRepository.GetCountersAsync(userId);
+            if (counters == null) return NotFound();
+
+            var user = await _userRepository.GetUserAsync(userId);
+
+            if (user == null) return NotFound();
+
+            return Ok(new
+            {
+                deaths = counters.Deaths,
+                swears = counters.Swears,
+                screams = counters.Screams,
+                bits = counters.Bits,
+                lastUpdated = counters.LastUpdated,
+                streamStarted = counters.StreamStarted,
                 settings = user.OverlaySettings
             });
         }

@@ -26,9 +26,13 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
-      transition: opacity 0.5s ease;
+      transition: opacity 1s ease-in-out;
+      opacity: 0;
+      /* Default hidden until stream starts */
+    }
+
+    .counter-overlay.visible {
       opacity: 1;
-      /* Default visible, JS can toggle */
     }
 
     .counter-item {
@@ -146,9 +150,12 @@
       }
 
       // Initial Data Load
-      fetch(`/api/counters/${userId}`) // Assuming this endpoint exists or similar
+      fetch(`/api/counters/${userId}`)
         .then(response => response.json())
         .then(data => {
+          if (data.settings) {
+            applySettings(data.settings);
+          }
           updateCounters(data);
         })
         .catch(err => console.error("Error loading initial data:", err));
@@ -195,25 +202,89 @@
           case 'counterUpdate':
             updateCounters(data);
             break;
+          case 'overlaySettingsUpdate':
+            applySettings(data);
+            break;
+          case 'streamStarted':
+            updateCounters(data);
+            break;
+          case 'streamEnded':
+            updateCounters(data);
+            break;
           case 'streamStatusUpdate':
             // Toggle visibility based on stream status if needed
             break;
           default:
             // Handle alerts
             if (window.overlayInterop) {
-              // Map WS message structure to what overlayInterop expects
-              // overlayInterop.triggerAlert(type, payload)
-              // The WS message might be method="follow", data={...}
               window.overlayInterop.triggerAlert(method, data);
             }
             break;
         }
       }
 
+      function applySettings(settings) {
+        const container = document.getElementById('overlay-container');
+
+        // Apply Scale
+        if (settings.scale) {
+          container.style.transform = `scale(${settings.scale})`;
+
+          // Set transform origin based on position
+          let origin = 'top right';
+          if (settings.position) {
+            if (settings.position.includes('left')) origin = 'top left';
+            if (settings.position.includes('bottom')) origin = origin.replace('top', 'bottom');
+          }
+          container.style.transformOrigin = origin;
+        }
+
+        // Apply Position
+        if (settings.position) {
+          container.style.top = '';
+          container.style.bottom = '';
+          container.style.left = '';
+          container.style.right = '';
+          container.style.transform = container.style.transform || ''; // Keep scale
+
+          switch (settings.position) {
+            case 'top-left':
+              container.style.top = '20px';
+              container.style.left = '20px';
+              break;
+            case 'top-right':
+              container.style.top = '20px';
+              container.style.right = '20px';
+              break;
+            case 'bottom-left':
+              container.style.bottom = '20px';
+              container.style.left = '20px';
+              break;
+            case 'bottom-right':
+              container.style.bottom = '20px';
+              container.style.right = '20px';
+              break;
+            case 'custom':
+              // Custom logic if needed
+              break;
+          }
+        }
+      }
+
       function updateCounters(data) {
         const container = document.getElementById('overlay-container');
+
+        // Handle visibility based on stream status
+        if (data.streamStarted) {
+          container.classList.add('visible');
+        } else {
+          container.classList.remove('visible');
+        }
+
         container.innerHTML = ''; // Clear current
 
+        // Check settings if available to filter counters, otherwise show all present in data
+        // For now, show all present
         if (data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
         if (data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
         if (data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
