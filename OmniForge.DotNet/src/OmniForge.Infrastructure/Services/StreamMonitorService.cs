@@ -58,7 +58,32 @@ namespace OmniForge.Infrastructure.Services
             {
                 try
                 {
+                    var tcs = new TaskCompletionSource<string>();
+                    
+                    // Local handler to capture the session ID
+                    Func<string, Task> welcomeHandler = null;
+                    welcomeHandler = (sessionId) => 
+                    {
+                        tcs.TrySetResult(sessionId);
+                        return Task.CompletedTask;
+                    };
+
+                    _eventSubService.OnSessionWelcome += welcomeHandler;
+
                     await _eventSubService.ConnectAsync();
+                    
+                    // Wait for the welcome message with a timeout
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
+                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+
+                    _eventSubService.OnSessionWelcome -= welcomeHandler;
+
+                    if (completedTask == timeoutTask)
+                    {
+                        _logger.LogError("Timed out waiting for EventSub Session Welcome message.");
+                        return SubscriptionResult.Failed;
+                    }
+
                     StartWatchdog();
                 }
                 catch (Exception ex)
@@ -248,10 +273,10 @@ namespace OmniForge.Infrastructure.Services
         private async Task OnDisconnected()
         {
             _logger.LogWarning("EventSub Disconnected.");
-            
+
             // Clear subscriptions on disconnect so UI reflects state
             _subscribedUsers.Clear();
-            
+
             await Task.CompletedTask;
         }
 
