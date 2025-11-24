@@ -227,10 +227,16 @@
         }
         else
         {
-            var success = await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
-            if (success)
+            var result = await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
+            if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
             {
                 isMonitoring = true;
+            }
+            else if (result == OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized)
+            {
+                errorMessage = "Authorization failed. You may need to re-login to grant new permissions.";
+                // Optional: Redirect to login to force re-auth
+                NavigationManager.NavigateTo("/auth/twitch?force_verify=true", true);
             }
             else
             {

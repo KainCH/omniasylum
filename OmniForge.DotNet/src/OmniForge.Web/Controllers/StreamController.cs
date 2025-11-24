@@ -229,9 +229,9 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var success = await _streamMonitorService.SubscribeToUserAsync(userId);
+            var result = await _streamMonitorService.SubscribeToUserAsync(userId);
 
-            if (success)
+            if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
             {
                 // Start Twitch bot if eligible
                 var user = await _userRepository.GetUserAsync(userId);
@@ -241,6 +241,10 @@ namespace OmniForge.Web.Controllers
                 }
 
                 return Ok(new { message = "Successfully subscribed to stream monitoring", userId });
+            }
+            else if (result == OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized)
+            {
+                return Unauthorized(new { error = "Twitch authorization failed. Please re-login." });
             }
 
             return BadRequest(new { error = "Failed to subscribe to stream monitoring" });
@@ -265,9 +269,9 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var success = await _streamMonitorService.ForceReconnectUserAsync(userId);
+            var result = await _streamMonitorService.ForceReconnectUserAsync(userId);
 
-            if (success)
+            if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
             {
                 return Ok(new { message = "Successfully reconnected EventSub WebSocket", userId, status = "connected" });
             }

@@ -51,12 +51,20 @@ namespace OmniForge.Infrastructure.Services
             _eventSubService.OnDisconnected += OnDisconnected;
         }
 
-        public async Task<bool> SubscribeToUserAsync(string userId)
+        public async Task<SubscriptionResult> SubscribeToUserAsync(string userId)
         {
+            // Ensure connected
             if (!_eventSubService.IsConnected)
             {
-                _logger.LogWarning("Cannot subscribe user {UserId}: EventSub service is not connected.", userId);
-                return false;
+                try
+                {
+                    await _eventSubService.ConnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to connect to EventSub service.");
+                    return SubscriptionResult.Failed;
+                }
             }
 
             using (var scope = _scopeFactory.CreateScope())
@@ -68,13 +76,13 @@ namespace OmniForge.Infrastructure.Services
                 if (user == null)
                 {
                     _logger.LogWarning("Cannot subscribe user {UserId}: User not found in database.", userId);
-                    return false;
+                    return SubscriptionResult.Failed;
                 }
 
                 if (string.IsNullOrEmpty(user.AccessToken))
                 {
                     _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", userId);
-                    return false;
+                    return SubscriptionResult.Unauthorized;
                 }
 
                 try
@@ -85,7 +93,7 @@ namespace OmniForge.Infrastructure.Services
                     if (string.IsNullOrEmpty(sessionId))
                     {
                         _logger.LogWarning("Cannot subscribe user {UserId}: Session ID is missing.", userId);
-                        return false;
+                        return SubscriptionResult.Failed;
                     }
 
                     await helixWrapper.CreateEventSubSubscriptionAsync(
@@ -120,12 +128,17 @@ namespace OmniForge.Infrastructure.Services
                         _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId }, { "user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
 
                     _subscribedUsers.TryAdd(userId, true);
-                    return true;
+                    return SubscriptionResult.Success;
+                }
+                catch (TwitchLib.Api.Core.Exceptions.BadScopeException)
+                {
+                    _logger.LogWarning("Failed to subscribe user {UserId}: Bad Scope / Unauthorized.", userId);
+                    return SubscriptionResult.Unauthorized;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to subscribe user {UserId}", userId);
-                    return false;
+                    return SubscriptionResult.Failed;
                 }
             }
         }
@@ -139,7 +152,7 @@ namespace OmniForge.Infrastructure.Services
             await Task.CompletedTask;
         }
 
-        public async Task<bool> ForceReconnectUserAsync(string userId)
+        public async Task<SubscriptionResult> ForceReconnectUserAsync(string userId)
         {
             // Re-subscribe
             return await SubscribeToUserAsync(userId);
@@ -167,17 +180,10 @@ namespace OmniForge.Infrastructure.Services
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Starting StreamMonitorService...");
-            try
-            {
-                await _eventSubService.ConnectAsync();
-
-                // Start watchdog to ensure connection stays alive
-                _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error starting StreamMonitorService.");
-            }
+            // Do NOT auto-connect. Wait for user action.
+            // Start watchdog to ensure connection stays alive IF connected
+            _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            await Task.CompletedTask;
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)

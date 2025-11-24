@@ -5,11 +5,18 @@ namespace OmniForge.Core.Interfaces
 {
     public interface IStreamMonitorService
     {
-        Task<bool> SubscribeToUserAsync(string userId);
+        Task<SubscriptionResult> SubscribeToUserAsync(string userId);
         Task UnsubscribeFromUserAsync(string userId);
-        Task<bool> ForceReconnectUserAsync(string userId);
+        Task<SubscriptionResult> ForceReconnectUserAsync(string userId);
         StreamMonitorStatus GetUserConnectionStatus(string userId);
         bool IsUserSubscribed(string userId);
+    }
+
+    public enum SubscriptionResult
+    {
+        Success,
+        Failed,
+        Unauthorized
     }
 
     public class StreamMonitorStatus
