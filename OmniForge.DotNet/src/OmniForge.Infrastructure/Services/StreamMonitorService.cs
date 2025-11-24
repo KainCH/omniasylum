@@ -59,12 +59,17 @@ namespace OmniForge.Infrastructure.Services
                 try
                 {
                     await _eventSubService.ConnectAsync();
+                    StartWatchdog();
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to connect to EventSub service.");
                     return SubscriptionResult.Failed;
                 }
+            }
+            else
+            {
+                StartWatchdog();
             }
 
             using (var scope = _scopeFactory.CreateScope())
@@ -134,6 +139,15 @@ namespace OmniForge.Infrastructure.Services
             // For now, we'll just mark as unsubscribed in our local tracking.
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
             _subscribedUsers.TryRemove(userId, out _);
+
+            if (_subscribedUsers.IsEmpty)
+            {
+                _connectionWatchdog?.Dispose();
+                _connectionWatchdog = null;
+                // Optionally disconnect if no users are left to save resources
+                // await _eventSubService.DisconnectAsync(); 
+            }
+
             await Task.CompletedTask;
         }
 
@@ -166,9 +180,15 @@ namespace OmniForge.Infrastructure.Services
         {
             _logger.LogInformation("Starting StreamMonitorService...");
             // Do NOT auto-connect. Wait for user action.
-            // Start watchdog to ensure connection stays alive IF connected
-            _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             await Task.CompletedTask;
+        }
+
+        private void StartWatchdog()
+        {
+            if (_connectionWatchdog == null)
+            {
+                _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            }
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
@@ -202,6 +222,9 @@ namespace OmniForge.Infrastructure.Services
 
         private async void CheckConnection(object? state)
         {
+            // Only attempt to maintain connection if we have active subscriptions
+            if (_subscribedUsers.IsEmpty) return;
+
             if (!_eventSubService.IsConnected)
             {
                 _logger.LogWarning("Watchdog detected disconnected state. Attempting to reconnect...");
