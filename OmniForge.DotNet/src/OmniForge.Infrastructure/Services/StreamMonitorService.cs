@@ -59,10 +59,10 @@ namespace OmniForge.Infrastructure.Services
                 try
                 {
                     var tcs = new TaskCompletionSource<string>();
-                    
+
                     // Local handler to capture the session ID
                     Func<string, Task> welcomeHandler = null;
-                    welcomeHandler = (sessionId) => 
+                    welcomeHandler = (sessionId) =>
                     {
                         tcs.TrySetResult(sessionId);
                         return Task.CompletedTask;
@@ -71,7 +71,7 @@ namespace OmniForge.Infrastructure.Services
                     _eventSubService.OnSessionWelcome += welcomeHandler;
 
                     await _eventSubService.ConnectAsync();
-                    
+
                     // Wait for the welcome message with a timeout
                     var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
                     var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);

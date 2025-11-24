@@ -27,11 +27,14 @@ namespace OmniForge.Infrastructure.Services
             var scopes = new List<string>
             {
                 "user:read:email",
-                "chat:read",
+                "user:read:chat",
+                "user:write:chat",
+                "user:bot",
                 "chat:edit",
                 "user:manage:whispers",
                 "channel:read:subscriptions",
                 "channel:read:redemptions",
+                "channel:manage:polls",
                 "moderator:read:followers",
                 "bits:read",
                 "clips:edit"

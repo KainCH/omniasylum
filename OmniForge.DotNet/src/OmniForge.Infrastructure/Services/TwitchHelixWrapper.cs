@@ -11,11 +11,20 @@ using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 
 using TwitchLib.Api.Core.Enums; // Added
 
+using Microsoft.Extensions.Logging; // Added
+
 namespace OmniForge.Infrastructure.Services
 {
     [ExcludeFromCodeCoverage]
     public class TwitchHelixWrapper : ITwitchHelixWrapper
     {
+        private readonly ILogger<TwitchHelixWrapper> _logger;
+
+        public TwitchHelixWrapper(ILogger<TwitchHelixWrapper> logger)
+        {
+            _logger = logger;
+        }
+
         public async Task<List<HelixCustomReward>> GetCustomRewardsAsync(string clientId, string accessToken, string broadcasterId)
         {
             var api = new TwitchAPI();
@@ -46,11 +55,36 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task CreateEventSubSubscriptionAsync(string clientId, string accessToken, string type, string version, Dictionary<string, string> condition, EventSubTransportMethod method, string sessionId)
         {
-            var api = new TwitchAPI();
-            api.Settings.ClientId = clientId;
-            api.Settings.AccessToken = accessToken;
+            try
+            {
+                _logger.LogInformation("Creating EventSub Subscription: Type={Type}, Version={Version}, SessionId={SessionId}, ClientId={ClientId}, TokenLength={TokenLength}",
+                    type, version, sessionId, clientId, accessToken?.Length ?? 0);
 
-            await api.Helix.EventSub.CreateEventSubSubscriptionAsync(type, version, condition, method, sessionId);
+                if (condition != null)
+                {
+                    foreach (var kvp in condition)
+                    {
+                        _logger.LogInformation("EventSub Condition: {Key}={Value}", kvp.Key, kvp.Value);
+                    }
+                }
+
+                var api = new TwitchAPI();
+                api.Settings.ClientId = clientId;
+                api.Settings.AccessToken = accessToken;
+
+                await api.Helix.EventSub.CreateEventSubSubscriptionAsync(type, version, condition, method, sessionId);
+            }
+            catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
+            {
+                _logger.LogError(ex, "BadRequestException in CreateEventSubSubscriptionAsync: {Message}", ex.Message);
+                // Log the raw response body if possible, or at least the parameters again
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in CreateEventSubSubscriptionAsync");
+                throw;
+            }
         }
 
         public async Task<GetStreamsResponse> GetStreamsAsync(string clientId, string accessToken, List<string> userIds)

@@ -8,6 +8,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$startTime = Get-Date
+Write-Host "🕒 Deployment started at: $($startTime.ToString('yyyy-MM-dd hh:mm:ss tt'))" -ForegroundColor Cyan
+
 # 1. Build Docker Image
 Write-Host "🔨 Building Docker image..." -ForegroundColor Cyan
 docker build -t "$AcrName.azurecr.io/$ImageName`:$ImageTag" -f ..\Dockerfile ..
@@ -48,5 +51,8 @@ $deployment = az deployment group create `
 $url = $deployment.properties.outputs.containerAppUrl.value
 Write-Host "✅ Deployment Complete!" -ForegroundColor Green
 Write-Host "🌍 App URL: https://$url" -ForegroundColor Yellow
+
+$endTime = Get-Date
+Write-Host "🕒 Deployment finished at: $($endTime.ToString('yyyy-MM-dd hh:mm:ss tt'))" -ForegroundColor Cyan
 Write-Host "🔗 Callback URL: https://$url/auth/twitch/callback" -ForegroundColor Yellow
 Write-Host "⚠️  Update this Callback URL in your Twitch Developer Console!" -ForegroundColor Magenta
