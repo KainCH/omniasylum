@@ -58,6 +58,63 @@
 
     <div class="row">
         <div class="col-md-12">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Asylum Effects Tests</h5>
+                </div>
+                <div class="card-body">
+                    <p>Trigger custom Asylum Effects (Sound & Visuals).</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Target User ID</label>
+                                <input type="text" class="form-control" @bind="effectsUserId" placeholder="Twitch User ID" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Sound Trigger (e.g., scream1, thunder)</label>
+                                <input type="text" class="form-control" @bind="soundTrigger" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Animation (e.g., shake, pulse)</label>
+                                <input type="text" class="form-control" @bind="animationName" />
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Visual Effects</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="enableScreenShake" id="chkShake">
+                                <label class="form-check-label" for="chkShake">Screen Shake</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="enableScreenFlicker" id="chkFlicker">
+                                <label class="form-check-label" for="chkFlicker">Screen Flicker</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="enableRedAlert" id="chkRed">
+                                <label class="form-check-label" for="chkRed">Red Alert</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="enableHeartbeat" id="chkHeart">
+                                <label class="form-check-label" for="chkHeart">Heartbeat Line</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="enableSilhouette" id="chkSil">
+                                <label class="form-check-label" for="chkSil">Silhouette</label>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-danger mt-3" @onclick="TriggerAsylumEffect">Trigger Effect</button>
+                    @if (!string.IsNullOrEmpty(effectsResult))
+                    {
+                        <div class="alert alert-info mt-2">
+                            @effectsResult
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
                     <h5>Overlay Tests</h5>
@@ -106,6 +163,17 @@
 
     private string offlineUserId = "";
     private string offlineResult = "";
+
+    // Asylum Effects
+    private string effectsUserId = "";
+    private string soundTrigger = "";
+    private string animationName = "";
+    private bool enableScreenShake = false;
+    private bool enableScreenFlicker = false;
+    private bool enableRedAlert = false;
+    private bool enableHeartbeat = false;
+    private bool enableSilhouette = false;
+    private string effectsResult = "";
 
     private async Task TestWebhookSave()
     {
@@ -189,6 +257,42 @@
         catch (Exception ex)
         {
             offlineResult = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerAsylumEffect()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(effectsUserId))
+            {
+                effectsResult = "Please enter a User ID";
+                return;
+            }
+
+            var payload = new
+            {
+                effects = new
+                {
+                    soundTrigger = string.IsNullOrWhiteSpace(soundTrigger) ? null : soundTrigger,
+                    animation = string.IsNullOrWhiteSpace(animationName) ? null : animationName,
+                    screenShake = enableScreenShake,
+                    screenFlicker = enableScreenFlicker,
+                    redAlert = enableRedAlert,
+                    heartbeatLine = enableHeartbeat,
+                    silhouette = enableSilhouette
+                },
+                duration = 5000 // Default duration
+            };
+
+            // Use "customAlert" as the type, which maps to overlay-interop.js handling
+            await OverlayNotifier.NotifyCustomAlertAsync(effectsUserId, "customAlert", payload);
+            
+            effectsResult = "Effect triggered successfully!";
+        }
+        catch (Exception ex)
+        {
+            effectsResult = $"Error: {ex.Message}";
         }
     }
 }
