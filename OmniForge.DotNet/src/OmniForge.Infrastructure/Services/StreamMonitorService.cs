@@ -53,7 +53,11 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<bool> SubscribeToUserAsync(string userId)
         {
-            if (!_eventSubService.IsConnected) return false;
+            if (!_eventSubService.IsConnected)
+            {
+                _logger.LogWarning("Cannot subscribe user {UserId}: EventSub service is not connected.", userId);
+                return false;
+            }
 
             using (var scope = _scopeFactory.CreateScope())
             {
@@ -61,14 +65,28 @@ namespace OmniForge.Infrastructure.Services
                 var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
                 var user = await userRepository.GetUserAsync(userId);
 
-                if (user == null || string.IsNullOrEmpty(user.AccessToken)) return false;
+                if (user == null)
+                {
+                    _logger.LogWarning("Cannot subscribe user {UserId}: User not found in database.", userId);
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(user.AccessToken))
+                {
+                    _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", userId);
+                    return false;
+                }
 
                 try
                 {
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId } };
                     var sessionId = _eventSubService.SessionId;
 
-                    if (string.IsNullOrEmpty(sessionId)) return false;
+                    if (string.IsNullOrEmpty(sessionId))
+                    {
+                        _logger.LogWarning("Cannot subscribe user {UserId}: Session ID is missing.", userId);
+                        return false;
+                    }
 
                     await helixWrapper.CreateEventSubSubscriptionAsync(
                         _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);

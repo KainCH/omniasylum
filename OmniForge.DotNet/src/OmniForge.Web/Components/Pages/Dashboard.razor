@@ -43,6 +43,13 @@
                     </div>
                 </div>
 
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger mt-3" role="alert">
+                        @errorMessage
+                    </div>
+                }
+
                 <div class="controls-section">
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
@@ -157,6 +164,7 @@
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
     private Timer? _refreshTimer;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,6 +218,7 @@
     private async Task ToggleMonitoring()
     {
         if (string.IsNullOrEmpty(TwitchUserId)) return;
+        errorMessage = null;
 
         if (isMonitoring)
         {
@@ -218,8 +227,15 @@
         }
         else
         {
-            await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
-            isMonitoring = true;
+            var success = await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
+            if (success)
+            {
+                isMonitoring = true;
+            }
+            else
+            {
+                errorMessage = "Failed to start monitoring. Check logs for details.";
+            }
         }
 
         monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
