@@ -76,12 +76,43 @@ namespace OmniForge.Infrastructure.Services
             {
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
+                var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
                 var user = await userRepository.GetUserAsync(userId);
 
                 if (user == null)
                 {
                     _logger.LogWarning("Cannot subscribe user {UserId}: User not found in database.", userId);
                     return SubscriptionResult.Failed;
+                }
+
+                // Check for token expiry and refresh if needed
+                if (user.TokenExpiry.AddMinutes(-5) < DateTimeOffset.UtcNow)
+                {
+                    _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", userId);
+                    
+                    if (!string.IsNullOrEmpty(user.RefreshToken))
+                    {
+                        var newToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                        if (newToken != null)
+                        {
+                            user.AccessToken = newToken.AccessToken;
+                            user.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
+                            user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            
+                            await userRepository.SaveUserAsync(user);
+                            _logger.LogInformation("Successfully refreshed access token for user {UserId}.", userId);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Failed to refresh access token for user {UserId}.", userId);
+                            return SubscriptionResult.Unauthorized;
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Cannot refresh token for user {UserId}: No refresh token available.", userId);
+                        return SubscriptionResult.Unauthorized;
+                    }
                 }
 
                 if (string.IsNullOrEmpty(user.AccessToken))
@@ -145,7 +176,7 @@ namespace OmniForge.Infrastructure.Services
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
                 // Optionally disconnect if no users are left to save resources
-                // await _eventSubService.DisconnectAsync(); 
+                // await _eventSubService.DisconnectAsync();
             }
 
             await Task.CompletedTask;
