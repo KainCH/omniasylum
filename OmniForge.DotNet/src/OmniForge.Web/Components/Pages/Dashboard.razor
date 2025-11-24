@@ -1,14 +1,18 @@
 @page "/dashboard"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
 @using System.Security.Claims
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using OmniForge.Web.Components.Modals
+@using System.Threading
 @attribute [Authorize]
 @inject ICounterRepository CounterRepository
 @inject IOverlayNotifier OverlayNotifier
 @inject NavigationManager NavigationManager
 @inject IStreamMonitorService StreamMonitorService
+@implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -72,7 +76,7 @@
 
                 @if (monitorStatus != null)
                 {
-                    <div class="monitor-status-card mt-4 p-3 border rounded bg-light">
+                    <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
                         <h5><i class="bi bi-activity"></i> Monitor Status</h5>
                         <div class="row">
                             <div class="col-md-6">
@@ -152,6 +156,7 @@
     private bool showDiscordSettings = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
+    private Timer? _refreshTimer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -170,11 +175,36 @@
                     counter = await CounterRepository.GetCountersAsync(TwitchUserId);
                     // Use the static HTML overlay instead of the Blazor page
                     OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
-                    isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
-                    monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
+
+                    // Initial check
+                    RefreshStatus();
+
+                    // Start timer to refresh status every 5 seconds
+                    _refreshTimer = new Timer(_ =>
+                    {
+                        InvokeAsync(() =>
+                        {
+                            RefreshStatus();
+                            StateHasChanged();
+                        });
+                    }, null, 5000, 5000);
                 }
             }
         }
+    }
+
+    private void RefreshStatus()
+    {
+        if (!string.IsNullOrEmpty(TwitchUserId))
+        {
+            isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
+            monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
     }
 
     private async Task ToggleMonitoring()
