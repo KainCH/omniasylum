@@ -107,21 +107,6 @@ namespace OmniForge.Infrastructure.Services
                         _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", condition, EventSubTransportMethod.Websocket, sessionId);
 
                     await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.subscribe", "1", condition, EventSubTransportMethod.Websocket, sessionId);
-
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.subscription.gift", "1", condition, EventSubTransportMethod.Websocket, sessionId);
-
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.subscription.message", "1", condition, EventSubTransportMethod.Websocket, sessionId);
-
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.cheer", "1", condition, EventSubTransportMethod.Websocket, sessionId);
-
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.raid", "1", new Dictionary<string, string> { { "to_broadcaster_user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
-
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
                         _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", new Dictionary<string, string> { { "broadcaster_user_id", user.TwitchUserId }, { "user_id", user.TwitchUserId } }, EventSubTransportMethod.Websocket, sessionId);
 
                     await helixWrapper.CreateEventSubSubscriptionAsync(
