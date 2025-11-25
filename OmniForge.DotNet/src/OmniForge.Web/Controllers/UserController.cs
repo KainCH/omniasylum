@@ -92,9 +92,19 @@ namespace OmniForge.Web.Controllers
             string actualWebhookUrl = request.WebhookUrl ?? request.DiscordWebhookUrl ?? string.Empty;
 
             // Basic validation
-            if (!string.IsNullOrEmpty(actualWebhookUrl) && !actualWebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
+            if (!string.IsNullOrEmpty(actualWebhookUrl))
             {
-                return BadRequest(new { error = "Invalid Discord webhook URL format" });
+                if (!actualWebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
+                {
+                    return BadRequest(new { error = "Invalid Discord webhook URL format" });
+                }
+
+                // Validate that the webhook actually exists
+                var isValid = await _discordService.ValidateWebhookAsync(actualWebhookUrl);
+                if (!isValid)
+                {
+                    return BadRequest(new { error = "The Discord webhook URL is invalid or does not exist. Please create a new webhook in Discord." });
+                }
             }
 
             user.DiscordWebhookUrl = actualWebhookUrl;

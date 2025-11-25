@@ -187,6 +187,22 @@ namespace OmniForge.Infrastructure.Services
             };
         }
 
+        public async Task<bool> ValidateWebhookAsync(string webhookUrl)
+        {
+            if (string.IsNullOrEmpty(webhookUrl)) return false;
+
+            try
+            {
+                var response = await _httpClient.GetAsync(webhookUrl);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", webhookUrl);
+                return false;
+            }
+        }
+
         private async Task SendWebhookAsync(string url, object payload)
         {
             try
@@ -202,6 +218,12 @@ namespace OmniForge.Infrastructure.Services
                 {
                     var errorText = await response.Content.ReadAsStringAsync();
                     _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, errorText);
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        throw new HttpRequestException($"Discord webhook URL is invalid or has been deleted. Please update your settings with a new webhook URL. Details: {errorText}");
+                    }
+
                     throw new HttpRequestException($"Discord webhook failed: {response.StatusCode} {errorText}");
                 }
 
