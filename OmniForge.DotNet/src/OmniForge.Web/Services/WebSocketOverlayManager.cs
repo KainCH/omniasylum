@@ -55,7 +55,7 @@ namespace OmniForge.Web.Services
             if (_sockets.TryGetValue(userId, out var userSockets))
             {
                 var payload = new { method, data };
-                var json = JsonSerializer.Serialize(payload);
+                var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
                 var bytes = Encoding.UTF8.GetBytes(json);
                 var segment = new ArraySegment<byte>(bytes);
 
