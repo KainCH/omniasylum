@@ -61,7 +61,7 @@ namespace OmniForge.Infrastructure.Services
                     var tcs = new TaskCompletionSource<string>();
 
                     // Local handler to capture the session ID
-                    Func<string, Task> welcomeHandler = null;
+                    Func<string, Task>? welcomeHandler = null;
                     welcomeHandler = (sessionId) =>
                     {
                         tcs.TrySetResult(sessionId);

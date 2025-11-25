@@ -9,7 +9,7 @@ const https = require('https');
 
 // You'll need your JWT token from browser developer tools
 const AUTH_TOKEN = 'YOUR_JWT_TOKEN_HERE';
-const WEBHOOK_URL = 'https://discord.com/api/webhooks/1436218415915335762/mH3t9foGHssnAb9iiN36dxaLM3yr0tTJABYUIaSZsm_MR1mmWlJgdPC0mG4uU9xoS74t';
+const WEBHOOK_URL = 'https://discord.com/api/webhooks/1442675628372394025/g3KOlf2i5W141v5DZxjKUB9V4O6wQ8tw9oPy-AIrvzqxUncIT9CmnfnY-PsIPvpZU3Aw';
 
 async function testWebhookSave() {
   console.log('🧪 Manual Webhook Save Test\n');
