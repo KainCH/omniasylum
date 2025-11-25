@@ -42,6 +42,12 @@ namespace OmniForge.Infrastructure.Services
                 _webSocket = new ClientWebSocket();
             }
 
+            if (_cts.IsCancellationRequested)
+            {
+                _cts.Dispose();
+                _cts = new CancellationTokenSource();
+            }
+
             try
             {
                 _logger.LogInformation("Connecting to Twitch EventSub WebSocket...");

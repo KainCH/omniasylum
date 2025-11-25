@@ -238,8 +238,8 @@ namespace OmniForge.Infrastructure.Services
             {
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
-                // Optionally disconnect if no users are left to save resources
-                // await _eventSubService.DisconnectAsync();
+                // Disconnect if no users are left to save resources and ensure clean state for next connection
+                await _eventSubService.DisconnectAsync();
             }
 
             await Task.CompletedTask;
