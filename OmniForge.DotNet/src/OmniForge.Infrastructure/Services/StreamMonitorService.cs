@@ -53,8 +53,8 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<SubscriptionResult> SubscribeToUserAsync(string userId)
         {
-            // Ensure connected
-            if (!_eventSubService.IsConnected)
+            // Ensure connected and we have a valid session ID
+            if (!_eventSubService.IsConnected || string.IsNullOrEmpty(_eventSubService.SessionId))
             {
                 try
                 {
@@ -70,6 +70,7 @@ namespace OmniForge.Infrastructure.Services
 
                     _eventSubService.OnSessionWelcome += welcomeHandler;
 
+                    // Connect if not already connected
                     await _eventSubService.ConnectAsync();
 
                     // Wait for the welcome message with a timeout
@@ -153,7 +154,7 @@ namespace OmniForge.Infrastructure.Services
                     if (!long.TryParse(broadcasterId, out _))
                     {
                         _logger.LogWarning("User ID '{UserId}' is not numeric. Attempting to resolve via Helix...", broadcasterId);
-                        try 
+                        try
                         {
                             _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
                             _twitchApi.Settings.AccessToken = user.AccessToken;
@@ -187,8 +188,8 @@ namespace OmniForge.Infrastructure.Services
 
                     // Add Channel Events
                     // channel.follow v2 requires moderator_user_id as well
-                    var followCondition = new Dictionary<string, string> 
-                    { 
+                    var followCondition = new Dictionary<string, string>
+                    {
                         { "broadcaster_user_id", broadcasterId },
                         { "moderator_user_id", broadcasterId }
                     };
@@ -198,12 +199,12 @@ namespace OmniForge.Infrastructure.Services
 
                     // For chat messages, we need to use the user's ID as the user_id condition.
                     // When a user subscribes to their own chat, user_id is their own ID.
-                    var chatCondition = new Dictionary<string, string> 
-                    { 
-                        { "broadcaster_user_id", broadcasterId }, 
-                        { "user_id", broadcasterId } 
+                    var chatCondition = new Dictionary<string, string>
+                    {
+                        { "broadcaster_user_id", broadcasterId },
+                        { "user_id", broadcasterId }
                     };
-                    
+
                     await helixWrapper.CreateEventSubSubscriptionAsync(
                         _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
 

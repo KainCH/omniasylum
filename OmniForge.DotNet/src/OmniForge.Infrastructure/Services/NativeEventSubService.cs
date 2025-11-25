@@ -64,6 +64,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None);
             }
+            SessionId = null; // Clear session ID on disconnect
             _cts.Cancel();
         }
 
