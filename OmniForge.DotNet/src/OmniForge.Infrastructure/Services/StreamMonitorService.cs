@@ -151,7 +151,7 @@ namespace OmniForge.Infrastructure.Services
                 {
                     // Validate the token and get the authoritative User ID
                     string tokenUserId = string.Empty;
-                    try 
+                    try
                     {
                         _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
                         _twitchApi.Settings.AccessToken = user.AccessToken;
@@ -159,7 +159,7 @@ namespace OmniForge.Infrastructure.Services
                         if (validation != null)
                         {
                             tokenUserId = validation.UserId;
-                            _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}", 
+                            _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}",
                                 validation.UserId, validation.Login, validation.ClientId);
                         }
                     }
@@ -171,7 +171,7 @@ namespace OmniForge.Infrastructure.Services
 
                     // Use the token's User ID as the broadcaster ID if we are monitoring the user themselves
                     var broadcasterId = tokenUserId;
-                    
+
                     // Fallback to database ID if validation failed (shouldn't happen if we return above) or if we want to support cross-channel monitoring later
                     if (string.IsNullOrEmpty(broadcasterId))
                     {
@@ -205,7 +205,7 @@ namespace OmniForge.Infrastructure.Services
                     }
 
                     // Subscribe to stream.online
-                    try 
+                    try
                     {
                         await helixWrapper.CreateEventSubSubscriptionAsync(
                             _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
