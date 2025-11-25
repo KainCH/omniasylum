@@ -149,25 +149,49 @@ namespace OmniForge.Infrastructure.Services
 
                 try
                 {
-                    // Validate User ID (must be numeric)
-                    var broadcasterId = user.TwitchUserId;
-                    if (!long.TryParse(broadcasterId, out _))
+                    // Validate the token and get the authoritative User ID
+                    string tokenUserId = string.Empty;
+                    try 
                     {
-                        _logger.LogWarning("User ID '{UserId}' is not numeric. Attempting to resolve via Helix...", broadcasterId);
-                        try
+                        _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
+                        _twitchApi.Settings.AccessToken = user.AccessToken;
+                        var validation = await _twitchApi.Auth.ValidateAccessTokenAsync();
+                        if (validation != null)
                         {
-                            _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
-                            _twitchApi.Settings.AccessToken = user.AccessToken;
-                            var users = await _twitchApi.Helix.Users.GetUsersAsync(logins: new List<string> { user.Username });
-                            if (users.Users.Length > 0)
-                            {
-                                broadcasterId = users.Users[0].Id;
-                                _logger.LogInformation("Resolved User ID '{OldId}' to '{NewId}'", user.TwitchUserId, broadcasterId);
-                            }
+                            tokenUserId = validation.UserId;
+                            _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}", 
+                                validation.UserId, validation.Login, validation.ClientId);
                         }
-                        catch (Exception ex)
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to validate access token for user {UserId}", userId);
+                        return SubscriptionResult.Unauthorized;
+                    }
+
+                    // Use the token's User ID as the broadcaster ID if we are monitoring the user themselves
+                    var broadcasterId = tokenUserId;
+                    
+                    // Fallback to database ID if validation failed (shouldn't happen if we return above) or if we want to support cross-channel monitoring later
+                    if (string.IsNullOrEmpty(broadcasterId))
+                    {
+                        broadcasterId = user.TwitchUserId;
+                        if (!long.TryParse(broadcasterId, out _))
                         {
-                            _logger.LogError(ex, "Failed to resolve user ID for {Username}", user.Username);
+                            _logger.LogWarning("User ID '{UserId}' is not numeric. Attempting to resolve via Helix...", broadcasterId);
+                            try
+                            {
+                                var users = await _twitchApi.Helix.Users.GetUsersAsync(logins: new List<string> { user.Username });
+                                if (users.Users.Length > 0)
+                                {
+                                    broadcasterId = users.Users[0].Id;
+                                    _logger.LogInformation("Resolved User ID '{OldId}' to '{NewId}'", user.TwitchUserId, broadcasterId);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to resolve user ID for {Username}", user.Username);
+                            }
                         }
                     }
 
@@ -180,36 +204,58 @@ namespace OmniForge.Infrastructure.Services
                         return SubscriptionResult.Failed;
                     }
 
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                    // Subscribe to stream.online
+                    try 
+                    {
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to stream.online"); }
 
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                    // Subscribe to stream.offline
+                    try
+                    {
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to stream.offline"); }
 
                     // Add Channel Events
                     // channel.follow v2 requires moderator_user_id as well
                     var followCondition = new Dictionary<string, string>
                     {
                         { "broadcaster_user_id", broadcasterId },
-                        { "moderator_user_id", broadcasterId }
+                        { "moderator_user_id", tokenUserId } // Must match token owner
                     };
 
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", followCondition, EventSubTransportMethod.Websocket, sessionId);
+                    try
+                    {
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", followCondition, EventSubTransportMethod.Websocket, sessionId);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to channel.follow"); }
 
                     // For chat messages, we need to use the user's ID as the user_id condition.
                     // When a user subscribes to their own chat, user_id is their own ID.
                     var chatCondition = new Dictionary<string, string>
                     {
                         { "broadcaster_user_id", broadcasterId },
-                        { "user_id", broadcasterId }
+                        { "user_id", tokenUserId } // Must match token owner
                     };
 
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                    try
+                    {
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to channel.chat.message"); }
 
-                    await helixWrapper.CreateEventSubSubscriptionAsync(
-                        _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                    try
+                    {
+                        await helixWrapper.CreateEventSubSubscriptionAsync(
+                            _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to channel.chat.notification"); }
 
                     _subscribedUsers.TryAdd(userId, true);
                     return SubscriptionResult.Success;
