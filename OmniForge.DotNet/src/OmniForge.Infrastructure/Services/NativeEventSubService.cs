@@ -66,12 +66,23 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task DisconnectAsync()
         {
+            _logger.LogInformation("🔌 DisconnectAsync called. Current state: {State}, SessionId: {SessionId}", 
+                _webSocket.State, SessionId ?? "(null)");
+            
             if (_webSocket.State == WebSocketState.Open)
             {
-                await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None);
+                _logger.LogInformation("🔌 Closing EventSub WebSocket gracefully...");
+                await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "User requested disconnect", CancellationToken.None);
+                _logger.LogInformation("🔌 EventSub WebSocket closed");
             }
+            else
+            {
+                _logger.LogInformation("🔌 WebSocket not open (state: {State}), skipping close", _webSocket.State);
+            }
+            
             SessionId = null; // Clear session ID on disconnect
             _cts.Cancel();
+            _logger.LogInformation("✅ EventSub disconnected. SessionId cleared, CancellationToken cancelled.");
         }
 
         private async Task ReceiveLoopAsync(CancellationToken token)

@@ -351,25 +351,26 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task UnsubscribeFromUserAsync(string userId)
         {
+            _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", userId);
+            
             // Note: Helix doesn't easily support "unsubscribe by user" without tracking subscription IDs.
             // For now, we'll just mark as unsubscribed in our local tracking.
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
-            _subscribedUsers.TryRemove(userId, out _);
-            _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
+            var wasSubscribed = _subscribedUsers.TryRemove(userId, out _);
+            var wasWanting = _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
 
-            _logger.LogInformation("🛑 User {UserId} unsubscribed. Active users: {Count}, Users wanting monitoring: {WantingCount}", 
-                userId, _subscribedUsers.Count, _usersWantingMonitoring.Count);
+            _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}", 
+                userId, wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
 
             if (_usersWantingMonitoring.IsEmpty)
             {
-                _logger.LogInformation("🔌 No users wanting monitoring. Disconnecting EventSub and stopping watchdog.");
+                _logger.LogInformation("🔌 No users wanting monitoring. Disconnecting EventSub WebSocket and stopping watchdog.");
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
                 // Disconnect if no users are left to save resources and ensure clean state for next connection
                 await _eventSubService.DisconnectAsync();
+                _logger.LogInformation("✅ EventSub disconnected successfully");
             }
-
-            await Task.CompletedTask;
         }
 
         /// <summary>
