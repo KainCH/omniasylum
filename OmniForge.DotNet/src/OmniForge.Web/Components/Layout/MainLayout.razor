@@ -1,0 +1,70 @@
+﻿@inherits LayoutComponentBase
+@inject IJSRuntime JSRuntime
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <button class="btn btn-link me-3" @onclick="ToggleDarkMode">
+                <span class="bi @(isDarkMode ? "bi-sun-fill" : "bi-moon-fill")" aria-hidden="true"></span>
+                @(isDarkMode ? "Light Mode" : "Dark Mode")
+            </button>
+            <AuthorizeView>
+                <Authorized>
+                    <span class="me-3">Hello, @context.User.Identity?.Name!</span>
+                    <a href="Auth/logout">Log out</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="auth/twitch">Log in with Twitch</a>
+                </NotAuthorized>
+            </AuthorizeView>
+            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank" class="ms-3">About</a>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool isDarkMode = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                isDarkMode = await JSRuntime.InvokeAsync<bool>("initDarkMode");
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing dark mode: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        try
+        {
+            isDarkMode = !isDarkMode;
+            await JSRuntime.InvokeVoidAsync("toggleDarkMode", isDarkMode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling dark mode: {ex.Message}");
+        }
+    }
+}

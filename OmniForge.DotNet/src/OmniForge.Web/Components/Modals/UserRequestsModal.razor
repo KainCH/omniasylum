@@ -1,0 +1,118 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>User Requests</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (requests == null || !requests.Any())
+                    {
+                        <div class="text-center p-5 text-muted">
+                            <i class="bi bi-inbox fs-1 mb-3"></i>
+                            <p>No pending requests found.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var request in requests)
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">@request.Username</h6>
+                                        <p class="mb-1 small text-muted">@request.Email</p>
+                                        <p class="mb-0 small">@request.Reason</p>
+                                    </div>
+                                    <div class="btn-group">
+                                        <button class="btn btn-success btn-sm" @onclick="() => ApproveRequest(request)">
+                                            <i class="bi bi-check-lg"></i> Approve
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" @onclick="() => DenyRequest(request)">
+                                            <i class="bi bi-x-lg"></i> Deny
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+
+    private List<UserRequest> requests = new();
+    private bool isLoading = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !isLoading)
+        {
+            await LoadRequests();
+        }
+    }
+
+    private async Task LoadRequests()
+    {
+        isLoading = true;
+        try
+        {
+            // TODO: Implement actual request loading from repository
+            // For now, simulate empty list or mock data
+            await Task.Delay(500);
+            requests = new List<UserRequest>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ApproveRequest(UserRequest request)
+    {
+        // TODO: Implement approval logic
+        await Task.Delay(500);
+        requests.Remove(request);
+    }
+
+    private async Task DenyRequest(UserRequest request)
+    {
+        // TODO: Implement denial logic
+        await Task.Delay(500);
+        requests.Remove(request);
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    public class UserRequest
+    {
+        public string Id { get; set; } = "";
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Reason { get; set; } = "";
+        public DateTime RequestDate { get; set; }
+    }
+}

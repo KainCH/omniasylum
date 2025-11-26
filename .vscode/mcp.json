@@ -5,7 +5,7 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "c:\\Game Data\\Coding Projects\\doc-omni"
+        "${workspaceFolder}"
       ]
     },
     "sequential-thinking": {

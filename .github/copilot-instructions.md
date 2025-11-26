@@ -23,6 +23,13 @@ This is a **multi-tenant Twitch stream counter application** with a Node.js back
 - Log important events with emojis (✅ ❌ 🔄 💀 🤬)
 - Use descriptive variable names (e.g., `twitchUserId` not `id`)
 
+### C# / .NET
+- **Code Coverage**: Maintain at least **85% code coverage** for all new code.
+- Use **Async/Await** for all I/O bound operations.
+- Use **Dependency Injection** for all services and repositories.
+- Follow **Clean Architecture** principles (Core, Infrastructure, Web).
+- Use **xUnit** for unit testing and **Moq** for mocking.
+
 ### File Organization
 ```
 API/

@@ -1,0 +1,262 @@
+@page "/settings/discord"
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserRepository UserRepository
+@inject IDiscordService DiscordService
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize]
+
+<PageTitle>Discord Settings - OmniForge</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-discord text-primary"></i> Discord Integration</h2>
+        <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (user == null)
+    {
+        <div class="alert alert-danger">User not found. Please try logging in again.</div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert alert-@messageType alert-dismissible fade show" role="alert">
+                @message
+                <button type="button" class="btn-close" @onclick="() => message = null"></button>
+            </div>
+        }
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Webhook Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            Create a webhook in your Discord server (Server Settings > Integrations > Webhooks) and paste the URL here.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label">Webhook URL</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                                <input type="text" class="form-control" @bind="user.DiscordWebhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" @onclick="SaveWebhook" disabled="@isSaving">
+                                @(isSaving ? "Saving..." : "Save Webhook")
+                            </button>
+                            <button class="btn btn-outline-secondary" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(user.DiscordWebhookUrl) || isTesting)">
+                                @(isTesting ? "Testing..." : "Test Webhook")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Community Invite</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            Link to your Discord community server. Displayed on your public profile.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label">Invite Link</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-discord"></i></span>
+                                <input type="text" class="form-control" @bind="user.DiscordInviteLink" placeholder="https://discord.gg/..." />
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SaveInvite" disabled="@isSaving">
+                            Save Invite
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Notification Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="border-bottom pb-2 mb-3">Milestones</h6>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.DeathMilestone" id="deathMilestone">
+                            <label class="form-check-label" for="deathMilestone">Death Milestones</label>
+                        </div>
+                        <div class="mb-3 ms-4">
+                            <label class="form-label small text-muted">Thresholds (comma separated)</label>
+                            <input type="text" class="form-control form-control-sm"
+                                   value="@string.Join(", ", user.DiscordSettings.MilestoneThresholds.Deaths)"
+                                   @onchange="@(e => UpdateThresholds(e, "deaths"))" />
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.SwearMilestone" id="swearMilestone">
+                            <label class="form-check-label" for="swearMilestone">Swear Milestones</label>
+                        </div>
+                        <div class="mb-3 ms-4">
+                            <label class="form-label small text-muted">Thresholds (comma separated)</label>
+                            <input type="text" class="form-control form-control-sm"
+                                   value="@string.Join(", ", user.DiscordSettings.MilestoneThresholds.Swears)"
+                                   @onchange="@(e => UpdateThresholds(e, "swears"))" />
+                        </div>
+
+                        <h6 class="border-bottom pb-2 mb-3 mt-4">Stream Events</h6>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.StreamStart" id="streamStart">
+                            <label class="form-check-label" for="streamStart">Stream Start</label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.StreamEnd" id="streamEnd">
+                            <label class="form-check-label" for="streamEnd">Stream End</label>
+                        </div>
+
+                        <div class="mt-4">
+                            <button class="btn btn-primary w-100" @onclick="SaveSettings" disabled="@isSaving">
+                                Save Notification Settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private User? user;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isTesting = false;
+    private string? message;
+    private string messageType = "info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst("userId")?.Value;
+
+            if (userId != null)
+            {
+                user = await UserRepository.GetUserAsync(userId);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading user data: {ex.Message}", "danger");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowMessage(string msg, string type)
+    {
+        message = msg;
+        messageType = type;
+        StateHasChanged();
+    }
+
+    private async Task SaveWebhook()
+    {
+        if (user == null) return;
+        isSaving = true;
+        try
+        {
+            await UserRepository.SaveUserAsync(user);
+            ShowMessage("Webhook URL saved successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving webhook: {ex.Message}", "danger");
+        }
+        isSaving = false;
+    }
+
+    private async Task SaveInvite()
+    {
+        if (user == null) return;
+        isSaving = true;
+        try
+        {
+            await UserRepository.SaveUserAsync(user);
+            ShowMessage("Invite link saved successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving invite: {ex.Message}", "danger");
+        }
+        isSaving = false;
+    }
+
+    private async Task TestWebhook()
+    {
+        if (user == null) return;
+        isTesting = true;
+        try
+        {
+            await DiscordService.SendTestNotificationAsync(user);
+            ShowMessage("Test notification sent! Check your Discord channel.", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error sending test notification: {ex.Message}", "danger");
+        }
+        isTesting = false;
+    }
+
+    private async Task SaveSettings()
+    {
+        if (user == null) return;
+        isSaving = true;
+        try
+        {
+            await UserRepository.SaveUserAsync(user);
+            ShowMessage("Notification settings saved successfully!", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving settings: {ex.Message}", "danger");
+        }
+        isSaving = false;
+    }
+
+    private void UpdateThresholds(ChangeEventArgs e, string type)
+    {
+        if (user == null) return;
+
+        var val = e.Value?.ToString();
+        if (val == null) return;
+
+        var list = val.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                      .Select(s => int.TryParse(s.Trim(), out int n) ? n : 0)
+                      .Where(n => n > 0)
+                      .OrderBy(n => n)
+                      .ToList();
+
+        if (type == "deaths") user.DiscordSettings.MilestoneThresholds.Deaths = list;
+        if (type == "swears") user.DiscordSettings.MilestoneThresholds.Swears = list;
+    }
+}

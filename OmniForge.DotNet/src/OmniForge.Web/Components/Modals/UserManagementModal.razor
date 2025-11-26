@@ -1,0 +1,219 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-person-gear me-2"></i>
+                        @(IsNewUser ? "Create User" : $"Edit User: {user.Username}")
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="@user" OnValidSubmit="SaveUser">
+                            <DataAnnotationsValidator />
+
+                            <div class="row">
+                                <!-- Left Column: User Details -->
+                                <div class="col-md-4 border-end border-secondary">
+                                    <h6 class="text-uppercase text-muted mb-3">Profile</h6>
+
+                                    <div class="text-center mb-4">
+                                        @if (!string.IsNullOrEmpty(user.ProfileImageUrl))
+                                        {
+                                            <img src="@user.ProfileImageUrl" class="rounded-circle mb-2" width="100" height="100" />
+                                        }
+                                        else
+                                        {
+                                            <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center mb-2" style="width: 100px; height: 100px;">
+                                                <i class="bi bi-person-fill fs-1"></i>
+                                            </div>
+                                        }
+                                        <h5>@user.DisplayName</h5>
+                                        <div class="text-muted">@user.TwitchUserId</div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Username</label>
+                                        <InputText class="form-control" @bind-Value="user.Username" disabled="@(!IsNewUser)" />
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Email</label>
+                                        <InputText class="form-control" @bind-Value="user.Email" />
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Role</label>
+                                        <InputSelect class="form-select" @bind-Value="user.Role">
+                                            <option value="streamer">Streamer</option>
+                                            <option value="admin">Admin</option>
+                                        </InputSelect>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <InputCheckbox id="isActive" class="form-check-input" @bind-Value="user.IsActive" />
+                                        <label class="form-check-label" for="isActive">Account Active</label>
+                                    </div>
+                                </div>
+
+                                <!-- Right Column: Features -->
+                                <div class="col-md-8 ps-4">
+                                    <h6 class="text-uppercase text-muted mb-3">Feature Flags</h6>
+
+                                    <div class="row g-3">
+                                        @foreach (var prop in typeof(FeatureFlags).GetProperties())
+                                        {
+                                            if (prop.PropertyType == typeof(bool))
+                                            {
+                                                <div class="col-md-6">
+                                                    <div class="card bg-secondary bg-opacity-10 border-secondary h-100">
+                                                        <div class="card-body d-flex align-items-center justify-content-between p-3">
+                                                            <div>
+                                                                <h6 class="mb-0">@SplitCamelCase(prop.Name)</h6>
+                                                            </div>
+                                                            <div class="form-check form-switch">
+                                                                <input class="form-check-input" type="checkbox"
+                                                                       checked="@((bool)prop.GetValue(user.Features)!)"
+                                                                       @onchange="@(e => SetFeature(prop.Name, (bool)e.Value!))" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer border-secondary mt-4">
+                                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                                <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                                    @if (isSaving)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                        <span>Saving...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Save User</span>
+                                    }
+                                </button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public string? UserId { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private User user = new();
+    private bool isLoading = false;
+    private bool isSaving = false;
+    private bool IsNewUser => string.IsNullOrEmpty(UserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !isLoading)
+        {
+            await LoadUser();
+        }
+    }
+
+    private async Task LoadUser()
+    {
+        isLoading = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(UserId))
+            {
+                var existingUser = await UserRepository.GetUserAsync(UserId);
+                if (existingUser != null)
+                {
+                    // Clone to avoid modifying the original reference until saved
+                    user = CloneUser(existingUser);
+                }
+            }
+            else
+            {
+                user = new User();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveUser()
+    {
+        isSaving = true;
+        try
+        {
+            await UserRepository.SaveUserAsync(user);
+            await OnSaved.InvokeAsync();
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving user: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    private void SetFeature(string propertyName, bool value)
+    {
+        var prop = typeof(FeatureFlags).GetProperty(propertyName);
+        if (prop != null)
+        {
+            prop.SetValue(user.Features, value);
+        }
+    }
+
+    private string SplitCamelCase(string input)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(input, "([A-Z])", " $1", System.Text.RegularExpressions.RegexOptions.Compiled).Trim();
+    }
+
+    private User CloneUser(User source)
+    {
+        // Simple JSON clone for deep copy
+        var json = System.Text.Json.JsonSerializer.Serialize(source);
+        return System.Text.Json.JsonSerializer.Deserialize<User>(json) ?? new User();
+    }
+}

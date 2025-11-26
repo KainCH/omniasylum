@@ -1,0 +1,128 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IAlertRepository AlertRepository
+@inject IJSRuntime JSRuntime
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-bell-fill me-2"></i>Manage Alerts</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (alerts == null || !alerts.Any())
+                    {
+                        <div class="alert alert-info">
+                            No alerts found. Create some alerts to manage them here.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>Visual Cue</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var alert in alerts)
+                                    {
+                                        <tr>
+                                            <td>@alert.Name</td>
+                                            <td><span class="badge bg-secondary">@alert.Type</span></td>
+                                            <td>@alert.VisualCue</td>
+                                            <td>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled" @onchange="@(e => ToggleAlert(alert, e))" />
+                                                    <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <!-- Future: Edit/Delete buttons -->
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowChanged { get; set; }
+
+    [Parameter]
+    public string UserId { get; set; } = string.Empty;
+
+    private List<Alert> alerts = new();
+    private bool isLoading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !string.IsNullOrEmpty(UserId))
+        {
+            await LoadAlerts();
+        }
+    }
+
+    private async Task LoadAlerts()
+    {
+        isLoading = true;
+        try
+        {
+            var result = await AlertRepository.GetAlertsAsync(UserId);
+            alerts = result.OrderBy(a => a.Name).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading alerts: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ToggleAlert(Alert alert, ChangeEventArgs e)
+    {
+        if (e.Value is bool isEnabled)
+        {
+            alert.IsEnabled = isEnabled;
+            alert.UpdatedAt = DateTimeOffset.UtcNow;
+            await AlertRepository.SaveAlertAsync(alert);
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+}

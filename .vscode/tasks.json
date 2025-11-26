@@ -2,59 +2,31 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Install API Dependencies",
+      "label": "Deploy .NET to Azure (Dev)",
       "type": "shell",
-      "command": "npm install",
+      "command": ".\\deploy.ps1 -Environment \"dev\"",
       "options": {
-        "cwd": "${workspaceFolder}/API"
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
       },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
-        "panel": "shared"
+        "panel": "shared",
+        "showReuseMessage": false
       }
     },
     {
-      "label": "Start API Server",
+      "label": "Deploy .NET to Azure (Prod)",
       "type": "shell",
-      "command": "npm start",
+      "command": ".\\deploy.ps1 -Environment \"prod\"",
       "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "focus": false
-      }
-    },
-    {
-      "label": "Start API Server (Dev)",
-      "type": "shell",
-      "command": "npm run dev",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
-      },
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "focus": false
-      }
-    },
-    {
-      "label": "Deploy to Azure",
-      "type": "shell",
-      "command": "az deployment group create --resource-group ${input:resourceGroup} --template-file deploy/main.bicep --parameters baseName=${input:baseName}",
-      "options": {
-        "cwd": "${workspaceFolder}/API"
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
       },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
-        "panel": "shared"
+        "panel": "shared",
+        "showReuseMessage": false
       }
     },
     {
@@ -68,18 +40,7 @@
       }
     },
     {
-      "label": "View Azure Logs",
-      "type": "shell",
-      "command": "az containerapp logs show --name ${input:containerAppName} --resource-group ${input:resourceGroup} --follow",
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Fullstack Deploy",
+      "label": "Fullstack Deploy (Legacy NodeJS)",
       "type": "shell",
       "command": ".\\deploy-with-cleanup.ps1",
       "options": {
@@ -93,7 +54,7 @@
       }
     },
     {
-      "label": "Backend Deploy",
+      "label": "Backend Deploy (Legacy NodeJS)",
       "type": "shell",
       "command": ".\\deploy-with-cleanup.ps1 -SkipFrontend",
       "options": {
@@ -104,6 +65,19 @@
         "reveal": "always",
         "panel": "shared",
         "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Docker Cleanup",
+      "type": "shell",
+      "command": ".\\cleanup-docker.ps1",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
       }
     }
   ],

@@ -1,0 +1,102 @@
+@page "/users/{TwitchUserId}"
+@using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize(Roles = "admin")]
+@inject IUserRepository UserRepository
+@inject NavigationManager NavigationManager
+
+<h3>Edit User</h3>
+
+@if (user == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <EditForm Model="@user" OnValidSubmit="HandleValidSubmit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="mb-3">
+            <label class="form-label">Username</label>
+            <InputText class="form-control" @bind-Value="user.Username" readonly />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Display Name</label>
+            <InputText class="form-control" @bind-Value="user.DisplayName" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Role</label>
+            <InputSelect class="form-select" @bind-Value="user.Role">
+                <option value="streamer">Streamer</option>
+                <option value="admin">Admin</option>
+            </InputSelect>
+        </div>
+
+        <div class="form-check mb-3">
+            <InputCheckbox class="form-check-input" @bind-Value="user.IsActive" />
+            <label class="form-check-label">Active</label>
+        </div>
+
+        <h4>Features</h4>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.ChatCommands" />
+                    <label class="form-check-label">Chat Commands</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.ChannelPoints" />
+                    <label class="form-check-label">Channel Points</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.AutoClip" />
+                    <label class="form-check-label">Auto Clip</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.StreamOverlay" />
+                    <label class="form-check-label">Stream Overlay</label>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.DiscordNotifications" />
+                    <label class="form-check-label">Discord Notifications</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.StreamAlerts" />
+                    <label class="form-check-label">Stream Alerts</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/users" class="btn btn-secondary">Cancel</a>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter]
+    public string TwitchUserId { get; set; } = string.Empty;
+
+    private User? user;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserRepository.GetUserAsync(TwitchUserId);
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (user != null)
+        {
+            await UserRepository.SaveUserAsync(user);
+            NavigationManager.NavigateTo("/users");
+        }
+    }
+}

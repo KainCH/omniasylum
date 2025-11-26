@@ -1,0 +1,279 @@
+@page "/admin/users"
+@using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Modals
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@inject IUserRepository UserRepository
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Admin - Users</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>User Management</h1>
+        <div>
+            <button class="btn btn-outline-warning me-2" @onclick="() => showBrokenUserModal = true">
+                <i class="bi bi-tools"></i> Fix Users
+            </button>
+            <button class="btn btn-outline-info me-2" @onclick="() => showUserRequestsModal = true">
+                <i class="bi bi-inbox"></i> Requests
+            </button>
+            <button class="btn btn-outline-dark me-2" @onclick="() => showPermissionManagerModal = true">
+                <i class="bi bi-shield-lock"></i> Permissions
+            </button>
+            <button class="btn btn-success me-2" @onclick="CreateUser">
+                <i class="bi bi-plus-lg"></i> New User
+            </button>
+            <button class="btn btn-primary" @onclick="RefreshUsers">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
+        <strong>Debug:</strong>
+        <button class="btn btn-sm btn-primary" @onclick="IncrementCount">Test Interactivity: @currentCount</button>
+    </div>
+
+    @if (users == null)
+    {
+        <p><em>Loading users...</em></p>
+    }
+    else
+    {
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-body-secondary shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="display-6">@users.Count()</h3>
+                        <div class="text-body-secondary">Total Users</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-body-secondary shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="display-6 text-success">@users.Count(u => u.IsActive)</h3>
+                        <div class="text-body-secondary">Active Users</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-body-secondary shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="display-6 text-danger">@users.Count(u => u.StreamStatus == "live")</h3>
+                        <div class="text-body-secondary">Live Streams</div>
+                    </div>
+                </div>
+            </div>
+             <div class="col-md-3">
+                <div class="card bg-body-secondary shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="display-6 text-primary">@users.Count(u => u.Role == "admin")</h3>
+                        <div class="text-body-secondary">Admins</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Features</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in users)
+                    {
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    @if (!string.IsNullOrEmpty(user.ProfileImageUrl))
+                                    {
+                                        <img src="@user.ProfileImageUrl" alt="@user.DisplayName" class="rounded-circle me-2" width="32" height="32" />
+                                    }
+                                    <div>
+                                        <div class="fw-bold">@user.DisplayName</div>
+                                        <div class="text-muted small">@user.Username (@user.TwitchUserId)</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge @(user.Role == "admin" ? "bg-danger" : "bg-secondary")">
+                                    @user.Role
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge @(user.IsActive ? "bg-success" : "bg-warning")">
+                                    @(user.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    @if (user.Features != null)
+                                    {
+                                        @if (user.Features.StreamOverlay) { <span class="badge bg-info me-1">Overlay</span> }
+                                        @if (user.Features.ChatCommands) { <span class="badge bg-info me-1">Chat</span> }
+                                        @if (user.Features.DiscordNotifications) { <span class="badge bg-info me-1">Discord</span> }
+                                    }
+                                </div>
+                            </td>
+                            <td>@user.LastLogin.ToLocalTime().ToString("g")</td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => EditUser(user)" title="Edit User">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenOverlaySettings(user)" title="Overlay Settings">
+                                        <i class="bi bi-layout-text-window-reverse"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenAlertSettings(user)" title="Alert Settings">
+                                        <i class="bi bi-megaphone"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenDiscordSettings(user)" title="Discord Settings">
+                                        <i class="bi bi-discord"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenSeriesSettings(user)" title="Series Saves">
+                                        <i class="bi bi-save"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <UserManagementModal @bind-Show="showUserModal" UserId="@selectedUserId" OnSaved="RefreshUsers" />
+    <UserRequestsModal @bind-Show="showUserRequestsModal" />
+    <BrokenUserManagerModal @bind-Show="showBrokenUserModal" />
+    <PermissionManagerModal @bind-Show="showPermissionManagerModal" Users="users" />
+
+    @if (selectedOverlayUser != null)
+    {
+        <OverlaySettingsModal @bind-Show="showOverlayModal" User="selectedOverlayUser" OnSaved="RefreshUsers" />
+    }
+
+    @if (selectedAlertUser != null)
+    {
+        <AlertsManagerModal @bind-Show="showAlertModal" User="selectedAlertUser" />
+    }
+
+    @if (selectedDiscordUser != null)
+    {
+        <DiscordWebhookSettingsModal @bind-Show="showDiscordModal" User="selectedDiscordUser" />
+    }
+
+    @if (selectedSeriesUser != null)
+    {
+        <SeriesSaveManagerModal @bind-Show="showSeriesModal" User="selectedSeriesUser" />
+    }
+</div>
+
+@code {
+    private IEnumerable<User>? users;
+    private bool showUserModal = false;
+    private bool showUserRequestsModal = false;
+    private bool showBrokenUserModal = false;
+    private bool showPermissionManagerModal = false;
+
+    private bool showOverlayModal = false;
+    private User? selectedOverlayUser;
+
+    private bool showAlertModal = false;
+    private User? selectedAlertUser;
+
+    private bool showDiscordModal = false;
+    private User? selectedDiscordUser;
+
+    private bool showSeriesModal = false;
+    private User? selectedSeriesUser;
+
+    private string? selectedUserId;
+    private int currentCount = 0;
+
+    private void IncrementCount()
+    {
+        currentCount++;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading users: {ex}");
+            users = new List<User>(); // Prevent null reference in UI
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await UserRepository.GetAllUsersAsync();
+    }
+
+    private async Task RefreshUsers()
+    {
+        users = null;
+        await LoadUsers();
+    }
+
+    private void CreateUser()
+    {
+        selectedUserId = null;
+        showUserModal = true;
+        StateHasChanged();
+    }
+
+    private void EditUser(User user)
+    {
+        try
+        {
+            Console.WriteLine($"Opening edit modal for user: {user.Username}");
+            selectedUserId = user.TwitchUserId;
+            showUserModal = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening edit modal: {ex}");
+        }
+    }
+
+    private void OpenOverlaySettings(User user)
+    {
+        selectedOverlayUser = user;
+        showOverlayModal = true;
+    }
+
+    private void OpenAlertSettings(User user)
+    {
+        selectedAlertUser = user;
+        showAlertModal = true;
+    }
+
+    private void OpenDiscordSettings(User user)
+    {
+        selectedDiscordUser = user;
+        showDiscordModal = true;
+    }
+
+    private void OpenSeriesSettings(User user)
+    {
+        selectedSeriesUser = user;
+        showSeriesModal = true;
+    }
+}

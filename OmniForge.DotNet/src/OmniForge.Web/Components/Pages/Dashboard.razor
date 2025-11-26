@@ -1,0 +1,301 @@
+@page "/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Modals
+@using System.Threading
+@attribute [Authorize]
+@inject ICounterRepository CounterRepository
+@inject IUserRepository UserRepository
+@inject NavigationManager NavigationManager
+@inject IStreamMonitorService StreamMonitorService
+@implements IDisposable
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="stream-counter-container">
+    <h1>Stream Counter</h1>
+
+    <AuthorizeView>
+        <Authorized>
+            @if (counter == null)
+            {
+                <p><em>Loading counters...</em></p>
+            }
+            else
+            {
+                <div class="counters-grid">
+                    @if (overlaySettings?.Counters?.Deaths != false)
+                    {
+                        <div class="counter-box deaths">
+                            <div class="counter-label">Deaths</div>
+                            <div class="counter-value">@counter.Deaths</div>
+                        </div>
+                    }
+
+                    @if (overlaySettings?.Counters?.Swears != false)
+                    {
+                        <div class="counter-box swears">
+                            <div class="counter-label">Swears</div>
+                            <div class="counter-value">@counter.Swears</div>
+                        </div>
+                    }
+
+                    @if (overlaySettings?.Counters?.Screams != false)
+                    {
+                        <div class="counter-box screams">
+                            <div class="counter-label">Screams</div>
+                            <div class="counter-value">@counter.Screams</div>
+                        </div>
+                    }
+
+                    @if (overlaySettings?.Counters?.Bits == true)
+                    {
+                        <div class="counter-box bits">
+                            <div class="counter-label">Bits</div>
+                            <div class="counter-value">@counter.Bits</div>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger mt-3" role="alert">
+                        @errorMessage
+                    </div>
+                }
+
+                <div class="controls-section">
+                    <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
+                        <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
+                    </button>
+                    <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
+                    <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
+                        <i class="bi bi-gear-fill"></i> Settings
+                    </button>
+                    <button class="btn-custom btn-warning" @onclick="() => showAlertsManager = true" style="background-color: #fd7e14; color: white;">
+                        <i class="bi bi-bell-fill"></i> Alerts
+                    </button>
+                    <button class="btn-custom btn-info" @onclick="() => showAlertEffects = true">
+                        <i class="bi bi-magic"></i> Effects
+                    </button>
+                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true" style="background-color: #5865F2; color: white;">
+                        <i class="bi bi-discord"></i> Discord
+                    </button>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span>Total Events:</span>
+                        <span>@(counter.Deaths + counter.Swears)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Last Updated:</span>
+                        <span>@(counter.LastUpdated.ToLocalTime().ToString("g"))</span>
+                    </div>
+                </div>
+
+                @if (monitorStatus != null)
+                {
+                    <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
+                        <h5><i class="bi bi-activity"></i> Monitor Status</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p>
+                                    <strong>Status:</strong>
+                                    <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
+                                        @(monitorStatus.Connected ? "Connected" : "Disconnected")
+                                    </span>
+                                </p>
+                                <p>
+                                    <strong>Monitoring You:</strong>
+                                    <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
+                                        @(isMonitoring ? "Yes" : "No")
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="col-md-6">
+                                <p>
+                                    <strong>Subscriptions:</strong>
+                                    @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
+                                    {
+                                        @foreach (var sub in monitorStatus.Subscriptions)
+                                        {
+                                            <span class="badge bg-info text-dark me-1">@sub</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">None</span>
+                                    }
+                                </p>
+                                <p>
+                                    <strong>Last Discord Notification:</strong>
+                                    @if (monitorStatus.LastDiscordNotification.HasValue)
+                                    {
+                                        <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
+                                            @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
+                                            <i class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Never</span>
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="mt-4 text-center">
+                     <p>
+                        <strong>Twitch User ID:</strong> @TwitchUserId <br />
+                        <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a>
+                    </p>
+                </div>
+
+                <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+                <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
+                <AlertEffectsModal @bind-Show="showAlertEffects" />
+                <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
+            }
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    private OmniForge.Core.Entities.Counter? counter;
+    private OmniForge.Core.Entities.OverlaySettings? overlaySettings;
+    private string? TwitchUserId;
+    private string? OverlayUrl;
+    private bool showOverlaySettings = false;
+    private bool showAlertsManager = false;
+    private bool showAlertEffects = false;
+    private bool showDiscordSettings = false;
+    private bool isMonitoring = false;
+    private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
+    private Timer? _refreshTimer;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                // Twitch OAuth maps the ID to NameIdentifier by default
+                TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                if (!string.IsNullOrEmpty(TwitchUserId))
+                {
+                    counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+
+                    // Load user settings to determine which counters to show
+                    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+                    overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+
+                    // Use the static HTML overlay instead of the Blazor page
+                    OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
+
+                    // Initial check
+                    RefreshStatus();
+
+                    // Start timer to refresh status every 5 seconds
+                    _refreshTimer = new Timer(_ =>
+                    {
+                        InvokeAsync(() =>
+                        {
+                            // Only refresh if no modals are open to prevent interfering with user edits
+                            if (!IsAnyModalOpen())
+                            {
+                                RefreshStatus();
+                                StateHasChanged();
+                            }
+                        });
+                    }, null, 5000, 5000);
+                }
+            }
+        }
+    }
+
+    private void RefreshStatus()
+    {
+        if (!string.IsNullOrEmpty(TwitchUserId))
+        {
+            isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
+            monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
+        }
+    }
+
+    private bool IsAnyModalOpen()
+    {
+        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings;
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    private async Task ToggleMonitoring()
+    {
+        if (string.IsNullOrEmpty(TwitchUserId)) return;
+        errorMessage = null;
+
+        if (isMonitoring)
+        {
+            await StreamMonitorService.UnsubscribeFromUserAsync(TwitchUserId);
+            isMonitoring = false;
+        }
+        else
+        {
+            var result = await StreamMonitorService.SubscribeToUserAsync(TwitchUserId);
+            if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
+            {
+                isMonitoring = true;
+            }
+            else if (result == OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized)
+            {
+                errorMessage = "Authorization failed. You may need to re-login to grant new permissions.";
+                // Optional: Redirect to login to force re-auth
+                NavigationManager.NavigateTo("/auth/twitch?force_verify=true", true);
+            }
+            else
+            {
+                errorMessage = "Failed to start monitoring. Check logs for details.";
+            }
+        }
+
+        monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
+    }
+
+    private async Task OnSettingsSaved()
+    {
+        // Reload user settings to update which counters are shown
+        if (!string.IsNullOrEmpty(TwitchUserId))
+        {
+            var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+            overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportData()
+    {
+        if (!string.IsNullOrEmpty(TwitchUserId))
+        {
+            NavigationManager.NavigateTo($"/api/counters/export", true);
+        }
+        await Task.CompletedTask;
+    }
+}

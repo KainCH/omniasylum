@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniForge Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/overlay.css">
+  <style>
+    /* Basic Reset & Overlay Styles */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: transparent;
+      /* Crucial for OBS */
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .counter-overlay {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: opacity 1s ease-in-out;
+      opacity: 0;
+      /* Default hidden until stream starts */
+    }
+
+    .counter-overlay.visible {
+      opacity: 1;
+    }
+
+    .counter-item {
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #d4af37;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: white;
+      min-width: 150px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .counter-icon {
+      font-size: 24px;
+      margin-right: 10px;
+    }
+
+    .counter-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .counter-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #d4af37;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .counter-value {
+      font-size: 24px;
+      font-weight: bold;
+      line-height: 1.2;
+    }
+
+    /* Alert Popup Styles */
+    .counter-alert {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.5);
+      background: rgba(0, 0, 0, 0.9);
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      padding: 20px;
+      text-align: center;
+      opacity: 0;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 1000;
+      pointer-events: none;
+      min-width: 300px;
+    }
+
+    .counter-alert.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .alert-title {
+      font-family: 'Creepster', cursive;
+      font-size: 36px;
+      color: #d4af37;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    .alert-message {
+      font-size: 24px;
+      color: white;
+    }
+
+    /* Celebration Containers */
+    .bits-celebration,
+    .sub-celebration {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 900;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="overlay-container" class="counter-overlay" style="top: 20px; right: 20px;">
+    <!-- Counters will be injected here -->
+  </div>
+
+  <div class="counter-alert" id="alert-popup">
+    <div class="alert-title" id="alert-title">ALERT</div>
+    <div class="alert-message" id="alert-message">Message</div>
+  </div>
+
+  <div class="bits-celebration" id="bits-celebration"></div>
+  <div class="sub-celebration" id="sub-celebration"></div>
+
+  <!-- Scripts -->
+  <script src="/js/asylum-effects.js"></script>
+  <script src="/js/notification-audio.js"></script>
+  <script src="/js/overlay-interop.js"></script>
+  <script>
+    // Main Overlay Logic
+    (function () {
+      const urlParams = new URLSearchParams(window.location.search);
+      const userId = urlParams.get('userId');
+
+      // Store current overlay settings for filtering counters
+      let currentSettings = null;
+      // Store last counter data for re-rendering when settings change
+      let lastCounterData = null;
+
+      if (!userId) {
+        document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
+        return;
+      }
+
+      // Initial Data Load
+      fetch(`/api/counters/${userId}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log("📥 Initial data loaded:", JSON.stringify(data));
+          if (data.settings) {
+            currentSettings = data.settings;
+            console.log("⚙️ Loaded settings:", JSON.stringify(currentSettings));
+            applySettings(data.settings);
+          }
+          updateCounters(data);
+        })
+        .catch(err => console.error("Error loading initial data:", err));
+
+      // WebSocket Connection
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/overlay?userId=${userId}`;
+
+      let socket;
+
+      function connect() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function () {
+          console.log("Connected to Overlay WebSocket");
+        };
+
+        socket.onmessage = function (event) {
+          try {
+            const msg = JSON.parse(event.data);
+            handleMessage(msg);
+          } catch (e) {
+            console.error("Error parsing WS message:", e);
+          }
+        };
+
+        socket.onclose = function () {
+          console.log("WebSocket closed. Reconnecting in 5s...");
+          setTimeout(connect, 5000);
+        };
+
+        socket.onerror = function (err) {
+          console.error("WebSocket error:", err);
+          socket.close();
+        };
+      }
+
+      connect();
+
+      function handleMessage(msg) {
+        console.log("📨 WebSocket message received:", JSON.stringify(msg));
+        const { method, data } = msg;
+
+        switch (method) {
+          case 'counterUpdate':
+            console.log("📊 Counter update:", JSON.stringify(data));
+            updateCounters(data);
+            break;
+          case 'overlaySettingsUpdate':
+          case 'settingsUpdate':
+            console.log("⚙️ Settings update via WebSocket:", JSON.stringify(data));
+            currentSettings = data;
+            applySettings(data);
+            // Re-render counters with new settings filter
+            if (lastCounterData) {
+              console.log("🔄 Re-rendering counters with new settings filter");
+              updateCounters(lastCounterData);
+            }
+            break;
+          case 'streamStarted':
+            console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
+            updateCounters(data);
+            break;
+          case 'streamEnded':
+            console.log("🔴 Stream ended! Data:", JSON.stringify(data));
+            updateCounters(data);
+            break;
+          case 'streamStatusUpdate':
+            console.log("📺 Stream status update:", JSON.stringify(data));
+            // Toggle visibility based on stream status if needed
+            break;
+          case 'ping':
+            // Ignore ping messages
+            break;
+          default:
+            console.log("🔔 Alert message:", method, JSON.stringify(data));
+            // Handle alerts
+            if (window.overlayInterop) {
+              window.overlayInterop.triggerAlert(method, data);
+            }
+            break;
+        }
+      }
+
+      function applySettings(settings) {
+        const container = document.getElementById('overlay-container');
+
+        // Apply Scale
+        if (settings.scale) {
+          container.style.transform = `scale(${settings.scale})`;
+
+          // Set transform origin based on position
+          let origin = 'top right';
+          if (settings.position) {
+            if (settings.position.includes('left')) origin = 'top left';
+            if (settings.position.includes('bottom')) origin = origin.replace('top', 'bottom');
+          }
+          container.style.transformOrigin = origin;
+        }
+
+        // Apply Position
+        if (settings.position) {
+          container.style.top = '';
+          container.style.bottom = '';
+          container.style.left = '';
+          container.style.right = '';
+          container.style.transform = container.style.transform || ''; // Keep scale
+
+          switch (settings.position) {
+            case 'top-left':
+              container.style.top = '20px';
+              container.style.left = '20px';
+              break;
+            case 'top-right':
+              container.style.top = '20px';
+              container.style.right = '20px';
+              break;
+            case 'bottom-left':
+              container.style.bottom = '20px';
+              container.style.left = '20px';
+              break;
+            case 'bottom-right':
+              container.style.bottom = '20px';
+              container.style.right = '20px';
+              break;
+            case 'custom':
+              // Custom logic if needed
+              break;
+          }
+        }
+      }
+
+      function updateCounters(data) {
+        const container = document.getElementById('overlay-container');
+        console.log("🔄 updateCounters called with:", JSON.stringify(data));
+        console.log("🔍 streamStarted check:", data.streamStarted, "truthy:", !!data.streamStarted);
+        console.log("⚙️ Current settings for filtering:", JSON.stringify(currentSettings));
+
+        // Store last counter data for re-rendering when settings change
+        lastCounterData = data;
+
+        // Handle visibility based on stream status
+        if (data.streamStarted) {
+          console.log("✅ Adding 'visible' class to container");
+          container.classList.add('visible');
+        } else {
+          console.log("❌ Removing 'visible' class from container");
+          container.classList.remove('visible');
+        }
+
+        container.innerHTML = ''; // Clear current
+
+        // Get counter visibility settings (default to true if not specified)
+        const countersConfig = currentSettings?.counters || {};
+        const showDeaths = countersConfig.deaths !== false; // Default true
+        const showSwears = countersConfig.swears !== false; // Default true
+        const showScreams = countersConfig.screams !== false; // Default true
+        const showBits = countersConfig.bits === true; // Default false for bits
+
+        console.log("📋 Counter visibility - Deaths:", showDeaths, "Swears:", showSwears, "Screams:", showScreams, "Bits:", showBits);
+
+        // Only show counters that are enabled in settings
+        if (showDeaths && data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
+        if (showSwears && data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
+        if (showScreams && data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
+        if (showBits && data.bits !== undefined) createCounterItem(container, 'BITS', data.bits, '💎');
+      }
+
+      function createCounterItem(container, label, value, icon) {
+        const div = document.createElement('div');
+        div.className = 'counter-item';
+        div.innerHTML = `
+                    <div class="counter-icon">${icon}</div>
+                    <div class="counter-info">
+                        <div class="counter-label">${label}</div>
+                        <div class="counter-value">${value}</div>
+                    </div>
+                `;
+        container.appendChild(div);
+      }
+
+      // Initialize Interop
+      if (window.overlayInterop) {
+        window.overlayInterop.init();
+      }
+    })();
+  </script>
+</body>
+
+</html>

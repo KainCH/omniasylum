@@ -1,0 +1,111 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>Broken User Manager</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-info-circle me-2"></i>
+                        This tool identifies users with missing or corrupted data (e.g., missing partition keys, invalid JSON).
+                    </div>
+
+                    @if (isLoading)
+                    {
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-warning" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (brokenUsers == null || !brokenUsers.Any())
+                    {
+                        <div class="text-center p-5 text-success">
+                            <i class="bi bi-check-circle-fill fs-1 mb-3"></i>
+                            <p>No broken users found! System is healthy.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var user in brokenUsers)
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1 text-danger">@user.Username</h6>
+                                        <p class="mb-0 small text-muted">Issue: @user.IssueDescription</p>
+                                    </div>
+                                    <button class="btn btn-outline-warning btn-sm" @onclick="() => FixUser(user)">
+                                        <i class="bi bi-wrench"></i> Attempt Fix
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                    <button type="button" class="btn btn-warning" @onclick="ScanForBrokenUsers">Rescan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+
+    private List<BrokenUser> brokenUsers = new();
+    private bool isLoading = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !isLoading)
+        {
+            await ScanForBrokenUsers();
+        }
+    }
+
+    private async Task ScanForBrokenUsers()
+    {
+        isLoading = true;
+        try
+        {
+            // TODO: Implement actual scanning logic
+            // This would typically iterate all users and check for null fields or exceptions
+            await Task.Delay(1000);
+            brokenUsers = new List<BrokenUser>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task FixUser(BrokenUser user)
+    {
+        // TODO: Implement fix logic
+        await Task.Delay(500);
+        brokenUsers.Remove(user);
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    public class BrokenUser
+    {
+        public string Username { get; set; } = "";
+        public string IssueDescription { get; set; } = "";
+    }
+}

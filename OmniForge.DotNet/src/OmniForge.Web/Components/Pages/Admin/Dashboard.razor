@@ -1,0 +1,52 @@
+@page "/admin"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "admin")]
+
+<PageTitle>Admin Portal - OmniForge</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="display-4">Admin Portal</h1>
+            <p class="lead text-muted">System management and administration.</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- User Management -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-people-fill text-primary" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">User Management</h3>
+                    <p class="card-text text-muted">
+                        Manage users, roles, and feature flags.
+                    </p>
+                    <a href="admin/users" class="btn btn-primary btn-lg mt-3 stretched-link">
+                        Manage Users
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Debug -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-bug-fill text-warning" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">System Debug</h3>
+                    <p class="card-text text-muted">
+                        View system logs, connection status, and debug tools.
+                    </p>
+                    <a href="admin/debug" class="btn btn-warning text-dark btn-lg mt-3 stretched-link">
+                        Open Debugger
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
