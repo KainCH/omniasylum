@@ -8,7 +8,26 @@
       "options": {
         "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Deploy .NET to Azure (Prod)",
+      "type": "shell",
+      "command": ".\\deploy.ps1 -Environment \"prod\"",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
     },
     {
       "label": "Azure Login",

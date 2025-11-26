@@ -3,13 +3,31 @@ param(
     [string]$AcrName = "omniforgeacr",
     [string]$ImageName = "omniforge-dotnet",
     [string]$ImageTag = "$(Get-Date -Format 'yyyyMMdd-HHmmss')",
+    [ValidateSet("dev", "prod")]
     [string]$Environment = "dev"
 )
 
 $ErrorActionPreference = "Stop"
 
+# Environment-specific configuration
+$envConfig = @{
+    "dev" = @{
+        ContainerAppFqdn = "omniforgestream-api-dev.proudmeadow-a59c8b17.southcentralus.azurecontainerapps.io"
+        DisplayName = "Development"
+    }
+    "prod" = @{
+        ContainerAppFqdn = "omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io"
+        DisplayName = "Production"
+    }
+}
+
+$config = $envConfig[$Environment]
+$frontendUrl = "https://$($config.ContainerAppFqdn)"
+
 $startTime = Get-Date
 Write-Host "🕒 Deployment started at: $($startTime.ToString('yyyy-MM-dd hh:mm:ss tt'))" -ForegroundColor Cyan
+Write-Host "🎯 Target Environment: $($config.DisplayName) ($Environment)" -ForegroundColor Magenta
+Write-Host "🌐 Target URL: $frontendUrl" -ForegroundColor Magenta
 
 # 1. Build Docker Image
 Write-Host "🔨 Building Docker image..." -ForegroundColor Cyan
@@ -45,11 +63,12 @@ $deployment = az deployment group create `
         storageAccountName=$storageAccountName `
         keyVaultName=$keyVaultName `
         containerImage="$AcrName.azurecr.io/$ImageName`:$ImageTag" `
-        frontendUrl="https://omniforgestream-api-$Environment.proudmeadow-a59c8b17.southcentralus.azurecontainerapps.io" `
+        frontendUrl=$frontendUrl `
     --output json | ConvertFrom-Json
 
 $url = $deployment.properties.outputs.containerAppUrl.value
 Write-Host "✅ Deployment Complete!" -ForegroundColor Green
+Write-Host "🎯 Environment: $($config.DisplayName)" -ForegroundColor Yellow
 Write-Host "🌍 App URL: https://$url" -ForegroundColor Yellow
 
 $endTime = Get-Date
