@@ -152,6 +152,7 @@ namespace OmniForge.Infrastructure.Services
                 {
                     // Validate the token and get the authoritative User ID
                     string tokenUserId;
+                    List<string>? tokenScopes = null;
                     try
                     {
                         _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
@@ -163,13 +164,21 @@ namespace OmniForge.Infrastructure.Services
                             return SubscriptionResult.Unauthorized;
                         }
                         tokenUserId = validation.UserId;
-                        _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}",
-                            validation.UserId, validation.Login, validation.ClientId);
+                        tokenScopes = validation.Scopes;
+                        _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}, Scopes: {Scopes}",
+                            validation.UserId, validation.Login, validation.ClientId, string.Join(", ", tokenScopes ?? new List<string>()));
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Failed to validate access token for user {UserId}", userId);
                         return SubscriptionResult.Unauthorized;
+                    }
+
+                    // Check if user has required scopes for chat EventSub
+                    var hasChatScope = tokenScopes?.Contains("user:read:chat") == true;
+                    if (!hasChatScope)
+                    {
+                        _logger.LogWarning("⚠️ User {UserId} token is missing 'user:read:chat' scope. Chat EventSub subscriptions will be skipped. User needs to re-login to get updated scopes.", userId);
                     }
 
                     // Use the token's User ID as the broadcaster ID (they are the same for self-monitoring)
@@ -268,67 +277,53 @@ namespace OmniForge.Infrastructure.Services
                     // Since the broadcaster is monitoring their OWN channel, both values are the same:
                     // broadcaster_user_id = the channel to monitor chat in (broadcaster's ID)
                     // user_id = the user reading the chat (also the broadcaster's ID, since it's their token)
-                    var chatCondition = new Dictionary<string, string>
+                    // NOTE: These require the 'user:read:chat' scope which may not be present on older tokens
+                    if (hasChatScope)
                     {
-                        { "broadcaster_user_id", tokenUserId },  // Broadcaster's channel
-                        { "user_id", tokenUserId }               // Same ID - broadcaster is reading their own chat
-                    };
-
-                    _logger.LogInformation("Subscribing to channel.chat.message with broadcaster_user_id={BroadcasterId}, user_id={UserId} (same value for self-monitoring)",
-                        tokenUserId, tokenUserId);
-
-                    try
-                    {
-                        await helixWrapper.CreateEventSubSubscriptionAsync(
-                            _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
-                        _logger.LogInformation("✅ Successfully subscribed to channel.chat.message");
-                    }
-                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
-                    {
-                        _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.message - forcing token refresh...");
-                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
-                        if (user != null)
+                        var chatCondition = new Dictionary<string, string>
                         {
-                            try
-                            {
-                                await helixWrapper.CreateEventSubSubscriptionAsync(
-                                    _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
-                                _logger.LogInformation("✅ Successfully subscribed to channel.chat.message after token refresh");
-                            }
-                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to channel.chat.message even after token refresh"); }
+                            { "broadcaster_user_id", tokenUserId },  // Broadcaster's channel
+                            { "user_id", tokenUserId }               // Same ID - broadcaster is reading their own chat
+                        };
+
+                        _logger.LogInformation("Subscribing to channel.chat.message with broadcaster_user_id={BroadcasterId}, user_id={UserId} (same value for self-monitoring)",
+                            tokenUserId, tokenUserId);
+
+                        try
+                        {
+                            await helixWrapper.CreateEventSubSubscriptionAsync(
+                                _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                            _logger.LogInformation("✅ Successfully subscribed to channel.chat.message");
+                        }
+                        catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                        {
+                            _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.message - user may need to re-login");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.message. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
+                                tokenUserId, tokenUserId);
+                        }
+
+                        try
+                        {
+                            await helixWrapper.CreateEventSubSubscriptionAsync(
+                                _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                            _logger.LogInformation("✅ Successfully subscribed to channel.chat.notification");
+                        }
+                        catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                        {
+                            _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.notification - user may need to re-login");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.notification. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
+                                tokenUserId, tokenUserId);
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.message. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
-                            tokenUserId, tokenUserId);
-                    }
-
-                    try
-                    {
-                        await helixWrapper.CreateEventSubSubscriptionAsync(
-                            _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
-                        _logger.LogInformation("✅ Successfully subscribed to channel.chat.notification");
-                    }
-                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
-                    {
-                        _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.notification - forcing token refresh...");
-                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
-                        if (user != null)
-                        {
-                            try
-                            {
-                                await helixWrapper.CreateEventSubSubscriptionAsync(
-                                    _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
-                                _logger.LogInformation("✅ Successfully subscribed to channel.chat.notification after token refresh");
-                            }
-                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to channel.chat.notification even after token refresh"); }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.notification. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
-                            tokenUserId, tokenUserId);
+                        _logger.LogInformation("⏭️ Skipping chat EventSub subscriptions (channel.chat.message, channel.chat.notification) - missing 'user:read:chat' scope. Basic stream monitoring will still work.");
                     }
 
                     _subscribedUsers.TryAdd(userId, true);

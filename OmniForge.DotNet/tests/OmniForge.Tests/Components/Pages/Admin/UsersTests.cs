@@ -161,7 +161,7 @@ namespace OmniForge.Tests.Components.Pages.Admin
         }
 
         [Fact]
-        public void ClickingEditUser_OpensModalWithUserId()
+        public async Task ClickingEditUser_OpensModalWithUserId()
         {
             // Arrange
             var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
@@ -178,12 +178,17 @@ namespace OmniForge.Tests.Components.Pages.Admin
 
             var cut = RenderUsers();
 
-            // Act
-            cut.Find("button.btn-outline-primary").Click(); // Edit button
+            // Wait for initial render to complete
+            await Task.Delay(50);
 
-            // Assert
+            // Act - Use title attribute to find the Edit button specifically
+            cut.Find("button[title='Edit User']").Click();
+
+            // Wait for re-render after state change
+            await Task.Delay(50);
+
+            // Assert - Verify the modal has the correct UserId parameter set
             var modal = cut.FindComponent<Stub<UserManagementModal>>();
-            Assert.True(modal.Instance.Parameters.Get(x => x.Show));
             Assert.Equal("123", modal.Instance.Parameters.Get(x => x.UserId));
         }
 

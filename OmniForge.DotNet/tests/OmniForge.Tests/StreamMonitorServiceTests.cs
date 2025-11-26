@@ -89,13 +89,20 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task StartAsync_ShouldConnectEventSub()
+        public async Task StartAsync_ShouldLogStarting()
         {
             // Act
             await _service.StartAsync(CancellationToken.None);
 
-            // Assert
-            _mockEventSubService.Verify(x => x.ConnectAsync(), Times.Once);
+            // Assert - StartAsync no longer auto-connects, it just logs
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Starting StreamMonitorService")),
+                    null,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
         }
 
         [Fact]
@@ -109,31 +116,20 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void OnSessionWelcome_ShouldSubscribeToEvents()
+        public void OnSessionWelcome_ShouldLogSessionId()
         {
-            // Arrange
-            var users = new List<User>
-            {
-                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" },
-                new User { TwitchUserId = "456", DisplayName = "User2", AccessToken = "token2" }
-            };
-            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
-
             // Act
             _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
 
-            // Assert
-            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), "stream.online", "1",
-                It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "123"),
-                EventSubTransportMethod.Websocket, "test_session_id"), Times.Once);
-
-            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), "stream.offline", "1",
-                It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "123"),
-                EventSubTransportMethod.Websocket, "test_session_id"), Times.Once);
-
-            _mockUserRepository.Verify(x => x.GetAllUsersAsync(), Times.Once);
+            // Assert - OnSessionWelcome now just logs the session ID (subscriptions are user-initiated)
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("EventSub Session Welcome")),
+                    null,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
         }
 
         [Fact]
@@ -233,77 +229,43 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void OnSessionWelcome_ShouldLogError_WhenSubscriptionFails()
+        public void OnDisconnected_ShouldLogWarning_WhenUsersWantingMonitoring()
         {
-            // Arrange
-            var users = new List<User>
-            {
-                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" }
-            };
-            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
-            _mockHelixWrapper.Setup(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<Dictionary<string, string>>(), It.IsAny<EventSubTransportMethod>(), It.IsAny<string>()))
-                .ThrowsAsync(new Exception("Subscription failed"));
+            // This test verifies the disconnected handler logs appropriately
+            // The actual behavior depends on whether there are users wanting monitoring
 
             // Act
-            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
+            _mockEventSubService.Raise(x => x.OnDisconnected += null);
 
-            // Assert
+            // Assert - should log about disconnection
             _mockLogger.Verify(
                 x => x.Log(
-                    LogLevel.Error,
+                    LogLevel.Warning,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to subscribe to events for user User1")),
-                    It.IsAny<Exception>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("EventSub Disconnected")),
+                    null,
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-                Times.Once);
+                Times.AtLeastOnce);
         }
 
         [Fact]
-        public void OnSessionWelcome_ShouldContinue_WhenSubscriptionFailsForOneUser()
+        public void OnSessionWelcome_ShouldRecordSessionId()
         {
             // Arrange
-            var users = new List<User>
-            {
-                new User { TwitchUserId = "123", DisplayName = "User1", AccessToken = "token1" },
-                new User { TwitchUserId = "456", DisplayName = "User2", AccessToken = "token2" }
-            };
-            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
-
-            // Fail for User1
-            _mockHelixWrapper.Setup(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "123"),
-                It.IsAny<EventSubTransportMethod>(), It.IsAny<string>()))
-                .ThrowsAsync(new Exception("Subscription failed"));
-
-            // Succeed for User2
-            _mockHelixWrapper.Setup(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "456"),
-                It.IsAny<EventSubTransportMethod>(), It.IsAny<string>()))
-                .Returns(Task.CompletedTask);
+            var sessionId = "new_test_session_id";
 
             // Act
-            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, "test_session_id");
+            _mockEventSubService.Raise(x => x.OnSessionWelcome += null, sessionId);
 
-            // Assert
-            // Should log error for User1
+            // Assert - just verify session welcome was logged
             _mockLogger.Verify(
                 x => x.Log(
-                    LogLevel.Error,
+                    LogLevel.Information,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to subscribe to events for user User1")),
-                    It.IsAny<Exception>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("EventSub Session Welcome")),
+                    null,
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
-
-            // Should subscribe for User2 (called twice: online and offline)
-            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
-                It.IsAny<string>(), It.IsAny<string>(), "stream.online", "1",
-                It.Is<Dictionary<string, string>>(d => d["broadcaster_user_id"] == "456"),
-                EventSubTransportMethod.Websocket, "test_session_id"), Times.Once);
         }
     }
 }

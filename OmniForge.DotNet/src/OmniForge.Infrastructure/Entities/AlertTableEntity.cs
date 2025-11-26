@@ -28,12 +28,13 @@ namespace OmniForge.Infrastructure.Entities
         public object? createdAt { get; set; }
         public object? updatedAt { get; set; }
 
-        private DateTimeOffset ParseDateTimeOffset(object? value)
+        private static DateTimeOffset ParseDateTimeOffset(object? value)
         {
             if (value is DateTimeOffset dto) return dto;
             if (value is DateTime dt) return new DateTimeOffset(dt);
             if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
-            return default;
+            // Return current time as fallback - Azure Table Storage doesn't accept dates before 1601
+            return DateTimeOffset.UtcNow;
         }
 
         public Alert ToAlert()
@@ -62,6 +63,14 @@ namespace OmniForge.Infrastructure.Entities
 
         public static AlertTableEntity FromAlert(Alert alert)
         {
+            // Azure Table Storage requires dates after 1601-01-01
+            // Use current time if the date is default/unset
+            var minValidDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var now = DateTimeOffset.UtcNow;
+
+            var createdAtValue = alert.CreatedAt < minValidDate ? now : alert.CreatedAt;
+            var updatedAtValue = alert.UpdatedAt < minValidDate ? now : alert.UpdatedAt;
+
             return new AlertTableEntity
             {
                 PartitionKey = alert.UserId,
@@ -79,8 +88,8 @@ namespace OmniForge.Infrastructure.Entities
                 effects = alert.Effects,
                 isEnabled = alert.IsEnabled,
                 isDefault = alert.IsDefault,
-                createdAt = alert.CreatedAt,
-                updatedAt = alert.UpdatedAt
+                createdAt = createdAtValue,
+                updatedAt = updatedAtValue
             };
         }
     }

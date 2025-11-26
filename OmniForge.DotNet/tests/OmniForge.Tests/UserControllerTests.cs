@@ -93,6 +93,8 @@ namespace OmniForge.Tests
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
                 .ReturnsAsync(user);
+            _mockDiscordService.Setup(x => x.ValidateWebhookAsync(It.IsAny<string>()))
+                .ReturnsAsync(true);
 
             var request = new UpdateWebhookRequest { WebhookUrl = "https://discord.com/api/webhooks/123/abc" };
 
