@@ -79,6 +79,8 @@ namespace OmniForge.Infrastructure.Services
             var buffer = new byte[8192];
             var messageBuilder = new StringBuilder();
 
+            _logger.LogInformation("📡 EventSub receive loop started. WebSocket state: {State}", _webSocket.State);
+
             try
             {
                 while (_webSocket.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -94,7 +96,8 @@ namespace OmniForge.Infrastructure.Services
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _logger.LogWarning("Server closed the connection.");
+                        _logger.LogWarning("🔌 Server closed the EventSub WebSocket connection. CloseStatus: {Status}, Description: {Description}", 
+                            result.CloseStatus, result.CloseStatusDescription);
                         await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server closed", CancellationToken.None);
                         OnDisconnected?.Invoke();
                         break;
@@ -103,14 +106,23 @@ namespace OmniForge.Infrastructure.Services
                     var messageJson = messageBuilder.ToString();
                     await ProcessMessageAsync(messageJson);
                 }
+
+                _logger.LogWarning("📡 EventSub receive loop ended. WebSocket state: {State}, Cancellation requested: {Cancelled}", 
+                    _webSocket.State, token.IsCancellationRequested);
             }
             catch (OperationCanceledException)
             {
-                // Normal cancellation
+                _logger.LogInformation("📡 EventSub receive loop cancelled (normal shutdown)");
+            }
+            catch (WebSocketException wsEx)
+            {
+                _logger.LogError(wsEx, "🔴 WebSocket error in EventSub receive loop. State: {State}, ErrorCode: {ErrorCode}", 
+                    _webSocket.State, wsEx.WebSocketErrorCode);
+                OnDisconnected?.Invoke();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in WebSocket receive loop.");
+                _logger.LogError(ex, "🔴 Error in EventSub WebSocket receive loop. State: {State}", _webSocket.State);
                 OnDisconnected?.Invoke();
             }
         }

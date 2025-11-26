@@ -29,6 +29,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly TwitchSettings _twitchSettings;
         private Timer? _connectionWatchdog;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _usersWantingMonitoring = new(); // Track users who want monitoring (survives reconnects)
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Time, bool Success)> _lastDiscordNotifications = new();
 
         public StreamMonitorService(
@@ -331,6 +332,8 @@ namespace OmniForge.Infrastructure.Services
                     }
 
                     _subscribedUsers.TryAdd(userId, true);
+                    _usersWantingMonitoring.TryAdd(userId, true); // Track that this user wants monitoring
+                    _logger.LogInformation("✅ User {UserId} fully subscribed to all events", userId);
                     return SubscriptionResult.Success;
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadScopeException)
@@ -352,9 +355,14 @@ namespace OmniForge.Infrastructure.Services
             // For now, we'll just mark as unsubscribed in our local tracking.
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
             _subscribedUsers.TryRemove(userId, out _);
+            _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
 
-            if (_subscribedUsers.IsEmpty)
+            _logger.LogInformation("🛑 User {UserId} unsubscribed. Active users: {Count}, Users wanting monitoring: {WantingCount}", 
+                userId, _subscribedUsers.Count, _usersWantingMonitoring.Count);
+
+            if (_usersWantingMonitoring.IsEmpty)
             {
+                _logger.LogInformation("🔌 No users wanting monitoring. Disconnecting EventSub and stopping watchdog.");
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
                 // Disconnect if no users are left to save resources and ensure clean state for next connection
@@ -369,8 +377,8 @@ namespace OmniForge.Infrastructure.Services
         /// Returns the updated user, or null if refresh failed.
         /// </summary>
         private async Task<OmniForge.Core.Entities.User?> ForceRefreshTokenAsync(
-            OmniForge.Core.Entities.User user, 
-            ITwitchAuthService authService, 
+            OmniForge.Core.Entities.User user,
+            ITwitchAuthService authService,
             IUserRepository userRepository)
         {
             if (string.IsNullOrEmpty(user.RefreshToken))
@@ -469,9 +477,11 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task OnDisconnected()
         {
-            _logger.LogWarning("EventSub Disconnected.");
+            _logger.LogWarning("🔴 EventSub Disconnected! Active subscriptions: {Count}, Users wanting monitoring: {WantingCount}",
+                _subscribedUsers.Count, _usersWantingMonitoring.Count);
 
-            // Clear subscriptions on disconnect so UI reflects state
+            // Clear active subscriptions (they're invalidated on disconnect)
+            // BUT keep _usersWantingMonitoring so we can re-subscribe on reconnect
             _subscribedUsers.Clear();
 
             await Task.CompletedTask;
@@ -479,19 +489,42 @@ namespace OmniForge.Infrastructure.Services
 
         private async void CheckConnection(object? state)
         {
-            // Only attempt to maintain connection if we have active subscriptions
-            if (_subscribedUsers.IsEmpty) return;
+            // Only attempt to maintain connection if we have users wanting monitoring
+            if (_usersWantingMonitoring.IsEmpty) 
+            {
+                _logger.LogDebug("Watchdog: No users wanting monitoring, skipping check");
+                return;
+            }
 
             if (!_eventSubService.IsConnected)
             {
-                _logger.LogWarning("Watchdog detected disconnected state. Attempting to reconnect...");
+                _logger.LogWarning("🔄 Watchdog detected disconnected state. Users wanting monitoring: {Count}. Attempting to reconnect...", 
+                    _usersWantingMonitoring.Count);
                 try
                 {
                     await _eventSubService.ConnectAsync();
+                    
+                    // Wait for session welcome before re-subscribing
+                    await Task.Delay(2000); // Give time for welcome message
+                    
+                    if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
+                    {
+                        _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
+                        foreach (var userId in _usersWantingMonitoring.Keys)
+                        {
+                            _logger.LogInformation("🔄 Re-subscribing user {UserId}...", userId);
+                            var result = await SubscribeToUserAsync(userId);
+                            _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", userId, result);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("🔄 Connected but no session ID yet. Will retry on next watchdog tick.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Watchdog reconnection failed.");
+                    _logger.LogError(ex, "🔴 Watchdog reconnection failed.");
                 }
             }
             else
@@ -500,15 +533,28 @@ namespace OmniForge.Infrastructure.Services
                 var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
                 if (timeSinceLastKeepalive.TotalSeconds > 30) // Assuming default keepalive is ~10s
                 {
-                    _logger.LogWarning($"No keepalive received for {timeSinceLastKeepalive.TotalSeconds:F1}s. Reconnecting...");
+                    _logger.LogWarning("⏱️ No keepalive received for {Seconds:F1}s. Triggering reconnect...", timeSinceLastKeepalive.TotalSeconds);
                     try
                     {
                         await _eventSubService.DisconnectAsync();
                         await _eventSubService.ConnectAsync();
+                        
+                        // Wait for session welcome before re-subscribing
+                        await Task.Delay(2000);
+                        
+                        if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
+                        {
+                            _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
+                            foreach (var userId in _usersWantingMonitoring.Keys)
+                            {
+                                var result = await SubscribeToUserAsync(userId);
+                                _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", userId, result);
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Keepalive reconnection failed.");
+                        _logger.LogError(ex, "🔴 Keepalive reconnection failed.");
                     }
                 }
             }
