@@ -9,7 +9,7 @@
 @using System.Threading
 @attribute [Authorize]
 @inject ICounterRepository CounterRepository
-@inject IOverlayNotifier OverlayNotifier
+@inject IUserRepository UserRepository
 @inject NavigationManager NavigationManager
 @inject IStreamMonitorService StreamMonitorService
 @implements IDisposable
@@ -28,19 +28,37 @@
             else
             {
                 <div class="counters-grid">
-                    <div class="counter-box deaths">
-                        <div class="counter-label">Deaths</div>
-                        <div class="counter-value">@counter.Deaths</div>
-                        <button class="btn-increment" @onclick="() => UpdateCounter(c => c.Deaths++)">+</button>
-                        <button class="btn-decrement" @onclick="() => UpdateCounter(c => c.Deaths--)">−</button>
-                    </div>
+                    @if (overlaySettings?.Counters?.Deaths != false)
+                    {
+                        <div class="counter-box deaths">
+                            <div class="counter-label">Deaths</div>
+                            <div class="counter-value">@counter.Deaths</div>
+                        </div>
+                    }
 
-                    <div class="counter-box swears">
-                        <div class="counter-label">Swears</div>
-                        <div class="counter-value">@counter.Swears</div>
-                        <button class="btn-increment" @onclick="() => UpdateCounter(c => c.Swears++)">+</button>
-                        <button class="btn-decrement" @onclick="() => UpdateCounter(c => c.Swears--)">−</button>
-                    </div>
+                    @if (overlaySettings?.Counters?.Swears != false)
+                    {
+                        <div class="counter-box swears">
+                            <div class="counter-label">Swears</div>
+                            <div class="counter-value">@counter.Swears</div>
+                        </div>
+                    }
+
+                    @if (overlaySettings?.Counters?.Screams != false)
+                    {
+                        <div class="counter-box screams">
+                            <div class="counter-label">Screams</div>
+                            <div class="counter-value">@counter.Screams</div>
+                        </div>
+                    }
+
+                    @if (overlaySettings?.Counters?.Bits == true)
+                    {
+                        <div class="counter-box bits">
+                            <div class="counter-label">Bits</div>
+                            <div class="counter-value">@counter.Bits</div>
+                        </div>
+                    }
                 </div>
 
                 @if (!string.IsNullOrEmpty(errorMessage))
@@ -54,7 +72,6 @@
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
                     </button>
-                    <button class="btn-custom btn-reset" @onclick="ResetCounters">Reset All</button>
                     <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
                     <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
@@ -155,6 +172,7 @@
     private Task<AuthenticationState>? authenticationStateTask { get; set; }
 
     private OmniForge.Core.Entities.Counter? counter;
+    private OmniForge.Core.Entities.OverlaySettings? overlaySettings;
     private string? TwitchUserId;
     private string? OverlayUrl;
     private bool showOverlaySettings = false;
@@ -181,6 +199,11 @@
                 if (!string.IsNullOrEmpty(TwitchUserId))
                 {
                     counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+
+                    // Load user settings to determine which counters to show
+                    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+                    overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+
                     // Use the static HTML overlay instead of the Blazor page
                     OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
 
@@ -256,33 +279,15 @@
         monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
     }
 
-    private async Task UpdateCounter(Action<OmniForge.Core.Entities.Counter> updateAction)
+    private async Task OnSettingsSaved()
     {
-        if (counter != null && !string.IsNullOrEmpty(TwitchUserId))
+        // Reload user settings to update which counters are shown
+        if (!string.IsNullOrEmpty(TwitchUserId))
         {
-            updateAction(counter);
-            counter.LastUpdated = DateTime.UtcNow;
-            await CounterRepository.SaveCountersAsync(counter);
-            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
+            var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+            overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+            StateHasChanged();
         }
-    }
-
-    private async Task ResetCounters()
-    {
-        if (counter != null && !string.IsNullOrEmpty(TwitchUserId))
-        {
-            counter.Deaths = 0;
-            counter.Swears = 0;
-            counter.Screams = 0;
-            counter.LastUpdated = DateTime.UtcNow;
-            await CounterRepository.SaveCountersAsync(counter);
-            await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, counter);
-        }
-    }
-
-    private void OnSettingsSaved()
-    {
-        // Refresh settings if needed
     }
 
     private async Task ExportData()

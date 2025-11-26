@@ -57,10 +57,14 @@ namespace OmniForge.Infrastructure.Repositories
                 _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", user.TwitchUserId, user.DisplayName);
                 _logger.LogDebug("📋 OverlaySettings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
                     user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
+                _logger.LogInformation("🔗 DiscordWebhookUrl: {WebhookUrl}",
+                    string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length))}...");
 
                 var entity = UserTableEntity.FromDomain(user);
 
                 _logger.LogDebug("📦 Serialized overlaySettings: {OverlaySettings}", entity.overlaySettings);
+                _logger.LogDebug("📦 Entity discordWebhookUrl: {WebhookUrl}",
+                    string.IsNullOrEmpty(entity.discordWebhookUrl) ? "EMPTY" : $"{entity.discordWebhookUrl.Substring(0, Math.Min(50, entity.discordWebhookUrl.Length))}...");
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
                 _logger.LogInformation("✅ Successfully saved user {UserId} to Azure Table Storage", user.TwitchUserId);

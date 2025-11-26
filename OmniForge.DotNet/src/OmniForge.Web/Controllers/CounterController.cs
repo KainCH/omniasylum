@@ -281,8 +281,8 @@ namespace OmniForge.Web.Controllers
                 settings = user.OverlaySettings
             };
 
-            _logger.LogInformation("✅ Returning public counters for {UserId}: Deaths={Deaths}, Swears={Swears}",
-                userId, counters.Deaths, counters.Swears);
+            _logger.LogInformation("✅ Returning public counters for {UserId}: Deaths={Deaths}, Swears={Swears}, StreamStarted={StreamStarted}",
+                userId, counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
 
             return Ok(response);
         }

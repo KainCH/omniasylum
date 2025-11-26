@@ -43,8 +43,12 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task SendNotificationAsync(User user, string eventType, object data)
         {
+            _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, WebhookUrl={WebhookUrl}",
+                user.Username, eventType, string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length))}...");
+
             if (string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
+                _logger.LogWarning("⚠️ No Discord webhook URL configured for user {Username}", user.Username);
                 return;
             }
 

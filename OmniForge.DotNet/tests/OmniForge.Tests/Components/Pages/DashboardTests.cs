@@ -22,7 +22,7 @@ namespace OmniForge.Tests.Components.Pages
     public class DashboardTests : TestContext
     {
         private readonly Mock<ICounterRepository> _mockCounterRepository;
-        private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
@@ -30,13 +30,13 @@ namespace OmniForge.Tests.Components.Pages
         public DashboardTests()
         {
             _mockCounterRepository = new Mock<ICounterRepository>();
-            _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockUserRepository = new Mock<IUserRepository>();
             _mockStreamMonitorService = new Mock<IStreamMonitorService>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
 
             Services.AddSingleton(_mockCounterRepository.Object);
-            Services.AddSingleton(_mockOverlayNotifier.Object);
+            Services.AddSingleton(_mockUserRepository.Object);
             Services.AddSingleton(_mockStreamMonitorService.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
@@ -51,6 +51,10 @@ namespace OmniForge.Tests.Components.Pages
 
             _mockAuthorizationService.Setup(x => x.AuthorizeAsync(It.IsAny<ClaimsPrincipal>(), It.IsAny<object>(), It.IsAny<string>()))
                 .ReturnsAsync(AuthorizationResult.Success());
+
+            // Default user repository setup - returns user with default settings
+            _mockUserRepository.Setup(x => x.GetUserAsync(It.IsAny<string>()))
+                .ReturnsAsync(new User { TwitchUserId = "12345", OverlaySettings = new OverlaySettings() });
 
             // Stub out child components to avoid setting up their dependencies
             ComponentFactories.AddStub<OverlaySettingsModal>();
@@ -107,13 +111,13 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert
+            // Assert - Dashboard shows counter values as read-only (no buttons)
             cut.Find(".counter-box.deaths .counter-value").MarkupMatches("<div class=\"counter-value\">5</div>");
             cut.Find(".counter-box.swears .counter-value").MarkupMatches("<div class=\"counter-value\">3</div>");
         }
 
         [Fact]
-        public void Dashboard_ShouldIncrementDeaths_WhenButtonClicked()
+        public void Dashboard_ShouldRespectOverlaySettings_WhenCountersDisabled()
         {
             // Arrange
             var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
@@ -121,44 +125,27 @@ namespace OmniForge.Tests.Components.Pages
             }, "mock"));
             _authProvider.SetUser(user);
 
-            var counter = new Counter { Deaths = 5, Swears = 3, LastUpdated = DateTime.UtcNow };
+            var counter = new Counter { Deaths = 5, Swears = 3, Screams = 2, LastUpdated = DateTime.UtcNow };
             _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
                 .ReturnsAsync(counter);
+
+            // Configure settings to disable Deaths counter
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User {
+                    TwitchUserId = "12345",
+                    OverlaySettings = new OverlaySettings
+                    {
+                        Counters = new OverlayCounters { Deaths = false, Swears = true, Screams = true }
+                    }
+                });
 
             // Act
             var cut = RenderDashboard();
 
-            // Act
-            cut.Find(".counter-box.deaths .btn-increment").Click();
-
-            // Assert
-            cut.Find(".counter-box.deaths .counter-value").MarkupMatches("<div class=\"counter-value\">6</div>");
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Deaths == 6)), Times.Once);
-            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", It.Is<Counter>(c => c.Deaths == 6)), Times.Once);
-        }
-
-        [Fact]
-        public void Dashboard_ShouldResetCounters_WhenResetClicked()
-        {
-            // Arrange
-            var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
-                new Claim(ClaimTypes.NameIdentifier, "12345")
-            }, "mock"));
-            _authProvider.SetUser(user);
-
-            var counter = new Counter { Deaths = 5, Swears = 3, LastUpdated = DateTime.UtcNow };
-            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
-                .ReturnsAsync(counter);
-
-            var cut = RenderDashboard();
-
-            // Act
-            cut.Find(".btn-reset").Click();
-
-            // Assert
-            cut.Find(".counter-box.deaths .counter-value").MarkupMatches("<div class=\"counter-value\">0</div>");
-            cut.Find(".counter-box.swears .counter-value").MarkupMatches("<div class=\"counter-value\">0</div>");
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Deaths == 0 && c.Swears == 0)), Times.Once);
+            // Assert - Deaths should not be visible, Swears and Screams should be
+            Assert.Throws<Bunit.ElementNotFoundException>(() => cut.Find(".counter-box.deaths"));
+            cut.Find(".counter-box.swears .counter-value").MarkupMatches("<div class=\"counter-value\">3</div>");
+            cut.Find(".counter-box.screams .counter-value").MarkupMatches("<div class=\"counter-value\">2</div>");
         }
     }
 

@@ -144,6 +144,11 @@
       const urlParams = new URLSearchParams(window.location.search);
       const userId = urlParams.get('userId');
 
+      // Store current overlay settings for filtering counters
+      let currentSettings = null;
+      // Store last counter data for re-rendering when settings change
+      let lastCounterData = null;
+
       if (!userId) {
         document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
         return;
@@ -153,7 +158,10 @@
       fetch(`/api/counters/${userId}`)
         .then(response => response.json())
         .then(data => {
+          console.log("📥 Initial data loaded:", JSON.stringify(data));
           if (data.settings) {
+            currentSettings = data.settings;
+            console.log("⚙️ Loaded settings:", JSON.stringify(currentSettings));
             applySettings(data.settings);
           }
           updateCounters(data);
@@ -206,8 +214,14 @@
             break;
           case 'overlaySettingsUpdate':
           case 'settingsUpdate':
-            console.log("⚙️ Settings update:", JSON.stringify(data));
+            console.log("⚙️ Settings update via WebSocket:", JSON.stringify(data));
+            currentSettings = data;
             applySettings(data);
+            // Re-render counters with new settings filter
+            if (lastCounterData) {
+              console.log("🔄 Re-rendering counters with new settings filter");
+              updateCounters(lastCounterData);
+            }
             break;
           case 'streamStarted':
             console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
@@ -286,6 +300,10 @@
         const container = document.getElementById('overlay-container');
         console.log("🔄 updateCounters called with:", JSON.stringify(data));
         console.log("🔍 streamStarted check:", data.streamStarted, "truthy:", !!data.streamStarted);
+        console.log("⚙️ Current settings for filtering:", JSON.stringify(currentSettings));
+
+        // Store last counter data for re-rendering when settings change
+        lastCounterData = data;
 
         // Handle visibility based on stream status
         if (data.streamStarted) {
@@ -298,12 +316,20 @@
 
         container.innerHTML = ''; // Clear current
 
-        // Check settings if available to filter counters, otherwise show all present in data
-        // For now, show all present
-        if (data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
-        if (data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
-        if (data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
-        if (data.bits !== undefined) createCounterItem(container, 'BITS', data.bits, '💎');
+        // Get counter visibility settings (default to true if not specified)
+        const countersConfig = currentSettings?.counters || {};
+        const showDeaths = countersConfig.deaths !== false; // Default true
+        const showSwears = countersConfig.swears !== false; // Default true
+        const showScreams = countersConfig.screams !== false; // Default true
+        const showBits = countersConfig.bits === true; // Default false for bits
+
+        console.log("📋 Counter visibility - Deaths:", showDeaths, "Swears:", showSwears, "Screams:", showScreams, "Bits:", showBits);
+
+        // Only show counters that are enabled in settings
+        if (showDeaths && data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
+        if (showSwears && data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
+        if (showScreams && data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
+        if (showBits && data.bits !== undefined) createCounterItem(container, 'BITS', data.bits, '💎');
       }
 
       function createCounterItem(container, label, value, icon) {
