@@ -468,9 +468,9 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Streamer not found" });
                 }
 
-                var seriesSaves = await _seriesRepository.GetSeriesAsync(streamerId);
+                var seriesSaves = (await _seriesRepository.GetSeriesAsync(streamerId)).ToList();
 
-                _logger.LogInformation("📋 Moderator {Username} listed {Count} series saves for streamer {StreamerUsername}", GetCurrentUsername(), seriesSaves.Count(), streamer.Username);
+                _logger.LogInformation("📋 Moderator {Username} listed {Count} series saves for streamer {StreamerUsername}", GetCurrentUsername(), seriesSaves.Count, streamer.Username);
 
                 return Ok(new
                 {

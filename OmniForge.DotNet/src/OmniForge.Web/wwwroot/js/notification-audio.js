@@ -11,7 +11,7 @@ class NotificationAudioManager {
             milestone: 'alarm.wav'
         };
         // Auto-init ONLY if we are on the overlay page
-        if (window.location.pathname.includes('/overlay/')) {
+        if (window.location.pathname.startsWith('/overlay')) {
             if (document.readyState === 'complete') {
                 this.init();
             } else {
