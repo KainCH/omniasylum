@@ -174,7 +174,7 @@ namespace OmniForge.Web.Controllers
             try
             {
                 var users = await _userRepository.GetAllUsersAsync();
-                var allRewards = new System.Collections.Generic.List<object>();
+                var allRewards = new System.Collections.Generic.List<UserRewardsInfo>();
 
                 foreach (var user in users)
                 {
@@ -182,13 +182,14 @@ namespace OmniForge.Web.Controllers
 
                     if (user.Features.ChannelPoints)
                     {
-                        var rewards = await _channelPointRepository.GetRewardsAsync(user.TwitchUserId);
-                        allRewards.Add(new
+                        var rewards = (await _channelPointRepository.GetRewardsAsync(user.TwitchUserId)).ToList();
+                        allRewards.Add(new UserRewardsInfo
                         {
-                            userId = user.TwitchUserId,
-                            username = user.Username,
-                            displayName = user.DisplayName,
-                            rewards = rewards
+                            UserId = user.TwitchUserId,
+                            Username = user.Username,
+                            DisplayName = user.DisplayName,
+                            Rewards = rewards,
+                            RewardCount = rewards.Count
                         });
                     }
                 }
@@ -197,7 +198,7 @@ namespace OmniForge.Web.Controllers
                 {
                     users = allRewards,
                     totalUsers = allRewards.Count,
-                    totalRewards = allRewards.Sum(u => ((dynamic)u).rewards.Count)
+                    totalRewards = allRewards.Sum(u => u.RewardCount)
                 });
             }
             catch (Exception ex)
@@ -205,5 +206,17 @@ namespace OmniForge.Web.Controllers
                 return StatusCode(500, new { error = "Failed to get all rewards", details = ex.Message });
             }
         }
+    }
+
+    /// <summary>
+    /// DTO for admin rewards response to avoid using dynamic type.
+    /// </summary>
+    public class UserRewardsInfo
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public System.Collections.Generic.List<OmniForge.Core.Entities.ChannelPointReward> Rewards { get; set; } = new();
+        public int RewardCount { get; set; }
     }
 }

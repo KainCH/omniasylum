@@ -153,8 +153,7 @@ namespace OmniForge.Web.Controllers
             {
                 if (request.Config.Response != null) currentConfig.Response = request.Config.Response;
                 if (request.Config.Permission != null) currentConfig.Permission = request.Config.Permission;
-                if (request.Config.Cooldown >= 0) currentConfig.Cooldown = request.Config.Cooldown; // Assuming -1 or similar for "not set" in request, but int defaults to 0.
-                // Better to use nullable int in request DTO.
+                if (request.Config.Cooldown.HasValue) currentConfig.Cooldown = request.Config.Cooldown.Value;
                 currentConfig.Enabled = request.Config.Enabled;
                 currentConfig.UpdatedAt = DateTimeOffset.UtcNow;
             }
@@ -258,6 +257,17 @@ namespace OmniForge.Web.Controllers
 
     public class UpdateCommandRequest
     {
-        public ChatCommandDefinition? Config { get; set; }
+        public UpdateCommandConfigDto? Config { get; set; }
+    }
+
+    /// <summary>
+    /// DTO for updating chat command config with nullable properties for partial updates.
+    /// </summary>
+    public class UpdateCommandConfigDto
+    {
+        public string? Response { get; set; }
+        public string? Permission { get; set; }
+        public int? Cooldown { get; set; }
+        public bool Enabled { get; set; } = true;
     }
 }

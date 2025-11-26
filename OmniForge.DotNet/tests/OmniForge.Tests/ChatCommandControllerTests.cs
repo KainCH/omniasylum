@@ -108,7 +108,7 @@ namespace OmniForge.Tests
 
             var request = new UpdateCommandRequest
             {
-                Config = new ChatCommandDefinition { Response = "New" }
+                Config = new UpdateCommandConfigDto { Response = "New" }
             };
 
             var result = await _controller.UpdateChatCommand("!update", request);
@@ -127,7 +127,7 @@ namespace OmniForge.Tests
 
             var request = new UpdateCommandRequest
             {
-                Config = new ChatCommandDefinition { Response = "New" }
+                Config = new UpdateCommandConfigDto { Response = "New" }
             };
 
             var result = await _controller.UpdateChatCommand("!missing", request);
