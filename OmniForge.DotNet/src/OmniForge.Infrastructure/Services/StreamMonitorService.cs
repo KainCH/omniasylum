@@ -352,14 +352,14 @@ namespace OmniForge.Infrastructure.Services
         public async Task UnsubscribeFromUserAsync(string userId)
         {
             _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", userId);
-            
+
             // Note: Helix doesn't easily support "unsubscribe by user" without tracking subscription IDs.
             // For now, we'll just mark as unsubscribed in our local tracking.
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
             var wasSubscribed = _subscribedUsers.TryRemove(userId, out _);
             var wasWanting = _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
 
-            _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}", 
+            _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}",
                 userId, wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
 
             if (_usersWantingMonitoring.IsEmpty)
@@ -491,7 +491,7 @@ namespace OmniForge.Infrastructure.Services
         private async void CheckConnection(object? state)
         {
             // Only attempt to maintain connection if we have users wanting monitoring
-            if (_usersWantingMonitoring.IsEmpty) 
+            if (_usersWantingMonitoring.IsEmpty)
             {
                 _logger.LogDebug("Watchdog: No users wanting monitoring, skipping check");
                 return;
@@ -499,15 +499,15 @@ namespace OmniForge.Infrastructure.Services
 
             if (!_eventSubService.IsConnected)
             {
-                _logger.LogWarning("🔄 Watchdog detected disconnected state. Users wanting monitoring: {Count}. Attempting to reconnect...", 
+                _logger.LogWarning("🔄 Watchdog detected disconnected state. Users wanting monitoring: {Count}. Attempting to reconnect...",
                     _usersWantingMonitoring.Count);
                 try
                 {
                     await _eventSubService.ConnectAsync();
-                    
+
                     // Wait for session welcome before re-subscribing
                     await Task.Delay(2000); // Give time for welcome message
-                    
+
                     if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                     {
                         _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
@@ -539,10 +539,10 @@ namespace OmniForge.Infrastructure.Services
                     {
                         await _eventSubService.DisconnectAsync();
                         await _eventSubService.ConnectAsync();
-                        
+
                         // Wait for session welcome before re-subscribing
                         await Task.Delay(2000);
-                        
+
                         if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                         {
                             _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);

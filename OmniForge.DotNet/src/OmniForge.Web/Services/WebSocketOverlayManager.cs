@@ -30,10 +30,10 @@ namespace OmniForge.Web.Services
 
             var buffer = new byte[1024 * 4];
             using var pingCts = new CancellationTokenSource();
-            
+
             // Start ping task to keep connection alive
             var pingTask = SendPingsAsync(webSocket, connectionId, userId, pingCts.Token);
-            
+
             try
             {
                 while (webSocket.State == WebSocketState.Open)
@@ -69,14 +69,14 @@ namespace OmniForge.Web.Services
                 // Stop ping task
                 pingCts.Cancel();
                 try { await pingTask; } catch { /* ignore */ }
-                
+
                 // Proper cleanup - remove this specific connection
                 userConnections.TryRemove(connectionId, out _);
                 var remainingActive = userConnections.Count(kvp => kvp.Value.State == WebSocketState.Open);
-                
+
                 _logger.LogInformation("🔴 Overlay WebSocket disconnected for user {UserId} (conn: {ConnectionId}). Final state: {State}. Remaining active: {Count}",
                     userId, connectionId, webSocket.State, remainingActive);
-                
+
                 // Clean up empty user entries
                 if (userConnections.IsEmpty)
                 {
@@ -92,7 +92,7 @@ namespace OmniForge.Web.Services
                 while (!cancellationToken.IsCancellationRequested && webSocket.State == WebSocketState.Open)
                 {
                     await Task.Delay(PingInterval, cancellationToken);
-                    
+
                     if (webSocket.State == WebSocketState.Open)
                     {
                         try
@@ -137,7 +137,7 @@ namespace OmniForge.Web.Services
                 {
                     var connId = kvp.Key;
                     var socket = kvp.Value;
-                    
+
                     if (socket.State == WebSocketState.Open)
                     {
                         try
