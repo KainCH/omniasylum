@@ -189,6 +189,22 @@ namespace OmniForge.Infrastructure.Services
                     {
                         await helixWrapper.CreateEventSubSubscriptionAsync(
                             _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                        _logger.LogInformation("✅ Successfully subscribed to stream.online");
+                    }
+                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                    {
+                        _logger.LogWarning(btEx, "⚠️ BadTokenException for stream.online - forcing token refresh...");
+                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
+                        if (user != null)
+                        {
+                            try
+                            {
+                                await helixWrapper.CreateEventSubSubscriptionAsync(
+                                    _twitchSettings.ClientId, user.AccessToken, "stream.online", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                                _logger.LogInformation("✅ Successfully subscribed to stream.online after token refresh");
+                            }
+                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to stream.online even after token refresh"); }
+                        }
                     }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to stream.online"); }
 
@@ -197,6 +213,22 @@ namespace OmniForge.Infrastructure.Services
                     {
                         await helixWrapper.CreateEventSubSubscriptionAsync(
                             _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                        _logger.LogInformation("✅ Successfully subscribed to stream.offline");
+                    }
+                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                    {
+                        _logger.LogWarning(btEx, "⚠️ BadTokenException for stream.offline - forcing token refresh...");
+                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
+                        if (user != null)
+                        {
+                            try
+                            {
+                                await helixWrapper.CreateEventSubSubscriptionAsync(
+                                    _twitchSettings.ClientId, user.AccessToken, "stream.offline", "1", condition, EventSubTransportMethod.Websocket, sessionId);
+                                _logger.LogInformation("✅ Successfully subscribed to stream.offline after token refresh");
+                            }
+                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to stream.offline even after token refresh"); }
+                        }
                     }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to stream.offline"); }
 
@@ -212,6 +244,22 @@ namespace OmniForge.Infrastructure.Services
                     {
                         await helixWrapper.CreateEventSubSubscriptionAsync(
                             _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", followCondition, EventSubTransportMethod.Websocket, sessionId);
+                        _logger.LogInformation("✅ Successfully subscribed to channel.follow");
+                    }
+                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                    {
+                        _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.follow - forcing token refresh...");
+                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
+                        if (user != null)
+                        {
+                            try
+                            {
+                                await helixWrapper.CreateEventSubSubscriptionAsync(
+                                    _twitchSettings.ClientId, user.AccessToken, "channel.follow", "2", followCondition, EventSubTransportMethod.Websocket, sessionId);
+                                _logger.LogInformation("✅ Successfully subscribed to channel.follow after token refresh");
+                            }
+                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to channel.follow even after token refresh"); }
+                        }
                     }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to subscribe to channel.follow"); }
 
@@ -234,10 +282,25 @@ namespace OmniForge.Infrastructure.Services
                             _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
                         _logger.LogInformation("✅ Successfully subscribed to channel.chat.message");
                     }
-                    catch (Exception ex) 
-                    { 
-                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.message. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}", 
-                            tokenUserId, tokenUserId); 
+                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                    {
+                        _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.message - forcing token refresh...");
+                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
+                        if (user != null)
+                        {
+                            try
+                            {
+                                await helixWrapper.CreateEventSubSubscriptionAsync(
+                                    _twitchSettings.ClientId, user.AccessToken, "channel.chat.message", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                                _logger.LogInformation("✅ Successfully subscribed to channel.chat.message after token refresh");
+                            }
+                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to channel.chat.message even after token refresh"); }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.message. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
+                            tokenUserId, tokenUserId);
                     }
 
                     try
@@ -246,10 +309,25 @@ namespace OmniForge.Infrastructure.Services
                             _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
                         _logger.LogInformation("✅ Successfully subscribed to channel.chat.notification");
                     }
-                    catch (Exception ex) 
-                    { 
-                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.notification. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}", 
-                            tokenUserId, tokenUserId); 
+                    catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+                    {
+                        _logger.LogWarning(btEx, "⚠️ BadTokenException for channel.chat.notification - forcing token refresh...");
+                        user = await ForceRefreshTokenAsync(user, authService, userRepository);
+                        if (user != null)
+                        {
+                            try
+                            {
+                                await helixWrapper.CreateEventSubSubscriptionAsync(
+                                    _twitchSettings.ClientId, user.AccessToken, "channel.chat.notification", "1", chatCondition, EventSubTransportMethod.Websocket, sessionId);
+                                _logger.LogInformation("✅ Successfully subscribed to channel.chat.notification after token refresh");
+                            }
+                            catch (Exception retryEx) { _logger.LogError(retryEx, "❌ Failed to subscribe to channel.chat.notification even after token refresh"); }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "❌ Failed to subscribe to channel.chat.notification. Condition: broadcaster_user_id={BroadcasterId}, user_id={UserId}",
+                            tokenUserId, tokenUserId);
                     }
 
                     _subscribedUsers.TryAdd(userId, true);
@@ -284,6 +362,46 @@ namespace OmniForge.Infrastructure.Services
             }
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Forces a token refresh and updates the user in the database.
+        /// Returns the updated user, or null if refresh failed.
+        /// </summary>
+        private async Task<OmniForge.Core.Entities.User?> ForceRefreshTokenAsync(
+            OmniForge.Core.Entities.User user, 
+            ITwitchAuthService authService, 
+            IUserRepository userRepository)
+        {
+            if (string.IsNullOrEmpty(user.RefreshToken))
+            {
+                _logger.LogError("Cannot refresh token for user {UserId}: No refresh token available", user.TwitchUserId);
+                return null;
+            }
+
+            try
+            {
+                var refreshedToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                if (refreshedToken != null)
+                {
+                    user.AccessToken = refreshedToken.AccessToken;
+                    user.RefreshToken = refreshedToken.RefreshToken;
+                    user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshedToken.ExpiresIn);
+                    await userRepository.SaveUserAsync(user);
+                    _logger.LogInformation("✅ Token refreshed successfully for user {UserId}", user.TwitchUserId);
+                    return user;
+                }
+                else
+                {
+                    _logger.LogError("❌ Token refresh returned null for user {UserId}", user.TwitchUserId);
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Exception during token refresh for user {UserId}", user.TwitchUserId);
+                return null;
+            }
         }
 
         public async Task<SubscriptionResult> ForceReconnectUserAsync(string userId)
