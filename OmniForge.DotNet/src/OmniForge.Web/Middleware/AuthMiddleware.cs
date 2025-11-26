@@ -48,14 +48,6 @@ namespace OmniForge.Web.Middleware
                             return;
                         }
 
-                        if (!user.IsActive)
-                        {
-                            Console.WriteLine($"[AuthMiddleware] User {userIdClaim.Value} is inactive.");
-                            context.Response.StatusCode = 401;
-                            await context.Response.WriteAsJsonAsync(new { error = "Account deactivated" });
-                            return;
-                        }
-
                         // Attach user to context items for easy access
                         context.Items["User"] = user;
                     }

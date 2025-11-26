@@ -125,19 +125,6 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task UpdateUserStatus_ShouldReturnOk()
-        {
-            var user = new User { TwitchUserId = "12345", IsActive = true };
-            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-
-            var request = new UpdateUserStatusRequest { IsActive = false };
-            var result = await _controller.UpdateUserStatus("12345", request);
-
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.IsActive == false)), Times.Once);
-        }
-
-        [Fact]
         public async Task UpdateFeatures_ShouldReturnOk()
         {
             var user = new User { TwitchUserId = "12345" };

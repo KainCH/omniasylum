@@ -128,25 +128,6 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task Callback_ShouldRedirectWithError_WhenUserInactive()
-        {
-            var tokenResponse = new TwitchTokenResponse { AccessToken = "token" };
-            var userInfo = new TwitchUserInfo { Id = "123", Login = "user" };
-            var user = new User { TwitchUserId = "123", IsActive = false };
-
-            _mockTwitchAuthService.Setup(x => x.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>()))
-                .ReturnsAsync(tokenResponse);
-            _mockTwitchAuthService.Setup(x => x.GetUserInfoAsync("token", "client-id"))
-                .ReturnsAsync(userInfo);
-            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
-
-            var result = await _controller.Callback("code");
-
-            var redirectResult = Assert.IsType<RedirectResult>(result);
-            Assert.Contains("error=account_deactivated", redirectResult.Url);
-        }
-
-        [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenNoToken()
         {
             _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "";

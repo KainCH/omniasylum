@@ -142,48 +142,6 @@ namespace OmniForge.Web.Controllers
             return Ok(new { message = $"User role updated to {request.Role}", user });
         }
 
-        [HttpPut("users/{userId}/status")]
-        public async Task<IActionResult> UpdateUserStatus(string userId, [FromBody] UpdateUserStatusRequest request)
-        {
-            var user = await _userRepository.GetUserAsync(userId);
-            if (user == null) return NotFound("User not found");
-
-            var currentUserId = User.FindFirst("userId")?.Value;
-            var currentUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
-
-            // Check permissions
-            bool isAdmin = currentUserRole == "admin";
-            bool isSelfActivation = userId == currentUserId && request.IsActive;
-
-            if (!isAdmin && !isSelfActivation)
-            {
-                return StatusCode(403, new { error = "Insufficient permissions. You can only activate your own account." });
-            }
-
-            if (!isAdmin && !request.IsActive)
-            {
-                return StatusCode(403, new { error = "You cannot deactivate your own account. Contact an admin if needed." });
-            }
-
-            user.IsActive = request.IsActive;
-            await _userRepository.SaveUserAsync(user);
-
-            // If enabling chat commands and user becomes active, start Twitch bot
-            if (request.IsActive && user.Features.ChatCommands)
-            {
-                try
-                {
-                    await _twitchClientManager.ConnectUserAsync(userId);
-                }
-                catch
-                {
-                    // Log error but don't fail the request
-                }
-            }
-
-            return Ok(new { message = $"User status updated to {(request.IsActive ? "active" : "inactive")}", user });
-        }
-
         [HttpPut("users/{userId}/features")]
         public async Task<IActionResult> UpdateFeatures(string userId, [FromBody] UpdateFeaturesRequest request)
         {
@@ -286,11 +244,6 @@ namespace OmniForge.Web.Controllers
     public class UpdateRoleRequest
     {
         public string Role { get; set; } = string.Empty;
-    }
-
-    public class UpdateUserStatusRequest
-    {
-        public bool IsActive { get; set; }
     }
 
     public class UpdateFeaturesRequest

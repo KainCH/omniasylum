@@ -46,6 +46,12 @@ namespace OmniForge.Tests.Components.Pages
 
             _mockHubConnectionFactory.Setup(f => f.CreateConnection(It.IsAny<Uri>()))
                 .Returns(mockHubConnection.Object);
+
+            // Setup JSInterop to handle overlay JavaScript calls
+            JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var moduleInterop = JSInterop.SetupModule("./js/overlay-websocket.js");
+            moduleInterop.SetupVoid("connect", _ => true).SetVoidResult();
+            moduleInterop.SetupVoid("disconnect", _ => true).SetVoidResult();
         }
 
         [Fact]

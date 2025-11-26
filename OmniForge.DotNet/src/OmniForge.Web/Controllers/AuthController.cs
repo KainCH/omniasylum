@@ -80,11 +80,6 @@ namespace OmniForge.Web.Controllers
                 Features = new FeatureFlags()
             };
 
-            if (!user.IsActive)
-            {
-                 return Redirect($"/?error=account_deactivated&username={userInfo.Login}");
-            }
-
             // Update user info
             user.Username = userInfo.Login;
             user.DisplayName = userInfo.DisplayName;
