@@ -54,7 +54,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true); // Enable detailed errors for debugging
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 // Configure Data Protection
 var storageAccountName = builder.Configuration["AzureStorage:AccountName"];
@@ -113,6 +117,10 @@ builder.Services.AddSignalR(hubOptions =>
 {
     hubOptions.MaximumReceiveMessageSize = 102400; // 100KB
     hubOptions.EnableDetailedErrors = true;
+})
+.AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
 builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 

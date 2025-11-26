@@ -192,8 +192,12 @@
                     {
                         InvokeAsync(() =>
                         {
-                            RefreshStatus();
-                            StateHasChanged();
+                            // Only refresh if no modals are open to prevent interfering with user edits
+                            if (!IsAnyModalOpen())
+                            {
+                                RefreshStatus();
+                                StateHasChanged();
+                            }
                         });
                     }, null, 5000, 5000);
                 }
@@ -208,6 +212,11 @@
             isMonitoring = StreamMonitorService.IsUserSubscribed(TwitchUserId);
             monitorStatus = StreamMonitorService.GetUserConnectionStatus(TwitchUserId);
         }
+    }
+
+    private bool IsAnyModalOpen()
+    {
+        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings;
     }
 
     public void Dispose()
