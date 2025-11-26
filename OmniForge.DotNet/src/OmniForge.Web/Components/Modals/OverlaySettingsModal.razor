@@ -13,6 +13,18 @@
                     <button type="button" class="btn-close" @onclick="Close"></button>
                 </div>
                 <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>@successMessage
+                        </div>
+                    }
                     @if (isLoading)
                     {
                         <div class="text-center p-5">
@@ -145,6 +157,8 @@
     private OverlaySettings settings = new();
     private bool isLoading = false;
     private bool isSaving = false;
+    private string? errorMessage = null;
+    private string? successMessage = null;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -157,6 +171,7 @@
     private async Task LoadSettings()
     {
         isLoading = true;
+        errorMessage = null;
         try
         {
             var user = await UserRepository.GetUserAsync(UserId);
@@ -164,9 +179,14 @@
             {
                 settings = user.OverlaySettings ?? new OverlaySettings();
             }
+            else
+            {
+                errorMessage = $"User not found: {UserId}";
+            }
         }
         catch (Exception ex)
         {
+            errorMessage = $"Error loading settings: {ex.Message}";
             Console.WriteLine($"Error loading overlay settings: {ex.Message}");
         }
         finally
@@ -178,6 +198,8 @@
     private async Task SaveSettings()
     {
         isSaving = true;
+        errorMessage = null;
+        successMessage = null;
         try
         {
             var user = await UserRepository.GetUserAsync(UserId);
@@ -185,13 +207,22 @@
             {
                 user.OverlaySettings = settings;
                 await UserRepository.SaveUserAsync(user);
+                successMessage = "Settings saved successfully!";
+                Console.WriteLine($"✅ Overlay settings saved for user {UserId}");
                 await OnSaved.InvokeAsync();
+                // Don't close immediately - let user see the success message
+                await Task.Delay(1000);
                 await Close();
+            }
+            else
+            {
+                errorMessage = $"User not found: {UserId}";
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error saving overlay settings: {ex.Message}");
+            errorMessage = $"Error saving settings: {ex.Message}";
+            Console.WriteLine($"❌ Error saving overlay settings: {ex.Message}");
         }
         finally
         {

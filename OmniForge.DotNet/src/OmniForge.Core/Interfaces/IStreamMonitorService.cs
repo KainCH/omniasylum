@@ -16,7 +16,8 @@ namespace OmniForge.Core.Interfaces
     {
         Success,
         Failed,
-        Unauthorized
+        Unauthorized,
+        RequiresReauth  // Token is valid but missing required scopes - user must re-login
     }
 
     public class StreamMonitorStatus

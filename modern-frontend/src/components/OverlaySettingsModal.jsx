@@ -36,7 +36,7 @@ function OverlaySettingsModal({
       // Use different API endpoints based on context
       const endpoint = isAdminMode
         ? `/api/admin/users/${user.userId}/overlay`
-        : '/api/user/overlay-settings'
+        : '/api/counters/overlay/settings'
 
       const response = await fetch(endpoint, {
         headers: {
@@ -134,15 +134,15 @@ function OverlaySettingsModal({
       // Use different API endpoints based on context
       const endpoint = isAdminMode
         ? `/api/admin/users/${user.userId}/overlay`
-        : '/api/user/overlay-settings'
+        : '/api/counters/overlay/settings'
 
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ overlaySettings: newSettings })
+        body: JSON.stringify(newSettings)
       })
 
       if (response.ok) {

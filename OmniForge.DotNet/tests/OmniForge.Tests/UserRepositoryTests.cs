@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Entities;
@@ -17,16 +18,18 @@ namespace OmniForge.Tests
     {
         private readonly Mock<TableServiceClient> _mockServiceClient;
         private readonly Mock<TableClient> _mockTableClient;
+        private readonly Mock<ILogger<UserRepository>> _mockLogger;
         private readonly UserRepository _repository;
 
         public UserRepositoryTests()
         {
             _mockServiceClient = new Mock<TableServiceClient>();
             _mockTableClient = new Mock<TableClient>();
+            _mockLogger = new Mock<ILogger<UserRepository>>();
 
             _mockServiceClient.Setup(x => x.GetTableClient("users")).Returns(_mockTableClient.Object);
 
-            _repository = new UserRepository(_mockServiceClient.Object);
+            _repository = new UserRepository(_mockServiceClient.Object, _mockLogger.Object);
         }
 
         [Fact]

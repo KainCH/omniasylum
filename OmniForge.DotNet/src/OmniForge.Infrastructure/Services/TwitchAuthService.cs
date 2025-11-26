@@ -24,18 +24,30 @@ namespace OmniForge.Infrastructure.Services
 
         public string GetAuthorizationUrl(string redirectUri)
         {
+            // OAuth scopes for TwitchAPI + EventSub (not IRC)
+            // See: https://dev.twitch.tv/docs/authentication/scopes/
             var scopes = new List<string>
             {
+                // User profile
                 "user:read:email",
-                "user:read:chat",
-                "user:write:chat",
-                "user:bot",
-                "chat:edit",
+
+                // EventSub chat (requires all three for full chat functionality)
+                "user:read:chat",      // Read chat messages via EventSub
+                "user:write:chat",     // Send chat messages via Helix API
+                "user:bot",            // Required for EventSub chat subscriptions
+
+                // Whispers (optional - for DM functionality)
                 "user:manage:whispers",
+
+                // Channel features
                 "channel:read:subscriptions",
                 "channel:read:redemptions",
                 "channel:manage:polls",
+
+                // Moderation & followers
                 "moderator:read:followers",
+
+                // Bits & clips
                 "bits:read",
                 "clips:edit"
             };

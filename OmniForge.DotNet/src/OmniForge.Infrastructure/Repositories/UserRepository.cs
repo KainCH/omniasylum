@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -13,10 +15,12 @@ namespace OmniForge.Infrastructure.Repositories
     public class UserRepository : IUserRepository
     {
         private readonly TableClient _tableClient;
+        private readonly ILogger<UserRepository> _logger;
 
-        public UserRepository(TableServiceClient tableServiceClient)
+        public UserRepository(TableServiceClient tableServiceClient, ILogger<UserRepository> logger)
         {
             _tableClient = tableServiceClient.GetTableClient("users");
+            _logger = logger;
         }
 
         public async Task InitializeAsync()
@@ -28,24 +32,59 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
+                _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", twitchUserId);
                 var response = await _tableClient.GetEntityAsync<UserTableEntity>("user", twitchUserId);
-                return response.Value.ToDomain();
+                var user = response.Value.ToDomain();
+                _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", twitchUserId, user.DisplayName);
+                return user;
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
+                _logger.LogWarning("⚠️ User {UserId} not found in Azure Table Storage", twitchUserId);
                 return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error getting user {UserId} from Azure Table Storage", twitchUserId);
+                throw;
             }
         }
 
         public async Task SaveUserAsync(User user)
         {
-            var entity = UserTableEntity.FromDomain(user);
-            await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+            try
+            {
+                _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", user.TwitchUserId, user.DisplayName);
+                _logger.LogDebug("📋 OverlaySettings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
+                    user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
+
+                var entity = UserTableEntity.FromDomain(user);
+
+                _logger.LogDebug("📦 Serialized overlaySettings: {OverlaySettings}", entity.overlaySettings);
+
+                await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+                _logger.LogInformation("✅ Successfully saved user {UserId} to Azure Table Storage", user.TwitchUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error saving user {UserId} to Azure Table Storage", user.TwitchUserId);
+                throw;
+            }
         }
 
         public async Task DeleteUserAsync(string twitchUserId)
         {
-            await _tableClient.DeleteEntityAsync("user", twitchUserId);
+            try
+            {
+                _logger.LogInformation("🗑️ Deleting user {UserId} from Azure Table Storage", twitchUserId);
+                await _tableClient.DeleteEntityAsync("user", twitchUserId);
+                _logger.LogInformation("✅ Successfully deleted user {UserId}", twitchUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error deleting user {UserId}", twitchUserId);
+                throw;
+            }
         }
 
         public async Task<IEnumerable<User>> GetAllUsersAsync()

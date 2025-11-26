@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -16,6 +17,7 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<INotificationService> _mockNotificationService;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<ILogger<CounterController>> _mockLogger;
         private readonly CounterController _controller;
 
         public CounterControllerTests()
@@ -24,12 +26,14 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockNotificationService = new Mock<INotificationService>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockLogger = new Mock<ILogger<CounterController>>();
 
             _controller = new CounterController(
                 _mockCounterRepository.Object,
                 _mockUserRepository.Object,
                 _mockNotificationService.Object,
-                _mockOverlayNotifier.Object);
+                _mockOverlayNotifier.Object,
+                _mockLogger.Object);
 
             // Setup User Context
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]

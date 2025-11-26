@@ -242,6 +242,15 @@ namespace OmniForge.Web.Controllers
 
                 return Ok(new { message = "Successfully subscribed to stream monitoring", userId });
             }
+            else if (result == OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth)
+            {
+                // Token is valid but missing required scopes - user must re-login
+                return StatusCode(403, new {
+                    error = "Your Twitch authorization is missing required permissions. Please re-login to grant updated permissions.",
+                    requiresReauth = true,
+                    redirectUrl = "/auth/twitch"
+                });
+            }
             else if (result == OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized)
             {
                 return Unauthorized(new { error = "Twitch authorization failed. Please re-login." });
@@ -274,6 +283,15 @@ namespace OmniForge.Web.Controllers
             if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
             {
                 return Ok(new { message = "Successfully reconnected EventSub WebSocket", userId, status = "connected" });
+            }
+            else if (result == OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth)
+            {
+                // Token is valid but missing required scopes - user must re-login
+                return StatusCode(403, new {
+                    error = "Your Twitch authorization is missing required permissions. Please re-login to grant updated permissions.",
+                    requiresReauth = true,
+                    redirectUrl = "/auth/twitch"
+                });
             }
 
             return StatusCode(500, new { error = "Failed to reconnect EventSub WebSocket", userId, status = "failed" });

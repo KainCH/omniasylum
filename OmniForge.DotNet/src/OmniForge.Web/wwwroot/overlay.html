@@ -196,25 +196,36 @@
       connect();
 
       function handleMessage(msg) {
+        console.log("📨 WebSocket message received:", JSON.stringify(msg));
         const { method, data } = msg;
 
         switch (method) {
           case 'counterUpdate':
+            console.log("📊 Counter update:", JSON.stringify(data));
             updateCounters(data);
             break;
           case 'overlaySettingsUpdate':
+          case 'settingsUpdate':
+            console.log("⚙️ Settings update:", JSON.stringify(data));
             applySettings(data);
             break;
           case 'streamStarted':
+            console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
             updateCounters(data);
             break;
           case 'streamEnded':
+            console.log("🔴 Stream ended! Data:", JSON.stringify(data));
             updateCounters(data);
             break;
           case 'streamStatusUpdate':
+            console.log("📺 Stream status update:", JSON.stringify(data));
             // Toggle visibility based on stream status if needed
             break;
+          case 'ping':
+            // Ignore ping messages
+            break;
           default:
+            console.log("🔔 Alert message:", method, JSON.stringify(data));
             // Handle alerts
             if (window.overlayInterop) {
               window.overlayInterop.triggerAlert(method, data);
@@ -273,11 +284,15 @@
 
       function updateCounters(data) {
         const container = document.getElementById('overlay-container');
+        console.log("🔄 updateCounters called with:", JSON.stringify(data));
+        console.log("🔍 streamStarted check:", data.streamStarted, "truthy:", !!data.streamStarted);
 
         // Handle visibility based on stream status
         if (data.streamStarted) {
+          console.log("✅ Adding 'visible' class to container");
           container.classList.add('visible');
         } else {
+          console.log("❌ Removing 'visible' class from container");
           container.classList.remove('visible');
         }
 
