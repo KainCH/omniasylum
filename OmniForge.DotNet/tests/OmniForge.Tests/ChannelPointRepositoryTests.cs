@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
 using Moq;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Entities;
 using OmniForge.Infrastructure.Repositories;
@@ -24,10 +26,11 @@ namespace OmniForge.Tests
             _mockTableServiceClient = new Mock<TableServiceClient>();
             _mockTableClient = new Mock<TableClient>();
 
+            var tableConfig = Options.Create(new AzureTableConfiguration());
             _mockTableServiceClient.Setup(x => x.GetTableClient(It.IsAny<string>()))
                 .Returns(_mockTableClient.Object);
 
-            _repository = new ChannelPointRepository(_mockTableServiceClient.Object);
+            _repository = new ChannelPointRepository(_mockTableServiceClient.Object, tableConfig);
         }
 
         [Fact]

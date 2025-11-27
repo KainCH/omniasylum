@@ -6,7 +6,9 @@ using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Entities;
 using OmniForge.Infrastructure.Repositories;
@@ -27,29 +29,30 @@ namespace OmniForge.Tests
             _mockTableClient = new Mock<TableClient>();
             _mockLogger = new Mock<ILogger<UserRepository>>();
 
+            var tableConfig = Options.Create(new AzureTableConfiguration());
             _mockServiceClient.Setup(x => x.GetTableClient("users")).Returns(_mockTableClient.Object);
 
-            _repository = new UserRepository(_mockServiceClient.Object, _mockLogger.Object);
+            _repository = new UserRepository(_mockServiceClient.Object, tableConfig, _mockLogger.Object);
         }
 
         [Fact]
         public async Task GetUserAsync_ShouldReturnUser_WhenExists()
         {
             var userId = "123";
-            var entity = new UserTableEntity
+            // Use TableEntity to match the repository implementation
+            var entity = new TableEntity("user", userId)
             {
-                PartitionKey = "user",
-                RowKey = userId,
-                twitchUserId = userId,
-                username = "testuser",
-                displayName = "Test User",
-                role = "streamer",
-                features = "{}"
+                { "twitchUserId", userId },
+                { "username", "testuser" },
+                { "displayName", "Test User" },
+                { "role", "streamer" },
+                { "features", "{}" },
+                { "isActive", true }
             };
 
             var response = Response.FromValue(entity, Mock.Of<Response>());
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>("user", userId, null, default))
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>("user", userId, null, default))
                 .ReturnsAsync(response);
 
             var result = await _repository.GetUserAsync(userId);
@@ -64,7 +67,7 @@ namespace OmniForge.Tests
         {
             var userId = "123";
 
-            _mockTableClient.Setup(x => x.GetEntityAsync<UserTableEntity>("user", userId, null, default))
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>("user", userId, null, default))
                 .ThrowsAsync(new RequestFailedException(404, "Not Found"));
 
             var result = await _repository.GetUserAsync(userId);
@@ -103,16 +106,17 @@ namespace OmniForge.Tests
         [Fact]
         public async Task GetAllUsersAsync_ShouldReturnAllUsers()
         {
-            var entities = new List<UserTableEntity>
+            // Use TableEntity to match the repository implementation
+            var entities = new List<TableEntity>
             {
-                new UserTableEntity { PartitionKey = "user", RowKey = "1", username = "user1", role = "streamer", features = "{}" },
-                new UserTableEntity { PartitionKey = "user", RowKey = "2", username = "user2", role = "streamer", features = "{}" }
+                new TableEntity("user", "1") { { "twitchUserId", "1" }, { "username", "user1" }, { "role", "streamer" }, { "features", "{}" }, { "isActive", true } },
+                new TableEntity("user", "2") { { "twitchUserId", "2" }, { "username", "user2" }, { "role", "streamer" }, { "features", "{}" }, { "isActive", true } }
             };
 
-            var page = Page<UserTableEntity>.FromValues(entities, null, Mock.Of<Response>());
-            var pages = AsyncPageable<UserTableEntity>.FromPages(new[] { page });
+            var page = Page<TableEntity>.FromValues(entities, null, Mock.Of<Response>());
+            var pages = AsyncPageable<TableEntity>.FromPages(new[] { page });
 
-            _mockTableClient.Setup(x => x.QueryAsync<UserTableEntity>(It.IsAny<string>(), null, null, default))
+            _mockTableClient.Setup(x => x.QueryAsync<TableEntity>(It.IsAny<string>(), null, null, default))
                 .Returns(pages);
 
             var result = await _repository.GetAllUsersAsync();

@@ -27,6 +27,8 @@ var containerEnvName = '${baseName}-env-${environment}'
 var logAnalyticsName = '${baseName}-logs-${environment}'
 var appInsightsName = '${baseName}-insights-${environment}'
 var acrName = 'omniforgeacr'
+// Map environment param to ASPNETCORE_ENVIRONMENT value
+var aspnetEnvironment = environment == 'prod' ? 'Production' : 'Development'
 
 // Reference existing Azure Container Registry
 resource acrRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -135,7 +137,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'ASPNETCORE_ENVIRONMENT'
-              value: 'Development'
+              value: aspnetEnvironment
             }
             {
               name: 'KeyVaultName'
@@ -152,10 +154,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'Authentication__Twitch__CallbackPath'
               value: '/auth/twitch/callback'
-            }
-            {
-              name: 'AzureStorage__AccountName'
-              value: storageAccountName
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

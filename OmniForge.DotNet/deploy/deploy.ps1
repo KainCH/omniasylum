@@ -1,7 +1,6 @@
 param(
     [string]$ResourceGroup = "Streamer-Tools-RG",
     [string]$AcrName = "omniforgeacr",
-    [string]$ImageName = "omniforge-dotnet",
     [string]$ImageTag = "$(Get-Date -Format 'yyyyMMdd-HHmmss')",
     [ValidateSet("dev", "prod")]
     [string]$Environment = "dev"
@@ -14,20 +13,24 @@ $envConfig = @{
     "dev" = @{
         ContainerAppFqdn = "omniforgestream-api-dev.proudmeadow-a59c8b17.southcentralus.azurecontainerapps.io"
         DisplayName = "Development"
+        ImageName = "omniforge-dotnet-dev"
     }
     "prod" = @{
         ContainerAppFqdn = "omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io"
         DisplayName = "Production"
+        ImageName = "omniforge-dotnet-prod"
     }
 }
 
 $config = $envConfig[$Environment]
 $frontendUrl = "https://$($config.ContainerAppFqdn)"
+$ImageName = $config.ImageName
 
 $startTime = Get-Date
 Write-Host "🕒 Deployment started at: $($startTime.ToString('yyyy-MM-dd hh:mm:ss tt'))" -ForegroundColor Cyan
 Write-Host "🎯 Target Environment: $($config.DisplayName) ($Environment)" -ForegroundColor Magenta
 Write-Host "🌐 Target URL: $frontendUrl" -ForegroundColor Magenta
+Write-Host "🐳 Image: $AcrName.azurecr.io/$ImageName`:$ImageTag" -ForegroundColor Magenta
 
 # 1. Build Docker Image
 Write-Host "🔨 Building Docker image..." -ForegroundColor Cyan

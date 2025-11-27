@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -12,9 +14,9 @@ namespace OmniForge.Infrastructure.Repositories
     {
         private readonly TableClient _tableClient;
 
-        public CounterRepository(TableServiceClient tableServiceClient)
+        public CounterRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
         {
-            _tableClient = tableServiceClient.GetTableClient("counters");
+            _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.CountersTable);
         }
 
         public async Task InitializeAsync()
@@ -32,10 +34,10 @@ namespace OmniForge.Infrastructure.Repositories
                 var counter = new Counter
                 {
                     TwitchUserId = entity.PartitionKey,
-                    Deaths = entity.GetInt32("Deaths") ?? entity.GetInt32("deaths") ?? 0,
-                    Swears = entity.GetInt32("Swears") ?? entity.GetInt32("swears") ?? 0,
-                    Screams = entity.GetInt32("Screams") ?? entity.GetInt32("screams") ?? 0,
-                    Bits = entity.GetInt32("Bits") ?? entity.GetInt32("bits") ?? 0,
+                    Deaths = GetInt32SafeCaseInsensitive(entity, "Deaths"),
+                    Swears = GetInt32SafeCaseInsensitive(entity, "Swears"),
+                    Screams = GetInt32SafeCaseInsensitive(entity, "Screams"),
+                    Bits = GetInt32SafeCaseInsensitive(entity, "Bits"),
                     LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                     StreamStarted = GetDateTimeOffsetSafe(entity, "StreamStarted") ?? GetDateTimeOffsetSafe(entity, "streamStarted"),
                     LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
@@ -53,13 +55,11 @@ namespace OmniForge.Infrastructure.Repositories
                         !string.Equals(key, "StreamStarted", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (entity[key] is int value)
+                        // Handle various numeric types that may be stored
+                        // Use nullable pattern to properly distinguish "not found" from valid values
+                        if (TryGetInt32Safe(entity, key, out var customValue))
                         {
-                            counter.CustomCounters[key] = value;
-                        }
-                        else if (entity[key] is long longValue)
-                        {
-                             counter.CustomCounters[key] = (int)longValue;
+                            counter.CustomCounters[key] = customValue;
                         }
                     }
                 }
@@ -96,6 +96,60 @@ namespace OmniForge.Infrastructure.Repositories
             }
 
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        }
+
+        /// <summary>
+        /// Gets an int value checking both PascalCase and camelCase key variations.
+        /// This handles data that may have been stored with different casing conventions.
+        /// </summary>
+        private int GetInt32SafeCaseInsensitive(TableEntity entity, string pascalCaseKey, int defaultValue = 0)
+        {
+            // Try PascalCase first (preferred), then camelCase
+            var camelCaseKey = char.ToLowerInvariant(pascalCaseKey[0]) + pascalCaseKey.Substring(1);
+            
+            if (TryGetInt32Safe(entity, pascalCaseKey, out var value))
+            {
+                return value;
+            }
+            if (TryGetInt32Safe(entity, camelCaseKey, out value))
+            {
+                return value;
+            }
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Tries to get an int value from the entity, handling various storage types.
+        /// Returns true if a valid integer was found, false otherwise.
+        /// This properly distinguishes between "not found" and valid values (including int.MinValue).
+        /// </summary>
+        private bool TryGetInt32Safe(TableEntity entity, string key, out int result)
+        {
+            result = 0;
+            if (entity.TryGetValue(key, out var value))
+            {
+                if (value is int intValue)
+                {
+                    result = intValue;
+                    return true;
+                }
+                if (value is long longValue)
+                {
+                    result = (int)longValue;
+                    return true;
+                }
+                if (value is double doubleValue)
+                {
+                    result = (int)doubleValue;
+                    return true;
+                }
+                if (value is string stringValue && int.TryParse(stringValue, out var parsedInt))
+                {
+                    result = parsedInt;
+                    return true;
+                }
+            }
+            return false;
         }
 
         private DateTimeOffset? GetDateTimeOffsetSafe(TableEntity entity, string key)

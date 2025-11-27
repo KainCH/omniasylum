@@ -38,12 +38,33 @@ namespace OmniForge.Infrastructure.Services
             using (var scope = _scopeFactory.CreateScope())
             {
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
                 var user = await userRepository.GetUserAsync(userId);
 
                 if (user == null)
                 {
                     _logger.LogWarning("User {UserId} not found", userId);
                     return;
+                }
+
+                // Check if token needs refresh (buffer of 5 minutes)
+                if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
+                {
+                    _logger.LogInformation("🔄 Refreshing expired token for user {UserId} before IRC connect", userId);
+                    var newToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                    if (newToken != null)
+                    {
+                        user.AccessToken = newToken.AccessToken;
+                        user.RefreshToken = newToken.RefreshToken;
+                        user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+                        await userRepository.SaveUserAsync(user);
+                        _logger.LogInformation("✅ Token refreshed for user {UserId}, expires at {Expiry}", userId, user.TokenExpiry);
+                    }
+                    else
+                    {
+                        _logger.LogError("❌ Failed to refresh token for user {UserId} - cannot connect to IRC", userId);
+                        return;
+                    }
                 }
 
                 var credentials = new ConnectionCredentials(user.Username, user.AccessToken);
