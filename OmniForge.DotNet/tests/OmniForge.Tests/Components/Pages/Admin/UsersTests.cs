@@ -51,6 +51,11 @@ namespace OmniForge.Tests.Components.Pages.Admin
             ComponentFactories.AddStub<UserManagementModal>();
             ComponentFactories.AddStub<UserRequestsModal>();
             ComponentFactories.AddStub<BrokenUserManagerModal>();
+            ComponentFactories.AddStub<PermissionManagerModal>();
+            ComponentFactories.AddStub<OverlaySettingsModal>();
+            ComponentFactories.AddStub<AlertsManagerModal>();
+            ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
+            ComponentFactories.AddStub<SeriesSaveManagerModal>();
         }
 
         private IRenderedComponent<Users> RenderUsers()
@@ -232,6 +237,118 @@ namespace OmniForge.Tests.Components.Pages.Admin
             // Assert
             var modal = cut.FindComponent<Stub<BrokenUserManagerModal>>();
             Assert.True(modal.Instance.Parameters.Get(x => x.Show));
+        }
+
+        [Fact]
+        public async Task ClickingOverlaySettings_OpensModalWithCorrectUserId()
+        {
+            // Arrange
+            var authUser = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "admin"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+            _authProvider.SetUser(authUser);
+
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "456", DisplayName = "OverlayUser", Role = "streamer", LastLogin = DateTime.UtcNow }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var cut = RenderUsers();
+            await Task.Delay(50);
+
+            // Act - Click the Overlay Settings button (second button in btn-group)
+            cut.Find("button[title='Overlay Settings']").Click();
+            await Task.Delay(50);
+
+            // Assert
+            var modal = cut.FindComponent<Stub<OverlaySettingsModal>>();
+            Assert.Equal("456", modal.Instance.Parameters.Get(x => x.UserId));
+        }
+
+        [Fact]
+        public async Task ClickingAlertSettings_OpensModalWithCorrectUserId()
+        {
+            // Arrange
+            var authUser = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "admin"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+            _authProvider.SetUser(authUser);
+
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "789", DisplayName = "AlertUser", Role = "streamer", LastLogin = DateTime.UtcNow }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var cut = RenderUsers();
+            await Task.Delay(50);
+
+            // Act - Click the Alert Settings button
+            cut.Find("button[title='Alert Settings']").Click();
+            await Task.Delay(50);
+
+            // Assert
+            var modal = cut.FindComponent<Stub<AlertsManagerModal>>();
+            Assert.Equal("789", modal.Instance.Parameters.Get(x => x.UserId));
+        }
+
+        [Fact]
+        public async Task ClickingDiscordSettings_OpensModalWithCorrectUserId()
+        {
+            // Arrange
+            var authUser = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "admin"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+            _authProvider.SetUser(authUser);
+
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "101", DisplayName = "DiscordUser", Role = "streamer", LastLogin = DateTime.UtcNow }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var cut = RenderUsers();
+            await Task.Delay(50);
+
+            // Act - Click the Discord Settings button
+            cut.Find("button[title='Discord Settings']").Click();
+            await Task.Delay(50);
+
+            // Assert
+            var modal = cut.FindComponent<Stub<DiscordWebhookSettingsModal>>();
+            Assert.Equal("101", modal.Instance.Parameters.Get(x => x.UserId));
+        }
+
+        [Fact]
+        public async Task ClickingSeriesSaves_OpensModalWithCorrectUserId()
+        {
+            // Arrange
+            var authUser = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "admin"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+            _authProvider.SetUser(authUser);
+
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "202", DisplayName = "SeriesUser", Role = "streamer", LastLogin = DateTime.UtcNow }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var cut = RenderUsers();
+            await Task.Delay(50);
+
+            // Act - Click the Series Saves button
+            cut.Find("button[title='Series Saves']").Click();
+            await Task.Delay(50);
+
+            // Assert
+            var modal = cut.FindComponent<Stub<SeriesSaveManagerModal>>();
+            Assert.Equal("202", modal.Instance.Parameters.Get(x => x.UserId));
         }
     }
 
