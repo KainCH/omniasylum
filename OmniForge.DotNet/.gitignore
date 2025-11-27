@@ -25,7 +25,6 @@ publish/
 *.publishsettings
 
 # Environment / Secrets
-appsettings.Development.json
 *.local.json
 
 # OS
