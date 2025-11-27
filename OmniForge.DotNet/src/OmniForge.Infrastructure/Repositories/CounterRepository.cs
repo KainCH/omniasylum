@@ -34,10 +34,10 @@ namespace OmniForge.Infrastructure.Repositories
                 var counter = new Counter
                 {
                     TwitchUserId = entity.PartitionKey,
-                    Deaths = entity.GetInt32("Deaths") ?? entity.GetInt32("deaths") ?? 0,
-                    Swears = entity.GetInt32("Swears") ?? entity.GetInt32("swears") ?? 0,
-                    Screams = entity.GetInt32("Screams") ?? entity.GetInt32("screams") ?? 0,
-                    Bits = entity.GetInt32("Bits") ?? entity.GetInt32("bits") ?? 0,
+                    Deaths = GetInt32Safe(entity, "Deaths", GetInt32Safe(entity, "deaths")),
+                    Swears = GetInt32Safe(entity, "Swears", GetInt32Safe(entity, "swears")),
+                    Screams = GetInt32Safe(entity, "Screams", GetInt32Safe(entity, "screams")),
+                    Bits = GetInt32Safe(entity, "Bits", GetInt32Safe(entity, "bits")),
                     LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                     StreamStarted = GetDateTimeOffsetSafe(entity, "StreamStarted") ?? GetDateTimeOffsetSafe(entity, "streamStarted"),
                     LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
@@ -55,13 +55,11 @@ namespace OmniForge.Infrastructure.Repositories
                         !string.Equals(key, "StreamStarted", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (entity[key] is int value)
+                        // Handle various numeric types that may be stored
+                        var customValue = GetInt32Safe(entity, key, int.MinValue);
+                        if (customValue != int.MinValue)
                         {
-                            counter.CustomCounters[key] = value;
-                        }
-                        else if (entity[key] is long longValue)
-                        {
-                             counter.CustomCounters[key] = (int)longValue;
+                            counter.CustomCounters[key] = customValue;
                         }
                     }
                 }
@@ -98,6 +96,30 @@ namespace OmniForge.Infrastructure.Repositories
             }
 
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        }
+
+        private int GetInt32Safe(TableEntity entity, string key, int defaultValue = 0)
+        {
+            if (entity.TryGetValue(key, out var value))
+            {
+                if (value is int intValue)
+                {
+                    return intValue;
+                }
+                if (value is long longValue)
+                {
+                    return (int)longValue;
+                }
+                if (value is double doubleValue)
+                {
+                    return (int)doubleValue;
+                }
+                if (value is string stringValue && int.TryParse(stringValue, out var parsedInt))
+                {
+                    return parsedInt;
+                }
+            }
+            return defaultValue;
         }
 
         private DateTimeOffset? GetDateTimeOffsetSafe(TableEntity entity, string key)

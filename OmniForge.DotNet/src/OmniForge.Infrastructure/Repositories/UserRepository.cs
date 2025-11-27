@@ -35,8 +35,9 @@ namespace OmniForge.Infrastructure.Repositories
             try
             {
                 _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", twitchUserId);
-                var response = await _tableClient.GetEntityAsync<UserTableEntity>("user", twitchUserId);
-                var user = response.Value.ToDomain();
+                // Use raw TableEntity to safely handle type mismatches from data migrations
+                var response = await _tableClient.GetEntityAsync<TableEntity>("user", twitchUserId);
+                var user = UserTableEntity.FromTableEntitySafe(response.Value);
                 _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", twitchUserId, user.DisplayName);
                 return user;
             }
@@ -96,11 +97,19 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<IEnumerable<User>> GetAllUsersAsync()
         {
             var users = new List<User>();
-            var query = _tableClient.QueryAsync<UserTableEntity>(filter: $"PartitionKey eq 'user'");
+            // Use raw TableEntity to safely handle type mismatches from data migrations
+            var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq 'user'");
 
             await foreach (var entity in query)
             {
-                users.Add(entity.ToDomain());
+                try
+                {
+                    users.Add(UserTableEntity.FromTableEntitySafe(entity));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Skipping user entity {RowKey} due to conversion error", entity.RowKey);
+                }
             }
 
             return users;

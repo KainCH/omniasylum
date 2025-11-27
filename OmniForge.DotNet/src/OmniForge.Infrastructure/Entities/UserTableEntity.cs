@@ -100,6 +100,66 @@ namespace OmniForge.Infrastructure.Entities
             return user;
         }
 
+        /// <summary>
+        /// Safely converts a raw TableEntity to User domain object.
+        /// Handles type mismatches from data migrations (e.g., booleans stored as strings).
+        /// </summary>
+        public static User FromTableEntitySafe(TableEntity entity)
+        {
+            var userEntity = new UserTableEntity
+            {
+                PartitionKey = entity.PartitionKey,
+                RowKey = entity.RowKey,
+                Timestamp = entity.Timestamp,
+                ETag = entity.ETag,
+                twitchUserId = GetStringSafe(entity, "twitchUserId"),
+                username = GetStringSafe(entity, "username"),
+                displayName = GetStringSafe(entity, "displayName"),
+                email = GetStringSafe(entity, "email"),
+                profileImageUrl = GetStringSafe(entity, "profileImageUrl"),
+                accessToken = GetStringSafe(entity, "accessToken"),
+                refreshToken = GetStringSafe(entity, "refreshToken"),
+                tokenExpiry = entity.TryGetValue("tokenExpiry", out var te) ? te : null,
+                role = GetStringSafe(entity, "role", "streamer"),
+                features = GetStringSafe(entity, "features", "{}"),
+                overlaySettings = GetStringSafe(entity, "overlaySettings", "{}"),
+                discordSettings = GetStringSafe(entity, "discordSettings", "{}"),
+                discordWebhookUrl = GetStringSafe(entity, "discordWebhookUrl"),
+                discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
+                managedStreamers = GetStringSafe(entity, "managedStreamers", "[]"),
+                isActive = GetBoolSafe(entity, "isActive", true),
+                streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
+                createdAt = entity.TryGetValue("createdAt", out var ca) ? ca : null,
+                lastLogin = entity.TryGetValue("lastLogin", out var ll) ? ll : null
+            };
+
+            return userEntity.ToDomain();
+        }
+
+        private static string GetStringSafe(TableEntity entity, string key, string defaultValue = "")
+        {
+            if (entity.TryGetValue(key, out var value) && value != null)
+            {
+                return value.ToString() ?? defaultValue;
+            }
+            return defaultValue;
+        }
+
+        private static bool GetBoolSafe(TableEntity entity, string key, bool defaultValue = false)
+        {
+            if (entity.TryGetValue(key, out var value))
+            {
+                if (value is bool boolValue) return boolValue;
+                if (value is string stringValue)
+                {
+                    if (bool.TryParse(stringValue, out var parsed)) return parsed;
+                    if (stringValue.Equals("1", StringComparison.OrdinalIgnoreCase)) return true;
+                    if (stringValue.Equals("0", StringComparison.OrdinalIgnoreCase)) return false;
+                }
+            }
+            return defaultValue;
+        }
+
         public static UserTableEntity FromDomain(User user)
         {
             var minAzureDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
