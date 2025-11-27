@@ -35,7 +35,13 @@ namespace OmniForge.Infrastructure.Repositories
             try
             {
                 _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", twitchUserId);
-                // Use raw TableEntity to safely handle type mismatches from data migrations
+                // IMPORTANT: We use raw TableEntity here instead of UserTableEntity because
+                // CLI-based data migrations (e.g., Azure Storage Explorer, PowerShell, or manual edits)
+                // can introduce type mismatches or missing properties in the stored data.
+                // Attempting to deserialize directly into UserTableEntity can cause runtime errors
+                // if the schema does not match exactly. By retrieving as TableEntity and converting
+                // with UserTableEntity.FromTableEntitySafe, we can safely handle partial or mismatched
+                // data and provide better error handling.
                 var response = await _tableClient.GetEntityAsync<TableEntity>("user", twitchUserId);
                 var user = UserTableEntity.FromTableEntitySafe(response.Value);
                 _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", twitchUserId, user.DisplayName);

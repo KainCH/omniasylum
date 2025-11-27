@@ -156,10 +156,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: '/auth/twitch/callback'
             }
             {
-              name: 'AzureStorage__AccountName'
-              value: storageAccountName
-            }
-            {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.properties.ConnectionString
             }

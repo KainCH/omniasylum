@@ -140,7 +140,7 @@ namespace OmniForge.Infrastructure.Entities
         {
             if (entity.TryGetValue(key, out var value) && value != null)
             {
-                return value.ToString() ?? defaultValue;
+                return value.ToString()!;
             }
             return defaultValue;
         }
