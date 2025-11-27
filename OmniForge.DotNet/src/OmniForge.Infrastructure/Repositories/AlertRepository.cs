@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -15,10 +17,10 @@ namespace OmniForge.Infrastructure.Repositories
         private readonly TableClient _alertsClient;
         private readonly TableClient _usersClient;
 
-        public AlertRepository(TableServiceClient tableServiceClient)
+        public AlertRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
         {
-            _alertsClient = tableServiceClient.GetTableClient("alerts");
-            _usersClient = tableServiceClient.GetTableClient("users");
+            _alertsClient = tableServiceClient.GetTableClient(tableConfig.Value.AlertsTable);
+            _usersClient = tableServiceClient.GetTableClient(tableConfig.Value.UsersTable);
         }
 
         public async Task InitializeAsync()

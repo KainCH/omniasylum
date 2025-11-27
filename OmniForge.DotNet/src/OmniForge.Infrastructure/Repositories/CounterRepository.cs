@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -12,9 +14,9 @@ namespace OmniForge.Infrastructure.Repositories
     {
         private readonly TableClient _tableClient;
 
-        public CounterRepository(TableServiceClient tableServiceClient)
+        public CounterRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
         {
-            _tableClient = tableServiceClient.GetTableClient("counters");
+            _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.CountersTable);
         }
 
         public async Task InitializeAsync()

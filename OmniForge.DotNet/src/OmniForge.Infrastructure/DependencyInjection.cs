@@ -3,6 +3,7 @@ using Azure.Data.Tables;
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
@@ -19,6 +20,7 @@ namespace OmniForge.Infrastructure
         {
             services.Configure<TwitchSettings>(configuration.GetSection("Twitch"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+            services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
 
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
             services.AddScoped<IJwtService, JwtService>();

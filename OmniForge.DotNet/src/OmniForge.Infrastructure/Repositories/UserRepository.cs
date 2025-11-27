@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -17,9 +19,9 @@ namespace OmniForge.Infrastructure.Repositories
         private readonly TableClient _tableClient;
         private readonly ILogger<UserRepository> _logger;
 
-        public UserRepository(TableServiceClient tableServiceClient, ILogger<UserRepository> logger)
+        public UserRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig, ILogger<UserRepository> logger)
         {
-            _tableClient = tableServiceClient.GetTableClient("users");
+            _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.UsersTable);
             _logger = logger;
         }
 
