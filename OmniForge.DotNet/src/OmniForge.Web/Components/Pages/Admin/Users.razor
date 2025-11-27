@@ -161,22 +161,22 @@
 
     @if (selectedOverlayUser != null)
     {
-        <OverlaySettingsModal @bind-Show="showOverlayModal" User="selectedOverlayUser" OnSaved="RefreshUsers" />
+        <OverlaySettingsModal @bind-Show="showOverlayModal" UserId="@selectedOverlayUser.TwitchUserId" OnSaved="RefreshUsers" />
     }
 
     @if (selectedAlertUser != null)
     {
-        <AlertsManagerModal @bind-Show="showAlertModal" User="selectedAlertUser" />
+        <AlertsManagerModal @bind-Show="showAlertModal" UserId="@selectedAlertUser.TwitchUserId" />
     }
 
     @if (selectedDiscordUser != null)
     {
-        <DiscordWebhookSettingsModal @bind-Show="showDiscordModal" User="selectedDiscordUser" />
+        <DiscordWebhookSettingsModal @bind-Show="showDiscordModal" UserId="@selectedDiscordUser.TwitchUserId" />
     }
 
     @if (selectedSeriesUser != null)
     {
-        <SeriesSaveManagerModal @bind-Show="showSeriesModal" User="selectedSeriesUser" />
+        <SeriesSaveManagerModal @bind-Show="showSeriesModal" UserId="@selectedSeriesUser.TwitchUserId" />
     }
 </div>
 
