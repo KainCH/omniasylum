@@ -34,10 +34,10 @@ namespace OmniForge.Infrastructure.Repositories
                 var counter = new Counter
                 {
                     TwitchUserId = entity.PartitionKey,
-                    Deaths = GetInt32Safe(entity, "Deaths", GetInt32Safe(entity, "deaths")),
-                    Swears = GetInt32Safe(entity, "Swears", GetInt32Safe(entity, "swears")),
-                    Screams = GetInt32Safe(entity, "Screams", GetInt32Safe(entity, "screams")),
-                    Bits = GetInt32Safe(entity, "Bits", GetInt32Safe(entity, "bits")),
+                    Deaths = GetInt32SafeCaseInsensitive(entity, "Deaths"),
+                    Swears = GetInt32SafeCaseInsensitive(entity, "Swears"),
+                    Screams = GetInt32SafeCaseInsensitive(entity, "Screams"),
+                    Bits = GetInt32SafeCaseInsensitive(entity, "Bits"),
                     LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                     StreamStarted = GetDateTimeOffsetSafe(entity, "StreamStarted") ?? GetDateTimeOffsetSafe(entity, "streamStarted"),
                     LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
@@ -56,8 +56,8 @@ namespace OmniForge.Infrastructure.Repositories
                         !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase))
                     {
                         // Handle various numeric types that may be stored
-                        var customValue = GetInt32Safe(entity, key, int.MinValue);
-                        if (customValue != int.MinValue)
+                        // Use nullable pattern to properly distinguish "not found" from valid values
+                        if (TryGetInt32Safe(entity, key, out var customValue))
                         {
                             counter.CustomCounters[key] = customValue;
                         }
@@ -98,28 +98,58 @@ namespace OmniForge.Infrastructure.Repositories
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
         }
 
-        private int GetInt32Safe(TableEntity entity, string key, int defaultValue = 0)
+        /// <summary>
+        /// Gets an int value checking both PascalCase and camelCase key variations.
+        /// This handles data that may have been stored with different casing conventions.
+        /// </summary>
+        private int GetInt32SafeCaseInsensitive(TableEntity entity, string pascalCaseKey, int defaultValue = 0)
         {
+            // Try PascalCase first (preferred), then camelCase
+            var camelCaseKey = char.ToLowerInvariant(pascalCaseKey[0]) + pascalCaseKey.Substring(1);
+            
+            if (TryGetInt32Safe(entity, pascalCaseKey, out var value))
+            {
+                return value;
+            }
+            if (TryGetInt32Safe(entity, camelCaseKey, out value))
+            {
+                return value;
+            }
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Tries to get an int value from the entity, handling various storage types.
+        /// Returns true if a valid integer was found, false otherwise.
+        /// This properly distinguishes between "not found" and valid values (including int.MinValue).
+        /// </summary>
+        private bool TryGetInt32Safe(TableEntity entity, string key, out int result)
+        {
+            result = 0;
             if (entity.TryGetValue(key, out var value))
             {
                 if (value is int intValue)
                 {
-                    return intValue;
+                    result = intValue;
+                    return true;
                 }
                 if (value is long longValue)
                 {
-                    return (int)longValue;
+                    result = (int)longValue;
+                    return true;
                 }
                 if (value is double doubleValue)
                 {
-                    return (int)doubleValue;
+                    result = (int)doubleValue;
+                    return true;
                 }
                 if (value is string stringValue && int.TryParse(stringValue, out var parsedInt))
                 {
-                    return parsedInt;
+                    result = parsedInt;
+                    return true;
                 }
             }
-            return defaultValue;
+            return false;
         }
 
         private DateTimeOffset? GetDateTimeOffsetSafe(TableEntity entity, string key)
