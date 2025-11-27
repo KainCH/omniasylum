@@ -1,0 +1,207 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "14362194673090102409"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The Azure region where resources will be deployed"
+      }
+    },
+    "baseName": {
+      "type": "string",
+      "defaultValue": "omniforgestream",
+      "metadata": {
+        "description": "Base name for all resources"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "metadata": {
+        "description": "Environment name (dev, staging, prod)"
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "metadata": {
+        "description": "Container image to deploy"
+      }
+    },
+    "frontendUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Frontend URL for CORS"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[format('omni{0}', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Name of the existing storage account"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": "forge-steel-vault",
+      "metadata": {
+        "description": "Name of the existing Key Vault"
+      }
+    }
+  },
+  "variables": {
+    "containerAppName": "[format('{0}-api-{1}', parameters('baseName'), parameters('environment'))]",
+    "containerEnvName": "[format('{0}-env-{1}', parameters('baseName'), parameters('environment'))]",
+    "logAnalyticsName": "[format('{0}-logs-{1}', parameters('baseName'), parameters('environment'))]",
+    "appInsightsName": "[format('{0}-insights-{1}', parameters('baseName'), parameters('environment'))]",
+    "acrName": "omniforgeacr",
+    "aspnetEnvironment": "[if(equals(parameters('environment'), 'prod'), 'Production', 'Development')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[variables('logAnalyticsName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('containerEnvName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName')), '2022-10-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName')), '2022-10-01').primarySharedKey]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('containerAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'bears-stream-UAMI'))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('containerEnvName'))]",
+        "configuration": {
+          "ingress": {
+            "external": true,
+            "targetPort": 8080,
+            "transport": "auto",
+            "corsPolicy": {
+              "allowedOrigins": [
+                "[parameters('frontendUrl')]",
+                "http://localhost:3000",
+                "http://localhost:5173"
+              ],
+              "allowCredentials": true
+            }
+          },
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'bears-stream-UAMI')]"
+            }
+          ],
+          "secrets": []
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "omniforge-dotnet",
+              "image": "[parameters('containerImage')]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1.0Gi"
+              },
+              "env": [
+                {
+                  "name": "ASPNETCORE_ENVIRONMENT",
+                  "value": "[variables('aspnetEnvironment')]"
+                },
+                {
+                  "name": "KeyVaultName",
+                  "value": "[parameters('keyVaultName')]"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'bears-stream-UAMI'), '2023-01-31').clientId]"
+                },
+                {
+                  "name": "AzureStorage__AccountName",
+                  "value": "[parameters('storageAccountName')]"
+                },
+                {
+                  "name": "Authentication__Twitch__CallbackPath",
+                  "value": "/auth/twitch/callback"
+                },
+                {
+                  "name": "AzureStorage__AccountName",
+                  "value": "[parameters('storageAccountName')]"
+                },
+                {
+                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                  "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('containerEnvName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "containerAppUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', variables('containerAppName')), '2023-05-01').configuration.ingress.fqdn]"
+    }
+  }
+}
