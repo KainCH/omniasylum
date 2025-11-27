@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 
@@ -13,9 +15,9 @@ namespace OmniForge.Infrastructure.Repositories
     {
         private readonly TableClient _usersClient;
 
-        public TemplateRepository(TableServiceClient tableServiceClient)
+        public TemplateRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
         {
-            _usersClient = tableServiceClient.GetTableClient("users");
+            _usersClient = tableServiceClient.GetTableClient(tableConfig.Value.UsersTable);
         }
 
         public async Task InitializeAsync()

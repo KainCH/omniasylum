@@ -6,7 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
 using Moq;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Entities;
 using OmniForge.Infrastructure.Repositories;
@@ -27,12 +29,13 @@ namespace OmniForge.Tests
             _mockAlertsClient = new Mock<TableClient>();
             _mockUsersClient = new Mock<TableClient>();
 
+            var tableConfig = Options.Create(new AzureTableConfiguration());
             _mockTableServiceClient.Setup(x => x.GetTableClient("alerts"))
                 .Returns(_mockAlertsClient.Object);
             _mockTableServiceClient.Setup(x => x.GetTableClient("users"))
                 .Returns(_mockUsersClient.Object);
 
-            _repository = new AlertRepository(_mockTableServiceClient.Object);
+            _repository = new AlertRepository(_mockTableServiceClient.Object, tableConfig);
         }
 
         [Fact]

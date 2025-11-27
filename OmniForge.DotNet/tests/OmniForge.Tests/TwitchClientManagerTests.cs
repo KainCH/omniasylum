@@ -19,6 +19,7 @@ namespace OmniForge.Tests
         private readonly Mock<ILogger<TwitchClientManager>> _mockLogger;
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
+        private readonly Mock<ITwitchAuthService> _mockTwitchAuthService;
         private readonly TwitchClientManager _twitchClientManager;
 
         public TwitchClientManagerTests()
@@ -30,6 +31,7 @@ namespace OmniForge.Tests
             _mockLogger = new Mock<ILogger<TwitchClientManager>>();
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
+            _mockTwitchAuthService = new Mock<ITwitchAuthService>();
 
             // Setup Scope Factory
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
@@ -40,6 +42,8 @@ namespace OmniForge.Tests
                 .Returns(_mockUserRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository)))
                 .Returns(_mockCounterRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchAuthService)))
+                .Returns(_mockTwitchAuthService.Object);
 
             _twitchClientManager = new TwitchClientManager(
                 _mockScopeFactory.Object,
@@ -56,7 +60,9 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = userId,
                 Username = "testuser",
-                AccessToken = "token"
+                AccessToken = "token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) // Valid token
             };
 
             _mockUserRepository.Setup(x => x.GetUserAsync(userId))

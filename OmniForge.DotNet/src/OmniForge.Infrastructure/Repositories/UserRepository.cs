@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Entities;
@@ -17,9 +19,9 @@ namespace OmniForge.Infrastructure.Repositories
         private readonly TableClient _tableClient;
         private readonly ILogger<UserRepository> _logger;
 
-        public UserRepository(TableServiceClient tableServiceClient, ILogger<UserRepository> logger)
+        public UserRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig, ILogger<UserRepository> logger)
         {
-            _tableClient = tableServiceClient.GetTableClient("users");
+            _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.UsersTable);
             _logger = logger;
         }
 
@@ -33,8 +35,15 @@ namespace OmniForge.Infrastructure.Repositories
             try
             {
                 _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", twitchUserId);
-                var response = await _tableClient.GetEntityAsync<UserTableEntity>("user", twitchUserId);
-                var user = response.Value.ToDomain();
+                // IMPORTANT: We use raw TableEntity here instead of UserTableEntity because
+                // CLI-based data migrations (e.g., Azure Storage Explorer, PowerShell, or manual edits)
+                // can introduce type mismatches or missing properties in the stored data.
+                // Attempting to deserialize directly into UserTableEntity can cause runtime errors
+                // if the schema does not match exactly. By retrieving as TableEntity and converting
+                // with UserTableEntity.FromTableEntitySafe, we can safely handle partial or mismatched
+                // data and provide better error handling.
+                var response = await _tableClient.GetEntityAsync<TableEntity>("user", twitchUserId);
+                var user = UserTableEntity.FromTableEntitySafe(response.Value);
                 _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", twitchUserId, user.DisplayName);
                 return user;
             }
@@ -94,11 +103,19 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<IEnumerable<User>> GetAllUsersAsync()
         {
             var users = new List<User>();
-            var query = _tableClient.QueryAsync<UserTableEntity>(filter: $"PartitionKey eq 'user'");
+            // Use raw TableEntity to safely handle type mismatches from data migrations
+            var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq 'user'");
 
             await foreach (var entity in query)
             {
-                users.Add(entity.ToDomain());
+                try
+                {
+                    users.Add(UserTableEntity.FromTableEntitySafe(entity));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Skipping user entity {RowKey} due to conversion error", entity.RowKey);
+                }
             }
 
             return users;

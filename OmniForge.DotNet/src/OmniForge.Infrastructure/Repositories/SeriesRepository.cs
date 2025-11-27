@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using System.Text.Json;
@@ -14,9 +16,9 @@ namespace OmniForge.Infrastructure.Repositories
     {
         private readonly TableClient _tableClient;
 
-        public SeriesRepository(TableServiceClient tableServiceClient)
+        public SeriesRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
         {
-            _tableClient = tableServiceClient.GetTableClient("series");
+            _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.SeriesTable);
         }
 
         public async Task InitializeAsync()
