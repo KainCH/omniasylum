@@ -28,7 +28,8 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldNotRender_WhenShowIsFalse()
         {
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<SeriesSaveManagerModal>(0);
                 b.AddAttribute(1, "Show", false);
                 b.CloseComponent();
@@ -42,7 +43,8 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldRender_WhenShowIsTrue()
         {
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<SeriesSaveManagerModal>(0);
                 b.AddAttribute(1, "Show", true);
                 b.AddAttribute(2, "UserId", "123");
@@ -59,7 +61,8 @@ namespace OmniForge.Tests.Components.Modals
         {
             // Arrange
             var show = true;
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<SeriesSaveManagerModal>(0);
                 b.AddAttribute(1, "Show", show);
                 b.AddAttribute(2, "UserId", "123");
@@ -78,7 +81,8 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldLoadSeries_WhenShown()
         {
             // Arrange
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<SeriesSaveManagerModal>(0);
                 b.AddAttribute(1, "Show", true);
                 b.AddAttribute(2, "UserId", "123");
@@ -99,7 +103,8 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldShowDetails_WhenSeriesSelected()
         {
             // Arrange
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<SeriesSaveManagerModal>(0);
                 b.AddAttribute(1, "Show", true);
                 b.AddAttribute(2, "UserId", "123");

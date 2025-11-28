@@ -233,7 +233,8 @@ namespace OmniForge.Tests.Controllers
             var seriesId = "series-id";
             var moderator = new User { TwitchUserId = moderatorId, ManagedStreamers = new List<string> { streamerId } };
             var streamer = new User { TwitchUserId = streamerId };
-            var series = new Series {
+            var series = new Series
+            {
                 Id = seriesId,
                 Snapshot = new Counter { Deaths = 50 }
             };

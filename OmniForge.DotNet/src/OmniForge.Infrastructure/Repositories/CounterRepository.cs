@@ -106,7 +106,7 @@ namespace OmniForge.Infrastructure.Repositories
         {
             // Try PascalCase first (preferred), then camelCase
             var camelCaseKey = char.ToLowerInvariant(pascalCaseKey[0]) + pascalCaseKey.Substring(1);
-            
+
             if (TryGetInt32Safe(entity, pascalCaseKey, out var value))
             {
                 return value;

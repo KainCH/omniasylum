@@ -22,7 +22,8 @@ namespace OmniForge.Tests.Components.Pages
         public void RendersForm_Initially()
         {
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<RequestAccess>(0);
                 b.CloseComponent();
             });
@@ -39,7 +40,8 @@ namespace OmniForge.Tests.Components.Pages
         public void ShowsValidationErrors_WhenSubmittedEmpty()
         {
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<RequestAccess>(0);
                 b.CloseComponent();
             });
@@ -60,7 +62,8 @@ namespace OmniForge.Tests.Components.Pages
         public void ShowsSuccessMessage_WhenSubmittedValid()
         {
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<RequestAccess>(0);
                 b.CloseComponent();
             });

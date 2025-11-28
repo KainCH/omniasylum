@@ -70,9 +70,11 @@ namespace OmniForge.Tests.Components.Pages.Admin
 
         private IRenderedComponent<Users> RenderUsers()
         {
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<Users>(2);
                     builder.CloseComponent();
                 }));

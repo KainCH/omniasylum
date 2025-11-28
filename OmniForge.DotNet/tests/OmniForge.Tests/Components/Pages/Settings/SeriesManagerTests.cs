@@ -58,9 +58,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 .Returns(async () => { await Task.Delay(100); return new List<Series>(); });
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<SeriesManager>(2);
                     builder.CloseComponent();
                 }));
@@ -88,9 +90,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync("123")).ReturnsAsync(seriesList);
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<SeriesManager>(2);
                     builder.CloseComponent();
                 }));
@@ -118,9 +122,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockCounterRepo.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(new Counter { Deaths = 5, Swears = 2 });
             _mockSeriesRepo.Setup(x => x.CreateSeriesAsync(It.IsAny<Series>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<SeriesManager>(2);
                     builder.CloseComponent();
                 }));
@@ -163,9 +169,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockCounterRepo.Setup(x => x.SaveCountersAsync(It.IsAny<Counter>())).Returns(Task.CompletedTask);
             _mockOverlayNotifier.Setup(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<SeriesManager>(2);
                     builder.CloseComponent();
                 }));
@@ -200,9 +208,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync("123")).ReturnsAsync(new List<Series> { series });
             _mockSeriesRepo.Setup(x => x.DeleteSeriesAsync("123", "1")).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<SeriesManager>(2);
                     builder.CloseComponent();
                 }));

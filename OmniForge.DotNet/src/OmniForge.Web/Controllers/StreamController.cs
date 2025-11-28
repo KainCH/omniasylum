@@ -245,7 +245,8 @@ namespace OmniForge.Web.Controllers
             else if (result == OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth)
             {
                 // Token is valid but missing required scopes - user must re-login
-                return StatusCode(403, new {
+                return StatusCode(403, new
+                {
                     error = "Your Twitch authorization is missing required permissions. Please re-login to grant updated permissions.",
                     requiresReauth = true,
                     redirectUrl = "/auth/twitch"
@@ -287,7 +288,8 @@ namespace OmniForge.Web.Controllers
             else if (result == OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth)
             {
                 // Token is valid but missing required scopes - user must re-login
-                return StatusCode(403, new {
+                return StatusCode(403, new
+                {
                     error = "Your Twitch authorization is missing required permissions. Please re-login to grant updated permissions.",
                     requiresReauth = true,
                     redirectUrl = "/auth/twitch"

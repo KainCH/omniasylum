@@ -65,9 +65,11 @@ namespace OmniForge.Tests.Components.Pages
 
         private IRenderedComponent<Dashboard> RenderDashboard()
         {
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<Dashboard>(2);
                     builder.CloseComponent();
                 }));
@@ -131,7 +133,8 @@ namespace OmniForge.Tests.Components.Pages
 
             // Configure settings to disable Deaths counter
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
-                .ReturnsAsync(new User {
+                .ReturnsAsync(new User
+                {
                     TwitchUserId = "12345",
                     OverlaySettings = new OverlaySettings
                     {

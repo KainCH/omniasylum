@@ -646,7 +646,7 @@ namespace OmniForge.Infrastructure.Services
                 if (eventData.TryGetProperty("broadcaster_user_name", out var nameProp))
                     broadcasterName = nameProp.GetString();
             }
-            catch {}
+            catch { }
 
             if (broadcasterId == null) return;
 
@@ -758,7 +758,7 @@ namespace OmniForge.Infrastructure.Services
                 if (eventData.TryGetProperty("broadcaster_user_name", out var nameProp))
                     broadcasterName = nameProp.GetString();
             }
-            catch {}
+            catch { }
 
             if (broadcasterId == null) return;
 
