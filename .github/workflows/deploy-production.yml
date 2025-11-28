@@ -51,9 +51,6 @@ jobs:
     name: Build & Push Image
     needs: test
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-      full_image: ${{ steps.meta.outputs.tags }}
 
     steps:
       - name: Checkout code
@@ -78,7 +75,7 @@ jobs:
         with:
           images: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=,format=short
+            type=sha,prefix=,format=long
             type=raw,value=latest
             type=raw,value={{date 'YYYYMMDD-HHmmss'}}
 
@@ -110,20 +107,17 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get image tag
-        id: image
-        run: |
-          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
-          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "📦 Deploying image: $IMAGE_TAG"
-
       - name: Deploy to Container App
         run: |
+          # Use full SHA for reliable image identification
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "📦 Deploying image: $IMAGE_TAG"
+
           echo "🚀 Updating Container App with new image..."
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ steps.image.outputs.tag }}
+            --image "$IMAGE_TAG"
           echo "✅ Deployment complete!"
 
       - name: Verify deployment

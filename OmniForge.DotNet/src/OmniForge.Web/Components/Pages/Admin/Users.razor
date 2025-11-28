@@ -3,11 +3,15 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using OmniForge.Web.Components.Modals
+@using OmniForge.Web.Services
+@using System.Security.Claims
 @attribute [Authorize(Roles = "admin")]
 @rendermode InteractiveServer
 @inject IUserRepository UserRepository
+@inject IAdminService AdminService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Admin - Users</PageTitle>
 
@@ -145,7 +149,7 @@
                                     <button class="btn btn-sm btn-secondary" @onclick="() => OpenSeriesSettings(user)" title="Series Saves">
                                         <i class="bi bi-save"></i>
                                     </button>
-                                    @if (user.Username?.ToLower() != "riress")
+                                    @if (user.Role != "admin" && currentUser != null && AdminService.CanDeleteUser(user.TwitchUserId, currentUser))
                                     {
                                         <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDeleteUser(user)" title="Delete User">
                                             <i class="bi bi-trash"></i>
@@ -198,6 +202,12 @@
                     <div class="modal-body">
                         <p>Are you sure you want to delete user <strong>@userToDelete.DisplayName</strong> (@userToDelete.Username)?</p>
                         <p class="text-danger"><small>This action cannot be undone. All user data, counters, and settings will be permanently deleted.</small></p>
+                        @if (!string.IsNullOrEmpty(deleteError))
+                        {
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-circle"></i> @deleteError
+                            </div>
+                        }
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
@@ -217,6 +227,7 @@
 
 @code {
     private IEnumerable<User>? users;
+    private User? currentUser;
     private bool showUserModal = false;
     private bool showUserRequestsModal = false;
     private bool showBrokenUserModal = false;
@@ -237,6 +248,7 @@
     private bool showDeleteConfirmModal = false;
     private User? userToDelete;
     private bool isDeleting = false;
+    private string? deleteError = null;
 
     private string? selectedUserId;
     private int currentCount = 0;
@@ -250,12 +262,23 @@
     {
         try
         {
+            await LoadCurrentUser();
             await LoadUsers();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error loading users: {ex}");
             users = new List<User>(); // Prevent null reference in UI
+        }
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst("userId")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            currentUser = await UserRepository.GetUserAsync(userId);
         }
     }
 
@@ -326,30 +349,41 @@
     {
         showDeleteConfirmModal = false;
         userToDelete = null;
+        deleteError = null;
     }
 
     private async Task DeleteUser()
     {
-        if (userToDelete == null) return;
+        if (userToDelete == null || currentUser == null) return;
 
         try
         {
             isDeleting = true;
+            deleteError = null;
             StateHasChanged();
 
-            await UserRepository.DeleteUserAsync(userToDelete.TwitchUserId);
+            var result = await AdminService.DeleteUserAsync(userToDelete.TwitchUserId, currentUser);
 
-            showDeleteConfirmModal = false;
-            userToDelete = null;
-            await RefreshUsers();
+            if (result.Success)
+            {
+                showDeleteConfirmModal = false;
+                userToDelete = null;
+                await RefreshUsers();
+            }
+            else
+            {
+                deleteError = result.Message;
+            }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error deleting user: {ex}");
+            deleteError = $"Error: {ex.Message}";
         }
         finally
         {
             isDeleting = false;
+            StateHasChanged();
         }
     }
 }

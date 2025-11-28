@@ -66,6 +66,7 @@ namespace OmniForge.Infrastructure.Entities
         {
             var user = new User
             {
+                RowKey = RowKey, // Preserve the actual Azure Table RowKey for deletion
                 TwitchUserId = twitchUserId,
                 Username = username,
                 DisplayName = displayName,

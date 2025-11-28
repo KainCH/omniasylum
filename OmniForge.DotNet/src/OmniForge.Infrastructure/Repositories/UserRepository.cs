@@ -116,6 +116,11 @@ namespace OmniForge.Infrastructure.Repositories
                 await _tableClient.DeleteEntityAsync("user", rowKey);
                 _logger.LogInformation("✅ Successfully deleted user by RowKey '{RowKey}'", rowKey);
             }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Entity already deleted or doesn't exist - this is fine for cleanup operations
+                _logger.LogWarning("⚠️ User with RowKey '{RowKey}' not found (already deleted?)", rowKey);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error deleting user by RowKey '{RowKey}'", rowKey);

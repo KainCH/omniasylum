@@ -124,6 +124,15 @@
 
             // Get all users including raw entities to detect issues
             var allUsers = await UserRepository.GetAllUsersAsync();
+
+            if (allUsers == null)
+            {
+                Logger.LogWarning("GetAllUsersAsync returned null");
+                statusMessage = "Unable to retrieve users from database";
+                isError = true;
+                return;
+            }
+
             var usernameGroups = new Dictionary<string, List<User>>();
 
             foreach (var user in allUsers)
@@ -134,13 +143,14 @@
                     brokenUsers.Add(new BrokenUser
                     {
                         TwitchUserId = user.TwitchUserId ?? "",
+                        RowKey = user.RowKey, // Use actual RowKey from table for deletion
                         Username = user.Username ?? "(unknown)",
                         DisplayName = user.DisplayName ?? "",
                         IssueDescription = "Empty TwitchUserId - this record is orphaned and should be deleted",
                         CanDelete = true,
                         UserEntity = user
                     });
-                    Logger.LogWarning("Found user with empty TwitchUserId: {Username}", user.Username);
+                    Logger.LogWarning("Found user with empty TwitchUserId: {Username}, RowKey={RowKey}", user.Username, user.RowKey);
                     continue;
                 }
 
@@ -159,6 +169,7 @@
                     brokenUsers.Add(new BrokenUser
                     {
                         TwitchUserId = user.TwitchUserId,
+                        RowKey = user.RowKey, // Use actual RowKey from table for deletion
                         Username = "(no username)",
                         DisplayName = user.DisplayName ?? "",
                         IssueDescription = "Missing username - user data is incomplete",
@@ -190,6 +201,7 @@
                         brokenUsers.Add(new BrokenUser
                         {
                             TwitchUserId = duplicate.TwitchUserId,
+                            RowKey = duplicate.RowKey, // Use actual RowKey from table for deletion
                             Username = duplicate.Username ?? "(unknown)",
                             DisplayName = duplicate.DisplayName ?? "",
                             IssueDescription = $"Duplicate of user '{primary.Username}' (TwitchUserId: {primary.TwitchUserId}) - older/less complete record",
@@ -224,22 +236,20 @@
 
         try
         {
-            Logger.LogInformation("Attempting to delete broken user: TwitchUserId={TwitchUserId}, Username={Username}",
-                user.TwitchUserId, user.Username);
+            Logger.LogInformation("Attempting to delete broken user: TwitchUserId={TwitchUserId}, RowKey={RowKey}, Username={Username}",
+                user.TwitchUserId, user.RowKey, user.Username);
 
-            // For users with empty TwitchUserId, we need to delete by the actual entity
-            if (string.IsNullOrWhiteSpace(user.TwitchUserId))
+            // Always use RowKey for deletion - this handles both orphaned records
+            // (empty TwitchUserId) and normal records correctly
+            var rowKeyToDelete = !string.IsNullOrEmpty(user.RowKey) ? user.RowKey : user.TwitchUserId;
+
+            if (string.IsNullOrEmpty(rowKeyToDelete))
             {
-                // This is the orphaned record case - need to delete directly from table
-                await UserRepository.DeleteUserByRowKeyAsync(user.TwitchUserId ?? "");
-                Logger.LogInformation("Deleted orphaned user record");
+                throw new InvalidOperationException("Cannot delete user: both RowKey and TwitchUserId are empty");
             }
-            else
-            {
-                // Normal delete by TwitchUserId
-                await UserRepository.DeleteUserAsync(user.TwitchUserId);
-                Logger.LogInformation("Deleted user with TwitchUserId: {TwitchUserId}", user.TwitchUserId);
-            }
+
+            await UserRepository.DeleteUserByRowKeyAsync(rowKeyToDelete);
+            Logger.LogInformation("Deleted user record with RowKey: {RowKey}", rowKeyToDelete);
 
             brokenUsers.Remove(user);
             statusMessage = $"Successfully deleted user: {user.Username}";
@@ -268,6 +278,7 @@
     public class BrokenUser
     {
         public string TwitchUserId { get; set; } = "";
+        public string RowKey { get; set; } = ""; // The actual Azure Table RowKey for deletion
         public string Username { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public string IssueDescription { get; set; } = "";

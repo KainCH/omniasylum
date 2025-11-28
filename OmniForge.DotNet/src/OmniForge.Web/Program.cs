@@ -126,6 +126,7 @@ builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 
 builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
 builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -180,5 +181,8 @@ app.MapRazorComponents<App>()
 
 app.MapControllers();
 // app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
+
+// Health check endpoint for deployment verification
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
 
 app.Run();
