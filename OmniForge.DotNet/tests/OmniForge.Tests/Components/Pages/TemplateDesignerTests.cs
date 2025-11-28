@@ -38,7 +38,8 @@ namespace OmniForge.Tests.Components.Pages
             }, "TestAuthType")));
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<TemplateDesigner>(0);
                 b.CloseComponent();
             });
@@ -61,7 +62,8 @@ namespace OmniForge.Tests.Components.Pages
                 new Claim(ClaimTypes.Name, "TestUser")
             }, "TestAuthType")));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<TemplateDesigner>(0);
                 b.CloseComponent();
             });
@@ -86,7 +88,8 @@ namespace OmniForge.Tests.Components.Pages
                 new Claim(ClaimTypes.Name, "TestUser")
             }, "TestAuthType")));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<TemplateDesigner>(0);
                 b.CloseComponent();
             });
@@ -114,7 +117,8 @@ namespace OmniForge.Tests.Components.Pages
                 new Claim(ClaimTypes.Name, "TestUser")
             }, "TestAuthType")));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<TemplateDesigner>(0);
                 b.CloseComponent();
             });
@@ -136,7 +140,8 @@ namespace OmniForge.Tests.Components.Pages
                 new Claim(ClaimTypes.Name, "TestUser")
             }, "TestAuthType")));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<TemplateDesigner>(0);
                 b.CloseComponent();
             });

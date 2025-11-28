@@ -24,7 +24,8 @@ namespace OmniForge.Tests.Components.Modals
         [Fact]
         public void Hidden_ByDefault()
         {
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<UserManagementModal>(0);
                 b.AddAttribute(1, nameof(UserManagementModal.Show), false);
                 b.CloseComponent();
@@ -36,7 +37,8 @@ namespace OmniForge.Tests.Components.Modals
         [Fact]
         public void Renders_WhenShowIsTrue()
         {
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<UserManagementModal>(0);
                 b.AddAttribute(1, nameof(UserManagementModal.Show), true);
                 b.CloseComponent();
@@ -60,7 +62,8 @@ namespace OmniForge.Tests.Components.Modals
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<UserManagementModal>(0);
                 b.AddAttribute(1, nameof(UserManagementModal.Show), true);
                 b.AddAttribute(2, nameof(UserManagementModal.UserId), "123");
@@ -82,7 +85,8 @@ namespace OmniForge.Tests.Components.Modals
 
             _mockUserRepository.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<UserManagementModal>(0);
                 b.AddAttribute(1, nameof(UserManagementModal.Show), true);
                 b.AddAttribute(2, nameof(UserManagementModal.OnSaved), EventCallback.Factory.Create(this, () => onSavedCalled = true));
@@ -111,7 +115,8 @@ namespace OmniForge.Tests.Components.Modals
             var user = new User { TwitchUserId = "123", Features = new FeatureFlags { StreamOverlay = false } };
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<UserManagementModal>(0);
                 b.AddAttribute(1, nameof(UserManagementModal.Show), true);
                 b.AddAttribute(2, nameof(UserManagementModal.UserId), "123");

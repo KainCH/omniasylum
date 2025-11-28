@@ -68,7 +68,8 @@ namespace OmniForge.Web.Controllers
             {
                 totalUsers = users.Count(),
                 validUsers = users.Where(u => !string.IsNullOrEmpty(u.TwitchUserId) && !string.IsNullOrEmpty(u.Username))
-                    .Select(u => new {
+                    .Select(u => new
+                    {
                         username = u.Username,
                         displayName = u.DisplayName,
                         twitchUserId = u.TwitchUserId,
@@ -76,13 +77,15 @@ namespace OmniForge.Web.Controllers
                         isActive = u.IsActive
                     }),
                 brokenUsers = users.Where(u => string.IsNullOrEmpty(u.TwitchUserId))
-                    .Select(u => new {
+                    .Select(u => new
+                    {
                         username = u.Username,
                         tempDeleteId = new Random().Next(100, 999).ToString(),
                         canDelete = true
                     }),
                 suspiciousUsers = users.Where(u => !string.IsNullOrEmpty(u.TwitchUserId) && string.IsNullOrEmpty(u.Username))
-                    .Select(u => new {
+                    .Select(u => new
+                    {
                         twitchUserId = u.TwitchUserId,
                         role = u.Role
                     })
@@ -194,7 +197,8 @@ namespace OmniForge.Web.Controllers
                 recentLogins = users
                     .OrderByDescending(u => u.LastLogin)
                     .Take(10)
-                    .Select(u => new {
+                    .Select(u => new
+                    {
                         username = u.Username,
                         displayName = u.DisplayName,
                         lastLogin = u.LastLogin

@@ -63,6 +63,14 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
+                // CRITICAL: Prevent saving users with empty TwitchUserId as this corrupts the table
+                if (string.IsNullOrWhiteSpace(user.TwitchUserId))
+                {
+                    _logger.LogError("❌ CRITICAL: Attempted to save user with empty TwitchUserId! Username: {Username}, DisplayName: {DisplayName}",
+                        user.Username, user.DisplayName);
+                    throw new ArgumentException("Cannot save user with empty TwitchUserId - this would corrupt the database", nameof(user));
+                }
+
                 _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", user.TwitchUserId, user.DisplayName);
                 _logger.LogDebug("📋 OverlaySettings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
                     user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
@@ -96,6 +104,27 @@ namespace OmniForge.Infrastructure.Repositories
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error deleting user {UserId}", twitchUserId);
+                throw;
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task DeleteUserRecordByRowKeyAsync(string rowKey)
+        {
+            try
+            {
+                _logger.LogInformation("🗑️ Deleting user by RowKey '{RowKey}' from Azure Table Storage", rowKey);
+                await _tableClient.DeleteEntityAsync("user", rowKey);
+                _logger.LogInformation("✅ Successfully deleted user by RowKey '{RowKey}'", rowKey);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Entity already deleted or doesn't exist - this is fine for cleanup operations
+                _logger.LogWarning("⚠️ User with RowKey '{RowKey}' not found (already deleted?)", rowKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error deleting user by RowKey '{RowKey}'", rowKey);
                 throw;
             }
         }

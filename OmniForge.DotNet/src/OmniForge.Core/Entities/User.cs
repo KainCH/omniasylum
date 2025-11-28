@@ -5,6 +5,11 @@ namespace OmniForge.Core.Entities
 {
     public class User
     {
+        /// <summary>
+        /// The actual Azure Table Storage RowKey. This may differ from TwitchUserId
+        /// for corrupted records and is needed for proper deletion of orphaned entries.
+        /// </summary>
+        public string RowKey { get; set; } = string.Empty;
         public string TwitchUserId { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;

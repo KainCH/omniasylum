@@ -76,5 +76,114 @@ namespace OmniForge.Tests
             // Should NOT connect user3 (no token)
             _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("3"), Times.Never);
         }
+
+        [Fact]
+        public async Task ConnectAllUsersAsync_ShouldHandleEmptyUsersList()
+        {
+            // Arrange
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync())
+                .ReturnsAsync(new List<User>());
+
+            // Act
+            await _service.ConnectAllUsersAsync();
+
+            // Assert
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ConnectAllUsersAsync_ShouldHandleRepositoryException()
+        {
+            // Arrange
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync())
+                .ThrowsAsync(new Exception("Database error"));
+
+            // Act - should not throw
+            await _service.ConnectAllUsersAsync();
+
+            // Assert - should log error
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task ConnectAllUsersAsync_ShouldStopOnCancellation()
+        {
+            // Arrange
+            var cts = new CancellationTokenSource();
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "1", Username = "user1", IsActive = true, AccessToken = "token" },
+                new User { TwitchUserId = "2", Username = "user2", IsActive = true, AccessToken = "token" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync())
+                .ReturnsAsync(users);
+
+            // Cancel before starting
+            cts.Cancel();
+
+            // Act
+            await _service.ConnectAllUsersAsync(cts.Token);
+
+            // Assert - should not attempt to connect after cancellation
+            // The first user may or may not connect depending on timing
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("2"), Times.Never);
+        }
+
+        [Fact]
+        public async Task ConnectAllUsersAsync_ShouldConnectMultipleActiveUsers()
+        {
+            // Arrange
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "1", Username = "user1", IsActive = true, AccessToken = "token1" },
+                new User { TwitchUserId = "2", Username = "user2", IsActive = true, AccessToken = "token2" },
+                new User { TwitchUserId = "3", Username = "user3", IsActive = true, AccessToken = "token3" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync())
+                .ReturnsAsync(users);
+
+            // Act
+            await _service.ConnectAllUsersAsync();
+
+            // Assert - should connect all active users
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("1"), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("2"), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("3"), Times.Once);
+        }
+
+        [Fact]
+        public async Task ConnectAllUsersAsync_ShouldLogUserConnections()
+        {
+            // Arrange
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "1", Username = "testuser", IsActive = true, AccessToken = "token" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync())
+                .ReturnsAsync(users);
+
+            // Act
+            await _service.ConnectAllUsersAsync();
+
+            // Assert - should log connection attempt
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Connecting Twitch bot")),
+                    null,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
     }
 }

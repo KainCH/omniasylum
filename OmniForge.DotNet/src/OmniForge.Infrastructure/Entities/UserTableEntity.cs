@@ -66,6 +66,7 @@ namespace OmniForge.Infrastructure.Entities
         {
             var user = new User
             {
+                RowKey = RowKey, // Preserve the actual Azure Table RowKey for deletion
                 TwitchUserId = twitchUserId,
                 Username = username,
                 DisplayName = displayName,
@@ -162,6 +163,12 @@ namespace OmniForge.Infrastructure.Entities
 
         public static UserTableEntity FromDomain(User user)
         {
+            // CRITICAL: Validate TwitchUserId is not empty before creating entity
+            if (string.IsNullOrWhiteSpace(user.TwitchUserId))
+            {
+                throw new ArgumentException($"Cannot create UserTableEntity with empty TwitchUserId. Username: {user.Username}, DisplayName: {user.DisplayName}");
+            }
+
             var minAzureDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
             return new UserTableEntity

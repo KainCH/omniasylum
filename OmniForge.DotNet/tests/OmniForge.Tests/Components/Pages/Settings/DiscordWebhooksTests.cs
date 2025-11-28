@@ -55,9 +55,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 .Returns(async () => { await Task.Delay(100); return null; });
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -82,9 +84,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 .ReturnsAsync((User?)null);
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -106,7 +110,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 new Claim("userId", "123")
             }, "TestAuthType")));
 
-            var user = new User {
+            var user = new User
+            {
                 TwitchUserId = "123",
                 Username = "StreamerOne",
                 DiscordWebhookUrl = "https://discord.com/api/webhooks/..."
@@ -115,9 +120,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 .ReturnsAsync(user);
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -143,9 +150,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -195,9 +204,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -233,9 +244,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -279,9 +292,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -319,9 +334,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).ThrowsAsync(new System.Exception("Database error"));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -355,9 +372,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(It.IsAny<User>())).ThrowsAsync(new System.Exception("Network error"));
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));
@@ -391,9 +410,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<DiscordWebhooks>(2);
                     builder.CloseComponent();
                 }));

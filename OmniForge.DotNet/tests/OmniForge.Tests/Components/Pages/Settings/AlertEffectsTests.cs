@@ -51,9 +51,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 .Returns(async () => { await Task.Delay(100); return null; });
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<AlertEffects>(2);
                     builder.CloseComponent();
                 }));
@@ -78,9 +80,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
 
             // Act
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<AlertEffects>(2);
                     builder.CloseComponent();
                 }));
@@ -106,9 +110,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<AlertEffects>(2);
                     builder.CloseComponent();
                 }));
@@ -143,7 +149,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
 
             // Act
-            var cut = Render(builder => {
+            var cut = Render(builder =>
+            {
                 builder.OpenComponent<AlertEffects>(0);
                 builder.CloseComponent();
             });
@@ -166,7 +173,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync("123")).ThrowsAsync(new Exception("Database error"));
 
             // Act
-            var cut = Render(builder => {
+            var cut = Render(builder =>
+            {
                 builder.OpenComponent<AlertEffects>(0);
                 builder.CloseComponent();
             });
@@ -190,7 +198,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).ThrowsAsync(new Exception("Save failed"));
 
-            var cut = Render(builder => {
+            var cut = Render(builder =>
+            {
                 builder.OpenComponent<AlertEffects>(0);
                 builder.CloseComponent();
             });
@@ -223,7 +232,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
             };
             _mockUserRepo.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
 
-            var cut = Render(builder => {
+            var cut = Render(builder =>
+            {
                 builder.OpenComponent<AlertEffects>(0);
                 builder.CloseComponent();
             });
@@ -253,7 +263,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
             _mockUserRepo.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
             _mockUserRepo.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
-            var cut = Render(builder => {
+            var cut = Render(builder =>
+            {
                 builder.OpenComponent<AlertEffects>(0);
                 builder.CloseComponent();
             });
@@ -272,6 +283,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 u.OverlaySettings.Animations.EnableParticles == true &&
                 u.OverlaySettings.Animations.EnableScreenEffects == true
             )), Times.Once);
-        }    }
+        }
+    }
 }
 

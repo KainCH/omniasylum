@@ -324,5 +324,682 @@ namespace OmniForge.Tests.Components.Pages
             var deaths = cut.Find(".deaths .counter-value");
             Assert.Contains("11", deaths.TextContent);
         }
+
+        [Fact]
+        public void RendersBitsCounter_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters
+                    {
+                        Deaths = false,
+                        Swears = false,
+                        Screams = false,
+                        Bits = true
+                    },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser", Bits = 500 };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var bits = cut.Find(".bits .counter-value");
+            Assert.Contains("500", bits.TextContent);
+        }
+
+        [Fact]
+        public void RendersCorrectPosition_TopLeft()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top-left",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("top: 20px", style);
+            Assert.Contains("left: 20px", style);
+        }
+
+        [Fact]
+        public void RendersCorrectPosition_BottomRight()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "bottom-right",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("bottom: 20px", style);
+            Assert.Contains("right: 20px", style);
+        }
+
+        [Fact]
+        public void RendersWithCustomTheme()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top-right",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme
+                    {
+                        BackgroundColor = "purple",
+                        TextColor = "yellow",
+                        BorderColor = "cyan"
+                    }
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert - Theme colors are applied to counter-item, not overlay div
+            var counterItem = cut.Find(".counter-item");
+            var style = counterItem.GetAttribute("style");
+            Assert.Contains("purple", style);
+        }
+
+        [Fact]
+        public void RendersError_WhenUserNotFound()
+        {
+            // Arrange
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser"))
+                .ReturnsAsync((User?)null);
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert - When user is null, errorMessage is set to "User not found."
+            Assert.Contains("User not found", cut.Markup);
+        }
+
+        [Fact]
+        public void RendersAllCountersZero_WhenNew()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters
+                    {
+                        Deaths = true,
+                        Swears = true,
+                        Screams = true
+                    },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter
+            {
+                TwitchUserId = "testuser",
+                Deaths = 0,
+                Swears = 0,
+                Screams = 0
+            };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var deaths = cut.Find(".deaths .counter-value");
+            Assert.Contains("0", deaths.TextContent);
+        }
+
+        [Fact]
+        public void RendersCorrectPosition_TopCenter()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top-center",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("top: 20px", style);
+            Assert.Contains("left: 50%", style);
+            Assert.Contains("translateX(-50%)", style);
+        }
+
+        [Fact]
+        public void RendersCorrectPosition_BottomCenter()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "bottom-center",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("bottom: 20px", style);
+            Assert.Contains("left: 50%", style);
+        }
+
+        [Fact]
+        public void RendersCorrectPosition_CustomCSS()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top: 100px; left: 100px;",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("top: 100px", style);
+            Assert.Contains("left: 100px", style);
+        }
+
+        [Fact]
+        public void RendersBitsGoalProgress_WhenEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters
+                    {
+                        Deaths = false,
+                        Bits = true
+                    },
+                    BitsGoal = new BitsGoal
+                    {
+                        Target = 1000,
+                        Current = 250
+                    },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser", Bits = 250 };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            Assert.Contains("Goal:", cut.Markup);
+            Assert.Contains("250 / 1000", cut.Markup);
+        }
+
+        [Fact]
+        public void AppliesAnimationStyle_WhenAnimationsEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top-right",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme
+                    {
+                        BackgroundColor = "blue",
+                        BorderColor = "white"
+                    },
+                    Animations = new OverlayAnimations { Enabled = true }
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var deathsItem = cut.Find(".counter-item.deaths");
+            var style = deathsItem.GetAttribute("style");
+            Assert.Contains("transition:", style);
+        }
+
+        [Fact]
+        public void UpdatesBitsGoal_WhenBitsGoalUpdateReceived()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Bits = true },
+                    BitsGoal = new BitsGoal { Target = 1000, Current = 100 },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser", Bits = 100 };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>())).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var module = JSInterop.SetupModule("./js/overlay-websocket.js");
+            module.SetupVoid("connect", _ => true).SetVoidResult();
+
+            var cut = Render<Overlay>(parameters => parameters
+                .Add(p => p.TwitchUserId, "testuser")
+            );
+
+            // Act
+            var newGoal = new BitsGoal { Target = 1000, Current = 500 };
+            cut.InvokeAsync(() => cut.Instance.OnBitsGoalUpdate(newGoal));
+
+            // Assert
+            Assert.Contains("500 / 1000", cut.Markup);
+        }
+
+        [Fact]
+        public void UpdatesStreamStatus_WhenStreamStatusUpdateReceived()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                StreamStatus = "offline",
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>())).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var module = JSInterop.SetupModule("./js/overlay-websocket.js");
+            module.SetupVoid("connect", _ => true).SetVoidResult();
+
+            var cut = Render<Overlay>(parameters => parameters
+                .Add(p => p.TwitchUserId, "testuser")
+            );
+
+            // Act
+            cut.InvokeAsync(() => cut.Instance.OnStreamStatusUpdate("live"));
+
+            // Assert - opacity should be 1 when live
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("opacity: 1", style);
+        }
+
+        [Fact]
+        public void UpdatesOverlaySettings_WhenSettingsUpdateReceived()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = "top-right",
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme { BackgroundColor = "black" }
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>())).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var module = JSInterop.SetupModule("./js/overlay-websocket.js");
+            module.SetupVoid("connect", _ => true).SetVoidResult();
+
+            var cut = Render<Overlay>(parameters => parameters
+                .Add(p => p.TwitchUserId, "testuser")
+            );
+
+            // Act
+            var newSettings = new OverlaySettings
+            {
+                Position = "bottom-left",
+                Counters = new OverlayCounters { Deaths = true },
+                Theme = new OverlayTheme { BackgroundColor = "red" }
+            };
+            cut.InvokeAsync(() => cut.Instance.OnOverlaySettingsUpdate(newSettings));
+
+            // Assert
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("bottom: 20px", style);
+            Assert.Contains("left: 20px", style);
+        }
+
+        [Fact]
+        public void UpdatesStreamStatus_WhenStreamStartedReceived()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                StreamStatus = "offline",
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync(It.IsAny<string>())).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init").SetVoidResult();
+            var module = JSInterop.SetupModule("./js/overlay-websocket.js");
+            module.SetupVoid("connect", _ => true).SetVoidResult();
+
+            var cut = Render<Overlay>(parameters => parameters
+                .Add(p => p.TwitchUserId, "testuser")
+            );
+
+            // Act
+            cut.InvokeAsync(() => cut.Instance.OnStreamStarted(new { }));
+
+            // Assert - opacity should be 1 when live
+            var overlayDiv = cut.Find(".counter-overlay");
+            var style = overlayDiv.GetAttribute("style");
+            Assert.Contains("opacity: 1", style);
+        }
+
+        [Fact]
+        public void RendersNoCounters_WhenAllDisabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters
+                    {
+                        Deaths = false,
+                        Swears = false,
+                        Screams = false,
+                        Bits = false
+                    },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            Assert.Empty(cut.FindAll(".counter-item"));
+        }
+
+        [Fact]
+        public void RendersDefaultTheme_WhenThemeIsNull()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = null!
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert - Should use default gold color
+            var label = cut.Find(".counter-label");
+            var style = label.GetAttribute("style");
+            Assert.Contains("#d4af37", style);
+        }
+
+        [Fact]
+        public void RendersDefaultPosition_WhenPositionIsNull()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Position = null!,
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+            JSInterop.SetupVoid("overlayInterop.init");
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert - Should render without error
+            Assert.NotEmpty(cut.FindAll(".deaths"));
+        }
     }
 }

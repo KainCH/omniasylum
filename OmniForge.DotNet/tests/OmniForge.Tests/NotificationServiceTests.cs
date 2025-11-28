@@ -133,5 +133,110 @@ namespace OmniForge.Tests
                 }
             };
         }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldHandleScreamsMilestone()
+        {
+            var user = CreateUserWithSettings(screamsThresholds: new List<int> { 25 });
+
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "screams", 24, 25);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "scream_milestone", It.IsAny<object>()), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.SendMessageAsync(user.TwitchUserId, It.Is<string>(s => s.Contains("SCREAM") || s.Contains("scream"))), Times.Once);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldNotTrigger_WhenOldValueExceedsMilestone()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int> { 10 });
+
+            // 11 -> 12 (milestone 10 already passed)
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 11, 12);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldOnlySendDiscord_WhenChannelNotificationsDisabled()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int> { 10 });
+            user.DiscordSettings.EnableChannelNotifications = false;
+
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 9, 10);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "death_milestone", It.IsAny<object>()), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldOnlySendTwitch_WhenDiscordMilestoneDisabled()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int> { 10 });
+            user.DiscordSettings.EnabledNotifications.DeathMilestone = false;
+
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 9, 10);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+            _mockTwitchClientManager.Verify(x => x.SendMessageAsync(user.TwitchUserId, It.IsAny<string>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldCalculateNextMilestone()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int> { 10, 25, 50 });
+
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 9, 10);
+
+            // Should notify overlay with next milestone of 25
+            _mockOverlayNotifier.Verify(x => x.NotifyMilestoneReachedAsync(
+                user.TwitchUserId,
+                "deaths",
+                10,
+                It.IsAny<int>(),
+                It.IsAny<int>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldHandleEmptyThresholds()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int>());
+
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 9, 10);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+            _mockTwitchClientManager.Verify(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldHandleNullThresholds()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Username = "testuser",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnableChannelNotifications = true,
+                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true },
+                    MilestoneThresholds = null!
+                }
+            };
+
+            // Should not throw
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "deaths", 9, 10);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CheckAndSendMilestoneNotificationsAsync_ShouldHandleUnknownCounterType()
+        {
+            var user = CreateUserWithSettings(deathsThresholds: new List<int> { 10 });
+
+            // Unknown counter type should not throw, just do nothing
+            await _service.CheckAndSendMilestoneNotificationsAsync(user, "unknowntype", 9, 10);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        }
     }
 }

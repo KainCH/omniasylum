@@ -13,6 +13,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Components.Modals;
 using OmniForge.Web.Components.Pages.Admin;
+using OmniForge.Web.Services;
 using Xunit;
 
 #pragma warning disable CS0618
@@ -22,17 +23,26 @@ namespace OmniForge.Tests.Components.Pages.Admin
     public class UsersTests : TestContext
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<IAdminService> _mockAdminService;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
 
         public UsersTests()
         {
             _mockUserRepository = new Mock<IUserRepository>();
+            _mockAdminService = new Mock<IAdminService>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
 
             Services.AddSingleton(_mockUserRepository.Object);
+            Services.AddSingleton(_mockAdminService.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
+
+            // Setup default admin service behavior
+            _mockAdminService.Setup(x => x.CanDeleteUser(It.IsAny<string>(), It.IsAny<User>()))
+                .Returns(true);
+            _mockAdminService.Setup(x => x.DeleteUserAsync(It.IsAny<string>(), It.IsAny<User>()))
+                .ReturnsAsync(AdminOperationResult.Ok());
 
             // Add core authorization services
             Services.AddAuthorizationCore();
@@ -60,9 +70,11 @@ namespace OmniForge.Tests.Components.Pages.Admin
 
         private IRenderedComponent<Users> RenderUsers()
         {
-            var cut = Render(b => {
+            var cut = Render(b =>
+            {
                 b.OpenComponent<CascadingAuthenticationState>(0);
-                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder => {
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
                     builder.OpenComponent<Users>(2);
                     builder.CloseComponent();
                 }));

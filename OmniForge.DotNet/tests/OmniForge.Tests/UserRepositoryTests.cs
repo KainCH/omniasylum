@@ -104,6 +104,40 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task DeleteUserRecordByRowKeyAsync_ShouldDeleteEntity()
+        {
+            var rowKey = "some-row-key";
+
+            await _repository.DeleteUserRecordByRowKeyAsync(rowKey);
+
+            _mockTableClient.Verify(x => x.DeleteEntityAsync("user", rowKey, default, default), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserRecordByRowKeyAsync_ShouldHandleEmptyRowKey()
+        {
+            var rowKey = "";
+
+            await _repository.DeleteUserRecordByRowKeyAsync(rowKey);
+
+            _mockTableClient.Verify(x => x.DeleteEntityAsync("user", rowKey, default, default), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserRecordByRowKeyAsync_ShouldHandleNotFound()
+        {
+            var rowKey = "non-existent-key";
+
+            _mockTableClient.Setup(x => x.DeleteEntityAsync("user", rowKey, default, default))
+                .ThrowsAsync(new RequestFailedException(404, "Not Found"));
+
+            // Should not throw
+            await _repository.DeleteUserRecordByRowKeyAsync(rowKey);
+
+            _mockTableClient.Verify(x => x.DeleteEntityAsync("user", rowKey, default, default), Times.Once);
+        }
+
+        [Fact]
         public async Task GetAllUsersAsync_ShouldReturnAllUsers()
         {
             // Use TableEntity to match the repository implementation

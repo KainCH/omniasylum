@@ -14,6 +14,7 @@ using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Models.EventSub;
 using OmniForge.Infrastructure.Services;
+using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
 using Xunit;
@@ -35,6 +36,9 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<TwitchLib.Api.Core.Interfaces.IApiSettings> _mockApiSettings;
         private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
+        private readonly Mock<IEventSubHandlerRegistry> _mockHandlerRegistry;
+        private readonly Mock<IDiscordNotificationTracker> _mockDiscordTracker;
+        private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly StreamMonitorService _service;
 
         public StreamMonitorServiceTests()
@@ -50,6 +54,9 @@ namespace OmniForge.Tests
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockApiSettings = new Mock<TwitchLib.Api.Core.Interfaces.IApiSettings>();
             _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+            _mockHandlerRegistry = new Mock<IEventSubHandlerRegistry>();
+            _mockDiscordTracker = new Mock<IDiscordNotificationTracker>();
+            _mockAuthService = new Mock<ITwitchAuthService>();
 
             // Setup TwitchAPI mock
             _mockTwitchApi = new Mock<TwitchAPI>(MockBehavior.Loose, null!, null!, _mockApiSettings.Object, null!);
@@ -78,6 +85,7 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository))).Returns(_mockCounterRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IDiscordService))).Returns(_mockDiscordService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchHelixWrapper))).Returns(_mockHelixWrapper.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchAuthService))).Returns(_mockAuthService.Object);
 
             _service = new StreamMonitorService(
                 _mockEventSubService.Object,
@@ -85,7 +93,9 @@ namespace OmniForge.Tests
                 _mockHttpClientFactory.Object,
                 _mockLogger.Object,
                 _mockScopeFactory.Object,
-                _mockTwitchSettings.Object);
+                _mockTwitchSettings.Object,
+                _mockHandlerRegistry.Object,
+                _mockDiscordTracker.Object);
         }
 
         [Fact]
@@ -150,18 +160,17 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void OnStreamOnline_ShouldUpdateCounterAndNotifyDiscord()
+        public void OnNotification_ShouldDelegateStreamOnlineToHandler()
         {
             // Arrange
-            var userId = "123";
-            var userName = "TestUser";
+            var mockHandler = new Mock<IEventSubHandler>();
+            mockHandler.Setup(x => x.HandleAsync(It.IsAny<JsonElement>())).Returns(Task.CompletedTask);
+            _mockHandlerRegistry.Setup(x => x.GetHandler("stream.online")).Returns(mockHandler.Object);
 
             var eventData = new
             {
-                broadcaster_user_id = userId,
-                broadcaster_user_name = userName,
-                type = "live",
-                started_at = DateTime.UtcNow
+                broadcaster_user_id = "123",
+                broadcaster_user_name = "TestUser"
             };
 
             var message = new EventSubMessage
@@ -174,33 +183,26 @@ namespace OmniForge.Tests
                 }
             };
 
-            // Mock User Repository
-            var user = new User { TwitchUserId = userId, DisplayName = userName };
-            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
-
-            // Mock Counter Repository
-            var counters = new Counter { TwitchUserId = userId };
-            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
-
             // Act
             _mockEventSubService.Raise(x => x.OnNotification += null, message);
 
-            // Assert
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
-            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()), Times.Once);
+            // Assert - handler should be called with the event data
+            _mockHandlerRegistry.Verify(x => x.GetHandler("stream.online"), Times.Once);
+            mockHandler.Verify(x => x.HandleAsync(It.IsAny<JsonElement>()), Times.Once);
         }
 
         [Fact]
-        public void OnStreamOffline_ShouldUpdateCounter()
+        public void OnNotification_ShouldDelegateStreamOfflineToHandler()
         {
             // Arrange
-            var userId = "123";
-            var userName = "TestUser";
+            var mockHandler = new Mock<IEventSubHandler>();
+            mockHandler.Setup(x => x.HandleAsync(It.IsAny<JsonElement>())).Returns(Task.CompletedTask);
+            _mockHandlerRegistry.Setup(x => x.GetHandler("stream.offline")).Returns(mockHandler.Object);
 
             var eventData = new
             {
-                broadcaster_user_id = userId,
-                broadcaster_user_name = userName
+                broadcaster_user_id = "123",
+                broadcaster_user_name = "TestUser"
             };
 
             var message = new EventSubMessage
@@ -213,19 +215,12 @@ namespace OmniForge.Tests
                 }
             };
 
-            // Mock User Repository
-            var user = new User { TwitchUserId = userId, DisplayName = userName };
-            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
-
-            // Mock Counter Repository
-            var counters = new Counter { TwitchUserId = userId, StreamStarted = DateTimeOffset.UtcNow };
-            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
-
             // Act
             _mockEventSubService.Raise(x => x.OnNotification += null, message);
 
-            // Assert
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null)), Times.Once);
+            // Assert - handler should be called with the event data
+            _mockHandlerRegistry.Verify(x => x.GetHandler("stream.offline"), Times.Once);
+            mockHandler.Verify(x => x.HandleAsync(It.IsAny<JsonElement>()), Times.Once);
         }
 
         [Fact]
@@ -267,5 +262,326 @@ namespace OmniForge.Tests
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
         }
+
+        [Fact]
+        public void GetUserConnectionStatus_ShouldReturnStatus()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+
+            // Act
+            var status = _service.GetUserConnectionStatus("123");
+
+            // Assert
+            Assert.True(status.Connected);
+        }
+
+        [Fact]
+        public void GetUserConnectionStatus_ShouldReturnDisconnectedStatus()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(false);
+
+            // Act
+            var status = _service.GetUserConnectionStatus("123");
+
+            // Assert
+            Assert.False(status.Connected);
+            Assert.Empty(status.Subscriptions);
+        }
+
+        [Fact]
+        public void IsUserSubscribed_ShouldReturnFalse_WhenNotSubscribed()
+        {
+            // Act
+            var result = _service.IsUserSubscribed("unknown-user");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void OnNotification_ShouldDelegateToHandlerRegistry()
+        {
+            // Arrange
+            var eventData = new
+            {
+                broadcaster_user_id = "123",
+                user_name = "follower",
+                followed_at = DateTime.UtcNow
+            };
+
+            var message = new EventSubMessage
+            {
+                Metadata = new EventSubMetadata { MessageType = "notification" },
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "channel.follow" },
+                    Event = JsonSerializer.SerializeToElement(eventData)
+                }
+            };
+
+            var mockHandler = new Mock<IEventSubHandler>();
+            mockHandler.Setup(x => x.SubscriptionType).Returns("channel.follow");
+            _mockHandlerRegistry.Setup(x => x.GetHandler("channel.follow")).Returns(mockHandler.Object);
+
+            // Act
+            _mockEventSubService.Raise(x => x.OnNotification += null, message);
+
+            // Assert - Handler registry was queried and handler was invoked
+            _mockHandlerRegistry.Verify(x => x.GetHandler("channel.follow"), Times.Once);
+            mockHandler.Verify(x => x.HandleAsync(It.IsAny<JsonElement>()), Times.Once);
+        }
+
+        [Fact]
+        public void OnNotification_ShouldHandleUnknownSubscriptionType()
+        {
+            // Arrange - No handler registered for this type
+            _mockHandlerRegistry.Setup(x => x.GetHandler("unknown.type")).Returns((IEventSubHandler?)null);
+
+            var message = new EventSubMessage
+            {
+                Metadata = new EventSubMetadata { MessageType = "notification" },
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "unknown.type" },
+                    Event = JsonSerializer.SerializeToElement(new { })
+                }
+            };
+
+            // Act - Should not throw
+            _mockEventSubService.Raise(x => x.OnNotification += null, message);
+
+            // Assert
+            _mockHandlerRegistry.Verify(x => x.GetHandler("unknown.type"), Times.Once);
+        }
+
+        [Fact]
+        public void OnNotification_ShouldHandleMissingSubscriptionType()
+        {
+            // Arrange
+            var message = new EventSubMessage
+            {
+                Metadata = new EventSubMetadata { MessageType = "notification" },
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = null! },
+                    Event = JsonSerializer.SerializeToElement(new { })
+                }
+            };
+
+            // Act - Should not throw
+            _mockEventSubService.Raise(x => x.OnNotification += null, message);
+
+            // Assert - Registry should not be called with null type
+            _mockHandlerRegistry.Verify(x => x.GetHandler(It.IsAny<string>()), Times.Never);
+        }
+
+        // Legacy tests removed - handler behavior is now tested in EventHandlers/EventSubHandlerTests.cs
+        // The OnNotification method now delegates to IEventSubHandlerRegistry
+
+        [Fact]
+        public async Task UnsubscribeFromUserAsync_ShouldLogUnsubscription()
+        {
+            // Act
+            await _service.UnsubscribeFromUserAsync("123");
+
+            // Assert
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Stop Monitoring")),
+                    null,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task ForceReconnectUserAsync_ShouldAttemptResubscription()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(false);
+
+            // Act
+            var result = await _service.ForceReconnectUserAsync("123");
+
+            // Assert - should return Failed because no session
+            Assert.Equal(SubscriptionResult.Failed, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenUserNotFound_ShouldReturnFailed()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockEventSubService.Setup(x => x.SessionId).Returns("test_session");
+            _mockUserRepository.Setup(x => x.GetUserAsync("unknown")).ReturnsAsync((User?)null);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("unknown");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Failed, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenNoAccessToken_ShouldReturnUnauthorized()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockEventSubService.Setup(x => x.SessionId).Returns("test_session");
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Unauthorized, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenTokenExpiredAndNoRefreshToken_ShouldReturnUnauthorized()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockEventSubService.Setup(x => x.SessionId).Returns("test_session");
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "expired_token",
+                RefreshToken = "",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Unauthorized, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenTokenExpiredAndRefreshFails_ShouldReturnUnauthorized()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockEventSubService.Setup(x => x.SessionId).Returns("test_session");
+
+            _mockAuthService.Setup(x => x.RefreshTokenAsync(It.IsAny<string>())).ReturnsAsync((TwitchTokenResponse?)null);
+
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "expired_token",
+                RefreshToken = "valid_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Unauthorized, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenNotConnected_ShouldAttemptToConnect()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(false);
+            _mockEventSubService.Setup(x => x.SessionId).Returns((string?)null);
+            _mockEventSubService.Setup(x => x.ConnectAsync()).Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert - Should fail because timeout waiting for welcome
+            Assert.Equal(SubscriptionResult.Failed, result);
+            _mockEventSubService.Verify(x => x.ConnectAsync(), Times.Once);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenSessionIdMissing_ShouldReturnFailed()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockEventSubService.Setup(x => x.SessionId).Returns((string?)null);
+
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "valid_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert - Should fail because TwitchAPI validation fails (not mocked)
+            // or session ID missing - either returns Failed or Unauthorized
+            Assert.True(result == SubscriptionResult.Failed || result == SubscriptionResult.Unauthorized);
+        }
+
+        [Fact]
+        public async Task UnsubscribeFromUserAsync_WhenNoUsersRemaining_ShouldDisconnect()
+        {
+            // Arrange - Start with no subscribed users
+            _mockEventSubService.Setup(x => x.DisconnectAsync()).Returns(Task.CompletedTask);
+
+            // Act
+            await _service.UnsubscribeFromUserAsync("123");
+
+            // Assert
+            _mockEventSubService.Verify(x => x.DisconnectAsync(), Times.Once);
+        }
+
+        [Fact]
+        public void GetUserConnectionStatus_ShouldIncludeDiscordStatus()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockDiscordTracker.Setup(x => x.GetLastNotification("123"))
+                .Returns((Time: DateTimeOffset.UtcNow, Success: true));
+
+            // Act
+            var status = _service.GetUserConnectionStatus("123");
+
+            // Assert
+            Assert.True(status.Connected);
+            Assert.NotNull(status.LastDiscordNotification);
+            Assert.True(status.LastDiscordNotificationSuccess);
+        }
+
+        [Fact]
+        public void GetUserConnectionStatus_WhenNoDiscordNotification_ShouldReturnDefaults()
+        {
+            // Arrange
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
+            _mockDiscordTracker.Setup(x => x.GetLastNotification("123")).Returns((ValueTuple<DateTimeOffset, bool>?)null);
+
+            // Act
+            var status = _service.GetUserConnectionStatus("123");
+
+            // Assert
+            Assert.True(status.Connected);
+            Assert.Null(status.LastDiscordNotification);
+            Assert.False(status.LastDiscordNotificationSuccess);
+        }
+
+        // Legacy OnNotification handler tests removed
+        // Handler behavior (sub, resub, gift sub, raid, etc.) is now tested in:
+        // - EventHandlers/EventSubHandlerTests.cs
+        // - EventHandlers/ChatEventHandlerTests.cs
+        // The OnNotification method now delegates to IEventSubHandlerRegistry
     }
 }

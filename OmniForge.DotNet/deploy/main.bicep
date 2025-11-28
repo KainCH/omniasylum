@@ -35,7 +35,7 @@ resource acrRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existin
   name: acrName
 }
 
-// Log Analytics Workspace
+// Log Analytics Workspace - creates if not exists, updates if exists
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
   location: location
@@ -47,7 +47,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   }
 }
 
-// Application Insights
+// Application Insights - creates if not exists, updates if exists
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -58,19 +58,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// Storage Account for Table Storage (Reuse existing if possible, or create new for dev)
-// For this dotnet-dev deployment, we will reference the existing one to test data migration/compatibility
-// resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
-//   name: storageAccountName
-// }
-
-// Key Vault
-// Reference existing Key Vault
-// resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-//   name: keyVaultName
-// }
-
-// Container Apps Environment
+// Container Apps Environment - creates if not exists, updates if exists
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: containerEnvName
   location: location
@@ -82,6 +70,10 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
+    // Custom domain configuration is managed manually in the Azure Portal.
+    // This empty object is required to preserve existing domain bindings during deployment.
+    // Do not remove - see: https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates
+    customDomainConfiguration: {}
   }
 }
 

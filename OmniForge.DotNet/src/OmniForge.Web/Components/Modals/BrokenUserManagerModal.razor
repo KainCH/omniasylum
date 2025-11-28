@@ -1,6 +1,9 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Web.Services
 @inject IUserRepository UserRepository
+@inject IAdminService AdminService
+@inject ILogger<BrokenUserManagerModal> Logger
 
 @if (Show)
 {
@@ -14,15 +17,16 @@
                 <div class="modal-body">
                     <div class="alert alert-warning">
                         <i class="bi bi-info-circle me-2"></i>
-                        This tool identifies users with missing or corrupted data (e.g., missing partition keys, invalid JSON).
+                        This tool identifies users with missing or corrupted data (e.g., empty TwitchUserId, missing fields, duplicate entries).
                     </div>
 
                     @if (isLoading)
                     {
                         <div class="text-center p-5">
                             <div class="spinner-border text-warning" role="status">
-                                <span class="visually-hidden">Loading...</span>
+                                <span class="visually-hidden">Scanning users...</span>
                             </div>
+                            <p class="mt-2 text-muted">Scanning all users for issues...</p>
                         </div>
                     }
                     else if (brokenUsers == null || !brokenUsers.Any())
@@ -34,25 +38,57 @@
                     }
                     else
                     {
+                        <div class="alert alert-danger mb-3">
+                            <strong>Found @brokenUsers.Count broken user(s)</strong>
+                        </div>
                         <div class="list-group list-group-flush">
                             @foreach (var user in brokenUsers)
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h6 class="mb-1 text-danger">@user.Username</h6>
-                                        <p class="mb-0 small text-muted">Issue: @user.IssueDescription</p>
+                                        <h6 class="mb-1 text-danger">
+                                            @(string.IsNullOrEmpty(user.Username) ? "(No Username)" : user.Username)
+                                            @if (!string.IsNullOrEmpty(user.DisplayName))
+                                            {
+                                                <span class="text-muted">(@user.DisplayName)</span>
+                                            }
+                                        </h6>
+                                        <p class="mb-0 small text-muted">TwitchUserId: @(string.IsNullOrEmpty(user.TwitchUserId) ? "<empty>" : user.TwitchUserId)</p>
+                                        <p class="mb-0 small text-warning"><i class="bi bi-exclamation-triangle"></i> @user.IssueDescription</p>
                                     </div>
-                                    <button class="btn btn-outline-warning btn-sm" @onclick="() => FixUser(user)">
-                                        <i class="bi bi-wrench"></i> Attempt Fix
-                                    </button>
+                                    <div class="btn-group">
+                                        @if (user.CanDelete)
+                                        {
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteBrokenUser(user)" disabled="@user.IsProcessing">
+                                                @if (user.IsProcessing)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-trash"></i>
+                                                }
+                                                Delete
+                                            </button>
+                                        }
+                                    </div>
                                 </div>
                             }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(statusMessage))
+                    {
+                        <div class="alert @(isError ? "alert-danger" : "alert-success") mt-3">
+                            @statusMessage
                         </div>
                     }
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
-                    <button type="button" class="btn btn-warning" @onclick="ScanForBrokenUsers">Rescan</button>
+                    <button type="button" class="btn btn-warning" @onclick="ScanForBrokenUsers" disabled="@isLoading">
+                        <i class="bi bi-arrow-clockwise"></i> Rescan
+                    </button>
                 </div>
             </div>
         </div>
@@ -62,13 +98,16 @@
 @code {
     [Parameter] public bool Show { get; set; }
     [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public User? CurrentUser { get; set; }
 
     private List<BrokenUser> brokenUsers = new();
     private bool isLoading = false;
+    private string statusMessage = "";
+    private bool isError = false;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Show && !isLoading)
+        if (Show && !isLoading && !brokenUsers.Any())
         {
             await ScanForBrokenUsers();
         }
@@ -77,35 +116,197 @@
     private async Task ScanForBrokenUsers()
     {
         isLoading = true;
+        statusMessage = "";
+        isError = false;
+        brokenUsers.Clear();
+        StateHasChanged();
+
         try
         {
-            // TODO: Implement actual scanning logic
-            // This would typically iterate all users and check for null fields or exceptions
-            await Task.Delay(1000);
-            brokenUsers = new List<BrokenUser>();
+            Logger.LogInformation("Starting scan for broken users...");
+
+            // Get all users including raw entities to detect issues
+            var allUsers = await UserRepository.GetAllUsersAsync();
+
+            if (allUsers == null)
+            {
+                Logger.LogWarning("GetAllUsersAsync returned null");
+                statusMessage = "Unable to retrieve users from database";
+                isError = true;
+                return;
+            }
+
+            var usernameGroups = new Dictionary<string, List<User>>();
+
+            foreach (var user in allUsers)
+            {
+                // Check for empty TwitchUserId
+                if (string.IsNullOrWhiteSpace(user.TwitchUserId))
+                {
+                    brokenUsers.Add(new BrokenUser
+                    {
+                        TwitchUserId = user.TwitchUserId ?? "",
+                        RowKey = user.RowKey, // Use actual RowKey from table for deletion
+                        Username = user.Username ?? "(unknown)",
+                        DisplayName = user.DisplayName ?? "",
+                        IssueDescription = "Empty TwitchUserId - this record is orphaned and should be deleted",
+                        CanDelete = true,
+                        UserEntity = user
+                    });
+                    Logger.LogWarning("Found user with empty TwitchUserId: {Username}, RowKey={RowKey}", user.Username, user.RowKey);
+                    continue;
+                }
+
+                // Track for duplicate detection
+                var key = (user.Username ?? "").ToLowerInvariant();
+                if (!string.IsNullOrEmpty(key))
+                {
+                    if (!usernameGroups.ContainsKey(key))
+                        usernameGroups[key] = new List<User>();
+                    usernameGroups[key].Add(user);
+                }
+
+                // Check for missing required fields
+                if (string.IsNullOrWhiteSpace(user.Username))
+                {
+                    brokenUsers.Add(new BrokenUser
+                    {
+                        TwitchUserId = user.TwitchUserId,
+                        RowKey = user.RowKey, // Use actual RowKey from table for deletion
+                        Username = "(no username)",
+                        DisplayName = user.DisplayName ?? "",
+                        IssueDescription = "Missing username - user data is incomplete",
+                        CanDelete = true,
+                        UserEntity = user
+                    });
+                    Logger.LogWarning("Found user with empty Username: TwitchUserId={TwitchUserId}", user.TwitchUserId);
+                }
+            }
+
+            // Check for duplicates (same username, different TwitchUserId)
+            // Filter to only groups with more than one entry (i.e., duplicates)
+            foreach (var group in usernameGroups.Where(g => g.Value.Count > 1))
+            {
+                Logger.LogWarning("Found duplicate username: {Username} with {Count} entries", group.Key, group.Value.Count);
+
+                // Find the "primary" one (most recent login or has more data)
+                var sorted = group.Value
+                    .OrderByDescending(u => u.LastLogin)
+                    .ThenByDescending(u => !string.IsNullOrEmpty(u.DisplayName) ? 1 : 0)
+                    .ToList();
+
+                var primary = sorted.First();
+
+                foreach (var duplicate in sorted.Skip(1))
+                {
+                    // Only add if not already in the list
+                    if (!brokenUsers.Any(b => b.TwitchUserId == duplicate.TwitchUserId))
+                    {
+                        brokenUsers.Add(new BrokenUser
+                        {
+                            TwitchUserId = duplicate.TwitchUserId,
+                            RowKey = duplicate.RowKey, // Use actual RowKey from table for deletion
+                            Username = duplicate.Username ?? "(unknown)",
+                            DisplayName = duplicate.DisplayName ?? "",
+                            IssueDescription = $"Duplicate of user '{primary.Username}' (TwitchUserId: {primary.TwitchUserId}) - older/less complete record",
+                            CanDelete = true,
+                            UserEntity = duplicate
+                        });
+                    }
+                }
+            }
+
+            Logger.LogInformation("Scan complete. Found {Count} broken users", brokenUsers.Count);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error scanning for broken users");
+            statusMessage = $"Error scanning: {ex.Message}";
+            isError = true;
         }
         finally
         {
             isLoading = false;
+            StateHasChanged();
         }
     }
 
-    private async Task FixUser(BrokenUser user)
+    private async Task DeleteBrokenUser(BrokenUser user)
     {
-        // TODO: Implement fix logic
-        await Task.Delay(500);
-        brokenUsers.Remove(user);
+        // Verify we have the current user context for authorization
+        if (CurrentUser == null)
+        {
+            statusMessage = "Error: Not authenticated. Please refresh the page.";
+            isError = true;
+            StateHasChanged();
+            return;
+        }
+
+        user.IsProcessing = true;
+        statusMessage = "";
+        isError = false;
+        StateHasChanged();
+
+        try
+        {
+            Logger.LogInformation("Admin {AdminUsername} attempting to delete broken user: TwitchUserId={TwitchUserId}, RowKey={RowKey}, Username={Username}",
+                CurrentUser.Username, user.TwitchUserId, user.RowKey, user.Username);
+
+            // Always use RowKey for deletion - this handles both orphaned records
+            // (empty TwitchUserId) and normal records correctly
+            var rowKeyToDelete = !string.IsNullOrEmpty(user.RowKey) ? user.RowKey : user.TwitchUserId;
+
+            if (string.IsNullOrEmpty(rowKeyToDelete))
+            {
+                throw new InvalidOperationException("Cannot delete user: both RowKey and TwitchUserId are empty");
+            }
+
+            // Use AdminService for proper authorization
+            var result = await AdminService.DeleteUserRecordByRowKeyAsync(rowKeyToDelete, CurrentUser);
+
+            if (result.Success)
+            {
+                Logger.LogInformation("Deleted user record with RowKey: {RowKey}", rowKeyToDelete);
+                brokenUsers.Remove(user);
+                statusMessage = $"Successfully deleted user: {user.Username}";
+            }
+            else
+            {
+                Logger.LogWarning("Failed to delete broken user: {Message}", result.Message);
+                statusMessage = result.Message;
+                isError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting broken user: {TwitchUserId}", user.TwitchUserId);
+            statusMessage = $"Error deleting user: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            user.IsProcessing = false;
+            StateHasChanged();
+        }
     }
 
     private async Task Close()
     {
         Show = false;
+        brokenUsers.Clear();
+        statusMessage = "";
         await ShowChanged.InvokeAsync(false);
     }
 
     public class BrokenUser
     {
+        public string TwitchUserId { get; set; } = "";
+        public string RowKey { get; set; } = ""; // The actual Azure Table RowKey for deletion
         public string Username { get; set; } = "";
+        public string DisplayName { get; set; } = "";
         public string IssueDescription { get; set; } = "";
+        public bool CanDelete { get; set; } = false;
+        public bool IsProcessing { get; set; } = false;
+        public User? UserEntity { get; set; }
     }
 }
