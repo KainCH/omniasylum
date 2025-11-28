@@ -81,5 +81,39 @@ namespace OmniForge.Web.Services
 
             return AdminOperationResult.Ok($"User {targetUser.DisplayName} deleted successfully");
         }
+
+        /// <inheritdoc />
+        /// <inheritdoc />
+        public async Task<AdminOperationResult> DeleteUserRecordByRowKeyAsync(string rowKey, User currentUser)
+        {
+            // Verify current user is an admin
+            if (currentUser.Role != "admin")
+            {
+                _logger.LogWarning("Non-admin user {Username} attempted to delete broken user record with RowKey {RowKey}",
+                    currentUser.Username, rowKey);
+                return AdminOperationResult.Fail("Only administrators can delete user records");
+            }
+
+            // Cannot delete your own record by RowKey
+            if (currentUser.TwitchUserId == rowKey || currentUser.RowKey == rowKey)
+            {
+                _logger.LogWarning("Admin {Username} attempted to delete their own account via RowKey", currentUser.Username);
+                return AdminOperationResult.Fail("Cannot delete your own account");
+            }
+
+            _logger.LogInformation("Admin {AdminUsername} deleting broken user record with RowKey {RowKey}",
+                currentUser.Username, rowKey);
+
+            try
+            {
+                await _userRepository.DeleteUserRecordByRowKeyAsync(rowKey);
+                return AdminOperationResult.Ok("Broken user record deleted successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete user record with RowKey {RowKey}", rowKey);
+                return AdminOperationResult.Fail($"Failed to delete user record: {ex.Message}");
+            }
+        }
     }
 }

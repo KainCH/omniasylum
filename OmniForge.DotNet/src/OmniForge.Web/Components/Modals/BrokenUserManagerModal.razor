@@ -1,6 +1,8 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Web.Services
 @inject IUserRepository UserRepository
+@inject IAdminService AdminService
 @inject ILogger<BrokenUserManagerModal> Logger
 
 @if (Show)
@@ -96,6 +98,7 @@
 @code {
     [Parameter] public bool Show { get; set; }
     [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public User? CurrentUser { get; set; }
 
     private List<BrokenUser> brokenUsers = new();
     private bool isLoading = false;
@@ -181,6 +184,7 @@
             }
 
             // Check for duplicates (same username, different TwitchUserId)
+            // Filter to only groups with more than one entry (i.e., duplicates)
             foreach (var group in usernameGroups.Where(g => g.Value.Count > 1))
             {
                 Logger.LogWarning("Found duplicate username: {Username} with {Count} entries", group.Key, group.Value.Count);
@@ -229,6 +233,15 @@
 
     private async Task DeleteBrokenUser(BrokenUser user)
     {
+        // Verify we have the current user context for authorization
+        if (CurrentUser == null)
+        {
+            statusMessage = "Error: Not authenticated. Please refresh the page.";
+            isError = true;
+            StateHasChanged();
+            return;
+        }
+
         user.IsProcessing = true;
         statusMessage = "";
         isError = false;
@@ -236,8 +249,8 @@
 
         try
         {
-            Logger.LogInformation("Attempting to delete broken user: TwitchUserId={TwitchUserId}, RowKey={RowKey}, Username={Username}",
-                user.TwitchUserId, user.RowKey, user.Username);
+            Logger.LogInformation("Admin {AdminUsername} attempting to delete broken user: TwitchUserId={TwitchUserId}, RowKey={RowKey}, Username={Username}",
+                CurrentUser.Username, user.TwitchUserId, user.RowKey, user.Username);
 
             // Always use RowKey for deletion - this handles both orphaned records
             // (empty TwitchUserId) and normal records correctly
@@ -248,11 +261,21 @@
                 throw new InvalidOperationException("Cannot delete user: both RowKey and TwitchUserId are empty");
             }
 
-            await UserRepository.DeleteUserByRowKeyAsync(rowKeyToDelete);
-            Logger.LogInformation("Deleted user record with RowKey: {RowKey}", rowKeyToDelete);
+            // Use AdminService for proper authorization
+            var result = await AdminService.DeleteUserRecordByRowKeyAsync(rowKeyToDelete, CurrentUser);
 
-            brokenUsers.Remove(user);
-            statusMessage = $"Successfully deleted user: {user.Username}";
+            if (result.Success)
+            {
+                Logger.LogInformation("Deleted user record with RowKey: {RowKey}", rowKeyToDelete);
+                brokenUsers.Remove(user);
+                statusMessage = $"Successfully deleted user: {user.Username}";
+            }
+            else
+            {
+                Logger.LogWarning("Failed to delete broken user: {Message}", result.Message);
+                statusMessage = result.Message;
+                isError = true;
+            }
         }
         catch (Exception ex)
         {

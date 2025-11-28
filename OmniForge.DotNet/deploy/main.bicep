@@ -70,7 +70,9 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
-    // Custom domain verification and certificate binding is configured here
+    // Custom domain configuration is managed manually in the Azure Portal.
+    // This empty object is required to preserve existing domain bindings during deployment.
+    // Do not remove - see: https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates
     customDomainConfiguration: {}
   }
 }

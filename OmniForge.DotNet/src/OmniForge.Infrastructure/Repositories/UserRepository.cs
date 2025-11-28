@@ -108,7 +108,8 @@ namespace OmniForge.Infrastructure.Repositories
             }
         }
 
-        public async Task DeleteUserByRowKeyAsync(string rowKey)
+        /// <inheritdoc />
+        public async Task DeleteUserRecordByRowKeyAsync(string rowKey)
         {
             try
             {

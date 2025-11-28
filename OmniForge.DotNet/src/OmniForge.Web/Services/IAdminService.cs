@@ -23,6 +23,15 @@ namespace OmniForge.Web.Services
         /// <param name="currentUser">The current authenticated user</param>
         /// <returns>True if deletion is allowed, false otherwise</returns>
         bool CanDeleteUser(string targetUserId, User currentUser);
+
+        /// <summary>
+        /// Deletes a user record by RowKey with proper admin authorization.
+        /// Used for cleaning up broken/orphaned user records.
+        /// </summary>
+        /// <param name="rowKey">The Azure Table RowKey of the record to delete</param>
+        /// <param name="currentUser">The current authenticated user making the request</param>
+        /// <returns>A result indicating success or failure with message</returns>
+        Task<AdminOperationResult> DeleteUserRecordByRowKeyAsync(string rowKey, User currentUser);
     }
 
     public class AdminOperationResult

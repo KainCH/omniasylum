@@ -166,7 +166,7 @@
 
     <UserManagementModal @bind-Show="showUserModal" UserId="@selectedUserId" OnSaved="RefreshUsers" />
     <UserRequestsModal @bind-Show="showUserRequestsModal" />
-    <BrokenUserManagerModal @bind-Show="showBrokenUserModal" />
+    <BrokenUserManagerModal @bind-Show="showBrokenUserModal" CurrentUser="@currentUser" />
     <PermissionManagerModal @bind-Show="showPermissionManagerModal" Users="users" />
 
     @if (selectedOverlayUser != null)

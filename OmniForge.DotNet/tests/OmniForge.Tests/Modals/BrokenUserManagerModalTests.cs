@@ -2,8 +2,10 @@ using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Components.Modals;
+using OmniForge.Web.Services;
 using Xunit;
 
 namespace OmniForge.Tests.Modals;
@@ -11,11 +13,20 @@ namespace OmniForge.Tests.Modals;
 public class BrokenUserManagerModalTests : BunitContext
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
+    private readonly Mock<IAdminService> _mockAdminService;
 
     public BrokenUserManagerModalTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
+        _mockAdminService = new Mock<IAdminService>();
+
+        // Setup default admin service behavior
+        _mockAdminService
+            .Setup(x => x.DeleteUserRecordByRowKeyAsync(It.IsAny<string>(), It.IsAny<User>()))
+            .ReturnsAsync(AdminOperationResult.Ok("Deleted successfully"));
+
         Services.AddSingleton(_mockUserRepository.Object);
+        Services.AddSingleton(_mockAdminService.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
