@@ -16,37 +16,9 @@
       }
     },
     {
-      "label": "Deploy .NET to Azure (Prod)",
-      "type": "shell",
-      "command": ".\\deploy.ps1 -Environment \"prod\"",
-      "options": {
-        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "showReuseMessage": false
-      }
-    },
-    {
       "label": "Full Infrastructure Deploy (Dev)",
       "type": "shell",
       "command": ".\\deploy.ps1 -Environment \"dev\" -FullDeploy",
-      "options": {
-        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "showReuseMessage": false
-      }
-    },
-    {
-      "label": "Full Infrastructure Deploy (Prod)",
-      "type": "shell",
-      "command": ".\\deploy.ps1 -Environment \"prod\" -FullDeploy",
       "options": {
         "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
       },
