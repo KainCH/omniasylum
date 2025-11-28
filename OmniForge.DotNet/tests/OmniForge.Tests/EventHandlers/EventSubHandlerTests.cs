@@ -305,7 +305,7 @@ namespace OmniForge.Tests.EventHandlers
                 ""broadcaster_user_name"": ""TestUser""
             }").RootElement;
 
-            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = null };
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = null! };
             var counters = new Counter { TwitchUserId = "123" };
 
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);

@@ -179,7 +179,7 @@ namespace OmniForge.Tests.Components.Modals
                     TwitchUserId = "1",
                     DisplayName = "Manager1",
                     Role = "admin",
-                    ManagedStreamers = null
+                    ManagedStreamers = null!
                 }
             };
             _mockUserRepository.Setup(r => r.GetAllUsersAsync()).ReturnsAsync(users);

@@ -978,7 +978,7 @@ namespace OmniForge.Tests.Components.Pages
                 Features = new FeatureFlags { StreamOverlay = true },
                 OverlaySettings = new OverlaySettings
                 {
-                    Position = null,
+                    Position = null!,
                     Counters = new OverlayCounters { Deaths = true },
                     Theme = new OverlayTheme()
                 }

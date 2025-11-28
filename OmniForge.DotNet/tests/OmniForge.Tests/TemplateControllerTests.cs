@@ -198,7 +198,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task GetCurrentTemplate_ShouldReturnDefaultTemplate_WhenNoStyleSet()
         {
-            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { TemplateStyle = null } };
+            var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { TemplateStyle = null! } };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var templates = new Dictionary<string, Template>
