@@ -1,0 +1,177 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'OmniForge.DotNet/**'
+      - '.github/workflows/deploy-production.yml'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  RESOURCE_GROUP: 'Streamer-Tools-RG'
+  ACR_NAME: 'omniforgeacr'
+  CONTAINER_APP_NAME: 'omniforgestream-api-prod'
+  IMAGE_NAME: 'omniforge-dotnet-prod'
+  SOLUTION_PATH: 'OmniForge.DotNet/OmniForge.sln'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+
+      - name: Run tests
+        run: |
+          dotnet test ${{ env.SOLUTION_PATH }} \
+            --configuration Release \
+            --no-build \
+            --verbosity normal
+
+  build-and-push:
+    name: Build & Push Image
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+      full_image: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./OmniForge.DotNet
+          file: ./OmniForge.DotNet/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Azure
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get image tag
+        id: image
+        run: |
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "📦 Deploying image: $IMAGE_TAG"
+
+      - name: Deploy to Container App
+        run: |
+          echo "🚀 Updating Container App with new image..."
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ steps.image.outputs.tag }}
+          echo "✅ Deployment complete!"
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          sleep 30
+
+          # Check container app status
+          STATUS=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.runningStatus" -o tsv)
+
+          echo "📊 Container App Status: $STATUS"
+
+          if [ "$STATUS" != "Running" ]; then
+            echo "❌ Container App is not running!"
+            exit 1
+          fi
+
+          # Health check
+          echo "🏥 Running health check..."
+          HEALTH_URL="https://stream-tool.cerillia.com/health"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Health check passed!"
+          else
+            echo "⚠️ Health check returned: $HTTP_STATUS (may still be starting)"
+          fi
+
+  notify:
+    name: Notify
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Deployment Summary
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            echo "# ✅ Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+            echo "**URL:** https://stream-tool.cerillia.com" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "# ❌ Production Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

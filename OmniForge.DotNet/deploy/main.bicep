@@ -29,8 +29,6 @@ var appInsightsName = '${baseName}-insights-${environment}'
 var acrName = 'omniforgeacr'
 // Map environment param to ASPNETCORE_ENVIRONMENT value
 var aspnetEnvironment = environment == 'prod' ? 'Production' : 'Development'
-// Custom domain per environment
-var customDomain = environment == 'prod' ? 'stream-tool.cerillia.com' : 'dev.cerillia.com'
 
 // Reference existing Azure Container Registry
 resource acrRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
