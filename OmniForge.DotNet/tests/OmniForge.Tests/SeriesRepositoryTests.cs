@@ -165,5 +165,155 @@ namespace OmniForge.Tests
                 default,
                 It.IsAny<CancellationToken>()), Times.Once);
         }
+
+        [Fact]
+        public async Task GetSeriesByIdAsync_ShouldReturnNull_WhenNotFound()
+        {
+            // Arrange
+            var userId = "123";
+            var seriesId = "nonexistent";
+            var exception = new RequestFailedException(404, "Not Found", "NotFound", null);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(
+                userId,
+                seriesId,
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .ThrowsAsync(exception);
+
+            // Act
+            var result = await _repository.GetSeriesByIdAsync(userId, seriesId);
+
+            // Assert
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task GetSeriesAsync_ShouldReturnEmptyList_WhenNoSeries()
+        {
+            // Arrange
+            var userId = "123";
+            var page = Page<TableEntity>.FromValues(Array.Empty<TableEntity>(), null, Mock.Of<Response>());
+            var asyncPageable = AsyncPageable<TableEntity>.FromPages(new[] { page });
+
+            _mockTableClient.Setup(x => x.QueryAsync<TableEntity>(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .Returns(asyncPageable);
+
+            // Act
+            var result = await _repository.GetSeriesAsync(userId);
+
+            // Assert
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public async Task GetSeriesAsync_ShouldReturnMultipleSeries()
+        {
+            // Arrange
+            var userId = "123";
+            var entity1 = new TableEntity(userId, "series1")
+            {
+                ["name"] = "Series 1",
+                ["description"] = "Description 1",
+                ["snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 10 }),
+                ["createdAt"] = DateTimeOffset.UtcNow,
+                ["lastUpdated"] = DateTimeOffset.UtcNow,
+                ["isActive"] = true
+            };
+            var entity2 = new TableEntity(userId, "series2")
+            {
+                ["name"] = "Series 2",
+                ["description"] = "Description 2",
+                ["snapshot"] = JsonSerializer.Serialize(new Counter { Deaths = 20 }),
+                ["createdAt"] = DateTimeOffset.UtcNow,
+                ["lastUpdated"] = DateTimeOffset.UtcNow,
+                ["isActive"] = false
+            };
+
+            var page = Page<TableEntity>.FromValues(new[] { entity1, entity2 }, null, Mock.Of<Response>());
+            var asyncPageable = AsyncPageable<TableEntity>.FromPages(new[] { page });
+
+            _mockTableClient.Setup(x => x.QueryAsync<TableEntity>(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .Returns(asyncPageable);
+
+            // Act
+            var result = await _repository.GetSeriesAsync(userId);
+
+            // Assert
+            Assert.Equal(2, result.Count());
+            Assert.Contains(result, s => s.Name == "Series 1" && s.Snapshot.Deaths == 10);
+            Assert.Contains(result, s => s.Name == "Series 2" && s.Snapshot.Deaths == 20);
+        }
+
+        [Fact]
+        public async Task CreateSeriesAsync_ShouldIncludeAllProperties()
+        {
+            // Arrange
+            var series = new Series
+            {
+                UserId = "123",
+                Id = "abc",
+                Name = "Full Series",
+                Description = "Full Description",
+                Snapshot = new Counter { Deaths = 10, Swears = 5, Screams = 3 },
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow,
+                IsActive = true
+            };
+
+            // Act
+            await _repository.CreateSeriesAsync(series);
+
+            // Assert
+            _mockTableClient.Verify(x => x.AddEntityAsync(
+                It.Is<TableEntity>(e =>
+                    e.PartitionKey == "123" &&
+                    e.RowKey == "abc" &&
+                    (string)e["name"] == "Full Series" &&
+                    (string)e["description"] == "Full Description" &&
+                    (bool)e["isActive"] == true),
+                default), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetSeriesAsync_ShouldHandleMissingOptionalProperties()
+        {
+            // Arrange
+            var userId = "123";
+            var entity = new TableEntity(userId, "abc")
+            {
+                ["name"] = "Minimal Series",
+                ["snapshot"] = JsonSerializer.Serialize(new Counter())
+                // description, createdAt, lastUpdated, isActive are missing
+            };
+
+            var page = Page<TableEntity>.FromValues(new[] { entity }, null, Mock.Of<Response>());
+            var asyncPageable = AsyncPageable<TableEntity>.FromPages(new[] { page });
+
+            _mockTableClient.Setup(x => x.QueryAsync<TableEntity>(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<IEnumerable<string>>(),
+                It.IsAny<CancellationToken>()))
+                .Returns(asyncPageable);
+
+            // Act
+            var result = await _repository.GetSeriesAsync(userId);
+
+            // Assert
+            Assert.Single(result);
+            var series = result.First();
+            Assert.Equal("Minimal Series", series.Name);
+            // Description defaults to empty string when not set
+            Assert.True(string.IsNullOrEmpty(series.Description));
+        }
     }
 }

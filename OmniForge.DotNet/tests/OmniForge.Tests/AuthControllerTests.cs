@@ -203,5 +203,25 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.AccessToken == "new")), Times.Once);
         }
+
+        [Fact]
+        public async Task Logout_ShouldSignOutAndRedirect()
+        {
+            // Arrange
+            _mockAuthService
+                .Setup(x => x.SignOutAsync(It.IsAny<HttpContext>(), CookieAuthenticationDefaults.AuthenticationScheme, null))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _controller.Logout();
+
+            // Assert
+            var redirectResult = Assert.IsType<RedirectResult>(result);
+            Assert.Equal("/", redirectResult.Url);
+            _mockAuthService.Verify(x => x.SignOutAsync(
+                It.IsAny<HttpContext>(),
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                null), Times.Once);
+        }
     }
 }

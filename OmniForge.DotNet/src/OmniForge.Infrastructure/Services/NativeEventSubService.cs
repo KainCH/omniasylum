@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -9,10 +10,17 @@ using OmniForge.Infrastructure.Models.EventSub;
 
 namespace OmniForge.Infrastructure.Services
 {
+    /// <summary>
+    /// Native WebSocket implementation for Twitch EventSub.
+    /// WebSocket I/O code is excluded from coverage as it's infrastructure code
+    /// that's difficult to unit test. Message processing logic is in EventSubMessageProcessor.
+    /// </summary>
+    [ExcludeFromCodeCoverage]
     public class NativeEventSubService : INativeEventSubService, IDisposable
     {
         private const string TwitchEventSubUrl = "wss://eventsub.wss.twitch.tv/ws";
         private readonly ILogger<NativeEventSubService> _logger;
+        private readonly IEventSubMessageProcessor _messageProcessor;
         private ClientWebSocket _webSocket;
         private CancellationTokenSource _cts;
         private bool _isDisposed;
@@ -25,9 +33,12 @@ namespace OmniForge.Infrastructure.Services
         public event Func<string, Task>? OnSessionWelcome;
         public event Func<Task>? OnDisconnected;
 
-        public NativeEventSubService(ILogger<NativeEventSubService> logger)
+        public NativeEventSubService(
+            ILogger<NativeEventSubService> logger,
+            IEventSubMessageProcessor messageProcessor)
         {
             _logger = logger;
+            _messageProcessor = messageProcessor;
             _webSocket = new ClientWebSocket();
             _cts = new CancellationTokenSource();
         }
@@ -140,57 +151,45 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task ProcessMessageAsync(string json)
         {
-            try
+            var result = _messageProcessor.Process(json);
+
+            // Update keepalive time for all message types except unknown
+            if (result.MessageType != EventSubMessageType.Unknown)
             {
-                var message = JsonSerializer.Deserialize<EventSubMessage>(json);
-                if (message == null) return;
+                LastKeepaliveTime = DateTime.UtcNow;
+            }
 
-                switch (message.Metadata.MessageType)
-                {
-                    case "session_welcome":
-                        SessionId = message.Payload.Session?.Id;
-                        LastKeepaliveTime = DateTime.UtcNow;
-                        _logger.LogInformation($"Session Welcome! ID: {SessionId}, Keepalive: {message.Payload.Session?.KeepaliveTimeoutSeconds}s");
-                        if (SessionId != null)
-                        {
-                            OnSessionWelcome?.Invoke(SessionId);
-                        }
-                        break;
+            switch (result.MessageType)
+            {
+                case EventSubMessageType.SessionWelcome:
+                    SessionId = result.SessionId;
+                    if (SessionId != null)
+                    {
+                        OnSessionWelcome?.Invoke(SessionId);
+                    }
+                    break;
 
-                    case "session_keepalive":
-                        LastKeepaliveTime = DateTime.UtcNow;
-                        // _logger.LogDebug("Keepalive received.");
-                        break;
+                case EventSubMessageType.Notification:
+                    if (OnNotification != null && result.Message != null)
+                    {
+                        await OnNotification.Invoke(result.Message);
+                    }
+                    break;
 
-                    case "notification":
-                        LastKeepaliveTime = DateTime.UtcNow;
-                        _logger.LogInformation($"Notification received: {message.Metadata.MessageId}");
-                        if (OnNotification != null)
-                        {
-                            await OnNotification.Invoke(message);
-                        }
-                        break;
-
-                    case "reconnect":
-                        _logger.LogWarning($"Reconnect requested by server. URL: {message.Payload.Session?.ReconnectUrl}");
-                        // Handle reconnect logic here if needed, or just let it disconnect and reconnect via watchdog
-                        // For now, we'll treat it as a disconnect trigger
+                case EventSubMessageType.Reconnect:
+                    if (result.RequiresDisconnect)
+                    {
                         await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Reconnect requested", CancellationToken.None);
                         OnDisconnected?.Invoke();
-                        break;
+                    }
+                    break;
 
-                    case "revocation":
-                        _logger.LogWarning($"Subscription revoked: {message.Payload.Subscription?.Id} - {message.Payload.Subscription?.Status}");
-                        break;
-
-                    default:
-                        _logger.LogWarning($"Unknown message type: {message.Metadata.MessageType}");
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing WebSocket message.");
+                case EventSubMessageType.SessionKeepalive:
+                case EventSubMessageType.Revocation:
+                case EventSubMessageType.Unknown:
+                default:
+                    // No additional action needed
+                    break;
             }
         }
 

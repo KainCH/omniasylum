@@ -311,5 +311,208 @@ namespace OmniForge.Tests
             // Assert
             _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
         }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldLogError_WhenHttpRequestFails()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
+                }
+            };
+
+            var eventData = new { count = 100 };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.InternalServerError });
+
+            // Act & Assert - service throws on failure
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                _service.SendNotificationAsync(user, "death_milestone", eventData));
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldThrowException_WhenHttpRequestThrows()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
+                }
+            };
+
+            var eventData = new { count = 100 };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ThrowsAsync(new HttpRequestException("Network error"));
+
+            // Act & Assert - service throws on exception
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                _service.SendNotificationAsync(user, "death_milestone", eventData));
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldNotSend_WhenWebhookUrlEmpty()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DiscordWebhookUrl = ""
+            };
+
+            var eventData = new { count = 100 };
+
+            // Act
+            await _service.SendNotificationAsync(user, "death_milestone", eventData);
+
+            // Assert - should not send when webhook URL is empty
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldHandleUnknownEventType()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
+                }
+            };
+
+            var eventData = new { someData = "test" };
+
+            // Act - should not throw but should not send for unknown event type (returns false from IsNotificationEnabled)
+            await _service.SendNotificationAsync(user, "unknown_event_type", eventData);
+
+            // Assert - unknown event type returns false from IsNotificationEnabled, so no send
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldThrowException_WhenHttpRequestThrows()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
+            };
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ThrowsAsync(new HttpRequestException("Network error"));
+
+            // Act & Assert - service throws on exception
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                _service.SendTestNotificationAsync(user));
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldNotSend_WhenWebhookUrlEmpty()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordWebhookUrl = ""
+            };
+
+            // Act
+            await _service.SendTestNotificationAsync(user);
+
+            // Assert - should not send when webhook URL is empty
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenUrlEmpty()
+        {
+            // Act
+            var result = await _service.ValidateWebhookAsync("");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenRequestFails()
+        {
+            // Arrange
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ThrowsAsync(new HttpRequestException("Network error"));
+
+            // Act
+            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task ValidateWebhookAsync_ShouldReturnTrue_WhenRequestSucceeds()
+        {
+            // Arrange
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+
+            // Act
+            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenNon200Response()
+        {
+            // Arrange
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.NotFound });
+
+            // Act
+            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+
+            // Assert
+            Assert.False(result);
+        }
     }
 }

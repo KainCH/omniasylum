@@ -101,5 +101,133 @@ namespace OmniForge.Tests
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
         }
+
+        [Fact]
+        public async Task DisconnectUserAsync_ShouldNotThrow_WhenUserNotConnected()
+        {
+            // Arrange
+            var userId = "notconnected";
+
+            // Act & Assert - should not throw
+            await _twitchClientManager.DisconnectUserAsync(userId);
+        }
+
+        [Fact]
+        public void GetUserBotStatus_ShouldReturnNotConnected_WhenUserNotConnected()
+        {
+            // Arrange
+            var userId = "notconnected";
+
+            // Act
+            var result = _twitchClientManager.GetUserBotStatus(userId);
+
+            // Assert
+            Assert.False(result.Connected);
+            Assert.Equal("Not connected", result.Reason);
+        }
+
+        [Fact]
+        public async Task SendMessageAsync_ShouldNotThrow_WhenUserNotConnected()
+        {
+            // Arrange
+            var userId = "notconnected";
+            var message = "test message";
+
+            // Act & Assert - should not throw
+            await _twitchClientManager.SendMessageAsync(userId, message);
+        }
+
+        [Fact]
+        public async Task ConnectUserAsync_ShouldRefreshToken_WhenExpired()
+        {
+            // Arrange
+            var userId = "12345";
+            var refreshToken = "refresh_token";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "expired_token",
+                RefreshToken = refreshToken,
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(user);
+
+            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync(refreshToken))
+                .ReturnsAsync(new TwitchTokenResponse
+                {
+                    AccessToken = "new_token",
+                    RefreshToken = "new_refresh_token",
+                    ExpiresIn = 3600
+                });
+
+            // Act
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            // Assert
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(refreshToken), Times.Once);
+        }
+
+        [Fact]
+        public async Task ConnectUserAsync_ShouldLogError_WhenTokenRefreshFails()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "expired_token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(user);
+
+            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync(user.RefreshToken))
+                .ReturnsAsync((TwitchTokenResponse?)null);
+
+            // Act
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            // Assert
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(user.RefreshToken), Times.Once);
+            // Should log error about failed token refresh
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to refresh token")),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task ConnectUserAsync_ShouldSkipRefresh_WhenTokenValid()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "valid_token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) // Valid token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(user);
+
+            // Act
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            // Assert
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
+        }
     }
 }

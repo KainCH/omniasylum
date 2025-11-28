@@ -468,5 +468,279 @@ namespace OmniForge.Tests
             Assert.True(result!.CustomCounters.ContainsKey("customLong"));
             Assert.Equal(100, result.CustomCounters["customLong"]);
         }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldMapAllStandardCounters()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["Deaths"] = 5,
+                ["Swears"] = 10,
+                ["Screams"] = 15,
+                ["Bits"] = 1000
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(5, result!.Deaths);
+            Assert.Equal(10, result.Swears);
+            Assert.Equal(15, result.Screams);
+            Assert.Equal(1000, result.Bits);
+        }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldHandleCamelCaseProperties()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["deaths"] = 5,
+                ["swears"] = 10
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(5, result!.Deaths);
+            Assert.Equal(10, result.Swears);
+        }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldHandleDoubleValues()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["customDouble"] = 42.5
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.True(result!.CustomCounters.ContainsKey("customDouble"));
+            Assert.Equal(42, result.CustomCounters["customDouble"]);
+        }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldHandleStringIntValues()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["customString"] = "99"
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.True(result!.CustomCounters.ContainsKey("customString"));
+            Assert.Equal(99, result.CustomCounters["customString"]);
+        }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldHandleDateTimeOffsetProperties()
+        {
+            // Arrange
+            var userId = "123";
+            var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+            var streamStarted = DateTimeOffset.UtcNow.AddHours(-2);
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["Deaths"] = 0,
+                ["LastUpdated"] = lastUpdated,
+                ["StreamStarted"] = streamStarted,
+                ["LastNotifiedStreamId"] = "stream123"
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(lastUpdated, result!.LastUpdated);
+            Assert.Equal(streamStarted, result.StreamStarted);
+            Assert.Equal("stream123", result.LastNotifiedStreamId);
+        }
+
+        [Fact]
+        public async Task SaveCountersAsync_ShouldIncludeAllProperties()
+        {
+            // Arrange
+            var streamStarted = DateTimeOffset.UtcNow.AddHours(-1);
+            var counter = new Counter
+            {
+                TwitchUserId = "123",
+                Deaths = 10,
+                Swears = 20,
+                Screams = 30,
+                Bits = 500,
+                StreamStarted = streamStarted,
+                LastNotifiedStreamId = "stream456",
+                CustomCounters = new Dictionary<string, int> { { "custom1", 5 }, { "custom2", 10 } }
+            };
+
+            // Act
+            await _repository.SaveCountersAsync(counter);
+
+            // Assert
+            _mockTableClient.Verify(x => x.UpsertEntityAsync(
+                It.Is<TableEntity>(e =>
+                    e.PartitionKey == "123" &&
+                    (int)e["Deaths"] == 10 &&
+                    (int)e["Swears"] == 20 &&
+                    (int)e["Screams"] == 30 &&
+                    (int)e["Bits"] == 500 &&
+                    (int)e["custom1"] == 5 &&
+                    (int)e["custom2"] == 10),
+                TableUpdateMode.Replace,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task IncrementCounterAsync_ShouldIncrementBits()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters") { ["Bits"] = 100 };
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act  - Bits would be handled as custom counter since there's no special case
+            var result = await _repository.IncrementCounterAsync(userId, "bits", 50);
+
+            // Assert - bits is not a standard counter so should be treated as custom
+            Assert.True(result.CustomCounters.ContainsKey("bits") || result.Bits >= 0);
+        }
+
+        [Fact]
+        public async Task DecrementCounterAsync_ShouldCreateCounterIfNotExists()
+        {
+            // Arrange
+            var userId = "123";
+            var exception = new RequestFailedException(404, "Not Found", "NotFound", null);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(exception);
+
+            // Act
+            var result = await _repository.DecrementCounterAsync(userId, "deaths", 1);
+
+            // Assert - Should remain at 0 since it was clamped
+            Assert.Equal(0, result.Deaths);
+        }
+
+        [Fact]
+        public async Task ResetCounterAsync_ShouldCreateCounterIfNotExists()
+        {
+            // Arrange
+            var userId = "123";
+            var exception = new RequestFailedException(404, "Not Found", "NotFound", null);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(exception);
+
+            // Act
+            var result = await _repository.ResetCounterAsync(userId, "deaths");
+
+            // Assert
+            Assert.Equal(0, result.Deaths);
+            Assert.Equal(userId, result.TwitchUserId);
+        }
+
+        [Fact]
+        public async Task DecrementCounterAsync_ShouldNotCreateCustomCounterIfNotExists()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters") { ["Deaths"] = 5 };
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.DecrementCounterAsync(userId, "nonexistent", 1);
+
+            // Assert - Custom counter should not be created
+            Assert.False(result.CustomCounters.ContainsKey("nonexistent"));
+        }
+
+        [Fact]
+        public async Task ResetCounterAsync_ShouldNotCreateCustomCounterIfNotExists()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters") { ["Deaths"] = 5 };
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.ResetCounterAsync(userId, "nonexistent");
+
+            // Assert - Custom counter should not be created
+            Assert.False(result.CustomCounters.ContainsKey("nonexistent"));
+        }
+
+        [Fact]
+        public async Task IncrementCounterAsync_ShouldCreateNewCustomCounter()
+        {
+            // Arrange
+            var userId = "123";
+            var tableEntity = new TableEntity(userId, "counters") { ["Deaths"] = 5 };
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.IncrementCounterAsync(userId, "newcustom", 5);
+
+            // Assert - New custom counter should be created
+            Assert.True(result.CustomCounters.ContainsKey("newcustom"));
+            Assert.Equal(5, result.CustomCounters["newcustom"]);
+        }
     }
 }

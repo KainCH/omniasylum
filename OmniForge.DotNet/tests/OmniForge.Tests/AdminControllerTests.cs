@@ -159,5 +159,150 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.DeleteUserAsync("12345"), Times.Once);
         }
+
+        [Fact]
+        public async Task DeleteUser_ShouldReturnForbidden_WhenDeletingAdmin()
+        {
+            var user = new User { TwitchUserId = "12345", Role = "admin" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var result = await _controller.DeleteUser("12345");
+
+            var statusResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(403, statusResult.StatusCode);
+        }
+
+        [Fact]
+        public async Task GetStats_ShouldReturnOk()
+        {
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "1", Username = "user1", Role = "admin", IsActive = true, Features = new FeatureFlags { ChatCommands = true } },
+                new User { TwitchUserId = "2", Username = "user2", Role = "streamer", IsActive = true, Features = new FeatureFlags { ChannelPoints = true } },
+                new User { TwitchUserId = "3", Username = "user3", Role = "streamer", IsActive = false, Features = new FeatureFlags() }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var result = await _controller.GetStats();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
+
+        [Fact]
+        public async Task UpdateUserRole_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("unknown")).ReturnsAsync((User?)null);
+
+            var request = new UpdateRoleRequest { Role = "admin" };
+            var result = await _controller.UpdateUserRole("unknown", request);
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateUserRole_ShouldAcceptModRole()
+        {
+            var user = new User { TwitchUserId = "12345", Role = "streamer" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateRoleRequest { Role = "mod" };
+            var result = await _controller.UpdateUserRole("12345", request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.Role == "mod")), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateFeatures_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("unknown")).ReturnsAsync((User?)null);
+
+            var request = new UpdateFeaturesRequest { Features = new FeatureFlags() };
+            var result = await _controller.UpdateFeatures("unknown", request);
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateFeatures_ShouldReturnBadRequest_WhenFeaturesNull()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateFeaturesRequest { Features = null! };
+            var result = await _controller.UpdateFeatures("12345", request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateFeatures_ShouldConnectTwitchBot_WhenChatCommandsEnabled()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Features = new FeatureFlags { ChatCommands = false }
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateFeaturesRequest { Features = new FeatureFlags { ChatCommands = true } };
+            var result = await _controller.UpdateFeatures("12345", request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("12345"), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateFeatures_ShouldDisconnectTwitchBot_WhenChatCommandsDisabled()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Features = new FeatureFlags { ChatCommands = true }
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateFeaturesRequest { Features = new FeatureFlags { ChatCommands = false } };
+            var result = await _controller.UpdateFeatures("12345", request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockTwitchClientManager.Verify(x => x.DisconnectUserAsync("12345"), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateFeatures_ShouldEnableOverlaySettings_WhenStreamOverlayEnabled()
+        {
+            var user = new User
+            {
+                TwitchUserId = "12345",
+                Features = new FeatureFlags { StreamOverlay = false },
+                OverlaySettings = new OverlaySettings { Enabled = false }
+            };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateFeaturesRequest { Features = new FeatureFlags { StreamOverlay = true } };
+            var result = await _controller.UpdateFeatures("12345", request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.OverlaySettings.Enabled == true)), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetAllUsers_ShouldIdentifyBrokenUsers()
+        {
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "", Username = "broken" }, // broken - empty TwitchUserId
+                new User { TwitchUserId = "123", Username = "" },    // incomplete - empty Username
+                new User { TwitchUserId = "456", Username = "complete" } // complete
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var result = await _controller.GetAllUsers();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
     }
 }

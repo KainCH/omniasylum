@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using Azure.Data.Tables;
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
@@ -9,11 +10,13 @@ using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Repositories;
 using OmniForge.Infrastructure.Services;
+using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api;
 using TwitchLib.EventSub.Websockets.Extensions;
 
 namespace OmniForge.Infrastructure
 {
+    [ExcludeFromCodeCoverage]
     public static class DependencyInjection
     {
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
@@ -71,7 +74,23 @@ namespace OmniForge.Infrastructure
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
             services.AddHostedService<TwitchConnectionService>();
 
+            // EventSub Event Handlers (Strategy Pattern)
+            services.AddSingleton<IDiscordNotificationTracker, DiscordNotificationTracker>();
+            services.AddSingleton<IDiscordInviteSender, DiscordInviteSender>();
+            services.AddSingleton<IEventSubHandler, StreamOnlineHandler>();
+            services.AddSingleton<IEventSubHandler, StreamOfflineHandler>();
+            services.AddSingleton<IEventSubHandler, FollowHandler>();
+            services.AddSingleton<IEventSubHandler, SubscribeHandler>();
+            services.AddSingleton<IEventSubHandler, SubscriptionGiftHandler>();
+            services.AddSingleton<IEventSubHandler, SubscriptionMessageHandler>();
+            services.AddSingleton<IEventSubHandler, CheerHandler>();
+            services.AddSingleton<IEventSubHandler, RaidHandler>();
+            services.AddSingleton<IEventSubHandler, ChatMessageHandler>();
+            services.AddSingleton<IEventSubHandler, ChatNotificationHandler>();
+            services.AddSingleton<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
+
             // Twitch EventSub
+            services.AddSingleton<IEventSubMessageProcessor, EventSubMessageProcessor>();
             services.AddSingleton<INativeEventSubService, NativeEventSubService>();
             services.AddSingleton<TwitchAPI>();
             services.AddSingleton<StreamMonitorService>();

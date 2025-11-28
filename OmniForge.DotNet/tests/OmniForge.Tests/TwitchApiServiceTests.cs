@@ -142,5 +142,85 @@ namespace OmniForge.Tests
             Assert.Equal("new_r", result.Id);
             Assert.Equal("New Reward", result.Title);
         }
+
+        [Fact]
+        public async Task GetCustomRewardsAsync_ShouldThrowException_WhenUserNotFound()
+        {
+            // Arrange
+            var userId = "unknown";
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync((User?)null);
+
+            // Act & Assert
+            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+        }
+
+        [Fact]
+        public async Task GetCustomRewardsAsync_ShouldThrowException_WhenTokenRefreshFails()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                AccessToken = "expired_token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(-1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
+
+            // Act & Assert
+            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+        }
+
+        [Fact]
+        public async Task CreateCustomRewardAsync_ShouldThrowException_WhenNoRewardsCreated()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                AccessToken = "access_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+
+            var request = new CreateRewardRequest { Title = "Test", Cost = 100 };
+
+            _mockHelixWrapper.Setup(x => x.CreateCustomRewardAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CreateCustomRewardsRequest>()))
+                .ReturnsAsync(new List<HelixCustomReward>()); // Empty response
+
+            // Act & Assert
+            await Assert.ThrowsAsync<Exception>(() => _service.CreateCustomRewardAsync(userId, request));
+        }
+
+        [Fact]
+        public async Task DeleteCustomRewardAsync_ShouldCallWrapper()
+        {
+            // Arrange
+            var userId = "12345";
+            var rewardId = "reward123";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                AccessToken = "access_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            await _service.DeleteCustomRewardAsync(userId, rewardId);
+
+            // Assert
+            _mockHelixWrapper.Verify(x => x.DeleteCustomRewardAsync("test_client_id", "access_token", userId, rewardId), Times.Once);
+        }
     }
 }
