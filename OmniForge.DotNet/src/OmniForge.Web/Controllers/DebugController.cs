@@ -43,6 +43,8 @@ namespace OmniForge.Web.Controllers
             }
 
             // Generate Series ID (RowKey) - Format: <timestamp>_<sanitized_series_name>
+            // ⚠️ CRITICAL: This logic is duplicated in restore-series-save.js.
+            // If you change the series ID format here, you MUST update it in both places to keep them in sync!
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var sanitizedName = System.Text.RegularExpressions.Regex.Replace(request.SeriesName, "[^a-zA-Z0-9]", "_");
             var seriesId = $"{timestamp}_{sanitizedName}";
@@ -68,14 +70,31 @@ namespace OmniForge.Web.Controllers
                 IsActive = true
             };
 
-            await _seriesRepository.CreateSeriesAsync(series);
+            try
+            {
+                await _seriesRepository.CreateSeriesAsync(series);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", request.TwitchUserId);
+                return StatusCode(500, new { success = false, error = "Failed to create series save" });
+            }
 
             return Ok(new
             {
                 success = true,
                 message = "Series save restored successfully",
-                seriesId,
-                series
+                save = new
+                {
+                    seriesId,
+                    seriesName = series.Name,
+                    description = series.Description,
+                    deaths = series.Snapshot.Deaths,
+                    swears = series.Snapshot.Swears,
+                    screams = series.Snapshot.Screams,
+                    bits = series.Snapshot.Bits,
+                    savedAt = series.LastUpdated
+                }
             });
         }
 

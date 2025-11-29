@@ -64,5 +64,6 @@ coverage/
 *-backup.*
 *.bak
 
-# Riress overlay
+# admin stuff
 .riress-streaming/
+admin-tools/

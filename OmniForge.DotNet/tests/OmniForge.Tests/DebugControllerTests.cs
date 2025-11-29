@@ -120,12 +120,54 @@ namespace OmniForge.Tests
             var result = await _controller.RestoreSeriesSave(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
+
+            // Use reflection to verify anonymous type properties
+            var value = okResult.Value;
+            var successProperty = value.GetType().GetProperty("success");
+            var saveProperty = value.GetType().GetProperty("save");
+
+            Assert.NotNull(successProperty);
+            Assert.True((bool)successProperty.GetValue(value));
+
+            Assert.NotNull(saveProperty);
+            var saveValue = saveProperty.GetValue(value);
+            var seriesNameProperty = saveValue.GetType().GetProperty("seriesName");
+            var deathsProperty = saveValue.GetType().GetProperty("deaths");
+
+            Assert.Equal("Test Series", seriesNameProperty.GetValue(saveValue));
+            Assert.Equal(10, deathsProperty.GetValue(saveValue));
+
             _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.Is<Series>(s =>
                 s.UserId == "12345" &&
                 s.Name == "Test Series" &&
                 s.Snapshot.Deaths == 10 &&
                 s.Snapshot.Swears == 5
             )), Times.Once);
+        }
+
+        [Fact]
+        public async Task RestoreSeriesSave_ShouldReturn500_WhenRepositoryFails()
+        {
+            var request = new RestoreSeriesRequest
+            {
+                TwitchUserId = "12345",
+                SeriesName = "Test Series"
+            };
+
+            _mockSeriesRepository.Setup(x => x.CreateSeriesAsync(It.IsAny<Series>()))
+                .ThrowsAsync(new System.Exception("Database error"));
+
+            var result = await _controller.RestoreSeriesSave(request);
+
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, objectResult.StatusCode);
+
+            var value = objectResult.Value;
+            var successProperty = value.GetType().GetProperty("success");
+            var errorProperty = value.GetType().GetProperty("error");
+
+            Assert.False((bool)successProperty.GetValue(value));
+            Assert.Equal("Failed to create series save", errorProperty.GetValue(value));
         }
     }
 }
