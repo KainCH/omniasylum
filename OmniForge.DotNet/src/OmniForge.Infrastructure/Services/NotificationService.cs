@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -83,7 +84,7 @@ namespace OmniForge.Infrastructure.Services
                         .OrderByDescending(t => t)
                         .FirstOrDefault();
 
-                    _logger.LogInformation("Milestone reached: {CounterType} {Milestone} for user {Username}", counterType, milestone, user.Username);
+                    _logger.LogInformation("Milestone reached: {CounterType} {Milestone} for user {Username}", LogSanitizer.Sanitize(counterType), milestone, LogSanitizer.Sanitize(user.Username));
 
                     // 4. Send Discord Notification
                     if (discordEnabledForType && !string.IsNullOrEmpty(user.DiscordWebhookUrl))
@@ -123,7 +124,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking milestones for user {Username}", user.Username);
+                _logger.LogError(ex, "Error checking milestones for user {Username}", LogSanitizer.Sanitize(user.Username));
             }
         }
     }

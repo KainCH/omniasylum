@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using System.Threading.Tasks;
 using System;
 using System.Linq;
@@ -9,10 +11,12 @@ namespace OmniForge.Web.Middleware
     public class AuthMiddleware
     {
         private readonly RequestDelegate _next;
+        private readonly ILogger<AuthMiddleware> _logger;
 
-        public AuthMiddleware(RequestDelegate next)
+        public AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
         {
             _next = next;
+            _logger = logger;
         }
 
         public async Task InvokeAsync(HttpContext context, IUserRepository userRepository)
@@ -42,7 +46,7 @@ namespace OmniForge.Web.Middleware
 
                         if (user == null)
                         {
-                            Console.WriteLine($"[AuthMiddleware] User {userIdClaim.Value} not found in database.");
+                            _logger.LogWarning("[AuthMiddleware] User {UserId} not found in database.", LogSanitizer.Sanitize(userIdClaim.Value));
                             context.Response.StatusCode = 401;
                             await context.Response.WriteAsJsonAsync(new { error = "User not found" });
                             return;
@@ -53,7 +57,7 @@ namespace OmniForge.Web.Middleware
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[AuthMiddleware] Error retrieving user: {ex.Message}");
+                        _logger.LogError(ex, "[AuthMiddleware] Error retrieving user");
                         // Don't block request on DB error, but log it
                     }
                 }

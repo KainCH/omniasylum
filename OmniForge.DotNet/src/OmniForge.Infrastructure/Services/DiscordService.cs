@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -25,11 +26,11 @@ namespace OmniForge.Infrastructure.Services
         {
             if (string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                _logger.LogWarning("Attempted to send test notification but no webhook URL is configured for user {Username}", user.Username);
+                _logger.LogWarning("Attempted to send test notification but no webhook URL is configured for user {Username}", LogSanitizer.Sanitize(user.Username));
                 return;
             }
 
-            _logger.LogInformation("Sending Discord test notification for {Username}", user.Username);
+            _logger.LogInformation("Sending Discord test notification for {Username}", LogSanitizer.Sanitize(user.Username));
 
             var payload = CreateDiscordPayload(
                 "Discord Integration Test",
@@ -44,18 +45,18 @@ namespace OmniForge.Infrastructure.Services
         public async Task SendNotificationAsync(User user, string eventType, object data)
         {
             _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, WebhookUrl={WebhookUrl}",
-                user.Username, eventType, string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length))}...");
+                LogSanitizer.Sanitize(user.Username), LogSanitizer.Sanitize(eventType), string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{LogSanitizer.Sanitize(user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length)))}...");
 
             if (string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                _logger.LogWarning("⚠️ No Discord webhook URL configured for user {Username}", user.Username);
+                _logger.LogWarning("⚠️ No Discord webhook URL configured for user {Username}", LogSanitizer.Sanitize(user.Username));
                 return;
             }
 
             // Check if notification is enabled
             if (!IsNotificationEnabled(user, eventType))
             {
-                _logger.LogInformation("Discord notification disabled for {EventType} by user {Username}", eventType, user.Username);
+                _logger.LogInformation("Discord notification disabled for {EventType} by user {Username}", LogSanitizer.Sanitize(eventType), LogSanitizer.Sanitize(user.Username));
                 return;
             }
 
@@ -202,7 +203,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", webhookUrl);
+                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", LogSanitizer.Sanitize(webhookUrl));
                 return false;
             }
         }
@@ -214,14 +215,14 @@ namespace OmniForge.Infrastructure.Services
                 var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                _logger.LogInformation("Sending Discord webhook to {Url}", url);
+                _logger.LogInformation("Sending Discord webhook to {Url}", LogSanitizer.Sanitize(url));
 
                 var response = await _httpClient.PostAsync(url, content);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorText = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, errorText);
+                    _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, LogSanitizer.Sanitize(errorText));
 
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
