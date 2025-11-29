@@ -4,7 +4,8 @@ param(
     [string]$ImageTag = "$(Get-Date -Format 'yyyyMMdd-HHmmss')",
     [ValidateSet("dev", "prod")]
     [string]$Environment = "dev",
-    [switch]$FullDeploy  # Use this flag to run full Bicep deployment (creates/updates infrastructure)
+    [switch]$FullDeploy,  # Use this flag to run full Bicep deployment (creates/updates infrastructure)
+    [switch]$NoCache      # Use this flag to force a fresh Docker build without cache
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +47,12 @@ if ($FullDeploy) {
 
 # 1. Build Docker Image
 Write-Host "🔨 Building Docker image..." -ForegroundColor Cyan
-docker build -t $FullImageName -f ..\Dockerfile ..
+$dockerBuildArgs = @("-t", $FullImageName, "-f", "..\Dockerfile", "..")
+if ($NoCache) {
+    Write-Host "   Using --no-cache for fresh build" -ForegroundColor Yellow
+    $dockerBuildArgs = @("--no-cache") + $dockerBuildArgs
+}
+docker build @dockerBuildArgs
 
 # 2. Login to ACR
 Write-Host "🔑 Logging into ACR..." -ForegroundColor Cyan

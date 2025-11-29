@@ -72,17 +72,19 @@
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
                     </button>
-                    <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
-                    <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
+                    <button class="btn-custom btn-series" @onclick="() => showSeriesSaves = true">
+                        <i class="bi bi-save"></i> Series Saves
+                    </button>
+                    <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
-                    <button class="btn-custom btn-warning" @onclick="() => showAlertsManager = true" style="background-color: #fd7e14; color: white;">
+                    <button class="btn-custom btn-alerts" @onclick="() => showAlertsManager = true">
                         <i class="bi bi-bell-fill"></i> Alerts
                     </button>
-                    <button class="btn-custom btn-info" @onclick="() => showAlertEffects = true">
+                    <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
                         <i class="bi bi-magic"></i> Effects
                     </button>
-                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true" style="background-color: #5865F2; color: white;">
+                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true">
                         <i class="bi bi-discord"></i> Discord
                     </button>
                 </div>
@@ -162,6 +164,7 @@
                 <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
                 <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
+                <SeriesSaveManagerModal @bind-Show="showSeriesSaves" UserId="@TwitchUserId" OnSeriesLoaded="OnSeriesLoaded" />
             }
         </Authorized>
     </AuthorizeView>
@@ -179,6 +182,7 @@
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
     private bool showDiscordSettings = false;
+    private bool showSeriesSaves = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
     private Timer? _refreshTimer;
@@ -239,7 +243,7 @@
 
     private bool IsAnyModalOpen()
     {
-        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings;
+        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings || showSeriesSaves;
     }
 
     public void Dispose()
@@ -290,12 +294,13 @@
         }
     }
 
-    private async Task ExportData()
+    private async Task OnSeriesLoaded()
     {
+        // Reload counters after a series is loaded
         if (!string.IsNullOrEmpty(TwitchUserId))
         {
-            NavigationManager.NavigateTo($"/api/counters/export", true);
+            counter = await CounterRepository.GetCountersAsync(TwitchUserId);
+            StateHasChanged();
         }
-        await Task.CompletedTask;
     }
 }

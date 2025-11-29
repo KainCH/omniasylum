@@ -47,7 +47,13 @@ namespace OmniForge.Tests
         {
             var seriesList = new List<Series>
             {
-                new Series { Id = "s1", Name = "Run 1" }
+                new Series
+                {
+                    Id = "s1",
+                    Name = "Run 1",
+                    UserId = "12345",
+                    Snapshot = new Counter { Deaths = 10, Swears = 5, Screams = 3 }
+                }
             };
 
             _mockSeriesRepository.Setup(x => x.GetSeriesAsync("12345"))
@@ -68,7 +74,7 @@ namespace OmniForge.Tests
                 Description = "No hit run"
             };
 
-            var counters = new Counter { Deaths = 10 };
+            var counters = new Counter { Deaths = 10, Swears = 5, Screams = 2 };
             _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
                 .ReturnsAsync(counters);
 
@@ -78,15 +84,64 @@ namespace OmniForge.Tests
             _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.Is<Series>(s =>
                 s.Name == "Elden Ring" &&
                 s.UserId == "12345" &&
-                s.Snapshot.Deaths == 10)), Times.Once);
+                s.Snapshot.Deaths == 10 &&
+                s.Snapshot.Swears == 5 &&
+                s.Snapshot.Screams == 2)), Times.Once);
+        }
+
+        [Fact]
+        public async Task SaveSeries_ShouldReturnBadRequest_WhenSeriesNameEmpty()
+        {
+            var request = new SaveSeriesRequest
+            {
+                SeriesName = "",
+                Description = "Test"
+            };
+
+            var result = await _controller.SaveSeries(request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task SaveSeries_ShouldUpdateExistingSeries_WhenSeriesIdProvided()
+        {
+            var existingSeries = new Series
+            {
+                Id = "existing-id",
+                UserId = "12345",
+                Name = "Old Name",
+                Snapshot = new Counter { Deaths = 5 }
+            };
+
+            var request = new SaveSeriesRequest
+            {
+                SeriesId = "existing-id",
+                SeriesName = "Updated Name",
+                Description = "Updated description"
+            };
+
+            var counters = new Counter { Deaths = 20, Swears = 10 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(counters);
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", "existing-id"))
+                .ReturnsAsync(existingSeries);
+
+            var result = await _controller.SaveSeries(request);
+
+            Assert.IsType<OkObjectResult>(result);
+            _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.IsAny<Series>()), Times.Never);
+            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.Is<Series>(s =>
+                s.Name == "Updated Name" &&
+                s.Snapshot.Deaths == 20)), Times.Once);
         }
 
         [Fact]
         public async Task LoadSeries_ShouldReturnOk_WhenSeriesExists()
         {
             var seriesId = "s1";
-            var snapshot = new Counter { Deaths = 50 };
-            var series = new Series { Id = seriesId, Snapshot = snapshot };
+            var snapshot = new Counter { Deaths = 50, Swears = 25, Screams = 10 };
+            var series = new Series { Id = seriesId, Name = "Test Series", Snapshot = snapshot };
 
             _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
                 .ReturnsAsync(series);
@@ -95,7 +150,11 @@ namespace OmniForge.Tests
             var result = await _controller.LoadSeries(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Deaths == 50 && c.TwitchUserId == "12345")), Times.Once);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
+                c.Deaths == 50 &&
+                c.Swears == 25 &&
+                c.Screams == 10 &&
+                c.TwitchUserId == "12345")), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", It.IsAny<Counter>()), Times.Once);
         }
 
@@ -113,14 +172,82 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task DeleteSeries_ShouldReturnOk()
+        public async Task LoadSeries_ShouldReturnBadRequest_WhenSeriesIdEmpty()
+        {
+            var request = new LoadSeriesRequest { SeriesId = "" };
+            var result = await _controller.LoadSeries(request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateSeries_ShouldReturnOk_WhenSeriesExists()
         {
             var seriesId = "s1";
+            var existingSeries = new Series
+            {
+                Id = seriesId,
+                UserId = "12345",
+                Name = "Old Name",
+                Snapshot = new Counter { Deaths = 5 }
+            };
+
+            var counters = new Counter { Deaths = 30, Swears = 15, Screams = 8 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(counters);
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
+                .ReturnsAsync(existingSeries);
+
+            var request = new UpdateSeriesRequest
+            {
+                SeriesName = "New Name",
+                Description = "New description"
+            };
+
+            var result = await _controller.UpdateSeries(seriesId, request);
+
+            Assert.IsType<OkObjectResult>(result);
+            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.Is<Series>(s =>
+                s.Name == "New Name" &&
+                s.Snapshot.Deaths == 30)), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateSeries_ShouldReturnNotFound_WhenSeriesDoesNotExist()
+        {
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", "nonexistent"))
+                .ReturnsAsync((Series?)null);
+
+            var request = new UpdateSeriesRequest { SeriesName = "Test" };
+            var result = await _controller.UpdateSeries("nonexistent", request);
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task DeleteSeries_ShouldReturnOk_WhenSeriesExists()
+        {
+            var seriesId = "s1";
+            var existingSeries = new Series { Id = seriesId, UserId = "12345", Name = "Test" };
+
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
+                .ReturnsAsync(existingSeries);
 
             var result = await _controller.DeleteSeries(seriesId);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockSeriesRepository.Verify(x => x.DeleteSeriesAsync("12345", seriesId), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteSeries_ShouldReturnNotFound_WhenSeriesDoesNotExist()
+        {
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", "nonexistent"))
+                .ReturnsAsync((Series?)null);
+
+            var result = await _controller.DeleteSeries("nonexistent");
+
+            Assert.IsType<NotFoundObjectResult>(result);
         }
     }
 }
