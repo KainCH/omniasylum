@@ -134,51 +134,46 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenNoToken()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "";
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("");
             Assert.IsType<UnauthorizedObjectResult>(result);
         }
 
         [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenInvalidToken()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "Bearer invalid";
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("invalid")).Returns((ClaimsPrincipal?)null);
 
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("Bearer invalid");
             Assert.IsType<UnauthorizedObjectResult>(result);
         }
 
         [Fact]
         public async Task Refresh_ShouldReturnNotFound_WhenUserNotFound()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "Bearer token";
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
 
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("Bearer token");
             Assert.IsType<NotFoundObjectResult>(result);
         }
 
         [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTokenValid()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "Bearer token";
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddHours(2) };
 
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
 
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("Bearer token");
             var okResult = Assert.IsType<OkObjectResult>(result);
         }
 
         [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenTwitchRefreshFails()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "Bearer token";
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(10), RefreshToken = "refresh" };
 
@@ -186,14 +181,13 @@ namespace OmniForge.Tests
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
             _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync("refresh")).ReturnsAsync((TwitchTokenResponse?)null);
 
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("Bearer token");
             Assert.IsType<UnauthorizedObjectResult>(result);
         }
 
         [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTwitchRefreshSuccess()
         {
-            _controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = "Bearer token";
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(10), RefreshToken = "refresh" };
             var newTokens = new TwitchTokenResponse { AccessToken = "new", RefreshToken = "new_refresh", ExpiresIn = 3600 };
@@ -203,7 +197,7 @@ namespace OmniForge.Tests
             _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync("refresh")).ReturnsAsync(newTokens);
             _mockJwtService.Setup(x => x.GenerateToken(user)).Returns("new_jwt");
 
-            var result = await _controller.Refresh();
+            var result = await _controller.Refresh("Bearer token");
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.AccessToken == "new")), Times.Once);
         }

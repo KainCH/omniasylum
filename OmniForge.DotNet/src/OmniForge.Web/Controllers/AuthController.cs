@@ -135,9 +135,8 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("refresh")]
-        public async Task<IActionResult> Refresh()
+        public async Task<IActionResult> Refresh([FromHeader(Name = "Authorization")] string authHeader)
         {
-            var authHeader = Request.Headers["Authorization"].ToString();
             if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
             {
                 return Unauthorized("No token provided");
