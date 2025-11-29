@@ -72,19 +72,19 @@
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
                     </button>
-                    <button class="btn-custom btn-secondary" @onclick="() => showSeriesSaves = true" style="background-color: #6c757d; color: white;">
+                    <button class="btn-custom btn-series" @onclick="() => showSeriesSaves = true">
                         <i class="bi bi-save"></i> Series Saves
                     </button>
-                    <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
+                    <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
-                    <button class="btn-custom btn-warning" @onclick="() => showAlertsManager = true" style="background-color: #fd7e14; color: white;">
+                    <button class="btn-custom btn-alerts" @onclick="() => showAlertsManager = true">
                         <i class="bi bi-bell-fill"></i> Alerts
                     </button>
-                    <button class="btn-custom btn-info" @onclick="() => showAlertEffects = true">
+                    <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
                         <i class="bi bi-magic"></i> Effects
                     </button>
-                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true" style="background-color: #5865F2; color: white;">
+                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true">
                         <i class="bi bi-discord"></i> Discord
                     </button>
                 </div>

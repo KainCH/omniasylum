@@ -322,6 +322,85 @@ body {
   color: white;
 }
 
+/* Dashboard Button Colors */
+.btn-series {
+  background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+  color: white;
+}
+
+.btn-series:hover {
+  background: linear-gradient(135deg, #00a187 0%, #00b8b5 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 184, 148, 0.4);
+}
+
+.btn-settings {
+  background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+  color: white;
+}
+
+.btn-settings:hover {
+  background: linear-gradient(135deg, #5b4cdb 0%, #918af5 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.4);
+}
+
+.btn-alerts {
+  background: linear-gradient(135deg, #fd7e14 0%, #ffc107 100%);
+  color: white;
+}
+
+.btn-alerts:hover {
+  background: linear-gradient(135deg, #e67211 0%, #e6ad06 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(253, 126, 20, 0.4);
+}
+
+.btn-effects {
+  background: linear-gradient(135deg, #e84393 0%, #fd79a8 100%);
+  color: white;
+}
+
+.btn-effects:hover {
+  background: linear-gradient(135deg, #d63884 0%, #fc6b9b 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(232, 67, 147, 0.4);
+}
+
+.btn-discord {
+  background-color: #5865F2;
+  color: white;
+}
+
+.btn-discord:hover {
+  background-color: #4752c4;
+  color: white;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #00b894 0%, #55efc4 100%);
+  color: white;
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #00a187 0%, #4de0b5 100%);
+  color: white;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #d63031 0%, #ff7675 100%);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: linear-gradient(135deg, #c0392b 0%, #ff6b6b 100%);
+  color: white;
+}
+
 .stats-grid {
   background: #f8f9fa;
   border-radius: 8px;
