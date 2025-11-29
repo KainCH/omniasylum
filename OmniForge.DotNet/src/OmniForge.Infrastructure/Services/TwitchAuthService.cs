@@ -28,6 +28,9 @@ namespace OmniForge.Infrastructure.Services
             // See: https://dev.twitch.tv/docs/authentication/scopes/
             var scopes = new List<string>
             {
+                // OIDC
+                "openid",
+
                 // User profile
                 "user:read:email",
 
@@ -87,6 +90,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 AccessToken = tokenData.AccessToken,
                 RefreshToken = tokenData.RefreshToken,
+                IdToken = tokenData.IdToken,
                 ExpiresIn = tokenData.ExpiresIn,
                 TokenType = tokenData.TokenType
             };
@@ -149,6 +153,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 AccessToken = tokenData.AccessToken,
                 RefreshToken = tokenData.RefreshToken,
+                IdToken = tokenData.IdToken,
                 ExpiresIn = tokenData.ExpiresIn,
                 TokenType = tokenData.TokenType
             };
@@ -161,6 +166,8 @@ namespace OmniForge.Infrastructure.Services
             public string AccessToken { get; set; } = "";
             [JsonPropertyName("refresh_token")]
             public string RefreshToken { get; set; } = "";
+            [JsonPropertyName("id_token")]
+            public string IdToken { get; set; } = "";
             [JsonPropertyName("expires_in")]
             public int ExpiresIn { get; set; }
             [JsonPropertyName("token_type")]

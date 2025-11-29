@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using System.Security.Claims;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 
 namespace OmniForge.Web.Controllers
 {
@@ -65,7 +67,44 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Failed to exchange authorization code");
             }
 
-            var userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
+            TwitchUserInfo? userInfo = null;
+
+            // Try to parse ID Token if available (OIDC)
+            if (!string.IsNullOrEmpty(tokenResponse.IdToken))
+            {
+                try
+                {
+                    var handler = new JwtSecurityTokenHandler();
+                    if (handler.CanReadToken(tokenResponse.IdToken))
+                    {
+                        var jwt = handler.ReadJwtToken(tokenResponse.IdToken);
+                        var sub = jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+                        var preferredUsername = jwt.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+                        
+                        if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(preferredUsername))
+                        {
+                            userInfo = new TwitchUserInfo
+                            {
+                                Id = sub,
+                                Login = preferredUsername, // Note: OIDC 'preferred_username' is usually the display name, but often matches login
+                                DisplayName = preferredUsername,
+                                Email = jwt.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? "",
+                                ProfileImageUrl = jwt.Claims.FirstOrDefault(c => c.Type == "picture")?.Value ?? ""
+                            };
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse ID Token");
+                }
+            }
+
+            // Fallback to Helix API if OIDC failed or missing
+            if (userInfo == null)
+            {
+                userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
+            }
 
             if (userInfo == null)
             {
