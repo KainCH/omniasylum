@@ -20,7 +20,7 @@ COPY . .
 WORKDIR "/src/src/OmniForge.Web"
 
 # This stage is used to publish the service project to be copied to the final stage
-# Skip the build stage and go straight to publish to ensure CSS and DLL are generated together
+# Publish directly (without separate build step) ensures Blazor CSS and DLL are generated together
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./OmniForge.Web.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
