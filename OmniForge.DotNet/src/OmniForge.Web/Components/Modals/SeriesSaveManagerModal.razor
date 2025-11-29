@@ -1,9 +1,10 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
-@using System.Net.Http.Json
 @using System.Text.Json
 @using System.Text.Json.Serialization
-@inject HttpClient Http
+@inject ISeriesRepository SeriesRepository
+@inject ICounterRepository CounterRepository
+@inject IOverlayNotifier OverlayNotifier
 
 @if (Show)
 {
@@ -91,13 +92,13 @@
                         {
                             <h6 class="mb-3"><i class="bi bi-collection me-2"></i>Saved Series (@seriesList.Count)</h6>
                             <div class="list-group">
-                                @foreach (var series in seriesList.OrderByDescending(s => s.SavedAt))
+                                @foreach (var series in seriesList.OrderByDescending(s => s.LastUpdated))
                                 {
                                     <div class="list-group-item list-group-item-action">
                                         <div class="d-flex w-100 justify-content-between align-items-start">
                                             <div class="flex-grow-1">
                                                 <h6 class="mb-1">
-                                                    @series.SeriesName
+                                                    @series.Name
                                                     @if (series.IsActive)
                                                     {
                                                         <span class="badge bg-primary ms-2">Active</span>
@@ -108,16 +109,16 @@
                                                     <p class="mb-1 text-muted small">@series.Description</p>
                                                 }
                                                 <div class="d-flex gap-3 mt-2">
-                                                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Deaths: @series.Deaths</span>
-                                                    <span class="badge bg-warning text-dark"><i class="bi bi-chat-dots me-1"></i>Swears: @series.Swears</span>
-                                                    <span class="badge bg-info text-dark"><i class="bi bi-emoji-dizzy me-1"></i>Screams: @series.Screams</span>
-                                                    @if (series.Bits > 0)
+                                                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Deaths: @(series.Snapshot?.Deaths ?? 0)</span>
+                                                    <span class="badge bg-warning text-dark"><i class="bi bi-chat-dots me-1"></i>Swears: @(series.Snapshot?.Swears ?? 0)</span>
+                                                    <span class="badge bg-info text-dark"><i class="bi bi-emoji-dizzy me-1"></i>Screams: @(series.Snapshot?.Screams ?? 0)</span>
+                                                    @if ((series.Snapshot?.Bits ?? 0) > 0)
                                                     {
-                                                        <span class="badge bg-purple" style="background-color: #9147ff;"><i class="bi bi-gem me-1"></i>Bits: @series.Bits</span>
+                                                        <span class="badge bg-purple" style="background-color: #9147ff;"><i class="bi bi-gem me-1"></i>Bits: @(series.Snapshot?.Bits ?? 0)</span>
                                                     }
                                                 </div>
                                                 <small class="text-muted">
-                                                    Saved: @series.SavedAt.ToLocalTime().ToString("g")
+                                                    Saved: @series.LastUpdated.ToLocalTime().ToString("g")
                                                 </small>
                                             </div>
                                             <div class="btn-group-vertical btn-group-sm">
@@ -156,15 +157,15 @@
                     <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Load</h5>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to load <strong>"@selectedSeries.SeriesName"</strong>?</p>
+                    <p>Are you sure you want to load <strong>"@selectedSeries.Name"</strong>?</p>
                     <p class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>This will <strong>replace your current counter values</strong> with the saved values:</p>
                     <ul>
-                        <li>Deaths: @selectedSeries.Deaths</li>
-                        <li>Swears: @selectedSeries.Swears</li>
-                        <li>Screams: @selectedSeries.Screams</li>
-                        @if (selectedSeries.Bits > 0)
+                        <li>Deaths: @(selectedSeries.Snapshot?.Deaths ?? 0)</li>
+                        <li>Swears: @(selectedSeries.Snapshot?.Swears ?? 0)</li>
+                        <li>Screams: @(selectedSeries.Snapshot?.Screams ?? 0)</li>
+                        @if ((selectedSeries.Snapshot?.Bits ?? 0) > 0)
                         {
-                            <li>Bits: @selectedSeries.Bits</li>
+                            <li>Bits: @(selectedSeries.Snapshot?.Bits ?? 0)</li>
                         }
                     </ul>
                 </div>
@@ -193,16 +194,16 @@
                     <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Overwrite</h5>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to overwrite <strong>"@selectedSeries.SeriesName"</strong>?</p>
+                    <p>Are you sure you want to overwrite <strong>"@selectedSeries.Name"</strong>?</p>
                     <p class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>This will <strong>replace the saved values</strong> with your current counter values.</p>
                     <p>Current saved values that will be lost:</p>
                     <ul>
-                        <li>Deaths: @selectedSeries.Deaths</li>
-                        <li>Swears: @selectedSeries.Swears</li>
-                        <li>Screams: @selectedSeries.Screams</li>
-                        @if (selectedSeries.Bits > 0)
+                        <li>Deaths: @(selectedSeries.Snapshot?.Deaths ?? 0)</li>
+                        <li>Swears: @(selectedSeries.Snapshot?.Swears ?? 0)</li>
+                        <li>Screams: @(selectedSeries.Snapshot?.Screams ?? 0)</li>
+                        @if ((selectedSeries.Snapshot?.Bits ?? 0) > 0)
                         {
-                            <li>Bits: @selectedSeries.Bits</li>
+                            <li>Bits: @(selectedSeries.Snapshot?.Bits ?? 0)</li>
                         }
                     </ul>
                 </div>
@@ -231,15 +232,15 @@
                     <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to delete <strong>"@selectedSeries.SeriesName"</strong>?</p>
+                    <p>Are you sure you want to delete <strong>"@selectedSeries.Name"</strong>?</p>
                     <p class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>This action <strong>cannot be undone</strong>. The following data will be permanently lost:</p>
                     <ul>
-                        <li>Deaths: @selectedSeries.Deaths</li>
-                        <li>Swears: @selectedSeries.Swears</li>
-                        <li>Screams: @selectedSeries.Screams</li>
-                        @if (selectedSeries.Bits > 0)
+                        <li>Deaths: @(selectedSeries.Snapshot?.Deaths ?? 0)</li>
+                        <li>Swears: @(selectedSeries.Snapshot?.Swears ?? 0)</li>
+                        <li>Screams: @(selectedSeries.Snapshot?.Screams ?? 0)</li>
+                        @if ((selectedSeries.Snapshot?.Bits ?? 0) > 0)
                         {
-                            <li>Bits: @selectedSeries.Bits</li>
+                            <li>Bits: @(selectedSeries.Snapshot?.Bits ?? 0)</li>
                         }
                     </ul>
                 </div>
@@ -264,7 +265,7 @@
     [Parameter] public string UserId { get; set; } = "";
     [Parameter] public EventCallback OnSeriesLoaded { get; set; }
 
-    private List<SeriesSaveDto> seriesList = new();
+    private List<Series> seriesList = new();
     private bool isLoading = false;
     private bool isSaving = false;
     private bool isProcessing = false;
@@ -279,7 +280,7 @@
     private bool showLoadConfirm = false;
     private bool showOverwriteConfirm = false;
     private bool showDeleteConfirm = false;
-    private SeriesSaveDto? selectedSeries = null;
+    private Series? selectedSeries = null;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -295,13 +296,13 @@
         errorMessage = null;
         try
         {
-            var response = await Http.GetFromJsonAsync<SeriesListResponse>("/api/counters/series/list");
-            seriesList = response?.Saves?.ToList() ?? new List<SeriesSaveDto>();
+            var series = await SeriesRepository.GetSeriesAsync(UserId);
+            seriesList = series.ToList();
         }
         catch (Exception ex)
         {
             errorMessage = $"Failed to load series: {ex.Message}";
-            seriesList = new List<SeriesSaveDto>();
+            seriesList = new List<Series>();
         }
         finally
         {
@@ -319,21 +320,24 @@
 
         try
         {
-            var request = new { seriesName = newSeriesName.Trim(), description = newSeriesDescription?.Trim() };
-            var response = await Http.PostAsJsonAsync("/api/counters/series/save", request);
+            var currentCounters = await CounterRepository.GetCountersAsync(UserId);
+            var series = new Series
+            {
+                UserId = UserId,
+                Name = newSeriesName.Trim(),
+                Description = newSeriesDescription?.Trim() ?? string.Empty,
+                Snapshot = currentCounters ?? new Counter { TwitchUserId = UserId },
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow,
+                IsActive = false
+            };
 
-            if (response.IsSuccessStatusCode)
-            {
-                successMessage = $"Series '{newSeriesName}' saved successfully!";
-                newSeriesName = "";
-                newSeriesDescription = "";
-                await LoadSeriesList();
-            }
-            else
-            {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                errorMessage = error?.Error ?? "Failed to save series";
-            }
+            await SeriesRepository.CreateSeriesAsync(series);
+
+            successMessage = $"Series '{newSeriesName}' saved successfully!";
+            newSeriesName = "";
+            newSeriesDescription = "";
+            await LoadSeriesList();
         }
         catch (Exception ex)
         {
@@ -345,19 +349,19 @@
         }
     }
 
-    private void ShowLoadConfirmation(SeriesSaveDto series)
+    private void ShowLoadConfirmation(Series series)
     {
         selectedSeries = series;
         showLoadConfirm = true;
     }
 
-    private void ShowOverwriteConfirmation(SeriesSaveDto series)
+    private void ShowOverwriteConfirmation(Series series)
     {
         selectedSeries = series;
         showOverwriteConfirm = true;
     }
 
-    private void ShowDeleteConfirmation(SeriesSaveDto series)
+    private void ShowDeleteConfirmation(Series series)
     {
         selectedSeries = series;
         showDeleteConfirm = true;
@@ -381,21 +385,35 @@
 
         try
         {
-            var request = new { seriesId = selectedSeries.SeriesId };
-            var response = await Http.PostAsJsonAsync("/api/counters/series/load", request);
+            // Create a new counter with the snapshot values
+            var restoredCounter = new Counter
+            {
+                TwitchUserId = UserId,
+                Deaths = selectedSeries.Snapshot.Deaths,
+                Swears = selectedSeries.Snapshot.Swears,
+                Screams = selectedSeries.Snapshot.Screams,
+                Bits = selectedSeries.Snapshot.Bits,
+                CustomCounters = selectedSeries.Snapshot.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                LastUpdated = DateTimeOffset.UtcNow,
+                StreamStarted = null, // Don't restore stream state
+                LastNotifiedStreamId = null
+            };
 
-            if (response.IsSuccessStatusCode)
-            {
-                successMessage = $"Loaded '{selectedSeries.SeriesName}' successfully! Counters updated.";
-                CancelConfirmation();
-                await LoadSeriesList();
-                await OnSeriesLoaded.InvokeAsync();
-            }
-            else
-            {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                errorMessage = error?.Error ?? "Failed to load series";
-            }
+            // Save the restored counters
+            await CounterRepository.SaveCountersAsync(restoredCounter);
+
+            // Notify overlay
+            await OverlayNotifier.NotifyCounterUpdateAsync(UserId, restoredCounter);
+
+            // Mark series as active
+            selectedSeries.IsActive = true;
+            selectedSeries.LastUpdated = DateTimeOffset.UtcNow;
+            await SeriesRepository.UpdateSeriesAsync(selectedSeries);
+
+            successMessage = $"Loaded '{selectedSeries.Name}' successfully! Counters updated.";
+            CancelConfirmation();
+            await LoadSeriesList();
+            await OnSeriesLoaded.InvokeAsync();
         }
         catch (Exception ex)
         {
@@ -417,20 +435,16 @@
 
         try
         {
-            var request = new { seriesName = selectedSeries.SeriesName, description = selectedSeries.Description };
-            var response = await Http.PutAsJsonAsync($"/api/counters/series/{selectedSeries.SeriesId}", request);
+            var currentCounters = await CounterRepository.GetCountersAsync(UserId);
 
-            if (response.IsSuccessStatusCode)
-            {
-                successMessage = $"'{selectedSeries.SeriesName}' updated with current counter values!";
-                CancelConfirmation();
-                await LoadSeriesList();
-            }
-            else
-            {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                errorMessage = error?.Error ?? "Failed to update series";
-            }
+            selectedSeries.Snapshot = currentCounters ?? new Counter { TwitchUserId = UserId };
+            selectedSeries.LastUpdated = DateTimeOffset.UtcNow;
+
+            await SeriesRepository.UpdateSeriesAsync(selectedSeries);
+
+            successMessage = $"'{selectedSeries.Name}' updated with current counter values!";
+            CancelConfirmation();
+            await LoadSeriesList();
         }
         catch (Exception ex)
         {
@@ -452,19 +466,11 @@
 
         try
         {
-            var response = await Http.DeleteAsync($"/api/counters/series/{selectedSeries.SeriesId}");
+            await SeriesRepository.DeleteSeriesAsync(UserId, selectedSeries.Id);
 
-            if (response.IsSuccessStatusCode)
-            {
-                successMessage = $"'{selectedSeries.SeriesName}' deleted successfully.";
-                CancelConfirmation();
-                await LoadSeriesList();
-            }
-            else
-            {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                errorMessage = error?.Error ?? "Failed to delete series";
-            }
+            successMessage = $"'{selectedSeries.Name}' deleted successfully.";
+            CancelConfirmation();
+            await LoadSeriesList();
         }
         catch (Exception ex)
         {
@@ -483,54 +489,5 @@
         errorMessage = null;
         Show = false;
         await ShowChanged.InvokeAsync(false);
-    }
-
-    // DTOs for API communication
-    private class SeriesListResponse
-    {
-        [JsonPropertyName("count")]
-        public int Count { get; set; }
-
-        [JsonPropertyName("saves")]
-        public IEnumerable<SeriesSaveDto> Saves { get; set; } = new List<SeriesSaveDto>();
-    }
-
-    private class SeriesSaveDto
-    {
-        [JsonPropertyName("seriesId")]
-        public string SeriesId { get; set; } = "";
-
-        [JsonPropertyName("seriesName")]
-        public string SeriesName { get; set; } = "";
-
-        [JsonPropertyName("description")]
-        public string Description { get; set; } = "";
-
-        [JsonPropertyName("deaths")]
-        public int Deaths { get; set; }
-
-        [JsonPropertyName("swears")]
-        public int Swears { get; set; }
-
-        [JsonPropertyName("screams")]
-        public int Screams { get; set; }
-
-        [JsonPropertyName("bits")]
-        public int Bits { get; set; }
-
-        [JsonPropertyName("savedAt")]
-        public DateTimeOffset SavedAt { get; set; }
-
-        [JsonPropertyName("createdAt")]
-        public DateTimeOffset CreatedAt { get; set; }
-
-        [JsonPropertyName("isActive")]
-        public bool IsActive { get; set; }
-    }
-
-    private class ErrorResponse
-    {
-        [JsonPropertyName("error")]
-        public string? Error { get; set; }
     }
 }

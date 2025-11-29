@@ -65,22 +65,24 @@
         </div>
 
         <!-- Overlay Designer Card -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100 shadow-sm hover-card">
-                <div class="card-body text-center p-5">
-                    <div class="mb-4">
-                        <i class="bi bi-palette-fill text-success" style="font-size: 4rem;"></i>
+        <AuthorizeView Roles="admin">
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm hover-card">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="bi bi-palette-fill text-success" style="font-size: 4rem;"></i>
+                        </div>
+                        <h3 class="card-title">Overlay Designer</h3>
+                        <p class="card-text text-muted">
+                            Customize the look and feel of your stream overlay. Change colors, fonts, and more.
+                        </p>
+                        <a href="template-designer" class="btn btn-success btn-lg mt-3 stretched-link">
+                            Open Designer
+                        </a>
                     </div>
-                    <h3 class="card-title">Overlay Designer</h3>
-                    <p class="card-text text-muted">
-                        Customize the look and feel of your stream overlay. Change colors, fonts, and more.
-                    </p>
-                    <a href="template-designer" class="btn btn-success btn-lg mt-3 stretched-link">
-                        Open Designer
-                    </a>
                 </div>
             </div>
-        </div>
+        </AuthorizeView>
 
         <!-- Discord Settings Card -->
         <div class="col-md-6 col-lg-4">

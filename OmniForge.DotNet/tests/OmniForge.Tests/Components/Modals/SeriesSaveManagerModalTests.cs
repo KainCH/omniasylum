@@ -1,12 +1,12 @@
 using System;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text.Json;
-using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using OmniForge.Core.Entities;
+using OmniForge.Core.Interfaces;
 using OmniForge.Web.Components.Modals;
 using Xunit;
 
@@ -16,25 +16,30 @@ namespace OmniForge.Tests.Components.Modals
 {
     public class SeriesSaveManagerModalTests : TestContext
     {
-        private readonly MockHttpMessageHandler _mockHandler;
-        private readonly HttpClient _httpClient;
+        private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<ICounterRepository> _mockCounterRepository;
+        private readonly Mock<ISeriesRepository> _mockSeriesRepository;
 
         public SeriesSaveManagerModalTests()
         {
-            _mockHandler = new MockHttpMessageHandler();
-            _httpClient = new HttpClient(_mockHandler) { BaseAddress = new Uri("http://localhost") };
-            Services.AddSingleton(_httpClient);
+            _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockCounterRepository = new Mock<ICounterRepository>();
+            _mockSeriesRepository = new Mock<ISeriesRepository>();
+
+            Services.AddSingleton(_mockOverlayNotifier.Object);
+            Services.AddSingleton(_mockCounterRepository.Object);
+            Services.AddSingleton(_mockSeriesRepository.Object);
+
+            // Default setup
+            _mockSeriesRepository.Setup(x => x.GetSeriesAsync(It.IsAny<string>()))
+                .ReturnsAsync(new List<Series>());
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(It.IsAny<string>()))
+                .ReturnsAsync(new Counter());
         }
 
         [Fact]
         public void Modal_ShouldNotRender_WhenShowIsFalse()
         {
-            // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
-
             // Act
             var cut = Render(b =>
             {
@@ -50,12 +55,6 @@ namespace OmniForge.Tests.Components.Modals
         [Fact]
         public void Modal_ShouldRender_WhenShowIsTrue()
         {
-            // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
-
             // Act
             var cut = Render(b =>
             {
@@ -73,12 +72,6 @@ namespace OmniForge.Tests.Components.Modals
         [Fact]
         public void Modal_ShouldClose_WhenCloseButtonClicked()
         {
-            // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
-
             var show = true;
             var cut = Render(b =>
             {
@@ -100,23 +93,17 @@ namespace OmniForge.Tests.Components.Modals
         }
 
         [Fact]
-        public async Task Modal_ShouldLoadSeries_WhenShown()
+        public void Modal_ShouldLoadSeries_WhenShown()
         {
             // Arrange
-            var response = new
+            var seriesList = new List<Series>
             {
-                count = 2,
-                saves = new[]
-                {
-                    new { seriesId = "1", seriesName = "Dark Souls Run", description = "", deaths = 452, swears = 120, screams = 30, bits = 0, savedAt = DateTimeOffset.UtcNow, createdAt = DateTimeOffset.UtcNow, isActive = false },
-                    new { seriesId = "2", seriesName = "Elden Ring", description = "First playthrough", deaths = 890, swears = 450, screams = 100, bits = 500, savedAt = DateTimeOffset.UtcNow, createdAt = DateTimeOffset.UtcNow, isActive = true }
-                }
+                new Series { Id = "1", Name = "Dark Souls Run", Description = "", Snapshot = new Counter { Deaths = 452, Swears = 120, Screams = 30 }, LastUpdated = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow, IsActive = false },
+                new Series { Id = "2", Name = "Elden Ring", Description = "First playthrough", Snapshot = new Counter { Deaths = 890, Swears = 450, Screams = 100, Bits = 500 }, LastUpdated = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow, IsActive = true }
             };
 
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(response), System.Text.Encoding.UTF8, "application/json")
-            };
+            _mockSeriesRepository.Setup(x => x.GetSeriesAsync("123"))
+                .ReturnsAsync(seriesList);
 
             // Act
             var cut = Render(b =>
@@ -127,37 +114,18 @@ namespace OmniForge.Tests.Components.Modals
                 b.CloseComponent();
             });
 
-            // Wait for async loading to complete - the component shows spinner while loading
-            await Task.Delay(100); // Give time for initial render
+            // Wait for async loading to complete
             cut.WaitForState(() => !cut.Markup.Contains("spinner-border"), TimeSpan.FromSeconds(3));
 
             // Assert
             var markup = cut.Markup;
-            var hasItems = cut.FindAll(".list-group-item").Count > 0;
-
-            // If no items, verify we at least got past loading state
-            if (!hasItems)
-            {
-                // Check if there's an error message or empty state
-                Assert.True(markup.Contains("No saved series yet") || markup.Contains("Dark Souls Run") || markup.Contains("Failed"),
-                    $"Expected series list or empty state, got: {markup.Substring(0, Math.Min(500, markup.Length))}");
-            }
-            else
-            {
-                Assert.Contains("Dark Souls Run", markup);
-                Assert.Contains("Elden Ring", markup);
-            }
+            Assert.Contains("Dark Souls Run", markup);
+            Assert.Contains("Elden Ring", markup);
         }
 
         [Fact]
         public void Modal_ShouldShowCreateForm()
         {
-            // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
-
             // Act
             var cut = Render(b =>
             {
@@ -179,12 +147,6 @@ namespace OmniForge.Tests.Components.Modals
         [Fact]
         public void Modal_ShouldDisableSaveButton_WhenNameIsEmpty()
         {
-            // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
-
             // Act
             var cut = Render(b =>
             {
@@ -206,10 +168,8 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldShowEmptyState_WhenNoSaves()
         {
             // Arrange
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"count\":0,\"saves\":[]}", System.Text.Encoding.UTF8, "application/json")
-            };
+            _mockSeriesRepository.Setup(x => x.GetSeriesAsync("123"))
+                .ReturnsAsync(new List<Series>());
 
             // Act
             var cut = Render(b =>
@@ -231,19 +191,13 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldShowActiveBadge_WhenSeriesIsActive()
         {
             // Arrange
-            var response = new
+            var seriesList = new List<Series>
             {
-                count = 1,
-                saves = new[]
-                {
-                    new { seriesId = "1", seriesName = "Dark Souls Run", description = "", deaths = 452, swears = 120, screams = 30, bits = 0, savedAt = DateTimeOffset.UtcNow, createdAt = DateTimeOffset.UtcNow, isActive = true }
-                }
+                new Series { Id = "1", Name = "Dark Souls Run", Snapshot = new Counter { Deaths = 452 }, LastUpdated = DateTimeOffset.UtcNow, IsActive = true }
             };
 
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(response), System.Text.Encoding.UTF8, "application/json")
-            };
+            _mockSeriesRepository.Setup(x => x.GetSeriesAsync("123"))
+                .ReturnsAsync(seriesList);
 
             // Act
             var cut = Render(b =>
@@ -266,19 +220,13 @@ namespace OmniForge.Tests.Components.Modals
         public void Modal_ShouldShowActionButtons_ForEachSeries()
         {
             // Arrange
-            var response = new
+            var seriesList = new List<Series>
             {
-                count = 1,
-                saves = new[]
-                {
-                    new { seriesId = "1", seriesName = "Dark Souls Run", description = "", deaths = 452, swears = 120, screams = 30, bits = 0, savedAt = DateTimeOffset.UtcNow, createdAt = DateTimeOffset.UtcNow, isActive = false }
-                }
+                new Series { Id = "1", Name = "Dark Souls Run", Snapshot = new Counter { Deaths = 452 }, LastUpdated = DateTimeOffset.UtcNow, IsActive = false }
             };
 
-            _mockHandler.ResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(response), System.Text.Encoding.UTF8, "application/json")
-            };
+            _mockSeriesRepository.Setup(x => x.GetSeriesAsync("123"))
+                .ReturnsAsync(seriesList);
 
             // Act
             var cut = Render(b =>
@@ -296,16 +244,6 @@ namespace OmniForge.Tests.Components.Modals
             Assert.NotNull(cut.Find(".btn-outline-primary")); // Load
             Assert.NotNull(cut.Find(".btn-outline-warning")); // Overwrite
             Assert.NotNull(cut.Find(".btn-outline-danger"));  // Delete
-        }
-
-        private class MockHttpMessageHandler : HttpMessageHandler
-        {
-            public Func<HttpRequestMessage, HttpResponseMessage>? ResponseFactory { get; set; }
-
-            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            {
-                return Task.FromResult(ResponseFactory?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.NotFound));
-            }
         }
     }
 }

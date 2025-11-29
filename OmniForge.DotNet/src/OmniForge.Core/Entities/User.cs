@@ -94,6 +94,11 @@ namespace OmniForge.Core.Entities
         public string BackgroundColor { get; set; } = "rgba(0, 0, 0, 0.7)";
         public string BorderColor { get; set; } = "#d4af37";
         public string TextColor { get; set; } = "white";
+        public string AccentColor { get; set; } = "#ff0000";
+        public string FontFamily { get; set; } = "'Segoe UI', sans-serif";
+        public int BorderRadius { get; set; } = 8;
+        public int BorderWidth { get; set; } = 2;
+        public float Opacity { get; set; } = 0.8f;
     }
 
     public class OverlayAnimations

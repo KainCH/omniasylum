@@ -5,21 +5,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/lib/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap-icons/bootstrap-icons.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["OmniForge.Web.styles.css"]" />
     <ImportMap />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="icon" type="image/png" href="@Assets["favicon.png"]" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 
 <body>
     <Routes @rendermode="InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
-    <script src="js/asylum-effects.js"></script>
-    <script src="js/notification-audio.js"></script>
-    <script src="js/overlay-interop.js"></script>
+    <script src="@Assets["js/asylum-effects.js"]"></script>
+    <script src="@Assets["js/notification-audio.js"]"></script>
+    <script src="@Assets["js/overlay-interop.js"]"></script>
     <script>
         window.toggleDarkMode = (isDark) => {
             if (isDark) {
