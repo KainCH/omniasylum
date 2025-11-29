@@ -333,6 +333,12 @@
       }
 
       function createCounterItem(container, label, value, icon) {
+        // Validate that value is numeric (CWE-20: Improper Input Validation)
+        if (value === null || value === undefined || isNaN(Number(value))) {
+          console.warn(`Invalid non-numeric value received for ${label}:`, value);
+          value = 0;
+        }
+
         const div = document.createElement('div');
         div.className = 'counter-item';
 
