@@ -9,17 +9,22 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 
+using Microsoft.Extensions.Logging; // Added
+using OmniForge.Core.Utilities; // Added
+
 namespace OmniForge.Infrastructure.Services
 {
     public class TwitchAuthService : ITwitchAuthService
     {
         private readonly HttpClient _httpClient;
         private readonly TwitchSettings _settings;
+        private readonly ILogger<TwitchAuthService> _logger; // Added
 
-        public TwitchAuthService(HttpClient httpClient, IOptions<TwitchSettings> settings)
+        public TwitchAuthService(HttpClient httpClient, IOptions<TwitchSettings> settings, ILogger<TwitchAuthService> logger) // Updated
         {
             _httpClient = httpClient;
             _settings = settings.Value;
+            _logger = logger;
         }
 
         public string GetAuthorizationUrl(string redirectUri)
@@ -140,6 +145,8 @@ namespace OmniForge.Infrastructure.Services
 
             if (!response.IsSuccessStatusCode)
             {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to refresh Twitch token. Status: {StatusCode}, Response: {Response}", response.StatusCode, LogSanitizer.Sanitize(errorContent));
                 return null;
             }
 
