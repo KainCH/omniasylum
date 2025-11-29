@@ -72,7 +72,6 @@
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
                     </button>
-                    <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
                     <button class="btn-custom btn-secondary" @onclick="() => showSeriesSaves = true" style="background-color: #6c757d; color: white;">
                         <i class="bi bi-save"></i> Series Saves
                     </button>
@@ -303,14 +302,5 @@
             counter = await CounterRepository.GetCountersAsync(TwitchUserId);
             StateHasChanged();
         }
-    }
-
-    private async Task ExportData()
-    {
-        if (!string.IsNullOrEmpty(TwitchUserId))
-        {
-            NavigationManager.NavigateTo($"/api/counters/export", true);
-        }
-        await Task.CompletedTask;
     }
 }
