@@ -73,6 +73,9 @@
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
                     </button>
                     <button class="btn-custom btn-export" @onclick="ExportData">Export Data</button>
+                    <button class="btn-custom btn-secondary" @onclick="() => showSeriesSaves = true" style="background-color: #6c757d; color: white;">
+                        <i class="bi bi-save"></i> Series Saves
+                    </button>
                     <button class="btn-custom btn-primary" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
@@ -162,6 +165,7 @@
                 <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
                 <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
+                <SeriesSaveManagerModal @bind-Show="showSeriesSaves" UserId="@TwitchUserId" OnSeriesLoaded="OnSeriesLoaded" />
             }
         </Authorized>
     </AuthorizeView>
@@ -179,6 +183,7 @@
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
     private bool showDiscordSettings = false;
+    private bool showSeriesSaves = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
     private Timer? _refreshTimer;
@@ -239,7 +244,7 @@
 
     private bool IsAnyModalOpen()
     {
-        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings;
+        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings || showSeriesSaves;
     }
 
     public void Dispose()
@@ -286,6 +291,16 @@
         {
             var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
             overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSeriesLoaded()
+    {
+        // Reload counters after a series is loaded
+        if (!string.IsNullOrEmpty(TwitchUserId))
+        {
+            counter = await CounterRepository.GetCountersAsync(TwitchUserId);
             StateHasChanged();
         }
     }

@@ -57,7 +57,7 @@ public class MainLayoutTests : BunitContext
                 <div class=""sidebar"">
                   <div class=""top-row ps-3 navbar navbar-dark"">
                     <div class=""container-fluid"">
-                      <a class=""navbar-brand"" href="""">OmniForge.Web</a>
+                      <span class=""navbar-brand"">OmniForge</span>
                     </div>
                   </div>
                   <input type=""checkbox"" title=""Navigation menu"" class=""navbar-toggler"" />
