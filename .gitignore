@@ -40,7 +40,7 @@ desktop.ini
 *~
 
 # Docker
-.dockerignore
+# .dockerignore
 
 # Azure
 .azure/
