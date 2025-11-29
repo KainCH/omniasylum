@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Entities;
 
 namespace OmniForge.Infrastructure.Repositories
@@ -34,7 +35,7 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", twitchUserId);
+                _logger.LogDebug("📥 Getting user {UserId} from Azure Table Storage", LogSanitizer.Sanitize(twitchUserId));
                 // IMPORTANT: We use raw TableEntity here instead of UserTableEntity because
                 // CLI-based data migrations (e.g., Azure Storage Explorer, PowerShell, or manual edits)
                 // can introduce type mismatches or missing properties in the stored data.
@@ -44,17 +45,17 @@ namespace OmniForge.Infrastructure.Repositories
                 // data and provide better error handling.
                 var response = await _tableClient.GetEntityAsync<TableEntity>("user", twitchUserId);
                 var user = UserTableEntity.FromTableEntitySafe(response.Value);
-                _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", twitchUserId, user.DisplayName);
+                _logger.LogDebug("✅ Retrieved user {UserId}: {DisplayName}", LogSanitizer.Sanitize(twitchUserId), LogSanitizer.Sanitize(user.DisplayName));
                 return user;
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
-                _logger.LogWarning("⚠️ User {UserId} not found in Azure Table Storage", twitchUserId);
+                _logger.LogWarning("⚠️ User {UserId} not found in Azure Table Storage", LogSanitizer.Sanitize(twitchUserId));
                 return null;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error getting user {UserId} from Azure Table Storage", twitchUserId);
+                _logger.LogError(ex, "❌ Error getting user {UserId} from Azure Table Storage", LogSanitizer.Sanitize(twitchUserId));
                 throw;
             }
         }
@@ -67,28 +68,28 @@ namespace OmniForge.Infrastructure.Repositories
                 if (string.IsNullOrWhiteSpace(user.TwitchUserId))
                 {
                     _logger.LogError("❌ CRITICAL: Attempted to save user with empty TwitchUserId! Username: {Username}, DisplayName: {DisplayName}",
-                        user.Username, user.DisplayName);
+                        LogSanitizer.Sanitize(user.Username), LogSanitizer.Sanitize(user.DisplayName));
                     throw new ArgumentException("Cannot save user with empty TwitchUserId - this would corrupt the database", nameof(user));
                 }
 
-                _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", user.TwitchUserId, user.DisplayName);
+                _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", LogSanitizer.Sanitize(user.TwitchUserId), LogSanitizer.Sanitize(user.DisplayName));
                 _logger.LogDebug("📋 OverlaySettings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
                     user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
                 _logger.LogInformation("🔗 DiscordWebhookUrl: {WebhookUrl}",
-                    string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length))}...");
+                    string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{LogSanitizer.Sanitize(user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length)))}...");
 
                 var entity = UserTableEntity.FromDomain(user);
 
                 _logger.LogDebug("📦 Serialized overlaySettings: {OverlaySettings}", entity.overlaySettings);
                 _logger.LogDebug("📦 Entity discordWebhookUrl: {WebhookUrl}",
-                    string.IsNullOrEmpty(entity.discordWebhookUrl) ? "EMPTY" : $"{entity.discordWebhookUrl.Substring(0, Math.Min(50, entity.discordWebhookUrl.Length))}...");
+                    string.IsNullOrEmpty(entity.discordWebhookUrl) ? "EMPTY" : $"{LogSanitizer.Sanitize(entity.discordWebhookUrl.Substring(0, Math.Min(50, entity.discordWebhookUrl.Length)))}...");
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
-                _logger.LogInformation("✅ Successfully saved user {UserId} to Azure Table Storage", user.TwitchUserId);
+                _logger.LogInformation("✅ Successfully saved user {UserId} to Azure Table Storage", LogSanitizer.Sanitize(user.TwitchUserId));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error saving user {UserId} to Azure Table Storage", user.TwitchUserId);
+                _logger.LogError(ex, "❌ Error saving user {UserId} to Azure Table Storage", LogSanitizer.Sanitize(user.TwitchUserId));
                 throw;
             }
         }
@@ -97,13 +98,13 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                _logger.LogInformation("🗑️ Deleting user {UserId} from Azure Table Storage", twitchUserId);
+                _logger.LogInformation("🗑️ Deleting user {UserId} from Azure Table Storage", LogSanitizer.Sanitize(twitchUserId));
                 await _tableClient.DeleteEntityAsync("user", twitchUserId);
-                _logger.LogInformation("✅ Successfully deleted user {UserId}", twitchUserId);
+                _logger.LogInformation("✅ Successfully deleted user {UserId}", LogSanitizer.Sanitize(twitchUserId));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error deleting user {UserId}", twitchUserId);
+                _logger.LogError(ex, "❌ Error deleting user {UserId}", LogSanitizer.Sanitize(twitchUserId));
                 throw;
             }
         }
@@ -113,18 +114,18 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                _logger.LogInformation("🗑️ Deleting user by RowKey '{RowKey}' from Azure Table Storage", rowKey);
+                _logger.LogInformation("🗑️ Deleting user by RowKey '{RowKey}' from Azure Table Storage", LogSanitizer.Sanitize(rowKey));
                 await _tableClient.DeleteEntityAsync("user", rowKey);
-                _logger.LogInformation("✅ Successfully deleted user by RowKey '{RowKey}'", rowKey);
+                _logger.LogInformation("✅ Successfully deleted user by RowKey '{RowKey}'", LogSanitizer.Sanitize(rowKey));
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
                 // Entity already deleted or doesn't exist - this is fine for cleanup operations
-                _logger.LogWarning("⚠️ User with RowKey '{RowKey}' not found (already deleted?)", rowKey);
+                _logger.LogWarning("⚠️ User with RowKey '{RowKey}' not found (already deleted?)", LogSanitizer.Sanitize(rowKey));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error deleting user by RowKey '{RowKey}'", rowKey);
+                _logger.LogError(ex, "❌ Error deleting user by RowKey '{RowKey}'", LogSanitizer.Sanitize(rowKey));
                 throw;
             }
         }
@@ -143,7 +144,7 @@ namespace OmniForge.Infrastructure.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ Skipping user entity {RowKey} due to conversion error", entity.RowKey);
+                    _logger.LogWarning(ex, "⚠️ Skipping user entity {RowKey} due to conversion error", LogSanitizer.Sanitize(entity.RowKey));
                 }
             }
 

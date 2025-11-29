@@ -333,15 +333,36 @@
       }
 
       function createCounterItem(container, label, value, icon) {
+        // Validate that value is numeric (CWE-20: Improper Input Validation)
+        if (value === null || value === undefined || isNaN(Number(value))) {
+          console.warn(`Invalid non-numeric value received for ${label}:`, value);
+          value = 0;
+        }
+
         const div = document.createElement('div');
         div.className = 'counter-item';
-        div.innerHTML = `
-                    <div class="counter-icon">${icon}</div>
-                    <div class="counter-info">
-                        <div class="counter-label">${label}</div>
-                        <div class="counter-value">${value}</div>
-                    </div>
-                `;
+
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'counter-icon';
+        iconDiv.textContent = icon;
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'counter-info';
+
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'counter-label';
+        labelDiv.textContent = label;
+
+        const valueDiv = document.createElement('div');
+        valueDiv.className = 'counter-value';
+        valueDiv.textContent = value;
+
+        infoDiv.appendChild(labelDiv);
+        infoDiv.appendChild(valueDiv);
+
+        div.appendChild(iconDiv);
+        div.appendChild(infoDiv);
+
         container.appendChild(div);
       }
 

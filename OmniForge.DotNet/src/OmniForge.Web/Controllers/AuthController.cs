@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
@@ -22,19 +23,22 @@ namespace OmniForge.Web.Controllers
         private readonly IJwtService _jwtService;
         private readonly TwitchSettings _twitchSettings;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<AuthController> _logger;
 
         public AuthController(
             ITwitchAuthService twitchAuthService,
             IUserRepository userRepository,
             IJwtService jwtService,
             IOptions<TwitchSettings> twitchSettings,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ILogger<AuthController> logger)
         {
             _twitchAuthService = twitchAuthService;
             _userRepository = userRepository;
             _jwtService = jwtService;
             _twitchSettings = twitchSettings.Value;
             _configuration = configuration;
+            _logger = logger;
         }
 
         [HttpGet("twitch")]
@@ -210,7 +214,18 @@ namespace OmniForge.Web.Controllers
 
         private string GetRedirectUri()
         {
-            return _configuration["Twitch:RedirectUri"] ?? $"{Request.Scheme}://{Request.Host}/auth/twitch/callback";
+            // CWE-247, CWE-350, CWE-807 Fix:
+            // Do not rely on Request.Host or Request.Scheme which are user-controlled.
+            // Require explicit configuration of the redirect URI.
+            var redirectUri = _configuration["Twitch:RedirectUri"];
+
+            if (string.IsNullOrEmpty(redirectUri))
+            {
+                _logger.LogCritical("Twitch:RedirectUri is not configured. Authentication cannot proceed.");
+                throw new InvalidOperationException("Twitch:RedirectUri is not configured.");
+            }
+
+            return redirectUri;
         }
     }
 }
