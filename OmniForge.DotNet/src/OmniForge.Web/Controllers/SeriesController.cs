@@ -13,6 +13,21 @@ namespace OmniForge.Web.Controllers
     [Authorize]
     public class SeriesController : ControllerBase
     {
+        /// <summary>
+        /// Creates a standardized response object for series save operations
+        /// </summary>
+        private static object CreateSeriesSaveResponse(Series series) => new
+        {
+            seriesId = series.Id,
+            seriesName = series.Name,
+            description = series.Description,
+            deaths = series.Snapshot?.Deaths ?? 0,
+            swears = series.Snapshot?.Swears ?? 0,
+            screams = series.Snapshot?.Screams ?? 0,
+            bits = series.Snapshot?.Bits ?? 0,
+            savedAt = series.LastUpdated
+        };
+
         private readonly ISeriesRepository _seriesRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IOverlayNotifier _overlayNotifier;
@@ -117,17 +132,7 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 message = isUpdate ? "Series updated successfully" : "Series saved successfully",
-                save = new
-                {
-                    seriesId = series.Id,
-                    seriesName = series.Name,
-                    description = series.Description,
-                    deaths = series.Snapshot.Deaths,
-                    swears = series.Snapshot.Swears,
-                    screams = series.Snapshot.Screams,
-                    bits = series.Snapshot.Bits,
-                    savedAt = series.LastUpdated
-                }
+                save = CreateSeriesSaveResponse(series)
             });
         }
 
@@ -223,17 +228,7 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 message = "Series updated successfully",
-                save = new
-                {
-                    seriesId = existingSeries.Id,
-                    seriesName = existingSeries.Name,
-                    description = existingSeries.Description,
-                    deaths = existingSeries.Snapshot.Deaths,
-                    swears = existingSeries.Snapshot.Swears,
-                    screams = existingSeries.Snapshot.Screams,
-                    bits = existingSeries.Snapshot.Bits,
-                    savedAt = existingSeries.LastUpdated
-                }
+                save = CreateSeriesSaveResponse(existingSeries)
             });
         }
 

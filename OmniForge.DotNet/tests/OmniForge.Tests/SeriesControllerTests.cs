@@ -130,6 +130,7 @@ namespace OmniForge.Tests
             var result = await _controller.SaveSeries(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.IsAny<Series>()), Times.Never);
             _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.Is<Series>(s =>
                 s.Name == "Updated Name" &&
                 s.Snapshot.Deaths == 20)), Times.Once);
