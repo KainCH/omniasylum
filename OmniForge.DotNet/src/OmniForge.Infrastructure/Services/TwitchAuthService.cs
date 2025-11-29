@@ -166,6 +166,25 @@ namespace OmniForge.Infrastructure.Services
             };
         }
 
+        public async Task<string?> GetOidcKeysAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to fetch Twitch OIDC keys. Status: {StatusCode}", response.StatusCode);
+                    return null;
+                }
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching Twitch OIDC keys");
+                return null;
+            }
+        }
+
         // Internal classes for JSON deserialization
         private class TwitchTokenResponseInternal
         {

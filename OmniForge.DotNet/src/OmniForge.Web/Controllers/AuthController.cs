@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
@@ -77,28 +78,50 @@ namespace OmniForge.Web.Controllers
                 try
                 {
                     var handler = new JwtSecurityTokenHandler();
+                    handler.InboundClaimTypeMap.Clear(); // Ensure claims are not mapped to .NET types
                     if (handler.CanReadToken(tokenResponse.IdToken))
                     {
-                        var jwt = handler.ReadJwtToken(tokenResponse.IdToken);
-                        var sub = jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-                        var preferredUsername = jwt.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+                        // Fetch OIDC keys for validation
+                        var jwksJson = await _twitchAuthService.GetOidcKeysAsync();
+                        if (string.IsNullOrEmpty(jwksJson))
+                        {
+                            throw new Exception("Failed to fetch OIDC keys");
+                        }
+
+                        var jwks = new JsonWebKeySet(jwksJson);
+                        var validationParameters = new TokenValidationParameters
+                        {
+                            ValidateIssuer = true,
+                            ValidIssuer = "https://id.twitch.tv/oauth2",
+                            ValidateAudience = true,
+                            ValidAudience = _twitchSettings.ClientId,
+                            ValidateIssuerSigningKey = true,
+                            IssuerSigningKeys = jwks.Keys,
+                            ValidateLifetime = true,
+                            ClockSkew = TimeSpan.FromMinutes(5) // Allow some clock skew
+                        };
+
+                        var principal = handler.ValidateToken(tokenResponse.IdToken, validationParameters, out var validatedToken);
+
+                        var sub = principal.FindFirst(c => c.Type == "sub")?.Value;
+                        var preferredUsername = principal.FindFirst(c => c.Type == "preferred_username")?.Value;
 
                         if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(preferredUsername))
                         {
                             userInfo = new TwitchUserInfo
                             {
                                 Id = sub,
-                                Login = preferredUsername, // Note: OIDC 'preferred_username' is usually the display name, but often matches login
-                                DisplayName = preferredUsername,
-                                Email = jwt.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? "",
-                                ProfileImageUrl = jwt.Claims.FirstOrDefault(c => c.Type == "picture")?.Value ?? ""
+                                Login = preferredUsername, // Note: OIDC 'preferred_username' is the Twitch login name (not display name)
+                                DisplayName = preferredUsername, // DisplayName not available in ID token; using login as fallback. Helix API update below will fix if needed.
+                                Email = principal.FindFirst(c => c.Type == "email")?.Value ?? "",
+                                ProfileImageUrl = principal.FindFirst(c => c.Type == "picture")?.Value ?? ""
                             };
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to parse ID Token");
+                    _logger.LogWarning(ex, "Failed to validate/parse ID Token. Falling back to Helix API.");
                 }
             }
 

@@ -8,6 +8,7 @@ namespace OmniForge.Core.Interfaces
         Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri);
         Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken);
         Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId);
+        Task<string?> GetOidcKeysAsync();
     }
 
     public class TwitchTokenResponse

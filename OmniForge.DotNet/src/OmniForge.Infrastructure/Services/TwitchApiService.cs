@@ -207,7 +207,16 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Twitch API call failed for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
+                // Only retry on Unauthorized (401)
+                // TwitchLib/HelixWrapper might throw different exceptions, so we check message or type if possible.
+                // Assuming standard HttpRequestException or similar with "401" or "Unauthorized" in message.
+                // We log the specific error for debugging.
+                if (!ex.Message.Contains("401") && !ex.Message.Contains("Unauthorized"))
+                {
+                    throw;
+                }
+
+                _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
 
                 // Force refresh
                 var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
@@ -228,7 +237,11 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task ExecuteWithRetryAsync(string userId, Func<string, Task> action)
         {
-            await ExecuteWithRetryAsync(userId, async (token) => { await action(token); return true; });
+            await ExecuteWithRetryAsync<object?>(userId, async (token) =>
+            {
+                await action(token);
+                return null;
+            });
         }
     }
 }

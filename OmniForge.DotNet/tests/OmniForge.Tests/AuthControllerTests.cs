@@ -13,7 +13,11 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Controllers;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using Xunit;
+using Newtonsoft.Json; // Try adding this
 
 namespace OmniForge.Tests
 {
@@ -131,6 +135,142 @@ namespace OmniForge.Tests
                 It.IsAny<AuthenticationProperties>()), Times.Once);
         }
 
+        [Fact]
+        public async Task Callback_ShouldUseOidc_WhenIdTokenValid()
+        {
+            // Arrange
+            var rsa = RSA.Create(2048);
+            var securityKey = new RsaSecurityKey(rsa) { KeyId = "test-key" };
+
+            var parameters = rsa.ExportParameters(false);
+            var e = Base64UrlEncoder.Encode(parameters.Exponent);
+            var n = Base64UrlEncoder.Encode(parameters.Modulus);
+
+            var jwksJson = $@"{{
+                ""keys"": [
+                    {{
+                        ""kty"": ""RSA"",
+                        ""use"": ""sig"",
+                        ""kid"": ""test-key"",
+                        ""alg"": ""RS256"",
+                        ""n"": ""{n}"",
+                        ""e"": ""{e}""
+                    }}
+                ]
+            }}";
+
+            _mockTwitchAuthService.Setup(x => x.GetOidcKeysAsync()).ReturnsAsync(jwksJson);
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var descriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim("sub", "123"),
+                    new Claim("preferred_username", "user"),
+                    new Claim("email", "user@example.com")
+                }),
+                Issuer = "https://id.twitch.tv/oauth2",
+                Audience = "client-id",
+                Expires = DateTime.UtcNow.AddMinutes(5),
+                SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256)
+            };
+            var idToken = tokenHandler.CreateToken(descriptor);
+            var idTokenString = tokenHandler.WriteToken(idToken);
+
+            var tokenResponse = new TwitchTokenResponse { AccessToken = "token", IdToken = idTokenString, ExpiresIn = 3600 };
+            _mockTwitchAuthService.Setup(x => x.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(tokenResponse);
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
+            _mockJwtService.Setup(x => x.GenerateToken(It.IsAny<User>())).Returns("jwt-token");
+
+            // Act
+            var result = await _controller.Callback("code");
+
+            // Assert
+            var redirectResult = Assert.IsType<RedirectResult>(result);
+            Assert.Equal("/portal", redirectResult.Url);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.TwitchUserId == "123" && u.Username == "user")), Times.Once);
+            // Verify GetUserInfoAsync was NOT called
+            _mockTwitchAuthService.Verify(x => x.GetUserInfoAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Callback_ShouldFallbackToHelix_WhenIdTokenInvalid()
+        {
+            // Arrange
+            var tokenResponse = new TwitchTokenResponse { AccessToken = "token", IdToken = "invalid-token", ExpiresIn = 3600 };
+            var userInfo = new TwitchUserInfo { Id = "123", Login = "user", DisplayName = "User" };
+
+            _mockTwitchAuthService.Setup(x => x.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(tokenResponse);
+            // Mock GetUserInfoAsync to return valid user info (fallback success)
+            _mockTwitchAuthService.Setup(x => x.GetUserInfoAsync("token", "client-id"))
+                .ReturnsAsync(userInfo);
+            
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
+            _mockJwtService.Setup(x => x.GenerateToken(It.IsAny<User>())).Returns("jwt-token");
+
+            // Act
+            var result = await _controller.Callback("code");
+
+            // Assert
+            var redirectResult = Assert.IsType<RedirectResult>(result);
+            Assert.Equal("/portal", redirectResult.Url);
+            _mockTwitchAuthService.Verify(x => x.GetUserInfoAsync("token", "client-id"), Times.Once);
+        }
+
+        [Fact]
+        public async Task Callback_ShouldFallbackToHelix_WhenIdTokenMissingClaims()
+        {
+            // Arrange
+            var rsa = RSA.Create(2048);
+            var securityKey = new RsaSecurityKey(rsa) { KeyId = "test-key" };
+            
+            var parameters = rsa.ExportParameters(false);
+            var e = Base64UrlEncoder.Encode(parameters.Exponent);
+            var n = Base64UrlEncoder.Encode(parameters.Modulus);
+            var jwksJson = $@"{{ ""keys"": [ {{ ""kty"": ""RSA"", ""use"": ""sig"", ""kid"": ""test-key"", ""alg"": ""RS256"", ""n"": ""{n}"", ""e"": ""{e}"" }} ] }}";
+
+            _mockTwitchAuthService.Setup(x => x.GetOidcKeysAsync()).ReturnsAsync(jwksJson);
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var descriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[] 
+                { 
+                    // Missing sub and preferred_username
+                    new Claim("email", "user@example.com")
+                }),
+                Issuer = "https://id.twitch.tv/oauth2",
+                Audience = "client-id",
+                Expires = DateTime.UtcNow.AddMinutes(5),
+                SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256)
+            };
+            var idToken = tokenHandler.CreateToken(descriptor);
+            var idTokenString = tokenHandler.WriteToken(idToken);
+
+            var tokenResponse = new TwitchTokenResponse { AccessToken = "token", IdToken = idTokenString, ExpiresIn = 3600 };
+            var userInfo = new TwitchUserInfo { Id = "123", Login = "user", DisplayName = "User" };
+
+            _mockTwitchAuthService.Setup(x => x.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(tokenResponse);
+            _mockTwitchAuthService.Setup(x => x.GetUserInfoAsync("token", "client-id"))
+                .ReturnsAsync(userInfo);
+            
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
+            _mockJwtService.Setup(x => x.GenerateToken(It.IsAny<User>())).Returns("jwt-token");
+
+            // Act
+            var result = await _controller.Callback("code");
+
+            // Assert
+            var redirectResult = Assert.IsType<RedirectResult>(result);
+            Assert.Equal("/portal", redirectResult.Url);
+            _mockTwitchAuthService.Verify(x => x.GetUserInfoAsync("token", "client-id"), Times.Once);
+        }
+
         // Tests for Refresh with [Authorize] middleware are simplified as middleware handles token validation.
         // We only test the controller logic assuming a valid user.
 
@@ -149,21 +289,34 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task Refresh_ShouldReturnUnauthorized_WhenUserInactive()
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim("userId", "123")
+            }, "Bearer"));
+            _controller.ControllerContext.HttpContext.User = principal;
+            var user = new User { TwitchUserId = "123", IsActive = false };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            var result = await _controller.Refresh();
+            Assert.IsType<UnauthorizedObjectResult>(result);
+        }
+
+        [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTokenValid()
         {
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim("userId", "123")
             }, "Bearer"));
             _controller.ControllerContext.HttpContext.User = principal;
-            var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddHours(2) };
+            var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddHours(2), IsActive = true };
 
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
 
             var result = await _controller.Refresh();
             var okResult = Assert.IsType<OkObjectResult>(result);
-        }
-
-        [Fact]
+        }        [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenTwitchRefreshFails()
         {
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
