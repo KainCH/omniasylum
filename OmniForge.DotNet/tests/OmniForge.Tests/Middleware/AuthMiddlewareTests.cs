@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -16,11 +17,13 @@ namespace OmniForge.Tests.Middleware
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<RequestDelegate> _mockNext;
+        private readonly Mock<ILogger<AuthMiddleware>> _mockLogger;
 
         public AuthMiddlewareTests()
         {
             _mockUserRepository = new Mock<IUserRepository>();
             _mockNext = new Mock<RequestDelegate>();
+            _mockLogger = new Mock<ILogger<AuthMiddleware>>();
             _mockNext.Setup(x => x(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
         }
 
@@ -52,7 +55,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_SkippedPaths_ShouldCallNextWithoutValidation(string path)
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext(path);
 
             // Act
@@ -67,7 +70,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_WebSocketRequest_ShouldSkipValidation()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = new DefaultHttpContext();
             context.Request.Path = "/some-path";
 
@@ -88,7 +91,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_UnauthenticatedUser_ShouldCallNextWithoutValidation()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext("/api/test", isAuthenticated: false);
 
             // Act
@@ -103,7 +106,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_AuthenticatedUserWithValidUser_ShouldAttachUserToContext()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext("/api/test", isAuthenticated: true, userId: "123");
             var user = new User { TwitchUserId = "123", DisplayName = "TestUser" };
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
@@ -120,7 +123,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_AuthenticatedUserNotFound_ShouldReturn401()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext("/api/test", isAuthenticated: true, userId: "999");
             context.Response.Body = new MemoryStream();
             _mockUserRepository.Setup(x => x.GetUserAsync("999")).ReturnsAsync((User?)null);
@@ -137,7 +140,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_AuthenticatedUserWithNoClaim_ShouldCallNext()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = new DefaultHttpContext();
             context.Request.Path = "/api/test";
 
@@ -157,7 +160,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_DatabaseError_ShouldContinueWithoutBlocking()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext("/api/test", isAuthenticated: true, userId: "123");
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ThrowsAsync(new Exception("DB error"));
 
@@ -173,7 +176,7 @@ namespace OmniForge.Tests.Middleware
         public async Task InvokeAsync_RootPath_ShouldProcessNormally()
         {
             // Arrange
-            var middleware = new AuthMiddleware(_mockNext.Object);
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
             var context = CreateHttpContext("/", isAuthenticated: false);
 
             // Act

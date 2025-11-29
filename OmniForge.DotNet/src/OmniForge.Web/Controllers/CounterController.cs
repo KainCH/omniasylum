@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using System;
-using System.Text.Json;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace OmniForge.Web.Controllers
@@ -180,7 +181,7 @@ namespace OmniForge.Web.Controllers
         public async Task<IActionResult> GetOverlaySettings()
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("⚙️ GetOverlaySettings called for userId: {UserId}", userId);
+            _logger.LogInformation("⚙️ GetOverlaySettings called for userId: {UserId}", LogSanitizer.Sanitize(userId));
 
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -189,12 +190,12 @@ namespace OmniForge.Web.Controllers
 
             if (!user.Features.StreamOverlay)
             {
-                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", userId);
+                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", LogSanitizer.Sanitize(userId));
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
             _logger.LogDebug("📋 Returning overlay settings: Position={Position}, Scale={Scale}",
-                user.OverlaySettings?.Position, user.OverlaySettings?.Scale);
+                LogSanitizer.Sanitize(user.OverlaySettings?.Position), user.OverlaySettings?.Scale);
 
             return Ok(user.OverlaySettings ?? new Core.Entities.OverlaySettings());
         }
@@ -203,9 +204,9 @@ namespace OmniForge.Web.Controllers
         public async Task<IActionResult> UpdateOverlaySettings([FromBody] Core.Entities.OverlaySettings request)
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("💾 UpdateOverlaySettings called for userId: {UserId}", userId);
+            _logger.LogInformation("💾 UpdateOverlaySettings called for userId: {UserId}", LogSanitizer.Sanitize(userId));
             _logger.LogDebug("📥 Received settings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                request?.Position, request?.Scale, request?.Enabled);
+                LogSanitizer.Sanitize(request?.Position), request?.Scale, request?.Enabled);
 
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -220,7 +221,7 @@ namespace OmniForge.Web.Controllers
 
             if (!user.Features.StreamOverlay)
             {
-                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", userId);
+                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", LogSanitizer.Sanitize(userId));
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
@@ -228,14 +229,14 @@ namespace OmniForge.Web.Controllers
             var validPositions = new[] { "top-left", "top-right", "bottom-left", "bottom-right" };
             if (!string.IsNullOrEmpty(request.Position) && !validPositions.Contains(request.Position))
             {
-                _logger.LogWarning("⚠️ Invalid position: {Position}", request.Position);
+                _logger.LogWarning("⚠️ Invalid position: {Position}", LogSanitizer.Sanitize(request.Position));
                 return BadRequest(new { error = "Invalid position. Must be one of: " + string.Join(", ", validPositions) });
             }
 
             user.OverlaySettings = request;
             await _userRepository.SaveUserAsync(user);
 
-            _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", userId);
+            _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", LogSanitizer.Sanitize(userId));
 
             return Ok(new
             {
@@ -248,24 +249,24 @@ namespace OmniForge.Web.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetPublicCounters(string userId)
         {
-            _logger.LogInformation("📊 GetPublicCounters called for userId: {UserId}", userId);
+            _logger.LogInformation("📊 GetPublicCounters called for userId: {UserId}", LogSanitizer.Sanitize(userId));
 
             var counters = await _counterRepository.GetCountersAsync(userId);
             if (counters == null)
             {
-                _logger.LogWarning("⚠️ Counters not found for userId: {UserId}", userId);
+                _logger.LogWarning("⚠️ Counters not found for userId: {UserId}", LogSanitizer.Sanitize(userId));
                 return NotFound();
             }
 
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null)
             {
-                _logger.LogWarning("⚠️ User not found for userId: {UserId}", userId);
+                _logger.LogWarning("⚠️ User not found for userId: {UserId}", LogSanitizer.Sanitize(userId));
                 return NotFound();
             }
 
             _logger.LogDebug("📋 User OverlaySettings for {UserId}: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                userId, user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
+                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(user.OverlaySettings?.Position), user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
             _logger.LogDebug("📋 OverlaySettings.Counters: Deaths={Deaths}, Swears={Swears}, Screams={Screams}, Bits={Bits}",
                 user.OverlaySettings?.Counters?.Deaths, user.OverlaySettings?.Counters?.Swears,
                 user.OverlaySettings?.Counters?.Screams, user.OverlaySettings?.Counters?.Bits);
@@ -282,7 +283,7 @@ namespace OmniForge.Web.Controllers
             };
 
             _logger.LogInformation("✅ Returning public counters for {UserId}: Deaths={Deaths}, Swears={Swears}, StreamStarted={StreamStarted}",
-                userId, counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
+                LogSanitizer.Sanitize(userId), counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
 
             return Ok(response);
         }
