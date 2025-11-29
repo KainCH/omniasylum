@@ -487,6 +487,14 @@ export const adminAPI = {
       method: 'POST',
       body: JSON.stringify(userData)
     });
+  },
+
+  // Restore series save (Debug)
+  restoreSeriesSave: async (restoreData) => {
+    return await makeAuthenticatedJsonRequest('/api/debug/restore-series-save', {
+      method: 'POST',
+      body: JSON.stringify(restoreData)
+    });
   }
 };
 

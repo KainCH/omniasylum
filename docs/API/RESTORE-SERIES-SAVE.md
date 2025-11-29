@@ -9,10 +9,10 @@ This guide explains how to use the `restore-series-save.js` script to manually i
     ```powershell
     az login
     ```
-3.  **Dependencies**: Ensure the project dependencies are installed.
+3.  **Dependencies**: Install the required Azure packages.
     ```powershell
     cd Legacy/API
-    npm install
+    npm install @azure/data-tables @azure/identity
     ```
 
 ## Configuration

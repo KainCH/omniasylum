@@ -12,17 +12,21 @@ const CONFIG = {
   storageAccountName: 'omni46jismtjodyuc', // Default from debug script, change if needed
 
   // The Twitch User ID to restore the save for
-  twitchUserId: 'YOUR_TWITCH_USER_ID_HERE',
+  twitchUserId: '1105619891',
 
   // Series Details
-  seriesName: 'Restored Series',
-  description: 'Restored via script',
+  seriesName: 'RE1',
+  description: 'Restored counters via admin',
 
   // Counter Values to Restore
   counters: {
-    deaths: 0,
-    swears: 0,
-    bits: 0
+    deaths: 14,
+    swears: 64,
+    screams: 0, // Supported in .NET and Node (but Node series saves ignore it)
+    bits: 0,
+    // Custom counters (Dictionary<string, int> in .NET)
+    // Example: { "hugs": 5, "fails": 2 }
+    customCounters: {}
   },
 
   // Optional: Set a specific save time (default is now)
@@ -51,19 +55,32 @@ async function restoreSeriesSave() {
 
     if (CONFIG.targetSystem === 'DOTNET') {
       // .NET Schema
+      // Ensure property names match C# Counter class (PascalCase is REQUIRED for System.Text.Json default deserialization)
+      // The C# Counter class has: Deaths, Swears, Screams, Bits, CustomCounters
+      const snapshotObj = {
+        Deaths: CONFIG.counters.deaths,
+        Swears: CONFIG.counters.swears,
+        Screams: CONFIG.counters.screams,
+        Bits: CONFIG.counters.bits,
+        CustomCounters: CONFIG.counters.customCounters || {},
+        TwitchUserId: CONFIG.twitchUserId,
+        LastUpdated: CONFIG.savedAt
+      };
+
       tableName = 'series';
       entity = {
         partitionKey: CONFIG.twitchUserId,
         rowKey: seriesId,
         name: CONFIG.seriesName,           // .NET uses 'name'
         description: CONFIG.description,
-        snapshot: JSON.stringify(CONFIG.counters), // .NET stores counters in JSON 'snapshot'
+        snapshot: JSON.stringify(snapshotObj), // .NET stores counters in JSON 'snapshot'
         createdAt: CONFIG.savedAt,
         lastUpdated: CONFIG.savedAt,
         isActive: true
       };
     } else {
       // Node.js Legacy Schema
+      // Note: Legacy series saves do NOT support 'screams' or 'customCounters'
       tableName = 'seriessaves';
       entity = {
         partitionKey: CONFIG.twitchUserId,
@@ -75,6 +92,10 @@ async function restoreSeriesSave() {
         bits: CONFIG.counters.bits,
         savedAt: CONFIG.savedAt
       };
+
+      if (CONFIG.counters.screams > 0) {
+        console.warn('⚠️ Warning: "screams" are not supported in Legacy Node.js series saves and will be ignored.');
+      }
     }
 
     // 4. Create Table Client

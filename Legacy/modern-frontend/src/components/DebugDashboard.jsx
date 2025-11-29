@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import './DebugDashboard.css'
 import { ActionButton, StatusBadge } from './ui/CommonControls'
-import { userAPI } from '../utils/authUtils'
+import { userAPI, adminAPI } from '../utils/authUtils'
 import { useToast, useLoading } from '../hooks'
 
 function DebugDashboard({ user }) {
@@ -15,6 +15,20 @@ function DebugDashboard({ user }) {
   const [testResults, setTestResults] = useState({})
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [refreshInterval, setRefreshInterval] = useState(null)
+
+  // Restore Series State
+  const [showRestoreForm, setShowRestoreForm] = useState(false)
+  const [restoreData, setRestoreData] = useState({
+    twitchUserId: '',
+    seriesName: '',
+    description: 'Restored via Admin Debug',
+    counters: {
+      deaths: 0,
+      swears: 0,
+      screams: 0,
+      bits: 0
+    }
+  })
 
   const { showMessage } = useToast()
   const { isLoading, withLoading } = useLoading()
@@ -223,6 +237,25 @@ function DebugDashboard({ user }) {
       })
     } catch (error) {
       showMessage(`Failed to clean webhook data: ${error.message}`, 'error')
+    }
+  }
+
+  const handleRestoreSeries = async (e) => {
+    e.preventDefault()
+    try {
+      await withLoading(async () => {
+        await adminAPI.restoreSeriesSave(restoreData)
+        showMessage('Series save restored successfully', 'success')
+        setShowRestoreForm(false)
+        setRestoreData({
+          twitchUserId: '',
+          seriesName: '',
+          description: 'Restored via Admin Debug',
+          counters: { deaths: 0, swears: 0, screams: 0, bits: 0 }
+        })
+      })
+    } catch (error) {
+      showMessage(`Failed to restore series: ${error.message}`, 'error')
     }
   }
 
@@ -506,6 +539,118 @@ function DebugDashboard({ user }) {
               🧹 Clean Webhook Data
             </ActionButton>
           </div>
+        </div>
+
+        {/* Restore Tools */}
+        <div className="test-group">
+          <h5>Restore Tools</h5>
+          <div className="test-actions">
+            <ActionButton
+              onClick={() => setShowRestoreForm(!showRestoreForm)}
+              disabled={isLoading}
+              className="test-button"
+            >
+              💾 Restore Series Save
+            </ActionButton>
+          </div>
+
+          {showRestoreForm && (
+            <div className="restore-form-container" style={{ marginTop: '15px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+              <form onSubmit={handleRestoreSeries}>
+                <div style={{ display: 'grid', gap: '10px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Twitch User ID:</label>
+                    <input
+                      type="text"
+                      value={restoreData.twitchUserId}
+                      onChange={e => setRestoreData({...restoreData, twitchUserId: e.target.value})}
+                      required
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      placeholder="e.g. 12345678"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Series Name:</label>
+                    <input
+                      type="text"
+                      value={restoreData.seriesName}
+                      onChange={e => setRestoreData({...restoreData, seriesName: e.target.value})}
+                      required
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      placeholder="e.g. Elden Ring Ep 1"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+                    <input
+                      type="text"
+                      value={restoreData.description}
+                      onChange={e => setRestoreData({...restoreData, description: e.target.value})}
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>Deaths:</label>
+                      <input
+                        type="number"
+                        value={restoreData.counters.deaths}
+                        onChange={e => setRestoreData({...restoreData, counters: {...restoreData.counters, deaths: parseInt(e.target.value) || 0}})}
+                        style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>Swears:</label>
+                      <input
+                        type="number"
+                        value={restoreData.counters.swears}
+                        onChange={e => setRestoreData({...restoreData, counters: {...restoreData.counters, swears: parseInt(e.target.value) || 0}})}
+                        style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>Screams:</label>
+                      <input
+                        type="number"
+                        value={restoreData.counters.screams}
+                        onChange={e => setRestoreData({...restoreData, counters: {...restoreData.counters, screams: parseInt(e.target.value) || 0}})}
+                        style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px' }}>Bits:</label>
+                      <input
+                        type="number"
+                        value={restoreData.counters.bits}
+                        onChange={e => setRestoreData({...restoreData, counters: {...restoreData.counters, bits: parseInt(e.target.value) || 0}})}
+                        style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <ActionButton
+                    type="button"
+                    onClick={() => setShowRestoreForm(false)}
+                    className="secondary"
+                    size="small"
+                  >
+                    Cancel
+                  </ActionButton>
+                  <ActionButton
+                    type="submit"
+                    disabled={isLoading}
+                    className="primary"
+                    size="small"
+                  >
+                    Restore Save
+                  </ActionButton>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       </div>
 

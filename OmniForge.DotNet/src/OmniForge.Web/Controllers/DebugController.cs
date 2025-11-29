@@ -15,16 +15,68 @@ namespace OmniForge.Web.Controllers
     {
         private readonly IUserRepository _userRepository;
         private readonly IDiscordService _discordService;
+        private readonly ISeriesRepository _seriesRepository;
         private readonly ILogger<DebugController> _logger;
 
         public DebugController(
             IUserRepository userRepository,
             IDiscordService discordService,
+            ISeriesRepository seriesRepository,
             ILogger<DebugController> logger)
         {
             _userRepository = userRepository;
             _discordService = discordService;
+            _seriesRepository = seriesRepository;
             _logger = logger;
+        }
+
+        [HttpPost("restore-series-save")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> RestoreSeriesSave([FromBody] RestoreSeriesRequest request)
+        {
+            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", request.TwitchUserId);
+
+            // Validate request
+            if (string.IsNullOrEmpty(request.TwitchUserId) || string.IsNullOrEmpty(request.SeriesName))
+            {
+                return BadRequest("TwitchUserId and SeriesName are required");
+            }
+
+            // Generate Series ID (RowKey) - Format: <timestamp>_<sanitized_series_name>
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(request.SeriesName, "[^a-zA-Z0-9]", "_");
+            var seriesId = $"{timestamp}_{sanitizedName}";
+
+            var series = new Series
+            {
+                UserId = request.TwitchUserId,
+                Id = seriesId,
+                Name = request.SeriesName,
+                Description = request.Description ?? "Restored via Admin Debug",
+                Snapshot = new Counter
+                {
+                    TwitchUserId = request.TwitchUserId,
+                    Deaths = request.Counters.Deaths,
+                    Swears = request.Counters.Swears,
+                    Screams = request.Counters.Screams,
+                    Bits = request.Counters.Bits,
+                    CustomCounters = request.Counters.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                    LastUpdated = DateTimeOffset.UtcNow
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow,
+                IsActive = true
+            };
+
+            await _seriesRepository.CreateSeriesAsync(series);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Series save restored successfully",
+                seriesId,
+                series
+            });
         }
 
         [HttpPost("test-webhook-save")]
@@ -158,6 +210,23 @@ namespace OmniForge.Web.Controllers
                 cleanedFields,
                 user = new { user.TwitchUserId, user.DiscordWebhookUrl }
             });
+        }
+    }
+
+    public class RestoreSeriesRequest
+    {
+        public string TwitchUserId { get; set; } = string.Empty;
+        public string SeriesName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public CounterValues Counters { get; set; } = new CounterValues();
+
+        public class CounterValues
+        {
+            public int Deaths { get; set; }
+            public int Swears { get; set; }
+            public int Screams { get; set; }
+            public int Bits { get; set; }
+            public System.Collections.Generic.Dictionary<string, int> CustomCounters { get; set; } = new System.Collections.Generic.Dictionary<string, int>();
         }
     }
 }
