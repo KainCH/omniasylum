@@ -17,7 +17,6 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using Xunit;
-using Newtonsoft.Json; // Try adding this
 
 namespace OmniForge.Tests
 {
@@ -139,7 +138,7 @@ namespace OmniForge.Tests
         public async Task Callback_ShouldUseOidc_WhenIdTokenValid()
         {
             // Arrange
-            var rsa = RSA.Create(2048);
+            using var rsa = RSA.Create(2048);
             var securityKey = new RsaSecurityKey(rsa) { KeyId = "test-key" };
 
             var parameters = rsa.ExportParameters(false);
@@ -224,7 +223,7 @@ namespace OmniForge.Tests
         public async Task Callback_ShouldFallbackToHelix_WhenIdTokenMissingClaims()
         {
             // Arrange
-            var rsa = RSA.Create(2048);
+            using var rsa = RSA.Create(2048);
             var securityKey = new RsaSecurityKey(rsa) { KeyId = "test-key" };
 
             var parameters = rsa.ExportParameters(false);

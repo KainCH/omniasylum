@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -209,11 +211,17 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                // Only retry on Unauthorized (401)
-                // TwitchLib/HelixWrapper might throw different exceptions, so we check message or type if possible.
-                // Assuming standard HttpRequestException or similar with "401" or "Unauthorized" in message.
-                // We log the specific error for debugging.
-                if (!ex.Message.Contains("401") && !ex.Message.Contains("Unauthorized"))
+                bool isUnauthorized = false;
+                if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    isUnauthorized = true;
+                }
+                else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    isUnauthorized = true;
+                }
+
+                if (!isUnauthorized)
                 {
                     throw;
                 }
@@ -226,6 +234,12 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
+
+                if (string.IsNullOrEmpty(user.RefreshToken))
+                {
+                    _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(userId));
+                    throw;
+                }
 
                 // Force refresh
                 var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
@@ -253,7 +267,17 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                if (!ex.Message.Contains("401") && !ex.Message.Contains("Unauthorized"))
+                bool isUnauthorized = false;
+                if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    isUnauthorized = true;
+                }
+                else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    isUnauthorized = true;
+                }
+
+                if (!isUnauthorized)
                 {
                     throw;
                 }
@@ -265,6 +289,12 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
+
+                if (string.IsNullOrEmpty(user.RefreshToken))
+                {
+                    _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(userId));
+                    throw;
+                }
 
                 var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
                 if (newToken != null)
