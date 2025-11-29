@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
@@ -43,7 +44,7 @@ namespace OmniForge.Infrastructure.Services
             // Check if token needs refresh (buffer of 5 minutes)
             if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
             {
-                _logger.LogInformation("Refreshing token for user {UserId}", userId);
+                _logger.LogInformation("Refreshing token for user {UserId}", LogSanitizer.Sanitize(userId));
                 var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
                 if (newToken != null)
                 {
@@ -54,7 +55,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Failed to refresh token for user {UserId}", userId);
+                    _logger.LogWarning("Failed to refresh token for user {UserId}", LogSanitizer.Sanitize(userId));
                     throw new Exception("Failed to refresh Twitch token");
                 }
             }
@@ -182,7 +183,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating clip for user {UserId}", userId);
+                _logger.LogError(ex, "Error creating clip for user {UserId}", LogSanitizer.Sanitize(userId));
                 return null;
             }
         }

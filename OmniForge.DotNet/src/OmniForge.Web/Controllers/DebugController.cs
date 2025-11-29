@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Controllers
 {
@@ -15,16 +16,87 @@ namespace OmniForge.Web.Controllers
     {
         private readonly IUserRepository _userRepository;
         private readonly IDiscordService _discordService;
+        private readonly ISeriesRepository _seriesRepository;
         private readonly ILogger<DebugController> _logger;
 
         public DebugController(
             IUserRepository userRepository,
             IDiscordService discordService,
+            ISeriesRepository seriesRepository,
             ILogger<DebugController> logger)
         {
             _userRepository = userRepository;
             _discordService = discordService;
+            _seriesRepository = seriesRepository;
             _logger = logger;
+        }
+
+        [HttpPost("restore-series-save")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> RestoreSeriesSave([FromBody] RestoreSeriesRequest request)
+        {
+            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", LogSanitizer.Sanitize(request.TwitchUserId));
+
+            // Validate request
+            if (string.IsNullOrEmpty(request.TwitchUserId) || string.IsNullOrEmpty(request.SeriesName))
+            {
+                return BadRequest("TwitchUserId and SeriesName are required");
+            }
+
+            // Generate Series ID (RowKey) - Format: <timestamp>_<sanitized_series_name>
+            // ⚠️ CRITICAL: This logic is duplicated in restore-series-save.js.
+            // If you change the series ID format here, you MUST update it in both places to keep them in sync!
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(request.SeriesName, "[^a-zA-Z0-9]", "_");
+            var seriesId = $"{timestamp}_{sanitizedName}";
+
+            var series = new Series
+            {
+                UserId = request.TwitchUserId,
+                Id = seriesId,
+                Name = request.SeriesName,
+                Description = request.Description ?? "Restored via Admin Debug",
+                Snapshot = new Counter
+                {
+                    TwitchUserId = request.TwitchUserId,
+                    Deaths = request.Counters.Deaths,
+                    Swears = request.Counters.Swears,
+                    Screams = request.Counters.Screams,
+                    Bits = request.Counters.Bits,
+                    CustomCounters = request.Counters.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                    LastUpdated = DateTimeOffset.UtcNow
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow,
+                IsActive = true
+            };
+
+            try
+            {
+                await _seriesRepository.CreateSeriesAsync(series);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", LogSanitizer.Sanitize(request.TwitchUserId));
+                return StatusCode(500, new { success = false, error = "Failed to create series save" });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Series save restored successfully",
+                save = new
+                {
+                    seriesId,
+                    seriesName = series.Name,
+                    description = series.Description,
+                    deaths = series.Snapshot.Deaths,
+                    swears = series.Snapshot.Swears,
+                    screams = series.Snapshot.Screams,
+                    bits = series.Snapshot.Bits,
+                    savedAt = series.LastUpdated
+                }
+            });
         }
 
         [HttpPost("test-webhook-save")]
@@ -34,7 +106,7 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var testWebhookUrl = "https://discord.com/api/webhooks/1234567890/test-webhook-token-12345";
-            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", userId);
+            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
@@ -72,7 +144,7 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", userId);
+            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
 
@@ -105,7 +177,7 @@ namespace OmniForge.Web.Controllers
                 });
             }
 
-            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", user.Username);
+            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", LogSanitizer.Sanitize(user.Username));
 
             var mockEvent = new
             {
@@ -132,7 +204,7 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", userId);
+            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
@@ -158,6 +230,23 @@ namespace OmniForge.Web.Controllers
                 cleanedFields,
                 user = new { user.TwitchUserId, user.DiscordWebhookUrl }
             });
+        }
+    }
+
+    public class RestoreSeriesRequest
+    {
+        public string TwitchUserId { get; set; } = string.Empty;
+        public string SeriesName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public CounterValues Counters { get; set; } = new CounterValues();
+
+        public class CounterValues
+        {
+            public int Deaths { get; set; }
+            public int Swears { get; set; }
+            public int Screams { get; set; }
+            public int Bits { get; set; }
+            public System.Collections.Generic.Dictionary<string, int> CustomCounters { get; set; } = new System.Collections.Generic.Dictionary<string, int>();
         }
     }
 }

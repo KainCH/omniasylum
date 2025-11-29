@@ -15,6 +15,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IDiscordService> _mockDiscordService;
+        private readonly Mock<ISeriesRepository> _mockSeriesRepository;
         private readonly Mock<ILogger<DebugController>> _mockLogger;
         private readonly DebugController _controller;
 
@@ -22,11 +23,13 @@ namespace OmniForge.Tests
         {
             _mockUserRepository = new Mock<IUserRepository>();
             _mockDiscordService = new Mock<IDiscordService>();
+            _mockSeriesRepository = new Mock<ISeriesRepository>();
             _mockLogger = new Mock<ILogger<DebugController>>();
 
             _controller = new DebugController(
                 _mockUserRepository.Object,
                 _mockDiscordService.Object,
+                _mockSeriesRepository.Object,
                 _mockLogger.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
@@ -97,6 +100,101 @@ namespace OmniForge.Tests
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => string.IsNullOrEmpty(u.DiscordWebhookUrl))), Times.Once);
+        }
+
+        [Fact]
+        public async Task RestoreSeriesSave_ShouldReturnOk()
+        {
+            var request = new RestoreSeriesRequest
+            {
+                TwitchUserId = "12345",
+                SeriesName = "Test Series",
+                Description = "Test Description",
+                Counters = new RestoreSeriesRequest.CounterValues
+                {
+                    Deaths = 10,
+                    Swears = 5
+                }
+            };
+
+            var result = await _controller.RestoreSeriesSave(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+
+            // Use reflection to verify anonymous type properties
+            var value = okResult.Value;
+            Assert.NotNull(value);
+
+            var successProperty = value!.GetType().GetProperty("success");
+            var saveProperty = value.GetType().GetProperty("save");
+
+            Assert.NotNull(successProperty);
+            Assert.True((bool)successProperty!.GetValue(value)!);
+
+            Assert.NotNull(saveProperty);
+            var saveValue = saveProperty!.GetValue(value);
+            Assert.NotNull(saveValue);
+
+            var seriesNameProperty = saveValue!.GetType().GetProperty("seriesName");
+            var deathsProperty = saveValue.GetType().GetProperty("deaths");
+
+            Assert.NotNull(seriesNameProperty);
+            Assert.NotNull(deathsProperty);
+
+            Assert.Equal("Test Series", seriesNameProperty!.GetValue(saveValue));
+            Assert.Equal(10, deathsProperty!.GetValue(saveValue));
+
+            _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.Is<Series>(s =>
+                s.UserId == "12345" &&
+                s.Name == "Test Series" &&
+                s.Snapshot.Deaths == 10 &&
+                s.Snapshot.Swears == 5
+            )), Times.Once);
+        }
+
+        [Fact]
+        public async Task RestoreSeriesSave_ShouldReturn500_WhenRepositoryFails()
+        {
+            var request = new RestoreSeriesRequest
+            {
+                TwitchUserId = "12345",
+                SeriesName = "Test Series"
+            };
+
+            _mockSeriesRepository.Setup(x => x.CreateSeriesAsync(It.IsAny<Series>()))
+                .ThrowsAsync(new System.Exception("Database error"));
+
+            var result = await _controller.RestoreSeriesSave(request);
+
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, objectResult.StatusCode);
+
+            var value = objectResult.Value;
+            Assert.NotNull(value);
+
+            var successProperty = value!.GetType().GetProperty("success");
+            var errorProperty = value.GetType().GetProperty("error");
+
+            Assert.NotNull(successProperty);
+            Assert.NotNull(errorProperty);
+
+            Assert.False((bool)successProperty!.GetValue(value)!);
+            Assert.Equal("Failed to create series save", errorProperty!.GetValue(value));
+        }
+
+        [Fact]
+        public async Task RestoreSeriesSave_ShouldReturnBadRequest_WhenValidationFails()
+        {
+            var request = new RestoreSeriesRequest
+            {
+                TwitchUserId = "", // Invalid
+                SeriesName = ""   // Invalid
+            };
+
+            var result = await _controller.RestoreSeriesSave(request);
+
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal("TwitchUserId and SeriesName are required", badRequestResult.Value);
         }
     }
 }
