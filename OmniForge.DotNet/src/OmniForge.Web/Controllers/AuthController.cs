@@ -80,7 +80,7 @@ namespace OmniForge.Web.Controllers
                         var jwt = handler.ReadJwtToken(tokenResponse.IdToken);
                         var sub = jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
                         var preferredUsername = jwt.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
-                        
+
                         if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(preferredUsername))
                         {
                             userInfo = new TwitchUserInfo

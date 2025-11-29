@@ -221,7 +221,7 @@ namespace OmniForge.Infrastructure.Services
                     // Retry with new token
                     return await action(user.AccessToken);
                 }
-                
+
                 throw;
             }
         }
