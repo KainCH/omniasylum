@@ -123,19 +123,26 @@ namespace OmniForge.Tests
 
             // Use reflection to verify anonymous type properties
             var value = okResult.Value;
-            var successProperty = value.GetType().GetProperty("success");
+            Assert.NotNull(value);
+
+            var successProperty = value!.GetType().GetProperty("success");
             var saveProperty = value.GetType().GetProperty("save");
 
             Assert.NotNull(successProperty);
-            Assert.True((bool)successProperty.GetValue(value));
+            Assert.True((bool)successProperty!.GetValue(value)!);
 
             Assert.NotNull(saveProperty);
-            var saveValue = saveProperty.GetValue(value);
-            var seriesNameProperty = saveValue.GetType().GetProperty("seriesName");
+            var saveValue = saveProperty!.GetValue(value);
+            Assert.NotNull(saveValue);
+
+            var seriesNameProperty = saveValue!.GetType().GetProperty("seriesName");
             var deathsProperty = saveValue.GetType().GetProperty("deaths");
 
-            Assert.Equal("Test Series", seriesNameProperty.GetValue(saveValue));
-            Assert.Equal(10, deathsProperty.GetValue(saveValue));
+            Assert.NotNull(seriesNameProperty);
+            Assert.NotNull(deathsProperty);
+
+            Assert.Equal("Test Series", seriesNameProperty!.GetValue(saveValue));
+            Assert.Equal(10, deathsProperty!.GetValue(saveValue));
 
             _mockSeriesRepository.Verify(x => x.CreateSeriesAsync(It.Is<Series>(s =>
                 s.UserId == "12345" &&
@@ -163,11 +170,31 @@ namespace OmniForge.Tests
             Assert.Equal(500, objectResult.StatusCode);
 
             var value = objectResult.Value;
-            var successProperty = value.GetType().GetProperty("success");
+            Assert.NotNull(value);
+
+            var successProperty = value!.GetType().GetProperty("success");
             var errorProperty = value.GetType().GetProperty("error");
 
-            Assert.False((bool)successProperty.GetValue(value));
-            Assert.Equal("Failed to create series save", errorProperty.GetValue(value));
+            Assert.NotNull(successProperty);
+            Assert.NotNull(errorProperty);
+
+            Assert.False((bool)successProperty!.GetValue(value)!);
+            Assert.Equal("Failed to create series save", errorProperty!.GetValue(value));
+        }
+
+        [Fact]
+        public async Task RestoreSeriesSave_ShouldReturnBadRequest_WhenValidationFails()
+        {
+            var request = new RestoreSeriesRequest
+            {
+                TwitchUserId = "", // Invalid
+                SeriesName = ""   // Invalid
+            };
+
+            var result = await _controller.RestoreSeriesSave(request);
+
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal("TwitchUserId and SeriesName are required", badRequestResult.Value);
         }
     }
 }
