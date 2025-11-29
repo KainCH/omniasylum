@@ -370,5 +370,69 @@ namespace OmniForge.Tests
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
         }
+
+        [Fact]
+        public async Task GetCustomRewardsAsync_ShouldThrow_WhenReactiveRefreshFails()
+        {
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                AccessToken = "bad_token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+
+            // First call fails with 401
+            _mockHelixWrapper.Setup(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId))
+                .ThrowsAsync(new Exception("401 Unauthorized"));
+
+            // Refresh fails
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
+
+            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+
+            _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once);
+            // Should not retry with original token or new token
+            _mockHelixWrapper.Verify(x => x.GetCustomRewardsAsync("test_client_id", It.IsAny<string>(), userId), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetCustomRewardsAsync_ShouldRetry_WhenHttpRequestException401()
+        {
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                AccessToken = "bad_token",
+                RefreshToken = "refresh_token",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+
+            // First call fails with HttpRequestException 401
+            var httpEx = new HttpRequestException("Unauthorized", null, System.Net.HttpStatusCode.Unauthorized);
+            _mockHelixWrapper.SetupSequence(x => x.GetCustomRewardsAsync("test_client_id", It.IsAny<string>(), userId))
+                .ThrowsAsync(httpEx)
+                .ReturnsAsync(new List<HelixCustomReward>());
+
+            var newToken = new TwitchTokenResponse
+            {
+                AccessToken = "new_token",
+                RefreshToken = "new_refresh",
+                ExpiresIn = 3600
+            };
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync(newToken);
+
+            await _service.GetCustomRewardsAsync(userId);
+
+            _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.AccessToken == "new_token")), Times.Once);
+            _mockHelixWrapper.Verify(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId), Times.Once);
+            _mockHelixWrapper.Verify(x => x.GetCustomRewardsAsync("test_client_id", "new_token", userId), Times.Once);
+        }
     }
 }
