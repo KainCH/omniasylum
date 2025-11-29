@@ -208,5 +208,32 @@ namespace OmniForge.Tests
 
             Assert.Null(result);
         }
+
+        [Fact]
+        public async Task GetOidcKeysAsync_ShouldReturnKeys_WhenSuccess()
+        {
+            var jwksJson = "{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"1\"}]}";
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req => req.RequestUri != null && req.RequestUri.ToString() == "https://id.twitch.tv/oauth2/keys"),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK, Content = new StringContent(jwksJson) });
+
+            var result = await _service.GetOidcKeysAsync();
+            Assert.Equal(jwksJson, result);
+        }
+
+        [Fact]
+        public async Task GetOidcKeysAsync_ShouldReturnNull_WhenFailure()
+        {
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.Unauthorized });
+
+            var result = await _service.GetOidcKeysAsync();
+            Assert.Null(result);
+        }
     }
 }
