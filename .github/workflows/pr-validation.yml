@@ -101,6 +101,7 @@ jobs:
         with:
           context: ./OmniForge.DotNet
           file: ./OmniForge.DotNet/Dockerfile
+          pull: true
           push: false
           tags: omniforge-dotnet:pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
