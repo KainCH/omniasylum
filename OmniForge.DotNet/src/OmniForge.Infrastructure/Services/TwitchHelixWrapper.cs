@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Interfaces;
+using OmniForge.Core.Utilities;
 using TwitchLib.Api;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 using TwitchLib.Api.Helix.Models.Streams.GetStreams;
@@ -58,13 +59,13 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 _logger.LogInformation("Creating EventSub Subscription: Type={Type}, Version={Version}, SessionId={SessionId}, ClientId={ClientId}, TokenLength={TokenLength}",
-                    type, version, sessionId, clientId, accessToken?.Length ?? 0);
+                    LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(version), LogSanitizer.Sanitize(sessionId), LogSanitizer.Sanitize(clientId), accessToken?.Length ?? 0);
 
                 if (condition != null)
                 {
                     foreach (var kvp in condition)
                     {
-                        _logger.LogInformation("EventSub Condition: {Key}={Value}", kvp.Key, kvp.Value);
+                        _logger.LogInformation("EventSub Condition: {Key}={Value}", LogSanitizer.Sanitize(kvp.Key), LogSanitizer.Sanitize(kvp.Value));
                     }
                 }
 
@@ -76,7 +77,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
             {
-                _logger.LogError(ex, "BadRequestException in CreateEventSubSubscriptionAsync: {Message}", ex.Message);
+                _logger.LogError(ex, "BadRequestException in CreateEventSubSubscriptionAsync: {Message}", LogSanitizer.Sanitize(ex.Message));
                 // Log the raw response body if possible, or at least the parameters again
                 throw;
             }

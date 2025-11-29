@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using TwitchLib.Client;
 using TwitchLib.Client.Models;
 using TwitchLib.Communication.Clients;
@@ -43,14 +44,14 @@ namespace OmniForge.Infrastructure.Services
 
                 if (user == null)
                 {
-                    _logger.LogWarning("User {UserId} not found", userId);
+                    _logger.LogWarning("User {UserId} not found", LogSanitizer.Sanitize(userId));
                     return;
                 }
 
                 // Check if token needs refresh (buffer of 5 minutes)
                 if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
                 {
-                    _logger.LogInformation("🔄 Refreshing expired token for user {UserId} before IRC connect", userId);
+                    _logger.LogInformation("🔄 Refreshing expired token for user {UserId} before IRC connect", LogSanitizer.Sanitize(userId));
                     var newToken = await authService.RefreshTokenAsync(user.RefreshToken);
                     if (newToken != null)
                     {
@@ -58,11 +59,11 @@ namespace OmniForge.Infrastructure.Services
                         user.RefreshToken = newToken.RefreshToken;
                         user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
                         await userRepository.SaveUserAsync(user);
-                        _logger.LogInformation("✅ Token refreshed for user {UserId}, expires at {Expiry}", userId, user.TokenExpiry);
+                        _logger.LogInformation("✅ Token refreshed for user {UserId}, expires at {Expiry}", LogSanitizer.Sanitize(userId), user.TokenExpiry);
                     }
                     else
                     {
-                        _logger.LogError("❌ Failed to refresh token for user {UserId} - cannot connect to IRC", userId);
+                        _logger.LogError("❌ Failed to refresh token for user {UserId} - cannot connect to IRC", LogSanitizer.Sanitize(userId));
                         return;
                     }
                 }
@@ -78,8 +79,8 @@ namespace OmniForge.Infrastructure.Services
 
                 client.Initialize(credentials, user.Username);
 
-                client.OnLog += (s, e) => _logger.LogDebug("Twitch Client {UserId}: {Data}", userId, e.Data);
-                client.OnConnected += (s, e) => _logger.LogInformation("Twitch Client {UserId} connected", userId);
+                client.OnLog += (s, e) => _logger.LogDebug("Twitch Client {UserId}: {Data}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(e.Data));
+                client.OnConnected += (s, e) => _logger.LogInformation("Twitch Client {UserId} connected", LogSanitizer.Sanitize(userId));
                 client.OnMessageReceived += (s, e) => HandleMessage(userId, e.ChatMessage);
 
                 if (client.Connect())
@@ -88,7 +89,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 else
                 {
-                    _logger.LogError("Failed to connect Twitch Client for {UserId}", userId);
+                    _logger.LogError("Failed to connect Twitch Client for {UserId}", LogSanitizer.Sanitize(userId));
                 }
             }
         }

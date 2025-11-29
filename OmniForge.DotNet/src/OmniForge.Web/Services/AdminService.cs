@@ -1,5 +1,6 @@
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Services
 {
@@ -43,14 +44,14 @@ namespace OmniForge.Web.Services
             if (currentUser.Role != "admin")
             {
                 _logger.LogWarning("Non-admin user {Username} attempted to delete user {UserId}",
-                    currentUser.Username, userId);
+                    LogSanitizer.Sanitize(currentUser.Username), LogSanitizer.Sanitize(userId));
                 return AdminOperationResult.Fail("Only administrators can delete users");
             }
 
             // Cannot delete yourself
             if (currentUser.TwitchUserId == userId)
             {
-                _logger.LogWarning("Admin {Username} attempted to delete their own account", currentUser.Username);
+                _logger.LogWarning("Admin {Username} attempted to delete their own account", LogSanitizer.Sanitize(currentUser.Username));
                 return AdminOperationResult.Fail("Cannot delete your own account");
             }
 
@@ -60,7 +61,7 @@ namespace OmniForge.Web.Services
             // If user doesn't exist, allow deletion (cleanup orphaned data)
             if (targetUser == null)
             {
-                _logger.LogInformation("Deleting non-existent/orphaned user record with ID {UserId}", userId);
+                _logger.LogInformation("Deleting non-existent/orphaned user record with ID {UserId}", LogSanitizer.Sanitize(userId));
                 await _userRepository.DeleteUserAsync(userId);
                 return AdminOperationResult.Ok("Orphaned user record deleted successfully");
             }
@@ -69,13 +70,13 @@ namespace OmniForge.Web.Services
             if (targetUser.Role == "admin")
             {
                 _logger.LogWarning("Admin {Username} attempted to delete another admin {TargetUsername}",
-                    currentUser.Username, targetUser.Username);
+                    LogSanitizer.Sanitize(currentUser.Username), LogSanitizer.Sanitize(targetUser.Username));
                 return AdminOperationResult.Fail("Cannot delete admin accounts");
             }
 
             // Perform the deletion
             _logger.LogInformation("Admin {AdminUsername} deleting user {Username} ({UserId})",
-                currentUser.Username, targetUser.Username, userId);
+                LogSanitizer.Sanitize(currentUser.Username), LogSanitizer.Sanitize(targetUser.Username), LogSanitizer.Sanitize(userId));
 
             await _userRepository.DeleteUserAsync(userId);
 
@@ -90,19 +91,19 @@ namespace OmniForge.Web.Services
             if (currentUser.Role != "admin")
             {
                 _logger.LogWarning("Non-admin user {Username} attempted to delete broken user record with RowKey {RowKey}",
-                    currentUser.Username, rowKey);
+                    LogSanitizer.Sanitize(currentUser.Username), LogSanitizer.Sanitize(rowKey));
                 return AdminOperationResult.Fail("Only administrators can delete user records");
             }
 
             // Cannot delete your own record by RowKey
             if (currentUser.TwitchUserId == rowKey || currentUser.RowKey == rowKey)
             {
-                _logger.LogWarning("Admin {Username} attempted to delete their own account via RowKey", currentUser.Username);
+                _logger.LogWarning("Admin {Username} attempted to delete their own account via RowKey", LogSanitizer.Sanitize(currentUser.Username));
                 return AdminOperationResult.Fail("Cannot delete your own account");
             }
 
             _logger.LogInformation("Admin {AdminUsername} deleting broken user record with RowKey {RowKey}",
-                currentUser.Username, rowKey);
+                LogSanitizer.Sanitize(currentUser.Username), LogSanitizer.Sanitize(rowKey));
 
             try
             {
@@ -111,7 +112,7 @@ namespace OmniForge.Web.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete user record with RowKey {RowKey}", rowKey);
+                _logger.LogError(ex, "Failed to delete user record with RowKey {RowKey}", LogSanitizer.Sanitize(rowKey));
                 return AdminOperationResult.Fail($"Failed to delete user record: {ex.Message}");
             }
         }

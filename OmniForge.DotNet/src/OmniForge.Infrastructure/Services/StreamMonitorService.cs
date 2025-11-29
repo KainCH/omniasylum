@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Models.EventSub;
@@ -114,14 +115,14 @@ namespace OmniForge.Infrastructure.Services
 
                 if (user == null)
                 {
-                    _logger.LogWarning("Cannot subscribe user {UserId}: User not found in database.", userId);
+                    _logger.LogWarning("Cannot subscribe user {UserId}: User not found in database.", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Failed;
                 }
 
                 // Check for token expiry and refresh if needed
                 if (user.TokenExpiry.AddMinutes(-5) < DateTimeOffset.UtcNow)
                 {
-                    _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", userId);
+                    _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", LogSanitizer.Sanitize(userId));
 
                     if (!string.IsNullOrEmpty(user.RefreshToken))
                     {
@@ -133,24 +134,24 @@ namespace OmniForge.Infrastructure.Services
                             user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
 
                             await userRepository.SaveUserAsync(user);
-                            _logger.LogInformation("Successfully refreshed access token for user {UserId}.", userId);
+                            _logger.LogInformation("Successfully refreshed access token for user {UserId}.", LogSanitizer.Sanitize(userId));
                         }
                         else
                         {
-                            _logger.LogWarning("Failed to refresh access token for user {UserId}.", userId);
+                            _logger.LogWarning("Failed to refresh access token for user {UserId}.", LogSanitizer.Sanitize(userId));
                             return SubscriptionResult.Unauthorized;
                         }
                     }
                     else
                     {
-                        _logger.LogWarning("Cannot refresh token for user {UserId}: No refresh token available.", userId);
+                        _logger.LogWarning("Cannot refresh token for user {UserId}: No refresh token available.", LogSanitizer.Sanitize(userId));
                         return SubscriptionResult.Unauthorized;
                     }
                 }
 
                 if (string.IsNullOrEmpty(user.AccessToken))
                 {
-                    _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", userId);
+                    _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Unauthorized;
                 }
 
@@ -166,17 +167,17 @@ namespace OmniForge.Infrastructure.Services
                         var validation = await _twitchApi.Auth.ValidateAccessTokenAsync();
                         if (validation == null || string.IsNullOrEmpty(validation.UserId))
                         {
-                            _logger.LogError("Token validation returned null or empty User ID for user {UserId}", userId);
+                            _logger.LogError("Token validation returned null or empty User ID for user {UserId}", LogSanitizer.Sanitize(userId));
                             return SubscriptionResult.Unauthorized;
                         }
                         tokenUserId = validation.UserId;
                         tokenScopes = validation.Scopes;
                         _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}, Scopes: {Scopes}",
-                            validation.UserId, validation.Login, validation.ClientId, string.Join(", ", tokenScopes ?? new List<string>()));
+                            LogSanitizer.Sanitize(validation.UserId), LogSanitizer.Sanitize(validation.Login), LogSanitizer.Sanitize(validation.ClientId), LogSanitizer.Sanitize(string.Join(", ", tokenScopes ?? new List<string>())));
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to validate access token for user {UserId}", userId);
+                        _logger.LogError(ex, "Failed to validate access token for user {UserId}", LogSanitizer.Sanitize(userId));
                         return SubscriptionResult.Unauthorized;
                     }
 
@@ -195,7 +196,7 @@ namespace OmniForge.Infrastructure.Services
                     if (missingScopes.Count > 0)
                     {
                         _logger.LogWarning("🔒 User {UserId} token is missing required scopes: [{MissingScopes}]. User must re-login to get updated scopes.",
-                            userId, string.Join(", ", missingScopes));
+                            LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(string.Join(", ", missingScopes)));
                         return SubscriptionResult.RequiresReauth;
                     }
 
@@ -203,14 +204,14 @@ namespace OmniForge.Infrastructure.Services
 
                     // Use the token's User ID as the broadcaster ID (they are the same for self-monitoring)
                     var broadcasterId = tokenUserId;
-                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, user_id={UserId} for subscriptions", broadcasterId, tokenUserId);
+                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, user_id={UserId} for subscriptions", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId));
 
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", broadcasterId } };
                     var sessionId = _eventSubService.SessionId;
 
                     if (string.IsNullOrEmpty(sessionId))
                     {
-                        _logger.LogWarning("Cannot subscribe user {UserId}: Session ID is missing.", userId);
+                        _logger.LogWarning("Cannot subscribe user {UserId}: Session ID is missing.", LogSanitizer.Sanitize(userId));
                         return SubscriptionResult.Failed;
                     }
 
@@ -247,7 +248,7 @@ namespace OmniForge.Infrastructure.Services
                         };
 
                         _logger.LogInformation("Subscribing to chat events with broadcaster_user_id={BroadcasterId}, user_id={UserId} (same value for self-monitoring)",
-                            tokenUserId, tokenUserId);
+                            LogSanitizer.Sanitize(tokenUserId), LogSanitizer.Sanitize(tokenUserId));
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
                         await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
@@ -260,17 +261,17 @@ namespace OmniForge.Infrastructure.Services
 
                     _subscribedUsers.TryAdd(userId, true);
                     _usersWantingMonitoring.TryAdd(userId, true);
-                    _logger.LogInformation("✅ User {UserId} fully subscribed to all events", userId);
+                    _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadScopeException)
                 {
-                    _logger.LogWarning("Failed to subscribe user {UserId}: Bad Scope / Unauthorized.", userId);
+                    _logger.LogWarning("Failed to subscribe user {UserId}: Bad Scope / Unauthorized.", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Unauthorized;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to subscribe user {UserId}", userId);
+                    _logger.LogError(ex, "Failed to subscribe user {UserId}", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Failed;
                 }
             }
@@ -278,7 +279,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task UnsubscribeFromUserAsync(string userId)
         {
-            _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", userId);
+            _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", LogSanitizer.Sanitize(userId));
 
             // Note: Helix doesn't easily support "unsubscribe by user" without tracking subscription IDs.
             // For now, we'll just mark as unsubscribed in our local tracking.
@@ -287,7 +288,7 @@ namespace OmniForge.Infrastructure.Services
             var wasWanting = _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
 
             _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}",
-                userId, wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
+                LogSanitizer.Sanitize(userId), wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
 
             if (_usersWantingMonitoring.IsEmpty)
             {
@@ -311,7 +312,7 @@ namespace OmniForge.Infrastructure.Services
         {
             if (string.IsNullOrEmpty(user.RefreshToken))
             {
-                _logger.LogError("Cannot refresh token for user {UserId}: No refresh token available", user.TwitchUserId);
+                _logger.LogError("Cannot refresh token for user {UserId}: No refresh token available", LogSanitizer.Sanitize(user.TwitchUserId));
                 return null;
             }
 
@@ -324,18 +325,18 @@ namespace OmniForge.Infrastructure.Services
                     user.RefreshToken = refreshedToken.RefreshToken;
                     user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshedToken.ExpiresIn);
                     await userRepository.SaveUserAsync(user);
-                    _logger.LogInformation("✅ Token refreshed successfully for user {UserId}", user.TwitchUserId);
+                    _logger.LogInformation("✅ Token refreshed successfully for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                     return user;
                 }
                 else
                 {
-                    _logger.LogError("❌ Token refresh returned null for user {UserId}", user.TwitchUserId);
+                    _logger.LogError("❌ Token refresh returned null for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                     return null;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Exception during token refresh for user {UserId}", user.TwitchUserId);
+                _logger.LogError(ex, "❌ Exception during token refresh for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                 return null;
             }
         }
@@ -379,18 +380,18 @@ namespace OmniForge.Infrastructure.Services
                     condition,
                     EventSubTransportMethod.Websocket,
                     context.SessionId);
-                _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType}", subscriptionType);
+                _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 return true;
             }
             catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
             {
                 if (!retryOnBadToken)
                 {
-                    _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - user may need to re-login", subscriptionType);
+                    _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - user may need to re-login", LogSanitizer.Sanitize(subscriptionType));
                     return false;
                 }
 
-                _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - forcing token refresh...", subscriptionType);
+                _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - forcing token refresh...", LogSanitizer.Sanitize(subscriptionType));
                 var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository);
                 if (refreshedUser != null)
                 {
@@ -406,19 +407,19 @@ namespace OmniForge.Infrastructure.Services
                             condition,
                             EventSubTransportMethod.Websocket,
                             context.SessionId);
-                        _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after token refresh", subscriptionType);
+                        _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after token refresh", LogSanitizer.Sanitize(subscriptionType));
                         return true;
                     }
                     catch (Exception retryEx)
                     {
-                        _logger.LogError(retryEx, "❌ Failed to subscribe to {SubscriptionType} even after token refresh", subscriptionType);
+                        _logger.LogError(retryEx, "❌ Failed to subscribe to {SubscriptionType} even after token refresh", LogSanitizer.Sanitize(subscriptionType));
                     }
                 }
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to subscribe to {SubscriptionType}", subscriptionType);
+                _logger.LogError(ex, "Failed to subscribe to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 return false;
             }
         }
@@ -479,7 +480,7 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task OnSessionWelcome(string sessionId)
         {
-            _logger.LogInformation($"EventSub Session Welcome. ID: {sessionId}");
+            _logger.LogInformation($"EventSub Session Welcome. ID: {LogSanitizer.Sanitize(sessionId)}");
 
             // Auto-subscription is disabled. Users must manually start monitoring.
             // This prevents unauthorized or unwanted subscriptions on startup.
@@ -523,9 +524,9 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                         foreach (var userId in _usersWantingMonitoring.Keys)
                         {
-                            _logger.LogInformation("🔄 Re-subscribing user {UserId}...", userId);
+                            _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
                             var result = await SubscribeToUserAsync(userId);
-                            _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", userId, result);
+                            _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                         }
                     }
                     else
@@ -559,7 +560,7 @@ namespace OmniForge.Infrastructure.Services
                             foreach (var userId in _usersWantingMonitoring.Keys)
                             {
                                 var result = await SubscribeToUserAsync(userId);
-                                _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", userId, result);
+                                _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                             }
                         }
                     }
@@ -591,7 +592,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 else
                 {
-                    _logger.LogDebug("No handler registered for subscription type: {SubscriptionType}", subscriptionType);
+                    _logger.LogDebug("No handler registered for subscription type: {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 }
             }
             catch (Exception ex)

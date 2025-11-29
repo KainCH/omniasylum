@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -48,7 +49,7 @@ namespace OmniForge.Infrastructure.Services
 
                         if (user.IsActive && !string.IsNullOrEmpty(user.AccessToken))
                         {
-                            _logger.LogInformation("Connecting Twitch bot for user: {Username}", user.Username);
+                            _logger.LogInformation("Connecting Twitch bot for user: {Username}", LogSanitizer.Sanitize(user.Username));
                             await _twitchClientManager.ConnectUserAsync(user.TwitchUserId);
                         }
                     }

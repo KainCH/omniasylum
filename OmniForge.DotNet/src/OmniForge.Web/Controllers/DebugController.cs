@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Controllers
 {
@@ -34,7 +35,7 @@ namespace OmniForge.Web.Controllers
         [Authorize(Roles = "admin")]
         public async Task<IActionResult> RestoreSeriesSave([FromBody] RestoreSeriesRequest request)
         {
-            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", request.TwitchUserId);
+            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", LogSanitizer.Sanitize(request.TwitchUserId));
 
             // Validate request
             if (string.IsNullOrEmpty(request.TwitchUserId) || string.IsNullOrEmpty(request.SeriesName))
@@ -76,7 +77,7 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", request.TwitchUserId);
+                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", LogSanitizer.Sanitize(request.TwitchUserId));
                 return StatusCode(500, new { success = false, error = "Failed to create series save" });
             }
 
@@ -105,7 +106,7 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var testWebhookUrl = "https://discord.com/api/webhooks/1234567890/test-webhook-token-12345";
-            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", userId);
+            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
@@ -143,7 +144,7 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", userId);
+            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
 
@@ -176,7 +177,7 @@ namespace OmniForge.Web.Controllers
                 });
             }
 
-            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", user.Username);
+            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", LogSanitizer.Sanitize(user.Username));
 
             var mockEvent = new
             {
@@ -203,7 +204,7 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", userId);
+            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", LogSanitizer.Sanitize(userId));
 
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");

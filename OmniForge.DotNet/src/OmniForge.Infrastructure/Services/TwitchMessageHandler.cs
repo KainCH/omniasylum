@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using TwitchLib.Client.Models;
 
 namespace OmniForge.Infrastructure.Services
@@ -262,14 +263,14 @@ namespace OmniForge.Infrastructure.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", userId);
+                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", LogSanitizer.Sanitize(userId));
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error handling message for {UserId}", userId);
+                _logger.LogError(ex, "Error handling message for {UserId}", LogSanitizer.Sanitize(userId));
             }
         }
     }
