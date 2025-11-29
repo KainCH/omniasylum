@@ -9,10 +9,10 @@ const CONFIG = {
   targetSystem: 'DOTNET',
 
   // Azure Storage Account Name
-  storageAccountName: 'omni46jismtjodyuc', // Default from debug script, change if needed
+  storageAccountName: process.env.AZURE_STORAGE_ACCOUNT || 'YOUR_STORAGE_ACCOUNT_NAME',
 
   // The Twitch User ID to restore the save for
-  twitchUserId: '1105619891',
+  twitchUserId: process.env.TARGET_USER_ID || 'TARGET_TWITCH_USER_ID',
 
   // Series Details
   seriesName: 'RE1',
@@ -35,6 +35,11 @@ const CONFIG = {
 
 async function restoreSeriesSave() {
   try {
+    if (CONFIG.storageAccountName === 'YOUR_STORAGE_ACCOUNT_NAME' || CONFIG.twitchUserId === 'TARGET_TWITCH_USER_ID') {
+        console.error('❌ Error: Please set AZURE_STORAGE_ACCOUNT and TARGET_USER_ID environment variables, or edit the script configuration.');
+        return;
+    }
+
     console.log(`🔄 Starting Series Save Restoration for [${CONFIG.targetSystem}]...`);
 
     // 1. Construct the Service URL
