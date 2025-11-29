@@ -208,7 +208,7 @@ namespace OmniForge.Tests
             // Mock GetUserInfoAsync to return valid user info (fallback success)
             _mockTwitchAuthService.Setup(x => x.GetUserInfoAsync("token", "client-id"))
                 .ReturnsAsync(userInfo);
-            
+
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
             _mockJwtService.Setup(x => x.GenerateToken(It.IsAny<User>())).Returns("jwt-token");
 
@@ -220,14 +220,13 @@ namespace OmniForge.Tests
             Assert.Equal("/portal", redirectResult.Url);
             _mockTwitchAuthService.Verify(x => x.GetUserInfoAsync("token", "client-id"), Times.Once);
         }
-
         [Fact]
         public async Task Callback_ShouldFallbackToHelix_WhenIdTokenMissingClaims()
         {
             // Arrange
             var rsa = RSA.Create(2048);
             var securityKey = new RsaSecurityKey(rsa) { KeyId = "test-key" };
-            
+
             var parameters = rsa.ExportParameters(false);
             var e = Base64UrlEncoder.Encode(parameters.Exponent);
             var n = Base64UrlEncoder.Encode(parameters.Modulus);
@@ -238,8 +237,8 @@ namespace OmniForge.Tests
             var tokenHandler = new JwtSecurityTokenHandler();
             var descriptor = new SecurityTokenDescriptor
             {
-                Subject = new ClaimsIdentity(new[] 
-                { 
+                Subject = new ClaimsIdentity(new[]
+                {
                     // Missing sub and preferred_username
                     new Claim("email", "user@example.com")
                 }),
@@ -258,7 +257,7 @@ namespace OmniForge.Tests
                 .ReturnsAsync(tokenResponse);
             _mockTwitchAuthService.Setup(x => x.GetUserInfoAsync("token", "client-id"))
                 .ReturnsAsync(userInfo);
-            
+
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
             _mockJwtService.Setup(x => x.GenerateToken(It.IsAny<User>())).Returns("jwt-token");
 
@@ -316,7 +315,9 @@ namespace OmniForge.Tests
 
             var result = await _controller.Refresh();
             var okResult = Assert.IsType<OkObjectResult>(result);
-        }        [Fact]
+        }
+
+        [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenTwitchRefreshFails()
         {
             var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
