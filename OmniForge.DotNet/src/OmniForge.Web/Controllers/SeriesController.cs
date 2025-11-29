@@ -39,16 +39,17 @@ namespace OmniForge.Web.Controllers
             var seriesList = await _seriesRepository.GetSeriesAsync(userId);
 
             // Map to frontend-expected format with seriesId instead of Id
+            // Use null-safe accessors in case Snapshot is null from storage
             var saves = seriesList.Select(s => new
             {
                 seriesId = s.Id,
                 seriesName = s.Name,
                 description = s.Description,
-                deaths = s.Snapshot.Deaths,
-                swears = s.Snapshot.Swears,
-                screams = s.Snapshot.Screams,
-                bits = s.Snapshot.Bits,
-                customCounters = s.Snapshot.CustomCounters,
+                deaths = s.Snapshot?.Deaths ?? 0,
+                swears = s.Snapshot?.Swears ?? 0,
+                screams = s.Snapshot?.Screams ?? 0,
+                bits = s.Snapshot?.Bits ?? 0,
+                customCounters = s.Snapshot?.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
                 savedAt = s.LastUpdated,
                 createdAt = s.CreatedAt,
                 isActive = s.IsActive
