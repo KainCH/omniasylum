@@ -24,6 +24,8 @@ namespace OmniForge.Tests.Components.Pages
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
+        private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<ISeriesRepository> _mockSeriesRepository;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
 
@@ -32,12 +34,16 @@ namespace OmniForge.Tests.Components.Pages
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
             _mockStreamMonitorService = new Mock<IStreamMonitorService>();
+            _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockSeriesRepository = new Mock<ISeriesRepository>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
 
             Services.AddSingleton(_mockCounterRepository.Object);
             Services.AddSingleton(_mockUserRepository.Object);
             Services.AddSingleton(_mockStreamMonitorService.Object);
+            Services.AddSingleton(_mockOverlayNotifier.Object);
+            Services.AddSingleton(_mockSeriesRepository.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Add core authorization services (PolicyProvider, etc.)
