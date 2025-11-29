@@ -9,6 +9,8 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
@@ -174,50 +176,10 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("refresh")]
-        public async Task<IActionResult> Refresh([FromHeader(Name = "Authorization")] string authHeader)
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        public async Task<IActionResult> Refresh()
         {
-            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
-            {
-                return Unauthorized("No token provided");
-            }
-
-            var token = authHeader.Substring(7);
-            // In a real scenario, we should validate the token here using the same logic as the middleware.
-            // However, since we are manually handling the refresh, we might want to decode it even if expired?
-            // The legacy code verifies it.
-
-            // TODO: We need a way to validate/decode the token manually here or rely on the [Authorize] attribute
-            // but allow expired tokens? The legacy code manually verifies.
-
-            // For now, let's assume the client sends a valid (or recently expired) token.
-            // We need a method in JwtService to Validate/Decode token.
-
-            // Let's skip the manual validation for a second and assume we can get the userId from claims if we were authorized.
-            // But if the token is expired, [Authorize] will fail.
-            // The legacy code allows refreshing an expired token if the underlying Twitch token is valid.
-
-            // So we need to manually decode the token without validating expiry.
-
-            var principal = _jwtService.GetPrincipalFromExpiredToken(token);
-            if (principal == null)
-            {
-                return Unauthorized("Invalid token");
-            }
-
-            // CWE-247, CWE-350, CWE-807 Fix:
-            // Ensure the token is not expired. We do not support refreshing with expired tokens
-            // as we lack a secure Refresh Token mechanism.
-            var expiryClaim = principal.FindFirst("exp");
-            if (expiryClaim != null && long.TryParse(expiryClaim.Value, out var expiryUnix))
-            {
-                var expiryDate = DateTimeOffset.FromUnixTimeSeconds(expiryUnix);
-                if (expiryDate < DateTimeOffset.UtcNow)
-                {
-                    return Unauthorized("Token expired. Please login again.");
-                }
-            }
-
-            var userIdClaim = principal.FindFirst("userId");
+            var userIdClaim = User.FindFirst("userId");
             if (userIdClaim == null)
             {
                 return Unauthorized("Invalid token claims");
