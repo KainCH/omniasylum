@@ -57,7 +57,7 @@ public class MainLayoutTests : BunitContext
                 <div class=""sidebar"">
                   <div class=""top-row ps-3 navbar navbar-dark"">
                     <div class=""container-fluid"">
-                      <span class=""navbar-brand"">OmniForge</span>
+                      <a class=""navbar-brand"" href=""/"">OmniForge</a>
                     </div>
                   </div>
                   <input type=""checkbox"" title=""Navigation menu"" class=""navbar-toggler"" />
@@ -65,7 +65,7 @@ public class MainLayoutTests : BunitContext
                     <nav class=""nav flex-column"">
                       <div class=""nav-item px-3"">
                         <a href="""" class=""nav-link active"" aria-current=""page"">
-                          <span class=""bi bi-house-door-fill-nav-menu"" aria-hidden=""true""></span>
+                          <i class=""bi bi-house-door-fill me-2"" aria-hidden=""true""></i>
                           Home
                         </a>
                       </div>

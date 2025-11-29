@@ -144,7 +144,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser"))
                 .ReturnsAsync(new List<Alert>());
 
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -189,7 +189,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -230,7 +230,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -271,7 +271,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -350,7 +350,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -385,7 +385,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -422,7 +422,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -464,7 +464,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -529,7 +529,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -564,7 +564,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -602,7 +602,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -639,7 +639,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -684,7 +684,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -724,7 +724,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -919,7 +919,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -952,7 +952,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
@@ -988,7 +988,7 @@ namespace OmniForge.Tests.Components.Pages
             _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
             _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
             _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
-            JSInterop.SetupVoid("overlayInterop.init");
+            // JSInterop.SetupVoid("overlayInterop.init");
 
             // Act
             var cut = Render(b =>
