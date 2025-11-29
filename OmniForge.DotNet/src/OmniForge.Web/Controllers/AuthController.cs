@@ -165,6 +165,19 @@ namespace OmniForge.Web.Controllers
                 return Unauthorized("Invalid token");
             }
 
+            // CWE-247, CWE-350, CWE-807 Fix:
+            // Ensure the token is not expired. We do not support refreshing with expired tokens
+            // as we lack a secure Refresh Token mechanism.
+            var expiryClaim = principal.FindFirst("exp");
+            if (expiryClaim != null && long.TryParse(expiryClaim.Value, out var expiryUnix))
+            {
+                var expiryDate = DateTimeOffset.FromUnixTimeSeconds(expiryUnix);
+                if (expiryDate < DateTimeOffset.UtcNow)
+                {
+                    return Unauthorized("Token expired. Please login again.");
+                }
+            }
+
             var userIdClaim = principal.FindFirst("userId");
             if (userIdClaim == null)
             {
@@ -175,6 +188,11 @@ namespace OmniForge.Web.Controllers
             if (user == null)
             {
                 return NotFound("User not found");
+            }
+
+            if (!user.IsActive)
+            {
+                return Unauthorized("User account is inactive");
             }
 
             // Check if Twitch token needs refresh (e.g. expires in < 1 hour)

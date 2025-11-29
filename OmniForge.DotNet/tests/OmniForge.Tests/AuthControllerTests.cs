@@ -150,7 +150,10 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnNotFound_WhenUserNotFound()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+                new Claim("userId", "123"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()) 
+            }));
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync((User?)null);
 
@@ -159,9 +162,25 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task Refresh_ShouldReturnUnauthorized_WhenTokenExpired()
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+                new Claim("userId", "123"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds().ToString()) 
+            }));
+            _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
+
+            var result = await _controller.Refresh("Bearer token");
+            Assert.IsType<UnauthorizedObjectResult>(result);
+        }
+
+        [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTokenValid()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+                new Claim("userId", "123"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()) 
+            }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddHours(2) };
 
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
@@ -174,7 +193,10 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenTwitchRefreshFails()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+                new Claim("userId", "123"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()) 
+            }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(10), RefreshToken = "refresh" };
 
             _mockJwtService.Setup(x => x.GetPrincipalFromExpiredToken("token")).Returns(principal);
@@ -188,7 +210,10 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTwitchRefreshSuccess()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("userId", "123") }));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+                new Claim("userId", "123"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString()) 
+            }));
             var user = new User { TwitchUserId = "123", TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(10), RefreshToken = "refresh" };
             var newTokens = new TwitchTokenResponse { AccessToken = "new", RefreshToken = "new_refresh", ExpiresIn = 3600 };
 
