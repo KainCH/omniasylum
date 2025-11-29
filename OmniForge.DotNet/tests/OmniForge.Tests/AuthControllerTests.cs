@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -24,6 +25,7 @@ namespace OmniForge.Tests
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly Mock<IAuthenticationService> _mockAuthService;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
+        private readonly Mock<ILogger<AuthController>> _mockLogger;
         private readonly AuthController _controller;
 
         public AuthControllerTests()
@@ -34,6 +36,7 @@ namespace OmniForge.Tests
             _mockConfiguration = new Mock<IConfiguration>();
             _mockAuthService = new Mock<IAuthenticationService>();
             _mockServiceProvider = new Mock<IServiceProvider>();
+            _mockLogger = new Mock<ILogger<AuthController>>();
 
             var twitchSettings = Options.Create(new TwitchSettings { ClientId = "client-id" });
 
@@ -49,7 +52,8 @@ namespace OmniForge.Tests
                 _mockUserRepository.Object,
                 _mockJwtService.Object,
                 twitchSettings,
-                _mockConfiguration.Object);
+                _mockConfiguration.Object,
+                _mockLogger.Object);
 
             _controller.ControllerContext = new ControllerContext
             {
