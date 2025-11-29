@@ -24,14 +24,13 @@ namespace OmniForge.Infrastructure.Services
             _logger = logger;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Twitch Connection Service starting...");
-
-            // Wait for app startup to complete
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-
-            await ConnectAllUsersAsync(stoppingToken);
+            // Twitch connections are now user-initiated via "Start Monitor" button
+            // Auto-connect on startup is disabled to respect user preferences and avoid
+            // unnecessary authentication attempts with potentially expired tokens
+            _logger.LogInformation("Twitch Connection Service initialized (connections are user-initiated via Start Monitor)");
+            return Task.CompletedTask;
         }
 
         public async Task ConnectAllUsersAsync(CancellationToken cancellationToken = default)

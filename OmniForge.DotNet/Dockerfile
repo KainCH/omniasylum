@@ -18,9 +18,9 @@ COPY ["src/OmniForge.Core/OmniForge.Core.csproj", "src/OmniForge.Core/"]
 RUN dotnet restore "./src/OmniForge.Web/OmniForge.Web.csproj"
 COPY . .
 WORKDIR "/src/src/OmniForge.Web"
-RUN dotnet build "./OmniForge.Web.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 # This stage is used to publish the service project to be copied to the final stage
+# Skip the build stage and go straight to publish to ensure CSS and DLL are generated together
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./OmniForge.Web.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
