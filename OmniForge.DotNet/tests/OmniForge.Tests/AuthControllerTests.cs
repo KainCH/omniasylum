@@ -138,7 +138,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnNotFound_WhenUserNotFound()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim("userId", "123")
             }, "Bearer"));
             _controller.ControllerContext.HttpContext.User = principal;
@@ -151,7 +151,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTokenValid()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim("userId", "123")
             }, "Bearer"));
             _controller.ControllerContext.HttpContext.User = principal;
@@ -166,7 +166,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnUnauthorized_WhenTwitchRefreshFails()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim("userId", "123")
             }, "Bearer"));
             _controller.ControllerContext.HttpContext.User = principal;
@@ -182,7 +182,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task Refresh_ShouldReturnOk_WhenTwitchRefreshSuccess()
         {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { 
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim("userId", "123")
             }, "Bearer"));
             _controller.ControllerContext.HttpContext.User = principal;

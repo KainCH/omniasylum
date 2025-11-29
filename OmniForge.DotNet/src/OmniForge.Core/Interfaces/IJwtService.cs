@@ -6,6 +6,6 @@ namespace OmniForge.Core.Interfaces
     public interface IJwtService
     {
         string GenerateToken(User user);
-        ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
+        ClaimsPrincipal? ValidateToken(string token);
     }
 }

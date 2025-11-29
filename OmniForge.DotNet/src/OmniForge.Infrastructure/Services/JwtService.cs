@@ -45,7 +45,7 @@ namespace OmniForge.Infrastructure.Services
             return tokenHandler.WriteToken(token);
         }
 
-        public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+        public ClaimsPrincipal? ValidateToken(string token)
         {
             var tokenValidationParameters = new TokenValidationParameters
             {
@@ -55,7 +55,8 @@ namespace OmniForge.Infrastructure.Services
                 ValidIssuer = _settings.Issuer,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(_settings.Secret)),
-                ValidateLifetime = false // Allow expired tokens
+                ValidateLifetime = true, // Enforce token expiry
+                ClockSkew = TimeSpan.Zero // Strict expiry
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
