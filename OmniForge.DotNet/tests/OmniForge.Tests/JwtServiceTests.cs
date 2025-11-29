@@ -78,37 +78,32 @@ namespace OmniForge.Tests
         [Fact]
         public void ValidateToken_ShouldReturnNull_WhenTokenIsExpired()
         {
-            // Create a service with normal settings
-            var settings = new JwtSettings
-            {
-                Secret = "super_secret_key_for_testing_purposes_only_must_be_long_enough",
-                ExpiryDays = 1,
-                Issuer = "TestIssuer",
-                Audience = "TestAudience"
-            };
-            var mockOptions = new Mock<IOptions<JwtSettings>>();
-            mockOptions.Setup(x => x.Value).Returns(settings);
-            var service = new JwtService(mockOptions.Object);
+            // Manually create an expired token using the shared settings
+            var tokenString = CreateTokenWithCustomExpiry("12345", DateTime.UtcNow.AddMinutes(-20), DateTime.UtcNow.AddMinutes(-20), DateTime.UtcNow.AddMinutes(-10));
 
-            // Manually create an expired token
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = System.Text.Encoding.ASCII.GetBytes(settings.Secret);
-            var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new[] { new Claim("userId", "12345") }),
-                Expires = DateTime.UtcNow.AddMinutes(-10), // Expired 10 mins ago
-                IssuedAt = DateTime.UtcNow.AddMinutes(-20), // Issued 20 mins ago
-                NotBefore = DateTime.UtcNow.AddMinutes(-20),
-                Issuer = settings.Issuer,
-                Audience = settings.Audience,
-                SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key), Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
-            };
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
-
-            var principal = service.ValidateToken(tokenString);
+            var principal = _service.ValidateToken(tokenString);
 
             Assert.Null(principal);
+        }
+
+        private string CreateTokenWithCustomExpiry(string userId, DateTime issuedAt, DateTime notBefore, DateTime expires)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = System.Text.Encoding.ASCII.GetBytes(_settings.Secret);
+            var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[] { new Claim("userId", userId) }),
+                Expires = expires,
+                IssuedAt = issuedAt,
+                NotBefore = notBefore,
+                Issuer = _settings.Issuer,
+                Audience = _settings.Audience,
+                SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                    new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
+                    Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
+            };
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
         }
     }
 }

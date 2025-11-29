@@ -36,11 +36,12 @@ namespace OmniForge.Infrastructure.Services
             _logger = logger;
         }
 
-        private async Task<User> EnsureUserTokenValidAsync(string userId)
+        private async Task<(User User, bool Refreshed)> EnsureUserTokenValidAsync(string userId)
         {
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) throw new Exception("User not found");
 
+            bool refreshed = false;
             // Check if token needs refresh (buffer of 5 minutes)
             if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
             {
@@ -52,6 +53,7 @@ namespace OmniForge.Infrastructure.Services
                     user.RefreshToken = newToken.RefreshToken;
                     user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
                     await _userRepository.SaveUserAsync(user);
+                    refreshed = true;
                 }
                 else
                 {
@@ -60,7 +62,7 @@ namespace OmniForge.Infrastructure.Services
                 }
             }
 
-            return user;
+            return (user, refreshed);
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
@@ -200,7 +202,7 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
+            var (user, wasRefreshed) = await EnsureUserTokenValidAsync(userId);
             try
             {
                 return await action(user.AccessToken);
@@ -213,6 +215,13 @@ namespace OmniForge.Infrastructure.Services
                 // We log the specific error for debugging.
                 if (!ex.Message.Contains("401") && !ex.Message.Contains("Unauthorized"))
                 {
+                    throw;
+                }
+
+                // If we just refreshed the token and it still failed, don't retry
+                if (wasRefreshed)
+                {
+                    _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(userId));
                     throw;
                 }
 
@@ -237,11 +246,40 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task ExecuteWithRetryAsync(string userId, Func<string, Task> action)
         {
-            await ExecuteWithRetryAsync<object?>(userId, async (token) =>
+            var (user, wasRefreshed) = await EnsureUserTokenValidAsync(userId);
+            try
             {
-                await action(token);
-                return null;
-            });
+                await action(user.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                if (!ex.Message.Contains("401") && !ex.Message.Contains("Unauthorized"))
+                {
+                    throw;
+                }
+
+                if (wasRefreshed)
+                {
+                    _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(userId));
+                    throw;
+                }
+
+                _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
+
+                var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
+                if (newToken != null)
+                {
+                    user.AccessToken = newToken.AccessToken;
+                    user.RefreshToken = newToken.RefreshToken;
+                    user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    await _userRepository.SaveUserAsync(user);
+
+                    await action(user.AccessToken);
+                    return;
+                }
+
+                throw;
+            }
         }
     }
 }

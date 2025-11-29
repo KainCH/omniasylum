@@ -111,8 +111,9 @@ namespace OmniForge.Web.Controllers
                             userInfo = new TwitchUserInfo
                             {
                                 Id = sub,
-                                Login = preferredUsername, // Note: OIDC 'preferred_username' is the Twitch login name (not display name)
-                                DisplayName = preferredUsername, // DisplayName not available in ID token; using login as fallback. Helix API update below will fix if needed.
+                                Login = preferredUsername, // OIDC 'preferred_username' is the Twitch login name (lowercase, unique)
+                                // Use the 'name' claim for display name if present, otherwise fall back to login name
+                                DisplayName = principal.FindFirst(c => c.Type == "name")?.Value ?? preferredUsername,
                                 Email = principal.FindFirst(c => c.Type == "email")?.Value ?? "",
                                 ProfileImageUrl = principal.FindFirst(c => c.Type == "picture")?.Value ?? ""
                             };
