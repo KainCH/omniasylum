@@ -211,49 +211,10 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                bool isUnauthorized = false;
-                if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+                if (await TryHandleUnauthorizedAndRefresh(ex, user, wasRefreshed))
                 {
-                    isUnauthorized = true;
-                }
-                else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
-                {
-                    isUnauthorized = true;
-                }
-
-                if (!isUnauthorized)
-                {
-                    throw;
-                }
-
-                // If we just refreshed the token and it still failed, don't retry
-                if (wasRefreshed)
-                {
-                    _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(userId));
-                    throw;
-                }
-
-                _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
-
-                if (string.IsNullOrEmpty(user.RefreshToken))
-                {
-                    _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(userId));
-                    throw;
-                }
-
-                // Force refresh
-                var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
-                if (newToken != null)
-                {
-                    user.AccessToken = newToken.AccessToken;
-                    user.RefreshToken = newToken.RefreshToken;
-                    user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
-                    await _userRepository.SaveUserAsync(user);
-
-                    // Retry with new token
                     return await action(user.AccessToken);
                 }
-
                 throw;
             }
         }
@@ -267,49 +228,51 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                bool isUnauthorized = false;
-                if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+                if (await TryHandleUnauthorizedAndRefresh(ex, user, wasRefreshed))
                 {
-                    isUnauthorized = true;
-                }
-                else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
-                {
-                    isUnauthorized = true;
-                }
-
-                if (!isUnauthorized)
-                {
-                    throw;
-                }
-
-                if (wasRefreshed)
-                {
-                    _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(userId));
-                    throw;
-                }
-
-                _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(userId));
-
-                if (string.IsNullOrEmpty(user.RefreshToken))
-                {
-                    _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(userId));
-                    throw;
-                }
-
-                var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
-                if (newToken != null)
-                {
-                    user.AccessToken = newToken.AccessToken;
-                    user.RefreshToken = newToken.RefreshToken;
-                    user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
-                    await _userRepository.SaveUserAsync(user);
-
                     await action(user.AccessToken);
                     return;
                 }
-
                 throw;
             }
+        }
+
+        private async Task<bool> TryHandleUnauthorizedAndRefresh(Exception ex, User user, bool wasRefreshed)
+        {
+            bool isUnauthorized = false;
+            if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                isUnauthorized = true;
+            }
+            else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+            {
+                isUnauthorized = true;
+            }
+
+            if (!isUnauthorized) return false;
+
+            if (wasRefreshed)
+            {
+                _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw ex;
+            }
+
+            _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+
+            if (string.IsNullOrEmpty(user.RefreshToken))
+            {
+                _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw ex;
+            }
+
+            var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
+            if (newToken == null) throw ex;
+
+            user.AccessToken = newToken.AccessToken;
+            user.RefreshToken = newToken.RefreshToken;
+            user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+            await _userRepository.SaveUserAsync(user);
+            return true;
         }
     }
 }

@@ -73,6 +73,10 @@ namespace OmniForge.Web.Controllers
             TwitchUserInfo? userInfo = null;
 
             // Try to parse ID Token if available (OIDC)
+            // OIDC validation is preferred because:
+            // 1. It's faster (no additional API call to Twitch)
+            // 2. It provides cryptographically verified user identity
+            // 3. It follows OAuth 2.0 / OpenID Connect best practices
             if (!string.IsNullOrEmpty(tokenResponse.IdToken))
             {
                 try
