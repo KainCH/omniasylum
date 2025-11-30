@@ -57,7 +57,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void GetPrincipalFromExpiredToken_ShouldReturnPrincipal_WhenTokenIsValid()
+        public void ValidateToken_ShouldReturnPrincipal_WhenTokenIsValid()
         {
             var user = new User
             {
@@ -69,10 +69,41 @@ namespace OmniForge.Tests
 
             var token = _service.GenerateToken(user);
 
-            var principal = _service.GetPrincipalFromExpiredToken(token);
+            var principal = _service.ValidateToken(token);
 
             Assert.NotNull(principal);
             Assert.Equal("12345", principal.FindFirst("userId")?.Value);
+        }
+
+        [Fact]
+        public void ValidateToken_ShouldReturnNull_WhenTokenIsExpired()
+        {
+            // Manually create an expired token using the shared settings
+            var tokenString = CreateTokenWithCustomExpiry("12345", DateTime.UtcNow.AddMinutes(-20), DateTime.UtcNow.AddMinutes(-20), DateTime.UtcNow.AddMinutes(-10));
+
+            var principal = _service.ValidateToken(tokenString);
+
+            Assert.Null(principal);
+        }
+
+        private string CreateTokenWithCustomExpiry(string userId, DateTime issuedAt, DateTime notBefore, DateTime expires)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = System.Text.Encoding.ASCII.GetBytes(_settings.Secret);
+            var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[] { new Claim("userId", userId) }),
+                Expires = expires,
+                IssuedAt = issuedAt,
+                NotBefore = notBefore,
+                Issuer = _settings.Issuer,
+                Audience = _settings.Audience,
+                SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                    new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
+                    Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
+            };
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
         }
     }
 }

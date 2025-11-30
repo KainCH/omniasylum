@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -36,11 +38,12 @@ namespace OmniForge.Infrastructure.Services
             _logger = logger;
         }
 
-        private async Task<User> EnsureUserTokenValidAsync(string userId)
+        private async Task<(User User, bool Refreshed)> EnsureUserTokenValidAsync(string userId)
         {
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) throw new Exception("User not found");
 
+            bool refreshed = false;
             // Check if token needs refresh (buffer of 5 minutes)
             if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
             {
@@ -52,6 +55,7 @@ namespace OmniForge.Infrastructure.Services
                     user.RefreshToken = newToken.RefreshToken;
                     user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
                     await _userRepository.SaveUserAsync(user);
+                    refreshed = true;
                 }
                 else
                 {
@@ -60,132 +64,215 @@ namespace OmniForge.Infrastructure.Services
                 }
             }
 
-            return user;
+            return (user, refreshed);
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
-            var clientId = _configuration["Twitch:ClientId"];
-            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
-
-            var rewards = await _helixWrapper.GetCustomRewardsAsync(clientId, user.AccessToken, user.TwitchUserId);
-
-            return rewards.Select(r => new TwitchCustomReward
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
-                Id = r.Id,
-                Title = r.Title,
-                Cost = r.Cost,
-                Prompt = r.Prompt,
-                IsEnabled = r.IsEnabled,
-                BackgroundColor = r.BackgroundColor,
-                IsUserInputRequired = r.IsUserInputRequired,
-                MaxPerStream = r.MaxPerStreamSetting.IsEnabled ? r.MaxPerStreamSetting.MaxPerStream : (int?)null,
-                MaxPerUserPerStream = r.MaxPerUserPerStreamSetting.IsEnabled ? r.MaxPerUserPerStreamSetting.MaxPerUserPerStream : (int?)null,
-                GlobalCooldownSeconds = r.GlobalCooldownSetting.IsEnabled ? r.GlobalCooldownSetting.GlobalCooldownSeconds : (int?)null
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var rewards = await _helixWrapper.GetCustomRewardsAsync(clientId, accessToken, userId); // Note: userId here is assumed to be broadcasterId which matches TwitchUserId
+
+                return rewards.Select(r => new TwitchCustomReward
+                {
+                    Id = r.Id,
+                    Title = r.Title,
+                    Cost = r.Cost,
+                    Prompt = r.Prompt,
+                    IsEnabled = r.IsEnabled,
+                    BackgroundColor = r.BackgroundColor,
+                    IsUserInputRequired = r.IsUserInputRequired,
+                    MaxPerStream = r.MaxPerStreamSetting.IsEnabled ? r.MaxPerStreamSetting.MaxPerStream : (int?)null,
+                    MaxPerUserPerStream = r.MaxPerUserPerStreamSetting.IsEnabled ? r.MaxPerUserPerStreamSetting.MaxPerUserPerStream : (int?)null,
+                    GlobalCooldownSeconds = r.GlobalCooldownSetting.IsEnabled ? r.GlobalCooldownSetting.GlobalCooldownSeconds : (int?)null
+                });
             });
         }
 
         public async Task<TwitchCustomReward> CreateCustomRewardAsync(string userId, CreateRewardRequest request)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
-            var clientId = _configuration["Twitch:ClientId"];
-            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
-
-            var createRequest = new CreateCustomRewardsRequest
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
-                Title = request.Title,
-                Cost = request.Cost,
-                Prompt = request.Prompt,
-                IsEnabled = request.IsEnabled,
-                BackgroundColor = request.BackgroundColor,
-                IsUserInputRequired = request.IsUserInputRequired,
-                ShouldRedemptionsSkipRequestQueue = request.ShouldRedemptionsSkipRequestQueue,
-                IsMaxPerStreamEnabled = request.MaxPerStream.HasValue,
-                MaxPerStream = request.MaxPerStream ?? 0,
-                IsMaxPerUserPerStreamEnabled = request.MaxPerUserPerStream.HasValue,
-                MaxPerUserPerStream = request.MaxPerUserPerStream ?? 0,
-                IsGlobalCooldownEnabled = request.GlobalCooldownSeconds.HasValue,
-                GlobalCooldownSeconds = request.GlobalCooldownSeconds ?? 0
-            };
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-            var response = await _helixWrapper.CreateCustomRewardAsync(clientId, user.AccessToken, user.TwitchUserId, createRequest);
-            var r = response.FirstOrDefault();
+                var createRequest = new CreateCustomRewardsRequest
+                {
+                    Title = request.Title,
+                    Cost = request.Cost,
+                    Prompt = request.Prompt,
+                    IsEnabled = request.IsEnabled,
+                    BackgroundColor = request.BackgroundColor,
+                    IsUserInputRequired = request.IsUserInputRequired,
+                    ShouldRedemptionsSkipRequestQueue = request.ShouldRedemptionsSkipRequestQueue,
+                    IsMaxPerStreamEnabled = request.MaxPerStream.HasValue,
+                    MaxPerStream = request.MaxPerStream ?? 0,
+                    IsMaxPerUserPerStreamEnabled = request.MaxPerUserPerStream.HasValue,
+                    MaxPerUserPerStream = request.MaxPerUserPerStream ?? 0,
+                    IsGlobalCooldownEnabled = request.GlobalCooldownSeconds.HasValue,
+                    GlobalCooldownSeconds = request.GlobalCooldownSeconds ?? 0
+                };
 
-            if (r == null) throw new Exception("Failed to create custom reward");
+                var response = await _helixWrapper.CreateCustomRewardAsync(clientId, accessToken, userId, createRequest);
+                var r = response.FirstOrDefault();
 
-            return new TwitchCustomReward
-            {
-                Id = r.Id,
-                Title = r.Title,
-                Cost = r.Cost,
-                Prompt = r.Prompt,
-                IsEnabled = r.IsEnabled,
-                BackgroundColor = r.BackgroundColor,
-                IsUserInputRequired = r.IsUserInputRequired,
-                MaxPerStream = r.MaxPerStreamSetting.IsEnabled ? r.MaxPerStreamSetting.MaxPerStream : (int?)null,
-                MaxPerUserPerStream = r.MaxPerUserPerStreamSetting.IsEnabled ? r.MaxPerUserPerStreamSetting.MaxPerUserPerStream : (int?)null,
-                GlobalCooldownSeconds = r.GlobalCooldownSetting.IsEnabled ? r.GlobalCooldownSetting.GlobalCooldownSeconds : (int?)null
-            };
+                if (r == null) throw new Exception("Failed to create custom reward");
+
+                return new TwitchCustomReward
+                {
+                    Id = r.Id,
+                    Title = r.Title,
+                    Cost = r.Cost,
+                    Prompt = r.Prompt,
+                    IsEnabled = r.IsEnabled,
+                    BackgroundColor = r.BackgroundColor,
+                    IsUserInputRequired = r.IsUserInputRequired,
+                    MaxPerStream = r.MaxPerStreamSetting.IsEnabled ? r.MaxPerStreamSetting.MaxPerStream : (int?)null,
+                    MaxPerUserPerStream = r.MaxPerUserPerStreamSetting.IsEnabled ? r.MaxPerUserPerStreamSetting.MaxPerUserPerStream : (int?)null,
+                    GlobalCooldownSeconds = r.GlobalCooldownSetting.IsEnabled ? r.GlobalCooldownSetting.GlobalCooldownSeconds : (int?)null
+                };
+            });
         }
 
         public async Task DeleteCustomRewardAsync(string userId, string rewardId)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
-            var clientId = _configuration["Twitch:ClientId"];
-            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+            await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-            await _helixWrapper.DeleteCustomRewardAsync(clientId, user.AccessToken, user.TwitchUserId, rewardId);
+                await _helixWrapper.DeleteCustomRewardAsync(clientId, accessToken, userId, rewardId);
+            });
         }
 
         public async Task<StreamInfo?> GetStreamInfoAsync(string userId)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
-            var clientId = _configuration["Twitch:ClientId"];
-            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
-
-            var response = await _helixWrapper.GetStreamsAsync(clientId, user.AccessToken, new List<string> { user.TwitchUserId });
-            var stream = response.Streams.FirstOrDefault();
-
-            if (stream == null)
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
-                return new StreamInfo { IsLive = false };
-            }
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-            return new StreamInfo
-            {
-                IsLive = true,
-                Title = stream.Title,
-                Game = stream.GameName,
-                Viewers = stream.ViewerCount,
-                StartedAt = stream.StartedAt
-            };
+                var response = await _helixWrapper.GetStreamsAsync(clientId, accessToken, new List<string> { userId });
+                var stream = response.Streams.FirstOrDefault();
+
+                if (stream == null)
+                {
+                    return new StreamInfo { IsLive = false };
+                }
+
+                return new StreamInfo
+                {
+                    IsLive = true,
+                    Title = stream.Title,
+                    Game = stream.GameName,
+                    Viewers = stream.ViewerCount,
+                    StartedAt = stream.StartedAt
+                };
+            });
         }
 
         public async Task<ClipInfo?> CreateClipAsync(string userId)
         {
-            var user = await EnsureUserTokenValidAsync(userId);
-            var clientId = _configuration["Twitch:ClientId"];
-            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
-
             try
             {
-                var response = await _helixWrapper.CreateClipAsync(clientId, user.AccessToken, user.TwitchUserId);
-                var clip = response.CreatedClips.FirstOrDefault();
-
-                if (clip == null) return null;
-
-                return new ClipInfo
+                return await ExecuteWithRetryAsync(userId, async (accessToken) =>
                 {
-                    Id = clip.Id,
-                    EditUrl = clip.EditUrl
-                };
+                    var clientId = _configuration["Twitch:ClientId"];
+                    if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                    var response = await _helixWrapper.CreateClipAsync(clientId, accessToken, userId);
+                    var clip = response.CreatedClips.FirstOrDefault();
+
+                    if (clip == null) return null;
+
+                    return new ClipInfo
+                    {
+                        Id = clip.Id,
+                        EditUrl = clip.EditUrl
+                    };
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating clip for user {UserId}", LogSanitizer.Sanitize(userId));
                 return null;
             }
+        }
+
+        private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)
+        {
+            var (user, wasRefreshed) = await EnsureUserTokenValidAsync(userId);
+            try
+            {
+                return await action(user.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                if (await TryHandleUnauthorizedAndRefresh(ex, user, wasRefreshed))
+                {
+                    return await action(user.AccessToken);
+                }
+                throw;
+            }
+        }
+
+        private async Task ExecuteWithRetryAsync(string userId, Func<string, Task> action)
+        {
+            var (user, wasRefreshed) = await EnsureUserTokenValidAsync(userId);
+            try
+            {
+                await action(user.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                if (await TryHandleUnauthorizedAndRefresh(ex, user, wasRefreshed))
+                {
+                    await action(user.AccessToken);
+                    return;
+                }
+                throw;
+            }
+        }
+
+        private async Task<bool> TryHandleUnauthorizedAndRefresh(Exception ex, User user, bool wasRefreshed)
+        {
+            bool isUnauthorized = false;
+            if (ex is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                isUnauthorized = true;
+            }
+            else if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+            {
+                isUnauthorized = true;
+            }
+
+            if (!isUnauthorized) return false;
+
+            if (wasRefreshed)
+            {
+                _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            }
+
+            _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+
+            if (string.IsNullOrEmpty(user.RefreshToken))
+            {
+                _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw new InvalidOperationException("Refresh token is required for automatic retry");
+            }
+
+            var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
+            if (newToken == null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+
+            user.AccessToken = newToken.AccessToken;
+            user.RefreshToken = newToken.RefreshToken;
+            user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+            await _userRepository.SaveUserAsync(user);
+            return true;
         }
     }
 }

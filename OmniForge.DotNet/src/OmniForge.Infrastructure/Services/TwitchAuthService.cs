@@ -9,17 +9,22 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 
+using Microsoft.Extensions.Logging; // Added
+using OmniForge.Core.Utilities; // Added
+
 namespace OmniForge.Infrastructure.Services
 {
     public class TwitchAuthService : ITwitchAuthService
     {
         private readonly HttpClient _httpClient;
         private readonly TwitchSettings _settings;
+        private readonly ILogger<TwitchAuthService> _logger; // Added
 
-        public TwitchAuthService(HttpClient httpClient, IOptions<TwitchSettings> settings)
+        public TwitchAuthService(HttpClient httpClient, IOptions<TwitchSettings> settings, ILogger<TwitchAuthService> logger) // Updated
         {
             _httpClient = httpClient;
             _settings = settings.Value;
+            _logger = logger;
         }
 
         public string GetAuthorizationUrl(string redirectUri)
@@ -28,6 +33,9 @@ namespace OmniForge.Infrastructure.Services
             // See: https://dev.twitch.tv/docs/authentication/scopes/
             var scopes = new List<string>
             {
+                // OIDC
+                "openid",
+
                 // User profile
                 "user:read:email",
 
@@ -87,6 +95,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 AccessToken = tokenData.AccessToken,
                 RefreshToken = tokenData.RefreshToken,
+                IdToken = tokenData.IdToken,
                 ExpiresIn = tokenData.ExpiresIn,
                 TokenType = tokenData.TokenType
             };
@@ -136,6 +145,8 @@ namespace OmniForge.Infrastructure.Services
 
             if (!response.IsSuccessStatusCode)
             {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to refresh Twitch token. Status: {StatusCode}, Response: {Response}", response.StatusCode, LogSanitizer.Sanitize(errorContent));
                 return null;
             }
 
@@ -149,9 +160,29 @@ namespace OmniForge.Infrastructure.Services
             {
                 AccessToken = tokenData.AccessToken,
                 RefreshToken = tokenData.RefreshToken,
+                IdToken = tokenData.IdToken,
                 ExpiresIn = tokenData.ExpiresIn,
                 TokenType = tokenData.TokenType
             };
+        }
+
+        public async Task<string?> GetOidcKeysAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to fetch Twitch OIDC keys. Status: {StatusCode}", response.StatusCode);
+                    return null;
+                }
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching Twitch OIDC keys");
+                return null;
+            }
         }
 
         // Internal classes for JSON deserialization
@@ -161,6 +192,8 @@ namespace OmniForge.Infrastructure.Services
             public string AccessToken { get; set; } = "";
             [JsonPropertyName("refresh_token")]
             public string RefreshToken { get; set; } = "";
+            [JsonPropertyName("id_token")]
+            public string IdToken { get; set; } = "";
             [JsonPropertyName("expires_in")]
             public int ExpiresIn { get; set; }
             [JsonPropertyName("token_type")]

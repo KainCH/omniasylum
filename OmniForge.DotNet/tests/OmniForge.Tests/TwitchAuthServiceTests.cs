@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging; // Added
 using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
@@ -17,6 +18,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<HttpMessageHandler> _mockHttpMessageHandler;
         private readonly Mock<IOptions<TwitchSettings>> _mockOptions;
+        private readonly Mock<ILogger<TwitchAuthService>> _mockLogger; // Added
         private readonly TwitchAuthService _service;
         private readonly HttpClient _httpClient;
         private readonly TwitchSettings _settings;
@@ -33,10 +35,12 @@ namespace OmniForge.Tests
             _mockOptions = new Mock<IOptions<TwitchSettings>>();
             _mockOptions.Setup(x => x.Value).Returns(_settings);
 
+            _mockLogger = new Mock<ILogger<TwitchAuthService>>(); // Added
+
             _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
             _httpClient = new HttpClient(_mockHttpMessageHandler.Object);
 
-            _service = new TwitchAuthService(_httpClient, _mockOptions.Object);
+            _service = new TwitchAuthService(_httpClient, _mockOptions.Object, _mockLogger.Object); // Updated
         }
 
         [Fact]
@@ -202,6 +206,33 @@ namespace OmniForge.Tests
 
             var result = await _service.RefreshTokenAsync(refreshToken);
 
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task GetOidcKeysAsync_ShouldReturnKeys_WhenSuccess()
+        {
+            var jwksJson = "{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"1\"}]}";
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req => req.RequestUri != null && req.RequestUri.ToString() == "https://id.twitch.tv/oauth2/keys"),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK, Content = new StringContent(jwksJson) });
+
+            var result = await _service.GetOidcKeysAsync();
+            Assert.Equal(jwksJson, result);
+        }
+
+        [Fact]
+        public async Task GetOidcKeysAsync_ShouldReturnNull_WhenFailure()
+        {
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.Unauthorized });
+
+            var result = await _service.GetOidcKeysAsync();
             Assert.Null(result);
         }
     }

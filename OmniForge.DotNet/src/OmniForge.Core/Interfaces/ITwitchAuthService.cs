@@ -8,12 +8,14 @@ namespace OmniForge.Core.Interfaces
         Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri);
         Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken);
         Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId);
+        Task<string?> GetOidcKeysAsync();
     }
 
     public class TwitchTokenResponse
     {
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
+        public string IdToken { get; set; } = string.Empty;
         public int ExpiresIn { get; set; }
         public string TokenType { get; set; } = string.Empty;
     }

@@ -9,8 +9,13 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 
 namespace OmniForge.Web.Controllers
 {
@@ -65,7 +70,71 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Failed to exchange authorization code");
             }
 
-            var userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
+            TwitchUserInfo? userInfo = null;
+
+            // Try to parse ID Token if available (OIDC)
+            // OIDC validation is preferred because:
+            // 1. It's faster (no additional API call to Twitch)
+            // 2. It provides cryptographically verified user identity
+            // 3. It follows OAuth 2.0 / OpenID Connect best practices
+            if (!string.IsNullOrEmpty(tokenResponse.IdToken))
+            {
+                try
+                {
+                    var handler = new JwtSecurityTokenHandler();
+                    handler.InboundClaimTypeMap.Clear(); // Ensure claims are not mapped to .NET types
+                    if (handler.CanReadToken(tokenResponse.IdToken))
+                    {
+                        // Fetch OIDC keys for validation
+                        var jwksJson = await _twitchAuthService.GetOidcKeysAsync();
+                        if (string.IsNullOrEmpty(jwksJson))
+                        {
+                            throw new InvalidOperationException("Failed to fetch OIDC keys");
+                        }
+
+                        var jwks = new JsonWebKeySet(jwksJson);
+                        var validationParameters = new TokenValidationParameters
+                        {
+                            ValidateIssuer = true,
+                            ValidIssuer = "https://id.twitch.tv/oauth2",
+                            ValidateAudience = true,
+                            ValidAudience = _twitchSettings.ClientId,
+                            ValidateIssuerSigningKey = true,
+                            IssuerSigningKeys = jwks.Keys,
+                            ValidateLifetime = true,
+                            ClockSkew = TimeSpan.FromMinutes(5) // Allow some clock skew
+                        };
+
+                        var principal = handler.ValidateToken(tokenResponse.IdToken, validationParameters, out var validatedToken);
+
+                        var sub = principal.FindFirst(c => c.Type == "sub")?.Value;
+                        var preferredUsername = principal.FindFirst(c => c.Type == "preferred_username")?.Value;
+
+                        if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(preferredUsername))
+                        {
+                            userInfo = new TwitchUserInfo
+                            {
+                                Id = sub,
+                                Login = preferredUsername, // OIDC 'preferred_username' is the Twitch login name (lowercase, unique)
+                                // Use the 'name' claim for display name if present, otherwise fall back to login name
+                                DisplayName = principal.FindFirst(c => c.Type == "name")?.Value ?? preferredUsername,
+                                Email = principal.FindFirst(c => c.Type == "email")?.Value ?? "",
+                                ProfileImageUrl = principal.FindFirst(c => c.Type == "picture")?.Value ?? ""
+                            };
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to validate/parse ID Token. Falling back to Helix API.");
+                }
+            }
+
+            // Fallback to Helix API if OIDC failed or missing
+            if (userInfo == null)
+            {
+                userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
+            }
 
             if (userInfo == null)
             {
@@ -135,38 +204,10 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("refresh")]
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         public async Task<IActionResult> Refresh()
         {
-            var authHeader = Request.Headers["Authorization"].ToString();
-            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
-            {
-                return Unauthorized("No token provided");
-            }
-
-            var token = authHeader.Substring(7);
-            // In a real scenario, we should validate the token here using the same logic as the middleware.
-            // However, since we are manually handling the refresh, we might want to decode it even if expired?
-            // The legacy code verifies it.
-
-            // TODO: We need a way to validate/decode the token manually here or rely on the [Authorize] attribute
-            // but allow expired tokens? The legacy code manually verifies.
-
-            // For now, let's assume the client sends a valid (or recently expired) token.
-            // We need a method in JwtService to Validate/Decode token.
-
-            // Let's skip the manual validation for a second and assume we can get the userId from claims if we were authorized.
-            // But if the token is expired, [Authorize] will fail.
-            // The legacy code allows refreshing an expired token if the underlying Twitch token is valid.
-
-            // So we need to manually decode the token without validating expiry.
-
-            var principal = _jwtService.GetPrincipalFromExpiredToken(token);
-            if (principal == null)
-            {
-                return Unauthorized("Invalid token");
-            }
-
-            var userIdClaim = principal.FindFirst("userId");
+            var userIdClaim = User.FindFirst("userId");
             if (userIdClaim == null)
             {
                 return Unauthorized("Invalid token claims");
@@ -176,6 +217,11 @@ namespace OmniForge.Web.Controllers
             if (user == null)
             {
                 return NotFound("User not found");
+            }
+
+            if (!user.IsActive)
+            {
+                return Unauthorized("User account is inactive");
             }
 
             // Check if Twitch token needs refresh (e.g. expires in < 1 hour)

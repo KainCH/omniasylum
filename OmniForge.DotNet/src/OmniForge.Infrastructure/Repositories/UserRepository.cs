@@ -74,7 +74,7 @@ namespace OmniForge.Infrastructure.Repositories
 
                 _logger.LogInformation("💾 Saving user {UserId} ({DisplayName}) to Azure Table Storage", LogSanitizer.Sanitize(user.TwitchUserId), LogSanitizer.Sanitize(user.DisplayName));
                 _logger.LogDebug("📋 OverlaySettings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                    user.OverlaySettings?.Position, user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
+                    LogSanitizer.Sanitize(user.OverlaySettings?.Position ?? string.Empty), user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
                 _logger.LogInformation("🔗 DiscordWebhookUrl: {WebhookUrl}",
                     string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "EMPTY" : $"{LogSanitizer.Sanitize(user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length)))}...");
 
