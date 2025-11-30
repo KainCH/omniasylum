@@ -366,7 +366,7 @@ namespace OmniForge.Tests
             _mockHelixWrapper.Setup(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId))
                 .ThrowsAsync(new Exception("401 Unauthorized"));
 
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
         }

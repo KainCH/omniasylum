@@ -254,19 +254,19 @@ namespace OmniForge.Infrastructure.Services
             if (wasRefreshed)
             {
                 _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
-                throw ex;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
             }
 
             _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
 
             if (string.IsNullOrEmpty(user.RefreshToken))
             {
-                _logger.LogWarning("Cannot refresh token for user {UserId}: RefreshToken is empty.", LogSanitizer.Sanitize(user.TwitchUserId));
-                throw ex;
+                _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw new InvalidOperationException("Refresh token is required for automatic retry");
             }
 
             var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
-            if (newToken == null) throw ex;
+            if (newToken == null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
 
             user.AccessToken = newToken.AccessToken;
             user.RefreshToken = newToken.RefreshToken;
