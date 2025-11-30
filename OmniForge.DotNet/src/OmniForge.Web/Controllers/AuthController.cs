@@ -85,7 +85,7 @@ namespace OmniForge.Web.Controllers
                         var jwksJson = await _twitchAuthService.GetOidcKeysAsync();
                         if (string.IsNullOrEmpty(jwksJson))
                         {
-                            throw new Exception("Failed to fetch OIDC keys");
+                            throw new InvalidOperationException("Failed to fetch OIDC keys");
                         }
 
                         var jwks = new JsonWebKeySet(jwksJson);
