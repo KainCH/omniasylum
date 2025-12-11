@@ -280,8 +280,12 @@ namespace OmniForge.Tests
             Assert.Contains("!death-", defaults.Keys);
             Assert.Contains("!swear+", defaults.Keys);
             Assert.Contains("!swear-", defaults.Keys);
+            Assert.Contains("!sw+", defaults.Keys);
+            Assert.Contains("!sw-", defaults.Keys);
             Assert.Contains("!scream+", defaults.Keys);
             Assert.Contains("!scream-", defaults.Keys);
+            Assert.Contains("!sc+", defaults.Keys);
+            Assert.Contains("!sc-", defaults.Keys);
             Assert.Contains("!resetcounters", defaults.Keys);
         }
 

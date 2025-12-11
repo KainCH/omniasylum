@@ -210,6 +210,7 @@ namespace OmniForge.Infrastructure.Services
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
+                await EnsureScopesAsync(userId, accessToken, new[] { "moderator:read:automod_settings" });
                 var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, userId);
                 var settings = response.Data.FirstOrDefault();
                 if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
@@ -225,6 +226,7 @@ namespace OmniForge.Infrastructure.Services
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
+                await EnsureScopesAsync(userId, accessToken, new[] { "moderator:manage:automod" });
                 var automod = MapDtoToAutomod(settings);
                 var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, userId, automod);
                 var updated = response.Data.FirstOrDefault();
@@ -295,6 +297,15 @@ namespace OmniForge.Infrastructure.Services
                     return await action(user.AccessToken);
                 }
                 throw;
+            }
+        }
+
+        private async Task EnsureScopesAsync(string userId, string accessToken, IEnumerable<string> requiredScopes)
+        {
+            var hasScopes = await _authService.HasScopesAsync(accessToken, requiredScopes);
+            if (!hasScopes)
+            {
+                throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", requiredScopes)}. Please re-authorize.");
             }
         }
 

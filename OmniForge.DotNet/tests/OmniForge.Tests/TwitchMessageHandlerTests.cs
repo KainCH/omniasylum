@@ -408,6 +408,38 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task HandleMessageAsync_ShouldIncrementScreams_WithShortAlias()
+        {
+            var userId = "user1";
+            var message = CreateMessage("!sc+", isMod: true);
+            var counters = new Counter { Screams = 2 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            Assert.Equal(3, counters.Screams);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+            sendMessageMock.Verify(x => x(userId, "Scream Count: 3"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleMessageAsync_ShouldIncrementSwears_WithShortAlias()
+        {
+            var userId = "user1";
+            var message = CreateMessage("!sw+", isMod: true);
+            var counters = new Counter { Swears = 7 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+
+            Assert.Equal(8, counters.Swears);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+            sendMessageMock.Verify(x => x(userId, "Swear Count: 8"), Times.Once);
+        }
+
+        [Fact]
         public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenPermissionGranted()
         {
             // Arrange

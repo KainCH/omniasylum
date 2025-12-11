@@ -1,7 +1,8 @@
 @page "/automod"
 @using OmniForge.Core.Entities
-@inject NavigationManager NavigationManager
-@inject HttpClient Http
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject OmniForge.Core.Interfaces.ITwitchApiService TwitchApiService
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>AutoMod Settings</PageTitle>
@@ -59,6 +60,9 @@ else if (settings != null)
     private bool saving = false;
     private string? errorMessage;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
     private class Slider
     {
         public string Label { get; set; } = string.Empty;
@@ -72,7 +76,15 @@ else if (settings != null)
     {
         try
         {
-            settings = await Http.GetFromJsonAsync<AutomodSettingsDto>("api/automod/settings");
+            var userId = await GetUserIdAsync();
+            if (string.IsNullOrEmpty(userId))
+            {
+                errorMessage = "Not authenticated";
+            }
+            else
+            {
+                settings = await TwitchApiService.GetAutomodSettingsAsync(userId);
+            }
             if (settings == null)
             {
                 errorMessage = "Failed to load settings";
@@ -117,16 +129,14 @@ else if (settings != null)
         errorMessage = null;
         try
         {
-            var response = await Http.PutAsJsonAsync("api/automod/settings", settings);
-            if (!response.IsSuccessStatusCode)
+            var userId = await GetUserIdAsync();
+            if (string.IsNullOrEmpty(userId))
             {
-                var err = await response.Content.ReadAsStringAsync();
-                errorMessage = $"Save failed: {response.StatusCode} {err}";
+                errorMessage = "Not authenticated";
+                return;
             }
-            else
-            {
-                settings = await response.Content.ReadFromJsonAsync<AutomodSettingsDto>();
-            }
+
+            settings = await TwitchApiService.UpdateAutomodSettingsAsync(userId, settings);
         }
         catch (Exception ex)
         {
@@ -136,5 +146,12 @@ else if (settings != null)
         {
             saving = false;
         }
+    }
+    private async Task<string?> GetUserIdAsync()
+    {
+        if (authenticationStateTask == null) return null;
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+        return user.FindFirst("userId")?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     }
 }

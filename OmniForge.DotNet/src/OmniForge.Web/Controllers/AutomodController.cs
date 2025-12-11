@@ -30,6 +30,10 @@ namespace OmniForge.Web.Controllers
                 var settings = await _twitchApiService.GetAutomodSettingsAsync(userId);
                 return Ok(settings);
             }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(403, new { error = ex.Message, reauthUrl = "/auth/twitch" });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = "Failed to get AutoMod settings", details = ex.Message });
@@ -48,6 +52,10 @@ namespace OmniForge.Web.Controllers
             {
                 var updated = await _twitchApiService.UpdateAutomodSettingsAsync(userId, settings);
                 return Ok(updated);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(403, new { error = ex.Message, reauthUrl = "/auth/twitch" });
             }
             catch (Exception ex)
             {

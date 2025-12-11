@@ -54,6 +54,8 @@ namespace OmniForge.Infrastructure.Services
 
                 // Moderation & followers
                 "moderator:read:followers",
+                "moderator:read:automod_settings",
+                "moderator:manage:automod",
 
                 // Bits & clips
                 "bits:read",
@@ -64,7 +66,7 @@ namespace OmniForge.Infrastructure.Services
             var encodedScopes = System.Net.WebUtility.UrlEncode(scopeString);
             var encodedRedirect = System.Net.WebUtility.UrlEncode(redirectUri);
 
-            return $"https://id.twitch.tv/oauth2/authorize?client_id={_settings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}";
+            return $"https://id.twitch.tv/oauth2/authorize?client_id={_settings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}&force_verify=true";
         }
 
         public async Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri)
@@ -129,6 +131,28 @@ namespace OmniForge.Infrastructure.Services
                 Email = user.Email,
                 ProfileImageUrl = user.ProfileImageUrl
             };
+        }
+
+        public async Task<IReadOnlyList<string>> GetTokenScopesAsync(string accessToken)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://id.twitch.tv/oauth2/validate");
+            request.Headers.Add("Authorization", $"OAuth {accessToken}");
+
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Array.Empty<string>();
+            }
+
+            var validation = await response.Content.ReadFromJsonAsync<TokenValidationResponse>();
+            return validation?.Scopes ?? (IReadOnlyList<string>)Array.Empty<string>();
+        }
+
+        public async Task<bool> HasScopesAsync(string accessToken, IEnumerable<string> requiredScopes)
+        {
+            var scopes = await GetTokenScopesAsync(accessToken);
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return requiredScopes.All(rs => set.Contains(rs));
         }
 
         public async Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken)
@@ -198,6 +222,21 @@ namespace OmniForge.Infrastructure.Services
             public int ExpiresIn { get; set; }
             [JsonPropertyName("token_type")]
             public string TokenType { get; set; } = "";
+        }
+
+        private class TokenValidationResponse
+        {
+            [JsonPropertyName("client_id")]
+            public string ClientId { get; set; } = string.Empty;
+
+            [JsonPropertyName("scopes")]
+            public List<string> Scopes { get; set; } = new();
+
+            [JsonPropertyName("user_id")]
+            public string UserId { get; set; } = string.Empty;
+
+            [JsonPropertyName("expires_in")]
+            public int ExpiresIn { get; set; }
         }
 
         private class TwitchUserResponseInternal

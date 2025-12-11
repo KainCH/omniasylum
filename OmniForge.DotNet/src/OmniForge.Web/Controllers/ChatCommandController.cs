@@ -53,8 +53,12 @@ namespace OmniForge.Web.Controllers
                 { "!death-", new ChatCommandDefinition { Action = "decrement", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!swear+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!swear-", new ChatCommandDefinition { Action = "decrement", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!sw+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!sw-", new ChatCommandDefinition { Action = "decrement", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!scream+", new ChatCommandDefinition { Action = "increment", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!scream-", new ChatCommandDefinition { Action = "decrement", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!sc+", new ChatCommandDefinition { Action = "increment", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!sc-", new ChatCommandDefinition { Action = "decrement", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!resetcounters", new ChatCommandDefinition { Action = "reset", Permission = "broadcaster", Cooldown = 10, Enabled = true } }
             };
             return Ok(defaults);

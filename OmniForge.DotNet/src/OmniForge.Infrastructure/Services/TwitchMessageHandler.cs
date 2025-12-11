@@ -103,6 +103,7 @@ namespace OmniForge.Infrastructure.Services
                             break;
                         case "!swear+":
                         case "!s+":
+                        case "!sw+":
                             if (isMod)
                             {
                                 counters.Swears++;
@@ -113,6 +114,7 @@ namespace OmniForge.Infrastructure.Services
                             break;
                         case "!swear-":
                         case "!s-":
+                        case "!sw-":
                             if (isMod && counters.Swears > 0)
                             {
                                 counters.Swears--;
