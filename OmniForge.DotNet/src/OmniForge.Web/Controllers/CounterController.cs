@@ -271,6 +271,16 @@ namespace OmniForge.Web.Controllers
                 user.OverlaySettings?.Counters?.Deaths, user.OverlaySettings?.Counters?.Swears,
                 user.OverlaySettings?.Counters?.Screams, user.OverlaySettings?.Counters?.Bits);
 
+            var previewRequested = HttpContext.Request.Query.TryGetValue("preview", out var previewValues)
+                && previewValues.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
+            var offlinePreviewEnabled = user.OverlaySettings?.OfflinePreview ?? false;
+
+            var streamStartedValue = counters.StreamStarted;
+            if (streamStartedValue == null && (previewRequested || offlinePreviewEnabled))
+            {
+                streamStartedValue = DateTimeOffset.UtcNow;
+            }
+
             var response = new
             {
                 deaths = counters.Deaths,
@@ -278,7 +288,7 @@ namespace OmniForge.Web.Controllers
                 screams = counters.Screams,
                 bits = counters.Bits,
                 lastUpdated = counters.LastUpdated,
-                streamStarted = counters.StreamStarted,
+                streamStarted = streamStartedValue,
                 settings = user.OverlaySettings
             };
 

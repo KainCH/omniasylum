@@ -748,6 +748,48 @@ namespace OmniForge.Tests
             Assert.IsType<NotFoundResult>(result);
         }
 
+        [Fact]
+        public async Task GetPublicCounters_ShouldForceStreamStarted_WhenPreviewQueryParam()
+        {
+            var counter = new Counter { Deaths = 1, StreamStarted = null };
+            var user = new User
+            {
+                TwitchUserId = "user123",
+                OverlaySettings = new OverlaySettings { OfflinePreview = false }
+            };
+
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("user123")).ReturnsAsync(counter);
+            _mockUserRepository.Setup(x => x.GetUserAsync("user123")).ReturnsAsync(user);
+
+            _controller.ControllerContext.HttpContext.Request.QueryString = new QueryString("?preview=true");
+
+            var result = await _controller.GetPublicCounters("user123");
+            var okResult = Assert.IsType<OkObjectResult>(result);
+
+            var streamStarted = okResult.Value?.GetType().GetProperty("streamStarted")?.GetValue(okResult.Value);
+            Assert.NotNull(streamStarted);
+        }
+
+        [Fact]
+        public async Task GetPublicCounters_ShouldForceStreamStarted_WhenOfflinePreviewSetting()
+        {
+            var counter = new Counter { Deaths = 1, StreamStarted = null };
+            var user = new User
+            {
+                TwitchUserId = "user123",
+                OverlaySettings = new OverlaySettings { OfflinePreview = true }
+            };
+
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("user123")).ReturnsAsync(counter);
+            _mockUserRepository.Setup(x => x.GetUserAsync("user123")).ReturnsAsync(user);
+
+            var result = await _controller.GetPublicCounters("user123");
+            var okResult = Assert.IsType<OkObjectResult>(result);
+
+            var streamStarted = okResult.Value?.GetType().GetProperty("streamStarted")?.GetValue(okResult.Value);
+            Assert.NotNull(streamStarted);
+        }
+
         #endregion
     }
 }

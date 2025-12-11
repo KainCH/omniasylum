@@ -13,6 +13,7 @@ using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
+using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -200,6 +201,84 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(ex, "Error creating clip for user {UserId}", LogSanitizer.Sanitize(userId));
                 return null;
             }
+        }
+
+        public async Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId)
+        {
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, userId);
+                var settings = response.Data.FirstOrDefault();
+                if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
+
+                return MapAutomodToDto(settings);
+            });
+        }
+
+        public async Task<AutomodSettingsDto> UpdateAutomodSettingsAsync(string userId, AutomodSettingsDto settings)
+        {
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var automod = MapDtoToAutomod(settings);
+                var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, userId, automod);
+                var updated = response.Data.FirstOrDefault();
+                if (updated == null) throw new Exception("Failed to update AutoMod settings");
+                return MapAutomodToDto(updated);
+            });
+        }
+
+        private static AutomodSettingsDto MapAutomodToDto(TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettingsResponseModel settings)
+        {
+            return new AutomodSettingsDto
+            {
+                OverallLevel = settings.OverallLevel,
+                Aggression = settings.Aggression ?? 0,
+                Bullying = settings.Bullying ?? 0,
+                Disability = settings.Disability ?? 0,
+                Misogyny = settings.Misogyny ?? 0,
+                RaceEthnicityOrReligion = settings.RaceEthnicityOrReligion ?? 0,
+                SexBasedTerms = settings.SexBasedTerms ?? 0,
+                SexualitySexOrGender = settings.SexualitySexOrGender ?? 0,
+                Swearing = settings.Swearing ?? 0
+            };
+        }
+
+        private static AutomodSettingsDto MapAutomodToDto(TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettings settings)
+        {
+            return new AutomodSettingsDto
+            {
+                OverallLevel = settings.OverallLevel,
+                Aggression = settings.Aggression ?? 0,
+                Bullying = settings.Bullying ?? 0,
+                Disability = settings.Disability ?? 0,
+                Misogyny = settings.Misogyny ?? 0,
+                RaceEthnicityOrReligion = settings.RaceEthnicityOrReligion ?? 0,
+                SexBasedTerms = settings.SexBasedTerms ?? 0,
+                SexualitySexOrGender = settings.SexualitySexOrGender ?? 0,
+                Swearing = settings.Swearing ?? 0
+            };
+        }
+
+        private static AutomodSettings MapDtoToAutomod(AutomodSettingsDto dto)
+        {
+            return new AutomodSettings
+            {
+                OverallLevel = dto.OverallLevel,
+                Aggression = dto.Aggression,
+                Bullying = dto.Bullying,
+                Disability = dto.Disability,
+                Misogyny = dto.Misogyny,
+                RaceEthnicityOrReligion = dto.RaceEthnicityOrReligion,
+                SexBasedTerms = dto.SexBasedTerms,
+                SexualitySexOrGender = dto.SexualitySexOrGender,
+                Swearing = dto.Swearing
+            };
         }
 
         private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)

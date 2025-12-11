@@ -143,6 +143,7 @@
     (function () {
       const urlParams = new URLSearchParams(window.location.search);
       const userId = urlParams.get('userId');
+      const preview = urlParams.get('preview') === 'true';
 
       // Store current overlay settings for filtering counters
       let currentSettings = null;
@@ -306,7 +307,9 @@
         lastCounterData = data;
 
         // Handle visibility based on stream status
-        if (data.streamStarted) {
+        const isStreamStarted = preview || !!data.streamStarted;
+
+        if (isStreamStarted) {
           console.log("✅ Adding 'visible' class to container");
           container.classList.add('visible');
         } else {

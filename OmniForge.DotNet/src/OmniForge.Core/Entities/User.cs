@@ -67,6 +67,7 @@ namespace OmniForge.Core.Entities
     public class OverlaySettings
     {
         public bool Enabled { get; set; } = false;
+        public bool OfflinePreview { get; set; } = false;
         public string Position { get; set; } = "top-right";
         public double Scale { get; set; } = 1.0;
         public OverlayCounters Counters { get; set; } = new OverlayCounters();

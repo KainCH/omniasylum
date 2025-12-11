@@ -4,14 +4,15 @@
 @using Microsoft.AspNetCore.Components.Web
 @using System.Security.Claims
 @using OmniForge.Core.Entities
-@using OmniForge.Core.Interfaces
 @using OmniForge.Web.Components.Modals
 @using System.Threading
+@using OmniForge.Core.Interfaces
 @attribute [Authorize]
 @inject ICounterRepository CounterRepository
 @inject IUserRepository UserRepository
 @inject NavigationManager NavigationManager
 @inject IStreamMonitorService StreamMonitorService
+@inject IOverlayNotifier OverlayNotifier
 @implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
@@ -61,16 +62,29 @@
                     }
                 </div>
 
-                @if (!string.IsNullOrEmpty(errorMessage))
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
                     <div class="alert alert-danger mt-3" role="alert">
                         @errorMessage
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(overlaySaveError))
+                {
+                    <div class="alert alert-warning mt-3" role="alert">
+                        @overlaySaveError
                     </div>
                 }
 
                 <div class="controls-section">
                     <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
                         <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop Monitor" : "Start Monitor")
+                    </button>
+                    <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
+                        @if (resettingCounters)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        }
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
                     </button>
                     <button class="btn-custom btn-series" @onclick="() => showSeriesSaves = true">
                         <i class="bi bi-save"></i> Series Saves
@@ -156,8 +170,23 @@
                 <div class="mt-4 text-center">
                      <p>
                         <strong>Twitch User ID:</strong> @TwitchUserId <br />
-                        <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a>
+                        <strong>Overlay URL:</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
+                        <strong>Preview URL:</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
                     </p>
+
+                    @if (overlaySettings != null)
+                    {
+                        <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
+                            <div class="form-check form-switch">
+                                <input id="offlinePreviewToggle" class="form-check-input" type="checkbox" checked="@overlaySettings.OfflinePreview" @onchange="OnOfflinePreviewChanged" />
+                                <label class="form-check-label" for="offlinePreviewToggle">Offline Preview (force visible when offline)</label>
+                            </div>
+                            @if (savingOfflinePreview)
+                            {
+                                <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                            }
+                        </div>
+                    }
                 </div>
 
                 <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
@@ -178,6 +207,9 @@
     private OmniForge.Core.Entities.OverlaySettings? overlaySettings;
     private string? TwitchUserId;
     private string? OverlayUrl;
+    private string? OverlayPreviewUrl;
+    private bool savingOfflinePreview = false;
+    private bool resettingCounters = false;
     private bool showOverlaySettings = false;
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
@@ -187,6 +219,7 @@
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
     private Timer? _refreshTimer;
     private string? errorMessage;
+    private string? overlaySaveError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,6 +243,7 @@
 
                     // Use the static HTML overlay instead of the Blazor page
                     OverlayUrl = NavigationManager.ToAbsoluteUri($"/overlay.html?userId={TwitchUserId}").ToString();
+                    OverlayPreviewUrl = $"{OverlayUrl}&preview=true";
 
                     // Initial check
                     RefreshStatus();
@@ -290,6 +324,84 @@
         {
             var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
             overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnOfflinePreviewChanged(ChangeEventArgs e)
+    {
+        if (overlaySettings == null || string.IsNullOrEmpty(TwitchUserId)) return;
+
+        bool newValue = false;
+        if (e.Value is bool b)
+        {
+            newValue = b;
+        }
+        else if (e.Value != null)
+        {
+            newValue = e.Value.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        overlaySettings.OfflinePreview = newValue;
+        savingOfflinePreview = true;
+        overlaySaveError = null;
+
+        try
+        {
+            var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+            if (userEntity != null)
+            {
+                userEntity.OverlaySettings = overlaySettings;
+                await UserRepository.SaveUserAsync(userEntity);
+            }
+        }
+        catch (Exception ex)
+        {
+            overlaySaveError = $"Error saving offline preview: {ex.Message}";
+        }
+        finally
+        {
+            savingOfflinePreview = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResetCountersAsync()
+    {
+        if (string.IsNullOrEmpty(TwitchUserId)) return;
+        resettingCounters = true;
+        errorMessage = null;
+
+        try
+        {
+            var countersEntity = await CounterRepository.GetCountersAsync(TwitchUserId);
+            if (countersEntity == null)
+            {
+                errorMessage = "Counters not found";
+                return;
+            }
+
+            countersEntity.Deaths = 0;
+            countersEntity.Swears = 0;
+            countersEntity.Screams = 0;
+            countersEntity.LastUpdated = DateTimeOffset.UtcNow;
+
+            await CounterRepository.SaveCountersAsync(countersEntity);
+            counter = countersEntity;
+
+            // Notify overlay
+            if (OverlayNotifier != null)
+            {
+                await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, countersEntity);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to reset counters: {ex.Message}";
+        }
+        finally
+        {
+            resettingCounters = false;
             StateHasChanged();
         }
     }

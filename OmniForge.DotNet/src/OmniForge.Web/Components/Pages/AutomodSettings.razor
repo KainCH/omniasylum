@@ -1,0 +1,140 @@
+@page "/automod"
+@using OmniForge.Core.Entities
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>AutoMod Settings</PageTitle>
+
+<h3>AutoMod Settings</h3>
+
+@if (loading)
+{
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (settings != null)
+{
+    <EditForm Model="settings" OnValidSubmit="SaveAsync">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Overall Level (optional)</label>
+            <InputNumber class="form-control" @bind-Value="settings.OverallLevel" />
+            <small class="text-muted">Set 0-4 to apply global level; leave null to control individual categories.</small>
+        </div>
+
+        @foreach (var slider in sliders)
+        {
+            <div class="mb-3">
+                <label class="form-label">@slider.Label (@slider.GetValue())</label>
+                <input type="range" min="0" max="4" step="1" class="form-range"
+                       value="@slider.GetValue()"
+                       @oninput="e => slider.SetValue(e.Value)" />
+                <div class="d-flex justify-content-between small text-muted">
+                    <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span>
+                </div>
+            </div>
+        }
+
+        <button class="btn btn-primary" type="submit" disabled="@saving">
+            @if (saving)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>Saving...</span>
+            }
+            else
+            {
+                <span>Save</span>
+            }
+        </button>
+    </EditForm>
+}
+
+@code {
+    private AutomodSettingsDto? settings;
+    private bool loading = true;
+    private bool saving = false;
+    private string? errorMessage;
+
+    private class Slider
+    {
+        public string Label { get; set; } = string.Empty;
+        public Func<int> GetValue { get; set; } = default!;
+        public Action<object?> SetValue { get; set; } = default!;
+    }
+
+    private List<Slider> sliders = new List<Slider>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            settings = await Http.GetFromJsonAsync<AutomodSettingsDto>("api/automod/settings");
+            if (settings == null)
+            {
+                errorMessage = "Failed to load settings";
+            }
+            else
+            {
+                sliders = new List<Slider>
+                {
+                    new Slider { Label = "Aggression", GetValue = () => settings.Aggression, SetValue = v => settings.Aggression = ParseSlider(v) },
+                    new Slider { Label = "Bullying", GetValue = () => settings.Bullying, SetValue = v => settings.Bullying = ParseSlider(v) },
+                    new Slider { Label = "Disability", GetValue = () => settings.Disability, SetValue = v => settings.Disability = ParseSlider(v) },
+                    new Slider { Label = "Misogyny", GetValue = () => settings.Misogyny, SetValue = v => settings.Misogyny = ParseSlider(v) },
+                    new Slider { Label = "Race/Ethnicity/Religion", GetValue = () => settings.RaceEthnicityOrReligion, SetValue = v => settings.RaceEthnicityOrReligion = ParseSlider(v) },
+                    new Slider { Label = "Sex-based Terms", GetValue = () => settings.SexBasedTerms, SetValue = v => settings.SexBasedTerms = ParseSlider(v) },
+                    new Slider { Label = "Sexuality/Sex/Gender", GetValue = () => settings.SexualitySexOrGender, SetValue = v => settings.SexualitySexOrGender = ParseSlider(v) },
+                    new Slider { Label = "Swearing", GetValue = () => settings.Swearing, SetValue = v => settings.Swearing = ParseSlider(v) },
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private static int ParseSlider(object? value)
+    {
+        if (value == null) return 0;
+        if (value is string s && int.TryParse(s, out var n)) return n;
+        if (value is int i) return i;
+        return 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (settings == null) return;
+        saving = true;
+        errorMessage = null;
+        try
+        {
+            var response = await Http.PutAsJsonAsync("api/automod/settings", settings);
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                errorMessage = $"Save failed: {response.StatusCode} {err}";
+            }
+            else
+            {
+                settings = await response.Content.ReadFromJsonAsync<AutomodSettingsDto>();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}
