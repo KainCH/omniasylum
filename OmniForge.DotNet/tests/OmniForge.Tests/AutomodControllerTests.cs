@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -18,7 +19,7 @@ namespace OmniForge.Tests
         public AutomodControllerTests()
         {
             _mockTwitchApiService = new Mock<ITwitchApiService>();
-            _controller = new AutomodController(_mockTwitchApiService.Object);
+            _controller = new AutomodController(_mockTwitchApiService.Object, NullLogger<AutomodController>.Instance);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
             {

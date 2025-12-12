@@ -251,24 +251,74 @@ namespace OmniForge.Infrastructure.Services
             var clientId = _configuration["Twitch:ClientId"];
             if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
+            var operationId = Guid.NewGuid().ToString("N");
+            using var scope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["AutoModOperationId"] = operationId,
+                ["AutoModOperation"] = "GET",
+                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+            });
+
+            _logger.LogInformation("AutoMod GET requested for user {UserId}", LogSanitizer.Sanitize(userId));
+
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
                 try
                 {
                     var validation = await _authService.ValidateTokenAsync(accessToken);
                     if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
-                    await EnsureScopesAsync(validation.Scopes, new[] { "moderator:read:automod_settings" });
 
-                    var moderatorId = string.IsNullOrEmpty(validation.UserId) ? userId : validation.UserId;
+                    _logger.LogInformation(
+                        "AutoMod GET token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                        LogSanitizer.Sanitize(validation.UserId),
+                        validation.Scopes?.Count ?? 0,
+                        validation.ExpiresIn);
+
+                    if (validation.Scopes != null && validation.Scopes.Count > 0)
+                    {
+                        _logger.LogInformation(
+                            "AutoMod GET token scopes: {Scopes}",
+                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    await EnsureScopesAsync(validation.Scopes ?? Array.Empty<string>(), new[] { "moderator:read:automod_settings" });
+
+                    if (!string.IsNullOrEmpty(validation.UserId) && !string.Equals(validation.UserId, userId, StringComparison.Ordinal))
+                    {
+                        _logger.LogWarning(
+                            "AutoMod GET token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(validation.UserId));
+                        throw new InvalidOperationException("Twitch token user does not match the signed-in user. Please re-authorize.");
+                    }
+
+                    var moderatorId = userId;
+
+                    _logger.LogInformation(
+                        "AutoMod GET calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(moderatorId));
+
                     var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, moderatorId);
                     var settings = response.Data.FirstOrDefault();
                     if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
 
+                    _logger.LogInformation("AutoMod GET succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
                     return MapAutomodToDto(settings);
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
                 {
                     _logger.LogError(ex, "Twitch AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
                     throw;
                 }
             });
@@ -279,23 +329,79 @@ namespace OmniForge.Infrastructure.Services
             var clientId = _configuration["Twitch:ClientId"];
             if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
+            var operationId = Guid.NewGuid().ToString("N");
+            using var scope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["AutoModOperationId"] = operationId,
+                ["AutoModOperation"] = "UPDATE",
+                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+            });
+
+            _logger.LogInformation(
+                "AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}",
+                LogSanitizer.Sanitize(userId),
+                settings.OverallLevel);
+
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
                 try
                 {
                     var validation = await _authService.ValidateTokenAsync(accessToken);
                     if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
-                    await EnsureScopesAsync(validation.Scopes, new[] { "moderator:manage:automod" });
-                    var moderatorId = string.IsNullOrEmpty(validation.UserId) ? userId : validation.UserId;
+
+                    _logger.LogInformation(
+                        "AutoMod UPDATE token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                        LogSanitizer.Sanitize(validation.UserId),
+                        validation.Scopes?.Count ?? 0,
+                        validation.ExpiresIn);
+
+                    if (validation.Scopes != null && validation.Scopes.Count > 0)
+                    {
+                        _logger.LogInformation(
+                            "AutoMod UPDATE token scopes: {Scopes}",
+                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    await EnsureAnyScopeAsync(
+                        validation.Scopes ?? Array.Empty<string>(),
+                        new[] { "moderator:manage:automod_settings", "moderator:manage:automod" });
+                    if (!string.IsNullOrEmpty(validation.UserId) && !string.Equals(validation.UserId, userId, StringComparison.Ordinal))
+                    {
+                        _logger.LogWarning(
+                            "AutoMod UPDATE token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(validation.UserId));
+                        throw new InvalidOperationException("Twitch token user does not match the signed-in user. Please re-authorize.");
+                    }
+
+                    var moderatorId = userId;
                     var automod = MapDtoToAutomod(settings);
+
+                    _logger.LogInformation(
+                        "AutoMod UPDATE calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(moderatorId));
+
                     var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, moderatorId, automod);
                     var updated = response.Data.FirstOrDefault();
                     if (updated == null) throw new Exception("Failed to update AutoMod settings");
+
+                    _logger.LogInformation("AutoMod UPDATE succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
                     return MapAutomodToDto(updated);
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
                 {
                     _logger.LogError(ex, "Twitch AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod UPDATE blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
                     throw;
                 }
             });
@@ -335,9 +441,40 @@ namespace OmniForge.Infrastructure.Services
 
         private static AutomodSettings MapDtoToAutomod(AutomodSettingsDto dto)
         {
+            if (dto == null) throw new InvalidOperationException("AutoMod settings payload is required");
+
+            // Twitch requires 0-4 for all values.
+            if (dto.OverallLevel.HasValue)
+            {
+                ValidateAutomodValue("overall_level", dto.OverallLevel.Value);
+
+                // Mutually exclusive: if overall level is set, do NOT include individual fields.
+                return new AutomodSettings
+                {
+                    OverallLevel = dto.OverallLevel.Value,
+                    Aggression = null,
+                    Bullying = null,
+                    Disability = null,
+                    Misogyny = null,
+                    RaceEthnicityOrReligion = null,
+                    SexBasedTerms = null,
+                    SexualitySexOrGender = null,
+                    Swearing = null
+                };
+            }
+
+            ValidateAutomodValue("aggression", dto.Aggression);
+            ValidateAutomodValue("bullying", dto.Bullying);
+            ValidateAutomodValue("disability", dto.Disability);
+            ValidateAutomodValue("misogyny", dto.Misogyny);
+            ValidateAutomodValue("race_ethnicity_or_religion", dto.RaceEthnicityOrReligion);
+            ValidateAutomodValue("sex_based_terms", dto.SexBasedTerms);
+            ValidateAutomodValue("sexuality_sex_or_gender", dto.SexualitySexOrGender);
+            ValidateAutomodValue("swearing", dto.Swearing);
+
             return new AutomodSettings
             {
-                OverallLevel = dto.OverallLevel,
+                OverallLevel = null,
                 Aggression = dto.Aggression,
                 Bullying = dto.Bullying,
                 Disability = dto.Disability,
@@ -347,6 +484,14 @@ namespace OmniForge.Infrastructure.Services
                 SexualitySexOrGender = dto.SexualitySexOrGender,
                 Swearing = dto.Swearing
             };
+        }
+
+        private static void ValidateAutomodValue(string name, int value)
+        {
+            if (value < 0 || value > 4)
+            {
+                throw new InvalidOperationException($"Invalid AutoMod setting '{name}' value '{value}'. Valid range is 0-4.");
+            }
         }
 
         private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)
@@ -381,7 +526,25 @@ namespace OmniForge.Infrastructure.Services
             var missing = requiredScopes.Where(rs => !set.Contains(rs)).ToList();
             if (missing.Any())
             {
+                _logger.LogWarning(
+                    "Missing required Twitch scopes: {MissingScopes}",
+                    string.Join(", ", missing.Select(LogSanitizer.Sanitize)));
                 throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please re-authorize.");
+            }
+            return Task.CompletedTask;
+        }
+
+        private Task EnsureAnyScopeAsync(IReadOnlyList<string> scopes, IEnumerable<string> acceptedScopes)
+        {
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var accepted = acceptedScopes.ToList();
+            if (!accepted.Any(s => set.Contains(s)))
+            {
+                _logger.LogWarning(
+                    "Missing required Twitch scope (any-of). AcceptedScopes={AcceptedScopes}",
+                    string.Join(", ", accepted.Select(LogSanitizer.Sanitize)));
+                throw new InvalidOperationException(
+                    $"Missing required Twitch scope. Need one of: {string.Join(", ", accepted)}. Please re-authorize.");
             }
             return Task.CompletedTask;
         }
