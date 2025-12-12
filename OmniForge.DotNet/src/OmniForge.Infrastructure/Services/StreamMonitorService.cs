@@ -34,6 +34,7 @@ namespace OmniForge.Infrastructure.Services
         private Timer? _connectionWatchdog;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _usersWantingMonitoring = new(); // Track users who want monitoring (survives reconnects)
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MonitorDiagnostics> _diagnostics = new();
 
         public StreamMonitorService(
             INativeEventSubService eventSubService,
@@ -65,6 +66,9 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task<SubscriptionResult> SubscribeToUserInternalAsync(string userId, string? actingUserId)
         {
+            var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
+            _logger.LogInformation("📡 Subscribe request: targetUser={TargetUserId}, actingAdmin={ActingAdmin}, isAdminActing={IsAdmin}",
+                LogSanitizer.Sanitize(userId), string.IsNullOrEmpty(actingUserId) ? "self" : LogSanitizer.Sanitize(actingUserId!), isAdminActing);
             // Ensure connected and we have a valid session ID
             if (!_eventSubService.IsConnected || string.IsNullOrEmpty(_eventSubService.SessionId))
             {
@@ -117,7 +121,7 @@ namespace OmniForge.Infrastructure.Services
                 var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
                 var user = await userRepository.GetUserAsync(userId);
                 User? actingUser = null;
-                var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
+                // isAdminActing computed above
                 if (isAdminActing)
                 {
                     actingUser = await userRepository.GetUserAsync(actingUserId!);
@@ -285,17 +289,31 @@ namespace OmniForge.Infrastructure.Services
 
                     _subscribedUsers.TryAdd(userId, true);
                     _usersWantingMonitoring.TryAdd(userId, true);
+                    var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
+                    diag.IsSubscribed = true;
+                    diag.AdminInitiated = isAdminActing;
+                    diag.LastSubscribeAt = DateTimeOffset.UtcNow;
+                    diag.LastSubscribeResult = SubscriptionResult.Success;
+                    diag.LastError = null;
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadScopeException)
                 {
                     _logger.LogWarning("Failed to subscribe user {UserId}: Bad Scope / Unauthorized.", LogSanitizer.Sanitize(userId));
+                    var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
+                    diag.LastSubscribeAt = DateTimeOffset.UtcNow;
+                    diag.LastSubscribeResult = SubscriptionResult.Unauthorized;
+                    diag.LastError = "Bad scope / unauthorized";
                     return SubscriptionResult.Unauthorized;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to subscribe user {UserId}", LogSanitizer.Sanitize(userId));
+                    var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
+                    diag.LastSubscribeAt = DateTimeOffset.UtcNow;
+                    diag.LastSubscribeResult = SubscriptionResult.Failed;
+                    diag.LastError = ex.Message;
                     return SubscriptionResult.Failed;
                 }
             }
@@ -310,6 +328,9 @@ namespace OmniForge.Infrastructure.Services
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
             var wasSubscribed = _subscribedUsers.TryRemove(userId, out _);
             var wasWanting = _usersWantingMonitoring.TryRemove(userId, out _); // User explicitly stopped monitoring
+            var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
+            diag.IsSubscribed = false;
+            diag.LastSubscribeResult = null;
 
             _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}",
                 LogSanitizer.Sanitize(userId), wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
@@ -450,13 +471,30 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<SubscriptionResult> ForceReconnectUserAsync(string userId)
         {
-            // Re-subscribe
-            return await SubscribeToUserAsync(userId);
+            _logger.LogInformation("🔄 Force reconnect requested for user {UserId}", LogSanitizer.Sanitize(userId));
+            if (_eventSubService.IsConnected)
+            {
+                try { await _eventSubService.DisconnectAsync(); } catch (Exception ex) { _logger.LogWarning(ex, "Force reconnect: disconnect failed but continuing"); }
+            }
+            try { await _eventSubService.ConnectAsync(); } catch (Exception ex) { _logger.LogError(ex, "Force reconnect: connect failed"); }
+            var result = await SubscribeToUserAsync(userId);
+            _logger.LogInformation("🔄 Force reconnect result for {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
+            return result;
         }
 
         public StreamMonitorStatus GetUserConnectionStatus(string userId)
         {
             var discordStatus = _discordTracker.GetLastNotification(userId);
+            _diagnostics.TryGetValue(userId, out var diag);
+            double? keepAliveAge = null;
+            try
+            {
+                if (_eventSubService.LastKeepaliveTime != default)
+                {
+                    keepAliveAge = (DateTime.UtcNow - _eventSubService.LastKeepaliveTime).TotalSeconds;
+                }
+            }
+            catch { }
 
             return new StreamMonitorStatus
             {
@@ -464,7 +502,15 @@ namespace OmniForge.Infrastructure.Services
                 Subscriptions = _subscribedUsers.ContainsKey(userId) ? new[] { "stream.online", "stream.offline" } : Array.Empty<string>(),
                 LastConnected = _eventSubService.IsConnected ? DateTimeOffset.UtcNow : null, // Approximate
                 LastDiscordNotification = discordStatus?.Time,
-                LastDiscordNotificationSuccess = discordStatus?.Success ?? false
+                LastDiscordNotificationSuccess = discordStatus?.Success ?? false,
+                IsSubscribed = diag?.IsSubscribed ?? _subscribedUsers.ContainsKey(userId),
+                EventSubSessionId = _eventSubService.SessionId,
+                LastEventType = diag?.LastEventType,
+                LastEventAt = diag?.LastEventAt,
+                LastEventSummary = diag?.LastEventSummary,
+                LastError = diag?.LastError,
+                KeepaliveAgeSeconds = keepAliveAge,
+                AdminInitiated = diag?.AdminInitiated ?? false
             };
         }
 
@@ -485,6 +531,7 @@ namespace OmniForge.Infrastructure.Services
             if (_connectionWatchdog == null)
             {
                 _connectionWatchdog = new Timer(CheckConnection, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+                _logger.LogInformation("🕒 Watchdog timer started (interval=1m)");
             }
         }
 
@@ -609,11 +656,28 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
+                var isChatEvent = subscriptionType.StartsWith("channel.chat", StringComparison.OrdinalIgnoreCase);
+                if (isChatEvent)
+                {
+                    _logger.LogDebug("💬 EventSub notification received: {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                }
+                else
+                {
+                    _logger.LogInformation("📨 EventSub notification received: {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                }
+
                 using var scope = _scopeFactory.CreateScope();
                 var handlerRegistry = scope.ServiceProvider.GetRequiredService<IEventSubHandlerRegistry>();
                 var handler = handlerRegistry.GetHandler(subscriptionType);
                 if (handler != null)
                 {
+                    if (TryGetBroadcasterId(eventData, out var broadcasterId) && !string.IsNullOrEmpty(broadcasterId))
+                    {
+                        var diag = _diagnostics.GetOrAdd(broadcasterId!, _ => new MonitorDiagnostics());
+                        diag.LastEventType = subscriptionType;
+                        diag.LastEventAt = DateTimeOffset.UtcNow;
+                        diag.LastEventSummary = TrySummarizeEvent(eventData);
+                    }
                     await handler.HandleAsync(eventData);
                 }
                 else
@@ -625,6 +689,46 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogError(ex, "Error processing notification.");
             }
+        }
+
+        private static string? TrySummarizeEvent(System.Text.Json.JsonElement eventData)
+        {
+            try
+            {
+                // Provide a concise summary (id + optional user/login if present)
+                if (eventData.TryGetProperty("id", out var idProp))
+                {
+                    var id = idProp.GetString();
+                    if (eventData.TryGetProperty("user_login", out var loginProp))
+                    {
+                        return $"id={id}, user={loginProp.GetString()}";
+                    }
+                    if (eventData.TryGetProperty("broadcaster_user_name", out var bnameProp))
+                    {
+                        return $"id={id}, broadcaster={bnameProp.GetString()}";
+                    }
+                    return $"id={id}";
+                }
+                // fallback: truncate raw JSON
+                var raw = eventData.GetRawText();
+                return raw.Length > 200 ? raw.Substring(0, 200) + "…" : raw;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private class MonitorDiagnostics
+        {
+            public bool IsSubscribed { get; set; }
+            public bool AdminInitiated { get; set; }
+            public DateTimeOffset? LastSubscribeAt { get; set; }
+            public SubscriptionResult? LastSubscribeResult { get; set; }
+            public string? LastEventType { get; set; }
+            public DateTimeOffset? LastEventAt { get; set; }
+            public string? LastEventSummary { get; set; }
+            public string? LastError { get; set; }
         }
 
         // NOTE: Legacy event handlers (HandleStreamOnline, HandleStreamOffline, HandleFollow, HandleSubscribe,

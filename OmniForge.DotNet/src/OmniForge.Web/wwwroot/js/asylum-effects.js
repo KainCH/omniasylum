@@ -531,6 +531,11 @@ class AsylumEffects {
 
   // Enhanced playSound with retry tracking to prevent infinite loops
   playSound(soundTrigger, retryCount = 0) {
+    if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
+      this.log('normal', '🔇 AsylumEffects sound suppressed during silence window:', soundTrigger);
+      return;
+    }
+
     // Input validation
     const sanitizedTrigger = this.sanitizeString(soundTrigger);
     if (!sanitizedTrigger) {

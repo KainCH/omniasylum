@@ -69,22 +69,19 @@ namespace OmniForge.Infrastructure.Services
                     switch (command)
                     {
                         case "!deaths":
-                            await TrySend(sendMessage, context.UserId, $"Death Count: {counters.Deaths}");
                             handled = true;
                             break;
                         case "!swears":
-                            await TrySend(sendMessage, context.UserId, $"Swear Count: {counters.Swears}");
                             handled = true;
                             break;
                         case "!screams":
                             if (user != null && user.OverlaySettings.Counters.Screams)
                             {
-                                await TrySend(sendMessage, context.UserId, $"Scream Count: {counters.Screams}");
+                                // Counter commands are intentionally silent (no chat replies)
                             }
                             handled = true;
                             break;
                         case "!stats":
-                            await TrySend(sendMessage, context.UserId, $"Deaths: {counters.Deaths} | Swears: {counters.Swears} | Screams: {counters.Screams}");
                             handled = true;
                             break;
 
@@ -95,7 +92,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Deaths++;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Death Count: {counters.Deaths}");
                             }
                             handled = true;
                             break;
@@ -105,7 +101,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Deaths--;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Death Count: {counters.Deaths}");
                             }
                             handled = true;
                             break;
@@ -115,7 +110,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Swears++;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Swear Count: {counters.Swears}");
                             }
                             handled = true;
                             break;
@@ -125,7 +119,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Swears--;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Swear Count: {counters.Swears}");
                             }
                             handled = true;
                             break;
@@ -135,7 +128,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Screams++;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Scream Count: {counters.Screams}");
                             }
                             handled = true;
                             break;
@@ -145,7 +137,6 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 counters.Screams--;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, $"Scream Count: {counters.Screams}");
                             }
                             handled = true;
                             break;
@@ -156,7 +147,6 @@ namespace OmniForge.Infrastructure.Services
                                 counters.Swears = 0;
                                 counters.Screams = 0;
                                 changed = true;
-                                await TrySend(sendMessage, context.UserId, "Counters have been reset.");
                             }
                             handled = true;
                             break;

@@ -125,6 +125,8 @@
   <script>
     // Silence alert sounds briefly on load/refresh
     window.omniSilenceInitialMs = 3000;
+    // Set the suppression window immediately so refresh/reconnect doesn't play sounds
+    window.omniSilenceUntil = Date.now() + window.omniSilenceInitialMs;
   </script>
   <div id="overlay-container" class="counter-overlay" style="top: 20px; right: 20px;">
     <!-- Counters will be injected here -->
@@ -157,6 +159,11 @@
       if (!userId) {
         document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
         return;
+      }
+
+      // Initialize interop early so any incoming messages during startup are suppressed
+      if (window.overlayInterop) {
+        window.overlayInterop.init();
       }
 
       // Initial Data Load
@@ -373,10 +380,7 @@
         container.appendChild(div);
       }
 
-      // Initialize Interop
-      if (window.overlayInterop) {
-        window.overlayInterop.init();
-      }
+      // Interop already initialized above
     })();
   </script>
 </body>

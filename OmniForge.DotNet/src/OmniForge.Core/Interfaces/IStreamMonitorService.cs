@@ -28,5 +28,13 @@ namespace OmniForge.Core.Interfaces
         public DateTimeOffset? LastConnected { get; set; }
         public DateTimeOffset? LastDiscordNotification { get; set; }
         public bool LastDiscordNotificationSuccess { get; set; }
+        public bool IsSubscribed { get; set; }
+        public string? EventSubSessionId { get; set; }
+        public string? LastEventType { get; set; }
+        public DateTimeOffset? LastEventAt { get; set; }
+        public string? LastEventSummary { get; set; }
+        public string? LastError { get; set; }
+        public double? KeepaliveAgeSeconds { get; set; }
+        public bool AdminInitiated { get; set; }
     }
 }

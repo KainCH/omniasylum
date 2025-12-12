@@ -267,17 +267,17 @@ socket.on('counterUpdate', (data) => {
 
 ### Public Commands (Anyone)
 
-- `!deaths` - Show current death count
-- `!swears` - Show current swear count
-- `!stats` - Show all statistics
+- `!deaths` - Show current death count (no chat reply)
+- `!swears` - Show current swear count (no chat reply)
+- `!stats` - Show all statistics (no chat reply)
 
 ### Mod-Only Commands (Broadcaster & Mods)
 
-- `!death+` or `!d+` - Increment deaths
-- `!death-` or `!d-` - Decrement deaths
-- `!swear+` or `!s+` - Increment swears
-- `!swear-` or `!s-` - Decrement swears
-- `!resetcounters` - Reset all counters
+- `!death+` or `!d+` - Increment deaths (no chat reply)
+- `!death-` or `!d-` - Decrement deaths (no chat reply)
+- `!swear+` or `!s+` - Increment swears (no chat reply)
+- `!swear-` or `!s-` - Decrement swears (no chat reply)
+- `!resetcounters` - Reset all counters (no chat reply)
 
 ### Series Save States (Broadcaster & Mods)
 

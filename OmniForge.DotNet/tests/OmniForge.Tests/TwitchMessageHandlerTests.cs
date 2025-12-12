@@ -135,7 +135,7 @@ namespace OmniForge.Tests
             await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
-            sendMessageMock.Verify(x => x(userId, "Death Count: 10"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -152,7 +152,7 @@ namespace OmniForge.Tests
             await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
-            sendMessageMock.Verify(x => x(userId, "Swear Count: 5"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -169,7 +169,7 @@ namespace OmniForge.Tests
             await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
-            sendMessageMock.Verify(x => x(userId, "Deaths: 10 | Swears: 5 | Screams: 2"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -188,7 +188,7 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(9, counters.Deaths);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Death Count: 9"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -225,7 +225,7 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(6, counters.Swears);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Swear Count: 6"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -244,7 +244,7 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(4, counters.Swears);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Swear Count: 4"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -282,7 +282,7 @@ namespace OmniForge.Tests
             Assert.Equal(11, counters.Deaths);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Death Count: 11"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -321,7 +321,7 @@ namespace OmniForge.Tests
             Assert.Equal(0, counters.Swears);
             Assert.Equal(0, counters.Screams);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Counters have been reset."), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -356,7 +356,7 @@ namespace OmniForge.Tests
             await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
-            sendMessageMock.Verify(x => x(userId, "Scream Count: 5"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -397,7 +397,7 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(6, counters.Screams);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Scream Count: 6"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -416,7 +416,7 @@ namespace OmniForge.Tests
             // Assert
             Assert.Equal(4, counters.Screams);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Scream Count: 4"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -432,7 +432,7 @@ namespace OmniForge.Tests
 
             Assert.Equal(3, counters.Screams);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Scream Count: 3"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -448,7 +448,7 @@ namespace OmniForge.Tests
 
             Assert.Equal(8, counters.Swears);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
-            sendMessageMock.Verify(x => x(userId, "Swear Count: 8"), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]

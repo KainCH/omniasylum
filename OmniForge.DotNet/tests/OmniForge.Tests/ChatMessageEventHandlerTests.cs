@@ -123,7 +123,7 @@ namespace OmniForge.Tests
                 ""broadcaster_user_id"": ""broadcaster123"",
                 ""chatter_user_id"": ""user999"",
                 ""message_id"": ""msg-1"",
-                ""message"": { ""text"": ""!deaths"" },
+                ""message"": { ""text"": ""!custom"" },
                 ""badges"": []
             }";
 
@@ -134,13 +134,36 @@ namespace OmniForge.Tests
                 .Setup(p => p.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<System.Func<string, string, Task>>()))
                 .Callback<ChatCommandContext, System.Func<string, string, Task>>(async (ctx, sender) =>
                 {
-                    await sender(ctx.UserId, "Death Count: 1");
+                    await sender(ctx.UserId, "Custom Response");
                 })
                 .Returns(Task.CompletedTask);
 
             await _handler.HandleAsync(evt);
 
-            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync("broadcaster123", "Death Count: 1", "msg-1", null), Times.Once);
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync("broadcaster123", "Custom Response", "msg-1", null), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_ShouldNotSendChatReply_ForCounterCommand()
+        {
+            var json = @"{
+                ""broadcaster_user_id"": ""broadcaster123"",
+                ""chatter_user_id"": ""user999"",
+                ""message_id"": ""msg-1"",
+                ""message"": { ""text"": ""!deaths"" },
+                ""badges"": []
+            }";
+
+            using var doc = JsonDocument.Parse(json);
+            var evt = doc.RootElement;
+
+            _mockChatCommandProcessor
+                .Setup(p => p.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<System.Func<string, string, Task>>()))
+                .Returns(Task.CompletedTask);
+
+            await _handler.HandleAsync(evt);
+
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]

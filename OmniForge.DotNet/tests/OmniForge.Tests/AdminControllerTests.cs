@@ -70,6 +70,28 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task StopMonitoringForUser_ShouldCallService()
+        {
+            var result = await _controller.StopMonitoringForUser("targetUser");
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            _mockStreamMonitorService.Verify(s => s.UnsubscribeFromUserAsync("targetUser"), Times.Once);
+            Assert.Contains("Monitoring stopped", ok.Value!.ToString());
+        }
+
+        [Fact]
+        public void GetMonitorStatus_ShouldReturnStatus()
+        {
+            var status = new StreamMonitorStatus { Connected = true, IsSubscribed = true };
+            _mockStreamMonitorService.Setup(s => s.GetUserConnectionStatus("targetUser")).Returns(status);
+
+            var result = _controller.GetMonitorStatus("targetUser");
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(status, ok.Value);
+        }
+
+        [Fact]
         public async Task GetUserDiagnostics_ShouldReturnOk()
         {
             _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(new List<User>());
