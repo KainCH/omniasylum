@@ -1,10 +1,12 @@
 @page "/automod"
 @using OmniForge.Core.Entities
+@using OmniForge.Core.Exceptions
 @using OmniForge.Core.Utilities
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @inject OmniForge.Core.Interfaces.ITwitchApiService TwitchApiService
 @inject Microsoft.Extensions.Logging.ILogger<AutomodSettings> Logger
+@inject Microsoft.AspNetCore.Components.NavigationManager Navigation
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>AutoMod Settings</PageTitle>
@@ -118,6 +120,11 @@ else if (settings != null)
         {
             await LoadFromTwitchAsync("initial-load");
         }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod init requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
+        }
         catch (Exception ex)
         {
             Logger.LogError(ex, "AutoMod page init failed: {Message}", LogSanitizer.Sanitize(ex.Message));
@@ -141,6 +148,11 @@ else if (settings != null)
         {
             await LoadFromTwitchAsync("manual-refresh");
             statusMessage = $"Refreshed from Twitch at {DateTimeOffset.Now:T}.";
+        }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod refresh requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
         }
         catch (Exception ex)
         {
@@ -223,6 +235,11 @@ else if (settings != null)
             settings = await TwitchApiService.UpdateAutomodSettingsAsync(userId, settings);
             SetupSliders();
             statusMessage = $"Saved at {DateTimeOffset.Now:T}.";
+        }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod save requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
         }
         catch (Exception ex)
         {

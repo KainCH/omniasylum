@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OmniForge.Core.Exceptions;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
@@ -35,6 +36,11 @@ namespace OmniForge.Web.Controllers
                 var settings = await _twitchApiService.GetAutomodSettingsAsync(userId);
                 return Ok(settings);
             }
+            catch (ReauthRequiredException ex)
+            {
+                _logger.LogWarning(ex, "API AutoMod GET requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                return Unauthorized(new { error = "Authentication expired", requireReauth = true, authUrl = "/auth/twitch", logoutUrl = "/auth/logout?reauth=1" });
+            }
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning(ex, "API AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
@@ -60,6 +66,11 @@ namespace OmniForge.Web.Controllers
                 _logger.LogInformation("API AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}", LogSanitizer.Sanitize(userId), settings.OverallLevel);
                 var updated = await _twitchApiService.UpdateAutomodSettingsAsync(userId, settings);
                 return Ok(updated);
+            }
+            catch (ReauthRequiredException ex)
+            {
+                _logger.LogWarning(ex, "API AutoMod UPDATE requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                return Unauthorized(new { error = "Authentication expired", requireReauth = true, authUrl = "/auth/twitch", logoutUrl = "/auth/logout?reauth=1" });
             }
             catch (InvalidOperationException ex)
             {

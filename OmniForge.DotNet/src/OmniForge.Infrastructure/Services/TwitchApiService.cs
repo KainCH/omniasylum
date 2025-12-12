@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
+using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Interfaces;
@@ -66,7 +67,7 @@ namespace OmniForge.Infrastructure.Services
                 else
                 {
                     _logger.LogWarning("Failed to refresh token for user {UserId}", LogSanitizer.Sanitize(userId));
-                    throw new Exception("Failed to refresh Twitch token");
+                    throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
                 }
             }
 
@@ -266,7 +267,7 @@ namespace OmniForge.Infrastructure.Services
                 try
                 {
                     var validation = await _authService.ValidateTokenAsync(accessToken);
-                    if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
+                    if (validation == null) throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
 
                     _logger.LogInformation(
                         "AutoMod GET token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
@@ -289,7 +290,7 @@ namespace OmniForge.Infrastructure.Services
                             "AutoMod GET token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
                             LogSanitizer.Sanitize(userId),
                             LogSanitizer.Sanitize(validation.UserId));
-                        throw new InvalidOperationException("Twitch token user does not match the signed-in user. Please re-authorize.");
+                        throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
                     }
 
                     var moderatorId = userId;
@@ -314,6 +315,11 @@ namespace OmniForge.Infrastructure.Services
                 catch (InvalidOperationException ex)
                 {
                     _logger.LogWarning(ex, "AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (ReauthRequiredException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod GET requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
                     throw;
                 }
                 catch (Exception ex)
@@ -347,7 +353,7 @@ namespace OmniForge.Infrastructure.Services
                 try
                 {
                     var validation = await _authService.ValidateTokenAsync(accessToken);
-                    if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
+                    if (validation == null) throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
 
                     _logger.LogInformation(
                         "AutoMod UPDATE token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
@@ -371,7 +377,7 @@ namespace OmniForge.Infrastructure.Services
                             "AutoMod UPDATE token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
                             LogSanitizer.Sanitize(userId),
                             LogSanitizer.Sanitize(validation.UserId));
-                        throw new InvalidOperationException("Twitch token user does not match the signed-in user. Please re-authorize.");
+                        throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
                     }
 
                     var moderatorId = userId;
@@ -397,6 +403,11 @@ namespace OmniForge.Infrastructure.Services
                 catch (InvalidOperationException ex)
                 {
                     _logger.LogWarning(ex, "AutoMod UPDATE blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (ReauthRequiredException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod UPDATE requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
                     throw;
                 }
                 catch (Exception ex)
@@ -529,7 +540,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogWarning(
                     "Missing required Twitch scopes: {MissingScopes}",
                     string.Join(", ", missing.Select(LogSanitizer.Sanitize)));
-                throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please re-authorize.");
+                throw new ReauthRequiredException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please sign in again.");
             }
             return Task.CompletedTask;
         }
@@ -543,8 +554,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogWarning(
                     "Missing required Twitch scope (any-of). AcceptedScopes={AcceptedScopes}",
                     string.Join(", ", accepted.Select(LogSanitizer.Sanitize)));
-                throw new InvalidOperationException(
-                    $"Missing required Twitch scope. Need one of: {string.Join(", ", accepted)}. Please re-authorize.");
+                throw new ReauthRequiredException(
+                    $"Missing required Twitch scope. Need one of: {string.Join(", ", accepted)}. Please sign in again.");
             }
             return Task.CompletedTask;
         }
@@ -584,7 +595,7 @@ namespace OmniForge.Infrastructure.Services
             if (wasRefreshed)
             {
                 _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
             }
 
             _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
@@ -592,11 +603,15 @@ namespace OmniForge.Infrastructure.Services
             if (string.IsNullOrEmpty(user.RefreshToken))
             {
                 _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", LogSanitizer.Sanitize(user.TwitchUserId));
-                throw new InvalidOperationException("Refresh token is required for automatic retry");
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
             }
 
             var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
-            if (newToken == null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            if (newToken == null)
+            {
+                _logger.LogWarning(ex, "Twitch token refresh failed for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
+            }
 
             user.AccessToken = newToken.AccessToken;
             user.RefreshToken = newToken.RefreshToken;

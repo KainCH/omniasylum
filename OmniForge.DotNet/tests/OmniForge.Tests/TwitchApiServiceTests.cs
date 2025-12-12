@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Entities;
+using OmniForge.Core.Exceptions;
 using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
@@ -66,7 +67,7 @@ namespace OmniForge.Tests
             getDataProp!.SetValue(helixResponse, new[] { new TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettingsResponseModel { OverallLevel = 2 } });
 
             // Token user mismatch should be rejected (prevents confusing BadScope/BadCreds errors)
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.GetAutomodSettingsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetAutomodSettingsAsync(userId));
         }
 
         [Fact]
@@ -90,7 +91,7 @@ namespace OmniForge.Tests
             var updateDataProp = typeof(UpdateAutomodSettingsResponse).GetProperty("Data");
             updateDataProp!.SetValue(helixResponse, new[] { new AutomodSettings { OverallLevel = 3 } });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.UpdateAutomodSettingsAsync(userId, dto));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.UpdateAutomodSettingsAsync(userId, dto));
         }
 
         [Fact]
@@ -374,7 +375,7 @@ namespace OmniForge.Tests
             _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
 
             // Act & Assert
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
         }
 
         [Fact]
@@ -510,7 +511,7 @@ namespace OmniForge.Tests
                 .ThrowsAsync(new Exception("401 Unauthorized"));
 
             // Should throw and NOT retry (no second refresh)
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once); // Only the proactive refresh
             _mockAuthService.Verify(x => x.RefreshTokenAsync("new_refresh"), Times.Never); // No second refresh
@@ -569,7 +570,7 @@ namespace OmniForge.Tests
             _mockHelixWrapper.Setup(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId))
                 .ThrowsAsync(new Exception("401 Unauthorized"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
         }
@@ -595,7 +596,7 @@ namespace OmniForge.Tests
             // Refresh fails
             _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
 
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once);
             // Should not retry with original token or new token
