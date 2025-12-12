@@ -14,24 +14,24 @@ using Xunit;
 
 namespace OmniForge.Tests
 {
-    public class TwitchMessageHandlerDynamicTests
+    public class ChatCommandProcessorDynamicTests
     {
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
-        private readonly Mock<ILogger<TwitchMessageHandler>> _mockLogger;
+        private readonly Mock<ILogger<ChatCommandProcessor>> _mockLogger;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
-        private readonly TwitchMessageHandler _handler;
+        private readonly ChatCommandProcessor _handler;
 
-        public TwitchMessageHandlerDynamicTests()
+        public ChatCommandProcessorDynamicTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
-            _mockLogger = new Mock<ILogger<TwitchMessageHandler>>();
+            _mockLogger = new Mock<ILogger<ChatCommandProcessor>>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
 
@@ -55,7 +55,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Setup(x => x.GetCountersAsync(It.IsAny<string>()))
                 .ReturnsAsync(new Counter());
 
-            _handler = new TwitchMessageHandler(
+            _handler = new ChatCommandProcessor(
                 _mockScopeFactory.Object,
                 _mockOverlayNotifier.Object,
                 _mockLogger.Object);
@@ -95,8 +95,20 @@ namespace OmniForge.Tests
             );
         }
 
+        private static ChatCommandContext ToContext(string userId, ChatMessage message)
+        {
+            return new ChatCommandContext
+            {
+                UserId = userId,
+                Message = message.Message,
+                IsModerator = message.IsModerator,
+                IsBroadcaster = message.IsBroadcaster,
+                IsSubscriber = message.IsSubscriber
+            };
+        }
+
         [Fact]
-        public async Task HandleMessageAsync_ShouldExecuteCustomCommand()
+        public async Task ProcessAsync_ShouldExecuteCustomCommand()
         {
             // Arrange
             var userId = "user1";
@@ -117,7 +129,7 @@ namespace OmniForge.Tests
             string? sentMessage = null;
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, (uid, msg) =>
+            await _handler.ProcessAsync(ToContext(userId, message), (uid, msg) =>
             {
                 sentMessage = msg;
                 return Task.CompletedTask;
@@ -128,7 +140,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldRespectPermission_Moderator()
+        public async Task ProcessAsync_ShouldRespectPermission_Moderator()
         {
             // Arrange
             var userId = "user1";
@@ -150,7 +162,7 @@ namespace OmniForge.Tests
             string? sentMessage = null;
 
             // Act - Viewer
-            await _handler.HandleMessageAsync(userId, messageViewer, (uid, msg) =>
+            await _handler.ProcessAsync(ToContext(userId, messageViewer), (uid, msg) =>
             {
                 sentMessage = msg;
                 return Task.CompletedTask;
@@ -160,7 +172,7 @@ namespace OmniForge.Tests
             Assert.Null(sentMessage);
 
             // Act - Mod
-            await _handler.HandleMessageAsync(userId, messageMod, (uid, msg) =>
+            await _handler.ProcessAsync(ToContext(userId, messageMod), (uid, msg) =>
             {
                 sentMessage = msg;
                 return Task.CompletedTask;
@@ -171,7 +183,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldRespectCooldown()
+        public async Task ProcessAsync_ShouldRespectCooldown()
         {
             // Arrange
             var userId = "user1";
@@ -192,14 +204,14 @@ namespace OmniForge.Tests
             int callCount = 0;
 
             // Act - First Call
-            await _handler.HandleMessageAsync(userId, message, (uid, msg) =>
+            await _handler.ProcessAsync(ToContext(userId, message), (uid, msg) =>
             {
                 callCount++;
                 return Task.CompletedTask;
             });
 
             // Act - Second Call (Immediate)
-            await _handler.HandleMessageAsync(userId, message, (uid, msg) =>
+            await _handler.ProcessAsync(ToContext(userId, message), (uid, msg) =>
             {
                 callCount++;
                 return Task.CompletedTask;

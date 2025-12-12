@@ -70,6 +70,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddHttpClient<IDiscordService, DiscordService>();
+            services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
             services.AddHostedService<TwitchConnectionService>();

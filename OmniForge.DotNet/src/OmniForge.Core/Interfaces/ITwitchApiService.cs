@@ -16,6 +16,9 @@ namespace OmniForge.Core.Interfaces
         // AutoMod settings
         Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId);
         Task<AutomodSettingsDto> UpdateAutomodSettingsAsync(string userId, AutomodSettingsDto settings);
+
+        // Chat
+        Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null);
     }
 
     public class StreamInfo

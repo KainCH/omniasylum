@@ -14,24 +14,24 @@ using Xunit;
 
 namespace OmniForge.Tests
 {
-    public class TwitchMessageHandlerTests
+    public class ChatCommandProcessorTests
     {
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
-        private readonly Mock<ILogger<TwitchMessageHandler>> _mockLogger;
+        private readonly Mock<ILogger<ChatCommandProcessor>> _mockLogger;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
-        private readonly TwitchMessageHandler _handler;
+        private readonly ChatCommandProcessor _handler;
 
-        public TwitchMessageHandlerTests()
+        public ChatCommandProcessorTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
-            _mockLogger = new Mock<ILogger<TwitchMessageHandler>>();
+            _mockLogger = new Mock<ILogger<ChatCommandProcessor>>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
 
@@ -54,13 +54,13 @@ namespace OmniForge.Tests
                     DiscordSettings = new DiscordSettings() // Ensure this is not null for milestone checks
                 });
 
-            _handler = new TwitchMessageHandler(
+            _handler = new ChatCommandProcessor(
                 _mockScopeFactory.Object,
                 _mockOverlayNotifier.Object,
                 _mockLogger.Object);
         }
 
-        private ChatMessage CreateMessage(string message, bool isMod = false, bool isBroadcaster = false)
+        private ChatMessage CreateMessage(string message, bool isMod = false, bool isBroadcaster = false, bool isSubscriber = false)
         {
             return new ChatMessage(
                 "bot", // botUsername
@@ -74,7 +74,7 @@ namespace OmniForge.Tests
                 UserType.Viewer, // userType
                 "channel", // channel
                 "id", // id
-                false, // isSubscriber
+                isSubscriber, // isSubscriber
                 0, // subscribedMonthCount
                 "room", // roomId
                 false, // isTurbo
@@ -95,22 +95,34 @@ namespace OmniForge.Tests
         }
 
 
+        private static ChatCommandContext ToContext(string userId, ChatMessage message)
+        {
+            return new ChatCommandContext
+            {
+                UserId = userId,
+                Message = message.Message,
+                IsModerator = message.IsModerator,
+                IsBroadcaster = message.IsBroadcaster,
+                IsSubscriber = message.IsSubscriber
+            };
+        }
+
         [Fact]
-        public async Task HandleMessageAsync_ShouldIgnoreNonCommands()
+        public async Task ProcessAsync_ShouldIgnoreNonCommands()
         {
             // Arrange
             var message = CreateMessage("hello");
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync("user1", message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext("user1", message), sendMessageMock.Object);
 
             // Assert
             _mockScopeFactory.Verify(x => x.CreateScope(), Times.Never);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldReturnDeaths()
+        public async Task ProcessAsync_ShouldReturnDeaths()
         {
             // Arrange
             var userId = "user1";
@@ -120,14 +132,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Death Count: 10"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldReturnSwears()
+        public async Task ProcessAsync_ShouldReturnSwears()
         {
             // Arrange
             var userId = "user1";
@@ -137,14 +149,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Swear Count: 5"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldReturnStats()
+        public async Task ProcessAsync_ShouldReturnStats()
         {
             // Arrange
             var userId = "user1";
@@ -154,14 +166,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Deaths: 10 | Swears: 5 | Screams: 2"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldDecrementDeaths_WhenModAndPositive()
+        public async Task ProcessAsync_ShouldDecrementDeaths_WhenModAndPositive()
         {
             // Arrange
             var userId = "user1";
@@ -171,7 +183,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(9, counters.Deaths);
@@ -180,7 +192,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotDecrementDeaths_WhenZero()
+        public async Task ProcessAsync_ShouldNotDecrementDeaths_WhenZero()
         {
             // Arrange
             var userId = "user1";
@@ -190,7 +202,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(0, counters.Deaths);
@@ -198,7 +210,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldIncrementSwears_WhenMod()
+        public async Task ProcessAsync_ShouldIncrementSwears_WhenMod()
         {
             // Arrange
             var userId = "user1";
@@ -208,7 +220,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(6, counters.Swears);
@@ -217,7 +229,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldDecrementSwears_WhenModAndPositive()
+        public async Task ProcessAsync_ShouldDecrementSwears_WhenModAndPositive()
         {
             // Arrange
             var userId = "user1";
@@ -227,7 +239,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(4, counters.Swears);
@@ -236,7 +248,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotDecrementSwears_WhenZero()
+        public async Task ProcessAsync_ShouldNotDecrementSwears_WhenZero()
         {
             // Arrange
             var userId = "user1";
@@ -246,7 +258,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(0, counters.Swears);
@@ -254,7 +266,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldIncrementDeaths_WhenMod()
+        public async Task ProcessAsync_ShouldIncrementDeaths_WhenMod()
         {
             // Arrange
             var userId = "user1";
@@ -264,7 +276,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(11, counters.Deaths);
@@ -274,7 +286,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotIncrementDeaths_WhenNotMod()
+        public async Task ProcessAsync_ShouldNotIncrementDeaths_WhenNotMod()
         {
             // Arrange
             var userId = "user1";
@@ -284,7 +296,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(10, counters.Deaths);
@@ -292,7 +304,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldResetCounters_WhenMod()
+        public async Task ProcessAsync_ShouldResetCounters_WhenMod()
         {
             // Arrange
             var userId = "user1";
@@ -302,7 +314,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(0, counters.Deaths);
@@ -313,7 +325,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotResetCounters_WhenNotMod()
+        public async Task ProcessAsync_ShouldNotResetCounters_WhenNotMod()
         {
             // Arrange
             var userId = "user1";
@@ -323,7 +335,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(10, counters.Deaths);
@@ -331,7 +343,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldReturnScreams_WhenEnabled()
+        public async Task ProcessAsync_ShouldReturnScreams_WhenEnabled()
         {
             // Arrange
             var userId = "user1";
@@ -341,14 +353,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Scream Count: 5"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotReturnScreams_WhenDisabled()
+        public async Task ProcessAsync_ShouldNotReturnScreams_WhenDisabled()
         {
             // Arrange
             var userId = "user1";
@@ -363,14 +375,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldIncrementScreams_WhenModAndEnabled()
+        public async Task ProcessAsync_ShouldIncrementScreams_WhenModAndEnabled()
         {
             // Arrange
             var userId = "user1";
@@ -380,7 +392,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(6, counters.Screams);
@@ -389,7 +401,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldDecrementScreams_WhenModAndEnabledAndPositive()
+        public async Task ProcessAsync_ShouldDecrementScreams_WhenModAndEnabledAndPositive()
         {
             // Arrange
             var userId = "user1";
@@ -399,7 +411,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             Assert.Equal(4, counters.Screams);
@@ -408,7 +420,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldIncrementScreams_WithShortAlias()
+        public async Task ProcessAsync_ShouldIncrementScreams_WithShortAlias()
         {
             var userId = "user1";
             var message = CreateMessage("!sc+", isMod: true);
@@ -416,7 +428,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             Assert.Equal(3, counters.Screams);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
@@ -424,7 +436,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldIncrementSwears_WithShortAlias()
+        public async Task ProcessAsync_ShouldIncrementSwears_WithShortAlias()
         {
             var userId = "user1";
             var message = CreateMessage("!sw+", isMod: true);
@@ -432,7 +444,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             Assert.Equal(8, counters.Swears);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
@@ -440,7 +452,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenPermissionGranted()
+        public async Task ProcessAsync_ShouldExecuteCustomCommand_WhenPermissionGranted()
         {
             // Arrange
             var userId = "user1";
@@ -460,14 +472,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Custom Response"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotExecuteCustomCommand_WhenPermissionDenied()
+        public async Task ProcessAsync_ShouldNotExecuteCustomCommand_WhenPermissionDenied()
         {
             // Arrange
             var userId = "user1";
@@ -487,14 +499,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldRespectCooldown()
+        public async Task ProcessAsync_ShouldRespectCooldown()
         {
             // Arrange
             var userId = "user1";
@@ -514,15 +526,15 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object); // First call
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object); // Second call (should be on cooldown)
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object); // First call
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object); // Second call (should be on cooldown)
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Custom Response"), Times.Once); // Only once
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenSubscriberPermissionAndIsSubscriber()
+        public async Task ProcessAsync_ShouldExecuteCustomCommand_WhenSubscriberPermissionAndIsSubscriber()
         {
             // Arrange
             var userId = "user1";
@@ -552,14 +564,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, chatMessage, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, chatMessage), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Sub Response"), Times.Once);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotExecuteCustomCommand_WhenSubscriberPermissionAndNotSubscriber()
+        public async Task ProcessAsync_ShouldNotExecuteCustomCommand_WhenSubscriberPermissionAndNotSubscriber()
         {
             // Arrange
             var userId = "user1";
@@ -579,14 +591,14 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldExecuteCustomCommand_WhenBroadcasterPermissionAndIsBroadcaster()
+        public async Task ProcessAsync_ShouldExecuteCustomCommand_WhenBroadcasterPermissionAndIsBroadcaster()
         {
             // Arrange
             var userId = "user1";
@@ -606,7 +618,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Broadcaster Response"), Times.Once);

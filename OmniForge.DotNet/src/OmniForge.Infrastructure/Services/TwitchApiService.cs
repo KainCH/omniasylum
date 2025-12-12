@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -23,6 +25,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchAuthService _authService;
         private readonly IConfiguration _configuration;
         private readonly ITwitchHelixWrapper _helixWrapper;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<TwitchApiService> _logger;
 
         public TwitchApiService(
@@ -30,12 +33,14 @@ namespace OmniForge.Infrastructure.Services
             ITwitchAuthService authService,
             IConfiguration configuration,
             ITwitchHelixWrapper helixWrapper,
+            IHttpClientFactory httpClientFactory,
             ILogger<TwitchApiService> logger)
         {
             _userRepository = userRepository;
             _authService = authService;
             _configuration = configuration;
             _helixWrapper = helixWrapper;
+            _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
 
@@ -203,6 +208,44 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null)
+        {
+            var (user, _) = await EnsureUserTokenValidAsync(senderId ?? broadcasterId);
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", user.AccessToken);
+
+                var payload = new
+                {
+                    broadcaster_id = broadcasterId,
+                    sender_id = senderId ?? user.TwitchUserId,
+                    message,
+                    reply_parent_message_id = replyParentMessageId
+                };
+
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                var response = await client.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending chat message for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+            }
+        }
+
         public async Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId)
         {
             var clientId = _configuration["Twitch:ClientId"];
@@ -210,12 +253,24 @@ namespace OmniForge.Infrastructure.Services
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
-                await EnsureScopesAsync(userId, accessToken, new[] { "moderator:read:automod_settings" });
-                var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, userId);
-                var settings = response.Data.FirstOrDefault();
-                if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
+                try
+                {
+                    var validation = await _authService.ValidateTokenAsync(accessToken);
+                    if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
+                    await EnsureScopesAsync(validation.Scopes, new[] { "moderator:read:automod_settings" });
 
-                return MapAutomodToDto(settings);
+                    var moderatorId = string.IsNullOrEmpty(validation.UserId) ? userId : validation.UserId;
+                    var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, moderatorId);
+                    var settings = response.Data.FirstOrDefault();
+                    if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
+
+                    return MapAutomodToDto(settings);
+                }
+                catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
+                {
+                    _logger.LogError(ex, "Twitch AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
             });
         }
 
@@ -226,12 +281,23 @@ namespace OmniForge.Infrastructure.Services
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
-                await EnsureScopesAsync(userId, accessToken, new[] { "moderator:manage:automod" });
-                var automod = MapDtoToAutomod(settings);
-                var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, userId, automod);
-                var updated = response.Data.FirstOrDefault();
-                if (updated == null) throw new Exception("Failed to update AutoMod settings");
-                return MapAutomodToDto(updated);
+                try
+                {
+                    var validation = await _authService.ValidateTokenAsync(accessToken);
+                    if (validation == null) throw new InvalidOperationException("Failed to validate Twitch token");
+                    await EnsureScopesAsync(validation.Scopes, new[] { "moderator:manage:automod" });
+                    var moderatorId = string.IsNullOrEmpty(validation.UserId) ? userId : validation.UserId;
+                    var automod = MapDtoToAutomod(settings);
+                    var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, moderatorId, automod);
+                    var updated = response.Data.FirstOrDefault();
+                    if (updated == null) throw new Exception("Failed to update AutoMod settings");
+                    return MapAutomodToDto(updated);
+                }
+                catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
+                {
+                    _logger.LogError(ex, "Twitch AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
             });
         }
 
@@ -307,6 +373,17 @@ namespace OmniForge.Infrastructure.Services
             {
                 throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", requiredScopes)}. Please re-authorize.");
             }
+        }
+
+        private Task EnsureScopesAsync(IReadOnlyList<string> scopes, IEnumerable<string> requiredScopes)
+        {
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var missing = requiredScopes.Where(rs => !set.Contains(rs)).ToList();
+            if (missing.Any())
+            {
+                throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please re-authorize.");
+            }
+            return Task.CompletedTask;
         }
 
         private async Task ExecuteWithRetryAsync(string userId, Func<string, Task> action)

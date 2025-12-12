@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OmniForge.Core.Entities;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
@@ -135,24 +136,39 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<IReadOnlyList<string>> GetTokenScopesAsync(string accessToken)
         {
+            var validation = await ValidateTokenAsync(accessToken);
+            return validation?.Scopes ?? Array.Empty<string>();
+        }
+
+        public async Task<bool> HasScopesAsync(string accessToken, IEnumerable<string> requiredScopes)
+        {
+            var validation = await ValidateTokenAsync(accessToken);
+            var scopes = validation?.Scopes ?? Array.Empty<string>();
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return requiredScopes.All(rs => set.Contains(rs));
+        }
+
+        public async Task<TokenValidationResult?> ValidateTokenAsync(string accessToken)
+        {
             var request = new HttpRequestMessage(HttpMethod.Get, "https://id.twitch.tv/oauth2/validate");
             request.Headers.Add("Authorization", $"OAuth {accessToken}");
 
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                return Array.Empty<string>();
+                return null;
             }
 
             var validation = await response.Content.ReadFromJsonAsync<TokenValidationResponse>();
-            return validation?.Scopes ?? (IReadOnlyList<string>)Array.Empty<string>();
-        }
+            if (validation == null) return null;
 
-        public async Task<bool> HasScopesAsync(string accessToken, IEnumerable<string> requiredScopes)
-        {
-            var scopes = await GetTokenScopesAsync(accessToken);
-            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return requiredScopes.All(rs => set.Contains(rs));
+            return new TokenValidationResult
+            {
+                ClientId = validation.ClientId,
+                UserId = validation.UserId,
+                Scopes = validation.Scopes,
+                ExpiresIn = validation.ExpiresIn
+            };
         }
 
         public async Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken)

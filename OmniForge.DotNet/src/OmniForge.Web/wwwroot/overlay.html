@@ -122,6 +122,10 @@
 </head>
 
 <body>
+  <script>
+    // Silence alert sounds briefly on load/refresh
+    window.omniSilenceInitialMs = 3000;
+  </script>
   <div id="overlay-container" class="counter-overlay" style="top: 20px; right: 20px;">
     <!-- Counters will be injected here -->
   </div>
@@ -191,8 +195,8 @@
           }
         };
 
-        socket.onclose = function () {
-          console.log("WebSocket closed. Reconnecting in 5s...");
+        socket.onclose = function (event) {
+          console.log("WebSocket closed. code=", event.code, "reason=", event.reason, "clean=", event.wasClean, "Reconnecting in 5s...");
           setTimeout(connect, 5000);
         };
 

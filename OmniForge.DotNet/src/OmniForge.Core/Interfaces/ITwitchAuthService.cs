@@ -1,5 +1,7 @@
 using System.Threading.Tasks;
 
+using OmniForge.Core.Entities;
+
 namespace OmniForge.Core.Interfaces
 {
     public interface ITwitchAuthService
@@ -11,6 +13,7 @@ namespace OmniForge.Core.Interfaces
         Task<string?> GetOidcKeysAsync();
         Task<IReadOnlyList<string>> GetTokenScopesAsync(string accessToken);
         Task<bool> HasScopesAsync(string accessToken, IEnumerable<string> requiredScopes);
+        Task<TokenValidationResult?> ValidateTokenAsync(string accessToken);
     }
 
     public class TwitchTokenResponse

@@ -126,6 +126,29 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task OnNotification_ShouldInvokeHandlerRegistryHandler()
+        {
+            // Arrange
+            var handlerMock = new Mock<IEventSubHandler>();
+            _mockHandlerRegistry.Setup(x => x.GetHandler("channel.follow")).Returns(handlerMock.Object);
+
+            var message = new EventSubMessage
+            {
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "channel.follow" },
+                    Event = JsonDocument.Parse("{\"broadcaster_user_id\":\"123\"}").RootElement
+                }
+            };
+
+            // Act: simulate EventSub notification
+            _mockEventSubService.Raise(m => m.OnNotification += null, message);
+
+            // Assert
+            handlerMock.Verify(x => x.HandleAsync(It.IsAny<JsonElement>()), Times.Once);
+        }
+
+        [Fact]
         public void OnSessionWelcome_ShouldLogSessionId()
         {
             // Act

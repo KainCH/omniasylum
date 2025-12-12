@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using Xunit;
 
@@ -15,6 +16,8 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<ILogger<ChatMessageHandler>> _mockLogger;
         private readonly Mock<IDiscordInviteSender> _mockDiscordInviteSender;
+        private readonly Mock<IChatCommandProcessor> _mockChatCommandProcessor;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
         private readonly ChatMessageHandler _handler;
 
         public ChatMessageHandlerTests()
@@ -22,11 +25,15 @@ namespace OmniForge.Tests.EventHandlers
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockLogger = new Mock<ILogger<ChatMessageHandler>>();
             _mockDiscordInviteSender = new Mock<IDiscordInviteSender>();
+            _mockChatCommandProcessor = new Mock<IChatCommandProcessor>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
 
             _handler = new ChatMessageHandler(
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
-                _mockDiscordInviteSender.Object);
+                _mockDiscordInviteSender.Object,
+                _mockChatCommandProcessor.Object,
+                _mockTwitchApiService.Object);
         }
 
         [Fact]
