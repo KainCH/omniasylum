@@ -78,17 +78,17 @@ namespace OmniForge.Infrastructure
             // EventSub Event Handlers (Strategy Pattern)
             services.AddSingleton<IDiscordNotificationTracker, DiscordNotificationTracker>();
             services.AddSingleton<IDiscordInviteSender, DiscordInviteSender>();
-            services.AddSingleton<IEventSubHandler, StreamOnlineHandler>();
-            services.AddSingleton<IEventSubHandler, StreamOfflineHandler>();
-            services.AddSingleton<IEventSubHandler, FollowHandler>();
-            services.AddSingleton<IEventSubHandler, SubscribeHandler>();
-            services.AddSingleton<IEventSubHandler, SubscriptionGiftHandler>();
-            services.AddSingleton<IEventSubHandler, SubscriptionMessageHandler>();
-            services.AddSingleton<IEventSubHandler, CheerHandler>();
-            services.AddSingleton<IEventSubHandler, RaidHandler>();
-            services.AddSingleton<IEventSubHandler, ChatMessageHandler>();
-            services.AddSingleton<IEventSubHandler, ChatNotificationHandler>();
-            services.AddSingleton<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
+            services.AddScoped<IEventSubHandler, StreamOnlineHandler>();
+            services.AddScoped<IEventSubHandler, StreamOfflineHandler>();
+            services.AddScoped<IEventSubHandler, FollowHandler>();
+            services.AddScoped<IEventSubHandler, SubscribeHandler>();
+            services.AddScoped<IEventSubHandler, SubscriptionGiftHandler>();
+            services.AddScoped<IEventSubHandler, SubscriptionMessageHandler>();
+            services.AddScoped<IEventSubHandler, CheerHandler>();
+            services.AddScoped<IEventSubHandler, RaidHandler>();
+            services.AddScoped<IEventSubHandler, ChatMessageHandler>();
+            services.AddScoped<IEventSubHandler, ChatNotificationHandler>();
+            services.AddScoped<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
 
             // Twitch EventSub
             services.AddSingleton<IEventSubMessageProcessor, EventSubMessageProcessor>();

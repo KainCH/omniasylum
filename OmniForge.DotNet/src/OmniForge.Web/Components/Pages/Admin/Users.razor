@@ -10,6 +10,7 @@
 @inject IUserRepository UserRepository
 @inject IAdminService AdminService
 @inject NavigationManager NavigationManager
+@inject IStreamMonitorService StreamMonitorService
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
@@ -386,4 +387,6 @@
             StateHasChanged();
         }
     }
+
+    // Monitoring moved to /admin/monitor
 }

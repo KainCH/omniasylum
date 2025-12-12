@@ -30,7 +30,6 @@ namespace OmniForge.Infrastructure.Services
         private readonly ILogger<StreamMonitorService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly TwitchSettings _twitchSettings;
-        private readonly IEventSubHandlerRegistry _handlerRegistry;
         private readonly IDiscordNotificationTracker _discordTracker;
         private Timer? _connectionWatchdog;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
@@ -43,7 +42,6 @@ namespace OmniForge.Infrastructure.Services
             ILogger<StreamMonitorService> logger,
             IServiceScopeFactory scopeFactory,
             IOptions<TwitchSettings> twitchSettings,
-            IEventSubHandlerRegistry handlerRegistry,
             IDiscordNotificationTracker discordTracker)
         {
             _eventSubService = eventSubService;
@@ -52,7 +50,6 @@ namespace OmniForge.Infrastructure.Services
             _logger = logger;
             _scopeFactory = scopeFactory;
             _twitchSettings = twitchSettings.Value;
-            _handlerRegistry = handlerRegistry;
             _discordTracker = discordTracker;
 
             _eventSubService.OnSessionWelcome += OnSessionWelcome;
@@ -612,7 +609,9 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
-                var handler = _handlerRegistry.GetHandler(subscriptionType);
+                using var scope = _scopeFactory.CreateScope();
+                var handlerRegistry = scope.ServiceProvider.GetRequiredService<IEventSubHandlerRegistry>();
+                var handler = handlerRegistry.GetHandler(subscriptionType);
                 if (handler != null)
                 {
                     await handler.HandleAsync(eventData);

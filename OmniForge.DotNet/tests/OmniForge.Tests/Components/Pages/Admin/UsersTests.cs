@@ -24,6 +24,7 @@ namespace OmniForge.Tests.Components.Pages.Admin
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IAdminService> _mockAdminService;
+        private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
 
@@ -31,11 +32,13 @@ namespace OmniForge.Tests.Components.Pages.Admin
         {
             _mockUserRepository = new Mock<IUserRepository>();
             _mockAdminService = new Mock<IAdminService>();
+            _mockStreamMonitorService = new Mock<IStreamMonitorService>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
 
             Services.AddSingleton(_mockUserRepository.Object);
             Services.AddSingleton(_mockAdminService.Object);
+            Services.AddSingleton(_mockStreamMonitorService.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Setup default admin service behavior
