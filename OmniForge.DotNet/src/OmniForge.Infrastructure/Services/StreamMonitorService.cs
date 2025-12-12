@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Core.Entities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Models.EventSub;
@@ -59,7 +60,13 @@ namespace OmniForge.Infrastructure.Services
             _eventSubService.OnDisconnected += OnDisconnected;
         }
 
-        public async Task<SubscriptionResult> SubscribeToUserAsync(string userId)
+        public Task<SubscriptionResult> SubscribeToUserAsync(string userId)
+            => SubscribeToUserInternalAsync(userId, null);
+
+        public Task<SubscriptionResult> SubscribeToUserAsAsync(string userId, string actingUserId)
+            => SubscribeToUserInternalAsync(userId, actingUserId);
+
+        private async Task<SubscriptionResult> SubscribeToUserInternalAsync(string userId, string? actingUserId)
         {
             // Ensure connected and we have a valid session ID
             if (!_eventSubService.IsConnected || string.IsNullOrEmpty(_eventSubService.SessionId))
@@ -112,6 +119,17 @@ namespace OmniForge.Infrastructure.Services
                 var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
                 var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
                 var user = await userRepository.GetUserAsync(userId);
+                User? actingUser = null;
+                var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
+                if (isAdminActing)
+                {
+                    actingUser = await userRepository.GetUserAsync(actingUserId!);
+                    if (actingUser == null || actingUser.Role != "admin")
+                    {
+                        _logger.LogWarning("Admin monitoring request denied. Acting user {ActingUserId} is not admin or not found.", LogSanitizer.Sanitize(actingUserId!));
+                        return SubscriptionResult.Unauthorized;
+                    }
+                }
 
                 if (user == null)
                 {
@@ -119,22 +137,24 @@ namespace OmniForge.Infrastructure.Services
                     return SubscriptionResult.Failed;
                 }
 
-                // Check for token expiry and refresh if needed
-                if (user.TokenExpiry.AddMinutes(-5) < DateTimeOffset.UtcNow)
-                {
-                    _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", LogSanitizer.Sanitize(userId));
+                User tokenOwner = isAdminActing ? actingUser! : user;
 
-                    if (!string.IsNullOrEmpty(user.RefreshToken))
+                // Check for token expiry and refresh if needed
+                if (tokenOwner.TokenExpiry.AddMinutes(-5) < DateTimeOffset.UtcNow)
+                {
+                    _logger.LogInformation("Access token for user {UserId} is expired or expiring soon. Refreshing...", LogSanitizer.Sanitize(tokenOwner.TwitchUserId));
+
+                    if (!string.IsNullOrEmpty(tokenOwner.RefreshToken))
                     {
-                        var newToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                        var newToken = await authService.RefreshTokenAsync(tokenOwner.RefreshToken);
                         if (newToken != null)
                         {
-                            user.AccessToken = newToken.AccessToken;
-                            user.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
-                            user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            tokenOwner.AccessToken = newToken.AccessToken;
+                            tokenOwner.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
+                            tokenOwner.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
 
-                            await userRepository.SaveUserAsync(user);
-                            _logger.LogInformation("Successfully refreshed access token for user {UserId}.", LogSanitizer.Sanitize(userId));
+                            await userRepository.SaveUserAsync(tokenOwner);
+                            _logger.LogInformation("Successfully refreshed access token for user {UserId}.", LogSanitizer.Sanitize(tokenOwner.TwitchUserId));
                         }
                         else
                         {
@@ -149,9 +169,9 @@ namespace OmniForge.Infrastructure.Services
                     }
                 }
 
-                if (string.IsNullOrEmpty(user.AccessToken))
+                if (string.IsNullOrEmpty(tokenOwner.AccessToken))
                 {
-                    _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning("Cannot subscribe user {UserId}: Access token is missing.", LogSanitizer.Sanitize(tokenOwner.TwitchUserId));
                     return SubscriptionResult.Unauthorized;
                 }
 
@@ -163,7 +183,7 @@ namespace OmniForge.Infrastructure.Services
                     try
                     {
                         _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
-                        _twitchApi.Settings.AccessToken = user.AccessToken;
+                        _twitchApi.Settings.AccessToken = tokenOwner.AccessToken;
                         var validation = await _twitchApi.Auth.ValidateAccessTokenAsync();
                         if (validation == null || string.IsNullOrEmpty(validation.UserId))
                         {
@@ -203,8 +223,8 @@ namespace OmniForge.Infrastructure.Services
                     var hasChatScope = tokenScopes?.Contains("user:read:chat") == true;
 
                     // Use the token's User ID as the broadcaster ID (they are the same for self-monitoring)
-                    var broadcasterId = tokenUserId;
-                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, user_id={UserId} for subscriptions", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId));
+                    var broadcasterId = userId; // target streamer
+                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, token_user_id={UserId} for subscriptions (actingAdmin={Acting})", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", broadcasterId } };
                     var sessionId = _eventSubService.SessionId;
@@ -221,14 +241,21 @@ namespace OmniForge.Infrastructure.Services
                         HelixWrapper = helixWrapper,
                         AuthService = authService,
                         UserRepository = userRepository,
-                        User = user,
+                        User = tokenOwner,
                         SessionId = sessionId,
-                        CurrentAccessToken = user.AccessToken
+                        CurrentAccessToken = tokenOwner.AccessToken
                     };
 
-                    // Subscribe to stream events
-                    await SubscribeWithRetryAsync(context, "stream.online", "1", condition);
-                    await SubscribeWithRetryAsync(context, "stream.offline", "1", condition);
+                    if (!isAdminActing)
+                    {
+                        // Subscribe to stream events (requires broadcaster auth)
+                        await SubscribeWithRetryAsync(context, "stream.online", "1", condition);
+                        await SubscribeWithRetryAsync(context, "stream.offline", "1", condition);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Admin-initiated monitoring: skipping stream.online/offline subscriptions (requires broadcaster auth)");
+                    }
 
                     // channel.follow v2 requires moderator_user_id as well
                     var followCondition = new Dictionary<string, string>
@@ -243,12 +270,12 @@ namespace OmniForge.Infrastructure.Services
                     {
                         var chatCondition = new Dictionary<string, string>
                         {
-                            { "broadcaster_user_id", tokenUserId },
+                            { "broadcaster_user_id", broadcasterId },
                             { "user_id", tokenUserId }
                         };
 
-                        _logger.LogInformation("Subscribing to chat events with broadcaster_user_id={BroadcasterId}, user_id={UserId} (same value for self-monitoring)",
-                            LogSanitizer.Sanitize(tokenUserId), LogSanitizer.Sanitize(tokenUserId));
+                        _logger.LogInformation("Subscribing to chat events with broadcaster_user_id={BroadcasterId}, user_id={UserId} (adminMode={AdminMode})",
+                            LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
                         await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);

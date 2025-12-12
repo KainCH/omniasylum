@@ -6,6 +6,7 @@ namespace OmniForge.Core.Interfaces
     public interface IStreamMonitorService
     {
         Task<SubscriptionResult> SubscribeToUserAsync(string userId);
+        Task<SubscriptionResult> SubscribeToUserAsAsync(string userId, string actingUserId);
         Task UnsubscribeFromUserAsync(string userId);
         Task<SubscriptionResult> ForceReconnectUserAsync(string userId);
         StreamMonitorStatus GetUserConnectionStatus(string userId);

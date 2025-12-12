@@ -18,15 +18,18 @@ namespace OmniForge.Web.Controllers
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly ITwitchClientManager _twitchClientManager;
+        private readonly IStreamMonitorService _streamMonitorService;
 
         public AdminController(
             IUserRepository userRepository,
             ICounterRepository counterRepository,
-            ITwitchClientManager twitchClientManager)
+            ITwitchClientManager twitchClientManager,
+            IStreamMonitorService streamMonitorService)
         {
             _userRepository = userRepository;
             _counterRepository = counterRepository;
             _twitchClientManager = twitchClientManager;
+            _streamMonitorService = streamMonitorService;
         }
 
         [HttpGet("users")]
@@ -219,6 +222,28 @@ namespace OmniForge.Web.Controllers
             };
 
             return Ok(stats);
+        }
+
+        [HttpPost("monitor/start/{userId}")]
+        public async Task<IActionResult> StartMonitoringForUser(string userId)
+        {
+            var adminId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(adminId)) return Unauthorized();
+
+            var result = await _streamMonitorService.SubscribeToUserAsAsync(userId, adminId);
+
+            return result switch
+            {
+                OmniForge.Core.Interfaces.SubscriptionResult.Success => Ok(new { message = "Monitoring started", userId, actingAdmin = adminId }),
+                OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth => StatusCode(403, new
+                {
+                    error = "Missing required Twitch permissions on acting admin token. Re-auth as admin to grant scopes.",
+                    requiresReauth = true,
+                    redirectUrl = "/auth/twitch"
+                }),
+                OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized => Unauthorized(new { error = "Twitch authorization failed for acting admin." }),
+                _ => BadRequest(new { error = "Failed to start monitoring" })
+            };
         }
 
         [HttpDelete("users/{userId}")]
