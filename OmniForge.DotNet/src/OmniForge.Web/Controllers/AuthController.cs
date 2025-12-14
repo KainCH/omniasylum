@@ -213,7 +213,12 @@ namespace OmniForge.Web.Controllers
                 return Redirect("/auth/twitch");
             }
 
-            return Redirect(returnUrl ?? "/");
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            {
+                return LocalRedirect(returnUrl);
+            }
+
+            return Redirect("/");
         }
 
         [HttpPost("refresh")]

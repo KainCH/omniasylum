@@ -6,6 +6,7 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
 
 namespace OmniForge.Web.Controllers
@@ -54,12 +55,10 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPut("settings")]
-        public async Task<IActionResult> UpdateSettings([FromBody] AutomodSettingsDto settings)
+        public async Task<IActionResult> UpdateSettings([FromBody, Required] AutomodSettingsDto settings)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            if (settings == null) return BadRequest("Settings payload is required");
 
             try
             {

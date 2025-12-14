@@ -81,7 +81,7 @@ namespace OmniForge.Web.Middleware
                     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
                     var isApi = context.Request.Path.StartsWithSegments("/api");
-                    var acceptsJson = context.Request.Headers.Accept.Any(a => a.Contains("application/json", StringComparison.OrdinalIgnoreCase));
+                    var acceptsJson = context.Request.Headers.Accept.Any(a => !string.IsNullOrEmpty(a) && a.Contains("application/json", StringComparison.OrdinalIgnoreCase));
 
                     if (isApi || acceptsJson)
                     {
