@@ -1,5 +1,6 @@
 @page "/admin/monitor"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
 @using OmniForge.Core.Interfaces
 @using OmniForge.Core.Entities
 @attribute [Authorize(Roles = "admin")]
@@ -8,6 +9,7 @@
 @inject IStreamMonitorService StreamMonitorService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime JSRuntime
+@inject ILogger<Monitor> Logger
 @using System.Threading
 @implements IAsyncDisposable
 
@@ -170,7 +172,14 @@
                     await RefreshStatus();
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                Logger.LogDebug("Admin monitor auto-refresh cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Admin monitor auto-refresh loop ended unexpectedly");
+            }
         });
     }
 

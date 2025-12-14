@@ -216,7 +216,7 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
                 var clientId = _configuration["Twitch:ClientId"];
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
@@ -233,7 +233,7 @@ namespace OmniForge.Infrastructure.Services
 
                 request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-                var response = await client.SendAsync(request);
+                using var response = await client.SendAsync(request);
 
                 if (!response.IsSuccessStatusCode)
                 {

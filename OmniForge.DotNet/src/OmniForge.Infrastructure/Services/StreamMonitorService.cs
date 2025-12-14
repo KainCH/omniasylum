@@ -494,7 +494,10 @@ namespace OmniForge.Infrastructure.Services
                     keepAliveAge = (DateTime.UtcNow - _eventSubService.LastKeepaliveTime).TotalSeconds;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to compute keepalive age");
+            }
 
             return new StreamMonitorStatus
             {

@@ -106,11 +106,11 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.twitch.tv/helix/users");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.twitch.tv/helix/users");
             request.Headers.Add("Authorization", $"Bearer {accessToken}");
             request.Headers.Add("Client-Id", clientId);
 
-            var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -150,10 +150,10 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TokenValidationResult?> ValidateTokenAsync(string accessToken)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://id.twitch.tv/oauth2/validate");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://id.twitch.tv/oauth2/validate");
             request.Headers.Add("Authorization", $"OAuth {accessToken}");
 
-            var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
