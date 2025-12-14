@@ -47,6 +47,11 @@
                                         <label class="form-check-label" for="overlayEnabled">Enable Overlay</label>
                                     </div>
 
+                                    <div class="form-check form-switch mb-3">
+                                        <InputCheckbox id="offlinePreview" class="form-check-input" @bind-Value="settings.OfflinePreview" />
+                                        <label class="form-check-label" for="offlinePreview">Offline Preview (force visible when offline)</label>
+                                    </div>
+
                                     <div class="mb-3">
                                         <label class="form-label">Position</label>
                                         <InputSelect class="form-select" @bind-Value="settings.Position">

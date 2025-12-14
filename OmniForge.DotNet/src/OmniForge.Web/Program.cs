@@ -132,6 +132,11 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(20)
+});
+
 // Initialize Database Tables
 using (var scope = app.Services.CreateScope())
 {

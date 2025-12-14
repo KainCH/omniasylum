@@ -17,6 +17,7 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<ITwitchClientManager> _mockTwitchClientManager;
+        private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly AdminController _controller;
 
         public AdminControllerTests()
@@ -24,11 +25,13 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockTwitchClientManager = new Mock<ITwitchClientManager>();
+            _mockStreamMonitorService = new Mock<IStreamMonitorService>();
 
             _controller = new AdminController(
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
-                _mockTwitchClientManager.Object);
+                _mockTwitchClientManager.Object,
+                _mockStreamMonitorService.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
             {
@@ -51,6 +54,41 @@ namespace OmniForge.Tests
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
+        }
+
+        [Fact]
+        public async Task StartMonitoringForUser_ShouldCallService()
+        {
+            _mockStreamMonitorService.Setup(s => s.SubscribeToUserAsAsync("targetUser", "admin123"))
+                .ReturnsAsync(OmniForge.Core.Interfaces.SubscriptionResult.Success);
+
+            var result = await _controller.StartMonitoringForUser("targetUser");
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            _mockStreamMonitorService.Verify(s => s.SubscribeToUserAsAsync("targetUser", "admin123"), Times.Once);
+            Assert.Contains("Monitoring started", ok.Value!.ToString());
+        }
+
+        [Fact]
+        public async Task StopMonitoringForUser_ShouldCallService()
+        {
+            var result = await _controller.StopMonitoringForUser("targetUser");
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            _mockStreamMonitorService.Verify(s => s.UnsubscribeFromUserAsync("targetUser"), Times.Once);
+            Assert.Contains("Monitoring stopped", ok.Value!.ToString());
+        }
+
+        [Fact]
+        public void GetMonitorStatus_ShouldReturnStatus()
+        {
+            var status = new StreamMonitorStatus { Connected = true, IsSubscribed = true };
+            _mockStreamMonitorService.Setup(s => s.GetUserConnectionStatus("targetUser")).Returns(status);
+
+            var result = _controller.GetMonitorStatus("targetUser");
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(status, ok.Value);
         }
 
         [Fact]

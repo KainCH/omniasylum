@@ -174,6 +174,11 @@ class NotificationAudioManager {
     }
 
     async playNotification(eventType, data = {}) {
+        if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
+            console.log('🔇 Notification sound suppressed during silence window:', eventType);
+            return;
+        }
+
         if (!this.notificationSounds[eventType]) {
             console.warn('⚠️ No sound configured for event type:', eventType);
             return;

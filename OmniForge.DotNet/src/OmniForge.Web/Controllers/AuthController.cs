@@ -197,9 +197,27 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpGet("logout")]
-        public async Task<IActionResult> Logout()
+        public async Task<IActionResult> Logout([FromQuery] string? returnUrl = null, [FromQuery] int reauth = 0)
         {
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+            // Safety: only allow local return URLs.
+            if (!string.IsNullOrEmpty(returnUrl) && !Url.IsLocalUrl(returnUrl))
+            {
+                returnUrl = null;
+            }
+
+            if (reauth == 1)
+            {
+                // Force full OAuth flow.
+                return Redirect("/auth/twitch");
+            }
+
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            {
+                return LocalRedirect(returnUrl);
+            }
+
             return Redirect("/");
         }
 

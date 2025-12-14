@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using System.Threading.Tasks;
 using System;
 using System.Linq;
+using System.Net.Mime;
+using System.Text.Encodings.Web;
 
 namespace OmniForge.Web.Middleware
 {
@@ -63,7 +68,43 @@ namespace OmniForge.Web.Middleware
                 }
             }
 
-            await _next(context);
+            try
+            {
+                await _next(context);
+            }
+            catch (ReauthRequiredException ex)
+            {
+                _logger.LogWarning(ex, "[AuthMiddleware] Reauth required: {Message}", LogSanitizer.Sanitize(ex.Message));
+
+                if (!context.Response.HasStarted)
+                {
+                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+                    var isApi = context.Request.Path.StartsWithSegments("/api");
+                    var acceptsJson = context.Request.Headers.Accept.Any(a => !string.IsNullOrEmpty(a) && a.Contains("application/json", StringComparison.OrdinalIgnoreCase));
+
+                    if (isApi || acceptsJson)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.ContentType = MediaTypeNames.Application.Json;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            error = "Authentication expired",
+                            requireReauth = true,
+                            authUrl = "/auth/twitch",
+                            logoutUrl = "/auth/logout?reauth=1"
+                        });
+                        return;
+                    }
+
+                    var returnUrl = context.Request.Path + context.Request.QueryString;
+                    var encodedReturnUrl = UrlEncoder.Default.Encode(returnUrl);
+                    context.Response.Redirect($"/auth/logout?reauth=1&returnUrl={encodedReturnUrl}");
+                    return;
+                }
+
+                throw;
+            }
         }
     }
 }

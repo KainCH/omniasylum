@@ -10,9 +10,20 @@ window.overlayInterop = {
         if (!window.notificationAudio) {
             console.warn("NotificationAudio not found! Audio will not play.");
         }
+
+        // Silence alerts briefly on initial load to avoid replay sounds on refresh
+        if (!window.omniSilenceUntil) {
+            const silenceMs = window.omniSilenceInitialMs || 3000;
+            window.omniSilenceUntil = Date.now() + silenceMs;
+        }
     },
 
     triggerAlert: function(type, payload) {
+        // Skip playing alerts if we're still in the initial silence window
+        if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
+            console.log("🔇 Alert suppressed during initial silence window:", type);
+            return;
+        }
         console.log("Triggering alert:", type, payload);
 
         // Play audio if available

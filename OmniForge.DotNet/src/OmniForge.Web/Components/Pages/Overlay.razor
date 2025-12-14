@@ -3,6 +3,7 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using System.Text.Json
+@using Microsoft.AspNetCore.WebUtilities
 @inject NavigationManager NavigationManager
 @inject ICounterRepository CounterRepository
 @inject IUserRepository UserRepository
@@ -319,6 +320,7 @@ else
     private OmniForge.Core.Entities.Counter? counter;
     private OmniForge.Core.Entities.User? user;
     private string StreamStatus { get; set; } = "offline";
+    private bool IsPreviewMode { get; set; } = false;
     private List<Alert> alerts = new();
     private IJSObjectReference? jsModule;
     private string? errorMessage;
@@ -332,6 +334,29 @@ else
             {
                 counter = await CounterRepository.GetCountersAsync(TwitchUserId);
                 StreamStatus = user.StreamStatus;
+
+                // Determine preview mode via query param or overlay settings
+                try
+                {
+                    var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+                    var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+                    if (query.TryGetValue("preview", out var previewValues) && previewValues.ToString().Equals("true", StringComparison.OrdinalIgnoreCase))
+                    {
+                        IsPreviewMode = true;
+                    }
+                }
+                catch { /* ignore query parsing errors */ }
+
+                if (user.OverlaySettings?.OfflinePreview == true)
+                {
+                    IsPreviewMode = true;
+                }
+
+                if (IsPreviewMode)
+                {
+                    StreamStatus = "live";
+                }
+
                 alerts = (await AlertRepository.GetAlertsAsync(TwitchUserId)).ToList();
             }
             else

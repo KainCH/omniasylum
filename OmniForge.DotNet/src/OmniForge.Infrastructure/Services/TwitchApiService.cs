@@ -3,16 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
+using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
+using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -22,6 +26,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchAuthService _authService;
         private readonly IConfiguration _configuration;
         private readonly ITwitchHelixWrapper _helixWrapper;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<TwitchApiService> _logger;
 
         public TwitchApiService(
@@ -29,12 +34,14 @@ namespace OmniForge.Infrastructure.Services
             ITwitchAuthService authService,
             IConfiguration configuration,
             ITwitchHelixWrapper helixWrapper,
+            IHttpClientFactory httpClientFactory,
             ILogger<TwitchApiService> logger)
         {
             _userRepository = userRepository;
             _authService = authService;
             _configuration = configuration;
             _helixWrapper = helixWrapper;
+            _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
 
@@ -60,7 +67,7 @@ namespace OmniForge.Infrastructure.Services
                 else
                 {
                     _logger.LogWarning("Failed to refresh token for user {UserId}", LogSanitizer.Sanitize(userId));
-                    throw new Exception("Failed to refresh Twitch token");
+                    throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
                 }
             }
 
@@ -202,6 +209,302 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null)
+        {
+            var (user, _) = await EnsureUserTokenValidAsync(senderId ?? broadcasterId);
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", user.AccessToken);
+
+                var payload = new
+                {
+                    broadcaster_id = broadcasterId,
+                    sender_id = senderId ?? user.TwitchUserId,
+                    message,
+                    reply_parent_message_id = replyParentMessageId
+                };
+
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending chat message for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+            }
+        }
+
+        public async Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId)
+        {
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            var operationId = Guid.NewGuid().ToString("N");
+            using var scope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["AutoModOperationId"] = operationId,
+                ["AutoModOperation"] = "GET",
+                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+            });
+
+            _logger.LogInformation("AutoMod GET requested for user {UserId}", LogSanitizer.Sanitize(userId));
+
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                try
+                {
+                    var validation = await _authService.ValidateTokenAsync(accessToken);
+                    if (validation == null) throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
+
+                    _logger.LogInformation(
+                        "AutoMod GET token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                        LogSanitizer.Sanitize(validation.UserId),
+                        validation.Scopes?.Count ?? 0,
+                        validation.ExpiresIn);
+
+                    if (validation.Scopes != null && validation.Scopes.Count > 0)
+                    {
+                        _logger.LogInformation(
+                            "AutoMod GET token scopes: {Scopes}",
+                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    await EnsureScopesAsync(validation.Scopes ?? Array.Empty<string>(), new[] { "moderator:read:automod_settings" });
+
+                    if (!string.IsNullOrEmpty(validation.UserId) && !string.Equals(validation.UserId, userId, StringComparison.Ordinal))
+                    {
+                        _logger.LogWarning(
+                            "AutoMod GET token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(validation.UserId));
+                        throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
+                    }
+
+                    var moderatorId = userId;
+
+                    _logger.LogInformation(
+                        "AutoMod GET calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(moderatorId));
+
+                    var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, moderatorId);
+                    var settings = response.Data.FirstOrDefault();
+                    if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
+
+                    _logger.LogInformation("AutoMod GET succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
+                    return MapAutomodToDto(settings);
+                }
+                catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
+                {
+                    _logger.LogError(ex, "Twitch AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (ReauthRequiredException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod GET requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+            });
+        }
+
+        public async Task<AutomodSettingsDto> UpdateAutomodSettingsAsync(string userId, AutomodSettingsDto settings)
+        {
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            var operationId = Guid.NewGuid().ToString("N");
+            using var scope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["AutoModOperationId"] = operationId,
+                ["AutoModOperation"] = "UPDATE",
+                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+            });
+
+            _logger.LogInformation(
+                "AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}",
+                LogSanitizer.Sanitize(userId),
+                settings.OverallLevel);
+
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                try
+                {
+                    var validation = await _authService.ValidateTokenAsync(accessToken);
+                    if (validation == null) throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
+
+                    _logger.LogInformation(
+                        "AutoMod UPDATE token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                        LogSanitizer.Sanitize(validation.UserId),
+                        validation.Scopes?.Count ?? 0,
+                        validation.ExpiresIn);
+
+                    if (validation.Scopes != null && validation.Scopes.Count > 0)
+                    {
+                        _logger.LogInformation(
+                            "AutoMod UPDATE token scopes: {Scopes}",
+                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    await EnsureAnyScopeAsync(
+                        validation.Scopes ?? Array.Empty<string>(),
+                        new[] { "moderator:manage:automod_settings", "moderator:manage:automod" });
+                    if (!string.IsNullOrEmpty(validation.UserId) && !string.Equals(validation.UserId, userId, StringComparison.Ordinal))
+                    {
+                        _logger.LogWarning(
+                            "AutoMod UPDATE token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(validation.UserId));
+                        throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
+                    }
+
+                    var moderatorId = userId;
+                    var automod = MapDtoToAutomod(settings);
+
+                    _logger.LogInformation(
+                        "AutoMod UPDATE calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(moderatorId));
+
+                    var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, moderatorId, automod);
+                    var updated = response.Data.FirstOrDefault();
+                    if (updated == null) throw new Exception("Failed to update AutoMod settings");
+
+                    _logger.LogInformation("AutoMod UPDATE succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
+                    return MapAutomodToDto(updated);
+                }
+                catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
+                {
+                    _logger.LogError(ex, "Twitch AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod UPDATE blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (ReauthRequiredException ex)
+                {
+                    _logger.LogWarning(ex, "AutoMod UPDATE requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    throw;
+                }
+            });
+        }
+
+        private static AutomodSettingsDto MapAutomodToDto(TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettingsResponseModel settings)
+        {
+            return new AutomodSettingsDto
+            {
+                OverallLevel = settings.OverallLevel,
+                Aggression = settings.Aggression ?? 0,
+                Bullying = settings.Bullying ?? 0,
+                Disability = settings.Disability ?? 0,
+                Misogyny = settings.Misogyny ?? 0,
+                RaceEthnicityOrReligion = settings.RaceEthnicityOrReligion ?? 0,
+                SexBasedTerms = settings.SexBasedTerms ?? 0,
+                SexualitySexOrGender = settings.SexualitySexOrGender ?? 0,
+                Swearing = settings.Swearing ?? 0
+            };
+        }
+
+        private static AutomodSettingsDto MapAutomodToDto(TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettings settings)
+        {
+            return new AutomodSettingsDto
+            {
+                OverallLevel = settings.OverallLevel,
+                Aggression = settings.Aggression ?? 0,
+                Bullying = settings.Bullying ?? 0,
+                Disability = settings.Disability ?? 0,
+                Misogyny = settings.Misogyny ?? 0,
+                RaceEthnicityOrReligion = settings.RaceEthnicityOrReligion ?? 0,
+                SexBasedTerms = settings.SexBasedTerms ?? 0,
+                SexualitySexOrGender = settings.SexualitySexOrGender ?? 0,
+                Swearing = settings.Swearing ?? 0
+            };
+        }
+
+        private static AutomodSettings MapDtoToAutomod(AutomodSettingsDto dto)
+        {
+            if (dto == null) throw new InvalidOperationException("AutoMod settings payload is required");
+
+            // Twitch requires 0-4 for all values.
+            if (dto.OverallLevel.HasValue)
+            {
+                ValidateAutomodValue("overall_level", dto.OverallLevel.Value);
+
+                // Mutually exclusive: if overall level is set, do NOT include individual fields.
+                return new AutomodSettings
+                {
+                    OverallLevel = dto.OverallLevel.Value,
+                    Aggression = null,
+                    Bullying = null,
+                    Disability = null,
+                    Misogyny = null,
+                    RaceEthnicityOrReligion = null,
+                    SexBasedTerms = null,
+                    SexualitySexOrGender = null,
+                    Swearing = null
+                };
+            }
+
+            ValidateAutomodValue("aggression", dto.Aggression);
+            ValidateAutomodValue("bullying", dto.Bullying);
+            ValidateAutomodValue("disability", dto.Disability);
+            ValidateAutomodValue("misogyny", dto.Misogyny);
+            ValidateAutomodValue("race_ethnicity_or_religion", dto.RaceEthnicityOrReligion);
+            ValidateAutomodValue("sex_based_terms", dto.SexBasedTerms);
+            ValidateAutomodValue("sexuality_sex_or_gender", dto.SexualitySexOrGender);
+            ValidateAutomodValue("swearing", dto.Swearing);
+
+            return new AutomodSettings
+            {
+                OverallLevel = null,
+                Aggression = dto.Aggression,
+                Bullying = dto.Bullying,
+                Disability = dto.Disability,
+                Misogyny = dto.Misogyny,
+                RaceEthnicityOrReligion = dto.RaceEthnicityOrReligion,
+                SexBasedTerms = dto.SexBasedTerms,
+                SexualitySexOrGender = dto.SexualitySexOrGender,
+                Swearing = dto.Swearing
+            };
+        }
+
+        private static void ValidateAutomodValue(string name, int value)
+        {
+            if (value < 0 || value > 4)
+            {
+                throw new InvalidOperationException($"Invalid AutoMod setting '{name}' value '{value}'. Valid range is 0-4.");
+            }
+        }
+
         private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)
         {
             var (user, wasRefreshed) = await EnsureUserTokenValidAsync(userId);
@@ -217,6 +520,44 @@ namespace OmniForge.Infrastructure.Services
                 }
                 throw;
             }
+        }
+
+        private async Task EnsureScopesAsync(string userId, string accessToken, IEnumerable<string> requiredScopes)
+        {
+            var hasScopes = await _authService.HasScopesAsync(accessToken, requiredScopes);
+            if (!hasScopes)
+            {
+                throw new InvalidOperationException($"Missing required Twitch scopes for {string.Join(", ", requiredScopes)}. Please re-authorize.");
+            }
+        }
+
+        private Task EnsureScopesAsync(IReadOnlyList<string> scopes, IEnumerable<string> requiredScopes)
+        {
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var missing = requiredScopes.Where(rs => !set.Contains(rs)).ToList();
+            if (missing.Any())
+            {
+                _logger.LogWarning(
+                    "Missing required Twitch scopes: {MissingScopes}",
+                    string.Join(", ", missing.Select(LogSanitizer.Sanitize)));
+                throw new ReauthRequiredException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please sign in again.");
+            }
+            return Task.CompletedTask;
+        }
+
+        private Task EnsureAnyScopeAsync(IReadOnlyList<string> scopes, IEnumerable<string> acceptedScopes)
+        {
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var accepted = acceptedScopes.ToList();
+            if (!accepted.Any(s => set.Contains(s)))
+            {
+                _logger.LogWarning(
+                    "Missing required Twitch scope (any-of). AcceptedScopes={AcceptedScopes}",
+                    string.Join(", ", accepted.Select(LogSanitizer.Sanitize)));
+                throw new ReauthRequiredException(
+                    $"Missing required Twitch scope. Need one of: {string.Join(", ", accepted)}. Please sign in again.");
+            }
+            return Task.CompletedTask;
         }
 
         private async Task ExecuteWithRetryAsync(string userId, Func<string, Task> action)
@@ -254,7 +595,7 @@ namespace OmniForge.Infrastructure.Services
             if (wasRefreshed)
             {
                 _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
             }
 
             _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
@@ -262,11 +603,15 @@ namespace OmniForge.Infrastructure.Services
             if (string.IsNullOrEmpty(user.RefreshToken))
             {
                 _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", LogSanitizer.Sanitize(user.TwitchUserId));
-                throw new InvalidOperationException("Refresh token is required for automatic retry");
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
             }
 
             var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
-            if (newToken == null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            if (newToken == null)
+            {
+                _logger.LogWarning(ex, "Twitch token refresh failed for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
+                throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
+            }
 
             user.AccessToken = newToken.AccessToken;
             user.RefreshToken = newToken.RefreshToken;

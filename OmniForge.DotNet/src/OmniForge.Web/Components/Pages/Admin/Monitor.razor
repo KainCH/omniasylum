@@ -1,0 +1,227 @@
+@page "/admin/monitor"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using OmniForge.Core.Interfaces
+@using OmniForge.Core.Entities
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@inject IUserRepository UserRepository
+@inject IStreamMonitorService StreamMonitorService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
+@inject ILogger<Monitor> Logger
+@using System.Threading
+@implements IAsyncDisposable
+
+<PageTitle>Admin - Stream Monitoring</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Stream Monitoring</h1>
+    </div>
+
+    @if (users == null)
+    {
+        <p><em>Loading users...</em></p>
+    }
+    else
+    {
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <label for="userSelect" class="form-label">Select streamer</label>
+                <select id="userSelect" class="form-select" @onchange="OnUserChanged">
+                    <option value="">-- Choose a streamer --</option>
+                    @foreach (var user in users)
+                    {
+                        <option value="@user.TwitchUserId" selected="@(user.TwitchUserId == selectedUserId)">
+                            @user.DisplayName (@user.Username)
+                        </option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(selectedUserId))
+        {
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Status</h5>
+                    @if (status != null)
+                    {
+                        <ul class="list-unstyled mb-2">
+                            <li><strong>Connected:</strong> @status.Connected</li>
+                            <li><strong>Subscribed:</strong> @(status.IsSubscribed)</li>
+                            <li><strong>Session ID:</strong> @(status.EventSubSessionId ?? "-")</li>
+                            <li><strong>Keepalive Age:</strong> @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s</li>
+                            <li><strong>Subscriptions:</strong> @(status.Subscriptions?.Length > 0 ? string.Join(", ", status.Subscriptions) : "None")</li>
+                            <li><strong>Last Connected:</strong> @(status.LastConnected?.ToLocalTime().ToString("g") ?? "-")</li>
+                            <li><strong>Last Event:</strong> @(status.LastEventType ?? "-") @if (status.LastEventAt.HasValue){<text>@status.LastEventAt.Value.ToLocalTime().ToString("g")</text>}</li>
+                            <li><strong>Last Event Summary:</strong> @(status.LastEventSummary ?? "-")</li>
+                            <li><strong>Last Error:</strong> @(status.LastError ?? "-")</li>
+                            <li><strong>Admin Initiated:</strong> @status.AdminInitiated</li>
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No status available.</p>
+                    }
+
+                    <button class="btn btn-success" @onclick="StartMonitoring" disabled="@(isWorking)">
+                        <i class="bi bi-broadcast-pin"></i> Start Monitoring
+                    </button>
+                    <button class="btn btn-outline-danger ms-2" @onclick="StopMonitoring" disabled="@(isWorking)">
+                        <i class="bi bi-stop-circle"></i> Stop Monitoring
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="RefreshStatus" disabled="@(isWorking)">
+                        Refresh Status
+                    </button>
+                    <button class="btn btn-outline-warning ms-2" @onclick="ForceReconnect" disabled="@(isWorking)">
+                        Force Reconnect
+                    </button>
+                    <span class="ms-3 text-muted">Auto-refresh: @(autoRefreshEnabled ? "On" : "Off")</span>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IEnumerable<User>? users;
+    private string? selectedUserId;
+    private StreamMonitorStatus? status;
+    private User? currentUser;
+    private bool isWorking = false;
+    private bool autoRefreshEnabled = false;
+    private PeriodicTimer? statusTimer;
+    private CancellationTokenSource? refreshCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        users = await UserRepository.GetAllUsersAsync();
+        // preselect first non-admin user if any
+        selectedUserId = users?.FirstOrDefault(u => u.Role != "admin")?.TwitchUserId;
+        await RefreshStatus();
+        StartAutoRefresh();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst("userId")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            currentUser = await UserRepository.GetUserAsync(userId);
+        }
+    }
+
+    private async Task OnUserChanged(ChangeEventArgs e)
+    {
+        selectedUserId = e.Value?.ToString();
+        await RefreshStatus();
+    }
+
+    private async Task RefreshStatus()
+    {
+        if (string.IsNullOrEmpty(selectedUserId)) { status = null; return; }
+        status = StreamMonitorService.GetUserConnectionStatus(selectedUserId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopMonitoring()
+    {
+        if (string.IsNullOrEmpty(selectedUserId)) return;
+        try
+        {
+            isWorking = true;
+            await StreamMonitorService.UnsubscribeFromUserAsync(selectedUserId);
+            await RefreshStatus();
+        }
+        finally
+        {
+            isWorking = false;
+        }
+    }
+
+    private async Task ForceReconnect()
+    {
+        if (string.IsNullOrEmpty(selectedUserId)) return;
+        try
+        {
+            isWorking = true;
+            await StreamMonitorService.ForceReconnectUserAsync(selectedUserId);
+            await RefreshStatus();
+        }
+        finally
+        {
+            isWorking = false;
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        autoRefreshEnabled = true;
+        refreshCts = new CancellationTokenSource();
+        statusTimer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await statusTimer!.WaitForNextTickAsync(refreshCts.Token))
+                {
+                    await RefreshStatus();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogDebug("Admin monitor auto-refresh cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Admin monitor auto-refresh loop ended unexpectedly");
+            }
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        autoRefreshEnabled = false;
+        if (refreshCts != null)
+        {
+            refreshCts.Cancel();
+            refreshCts.Dispose();
+        }
+        if (statusTimer != null)
+        {
+            statusTimer.Dispose();
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task StartMonitoring()
+    {
+        if (string.IsNullOrEmpty(selectedUserId) || currentUser == null) return;
+        try
+        {
+            isWorking = true;
+            var result = await StreamMonitorService.SubscribeToUserAsAsync(selectedUserId, currentUser.TwitchUserId);
+            if (result == SubscriptionResult.Success)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Monitoring started for {selectedUserId}.");
+                await RefreshStatus();
+            }
+            else if (result == SubscriptionResult.RequiresReauth)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Admin token missing required Twitch permissions. Re-auth required.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Failed to start monitoring.");
+            }
+        }
+        finally
+        {
+            isWorking = false;
+        }
+    }
+}

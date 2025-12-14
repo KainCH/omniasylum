@@ -5,8 +5,11 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OmniForge.Web.Controllers
 {
@@ -15,18 +18,24 @@ namespace OmniForge.Web.Controllers
     [Route("api/admin")]
     public class AdminController : ControllerBase
     {
+        private readonly ILogger<AdminController> _logger;
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly ITwitchClientManager _twitchClientManager;
+        private readonly IStreamMonitorService _streamMonitorService;
 
         public AdminController(
             IUserRepository userRepository,
             ICounterRepository counterRepository,
-            ITwitchClientManager twitchClientManager)
+            ITwitchClientManager twitchClientManager,
+            IStreamMonitorService streamMonitorService,
+            ILogger<AdminController>? logger = null)
         {
+            _logger = logger ?? NullLogger<AdminController>.Instance;
             _userRepository = userRepository;
             _counterRepository = counterRepository;
             _twitchClientManager = twitchClientManager;
+            _streamMonitorService = streamMonitorService;
         }
 
         [HttpGet("users")]
@@ -219,6 +228,51 @@ namespace OmniForge.Web.Controllers
             };
 
             return Ok(stats);
+        }
+
+        [HttpPost("monitor/start/{userId}")]
+        public async Task<IActionResult> StartMonitoringForUser(string userId)
+        {
+            var adminId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(adminId)) return Unauthorized();
+
+            _logger.LogInformation("🛰️ Admin monitoring request: targetUser={TargetUserId}, actingAdmin={AdminId}",
+                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(adminId));
+
+            var result = await _streamMonitorService.SubscribeToUserAsAsync(userId, adminId);
+
+            return result switch
+            {
+                OmniForge.Core.Interfaces.SubscriptionResult.Success => Ok(new { message = "Monitoring started", userId, actingAdmin = adminId }),
+                OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth => StatusCode(403, new
+                {
+                    error = "Missing required Twitch permissions on acting admin token. Re-auth as admin to grant scopes.",
+                    requiresReauth = true,
+                    redirectUrl = "/auth/twitch"
+                }),
+                OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized => Unauthorized(new { error = "Twitch authorization failed for acting admin." }),
+                _ => BadRequest(new { error = "Failed to start monitoring" })
+            };
+        }
+
+        [HttpPost("monitor/stop/{userId}")]
+        public async Task<IActionResult> StopMonitoringForUser(string userId)
+        {
+            var adminId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(adminId)) return Unauthorized();
+
+            _logger.LogInformation("🧹 Admin stop monitoring request: targetUser={TargetUserId}, actingAdmin={AdminId}",
+                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(adminId));
+
+            await _streamMonitorService.UnsubscribeFromUserAsync(userId);
+            return Ok(new { message = "Monitoring stopped", userId, actingAdmin = adminId });
+        }
+
+        [HttpGet("monitor/status/{userId}")]
+        public IActionResult GetMonitorStatus(string userId)
+        {
+            var status = _streamMonitorService.GetUserConnectionStatus(userId);
+            return Ok(status);
         }
 
         [HttpDelete("users/{userId}")]

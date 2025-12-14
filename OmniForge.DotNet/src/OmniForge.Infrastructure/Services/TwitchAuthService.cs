@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OmniForge.Core.Entities;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
@@ -54,6 +55,8 @@ namespace OmniForge.Infrastructure.Services
 
                 // Moderation & followers
                 "moderator:read:followers",
+                "moderator:read:automod_settings",
+                "moderator:manage:automod_settings",
 
                 // Bits & clips
                 "bits:read",
@@ -64,7 +67,7 @@ namespace OmniForge.Infrastructure.Services
             var encodedScopes = System.Net.WebUtility.UrlEncode(scopeString);
             var encodedRedirect = System.Net.WebUtility.UrlEncode(redirectUri);
 
-            return $"https://id.twitch.tv/oauth2/authorize?client_id={_settings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}";
+            return $"https://id.twitch.tv/oauth2/authorize?client_id={_settings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}&force_verify=true";
         }
 
         public async Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri)
@@ -103,11 +106,11 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.twitch.tv/helix/users");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.twitch.tv/helix/users");
             request.Headers.Add("Authorization", $"Bearer {accessToken}");
             request.Headers.Add("Client-Id", clientId);
 
-            var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -128,6 +131,43 @@ namespace OmniForge.Infrastructure.Services
                 DisplayName = user.DisplayName,
                 Email = user.Email,
                 ProfileImageUrl = user.ProfileImageUrl
+            };
+        }
+
+        public async Task<IReadOnlyList<string>> GetTokenScopesAsync(string accessToken)
+        {
+            var validation = await ValidateTokenAsync(accessToken);
+            return validation?.Scopes ?? Array.Empty<string>();
+        }
+
+        public async Task<bool> HasScopesAsync(string accessToken, IEnumerable<string> requiredScopes)
+        {
+            var validation = await ValidateTokenAsync(accessToken);
+            var scopes = validation?.Scopes ?? Array.Empty<string>();
+            var set = scopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return requiredScopes.All(rs => set.Contains(rs));
+        }
+
+        public async Task<TokenValidationResult?> ValidateTokenAsync(string accessToken)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://id.twitch.tv/oauth2/validate");
+            request.Headers.Add("Authorization", $"OAuth {accessToken}");
+
+            using var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var validation = await response.Content.ReadFromJsonAsync<TokenValidationResponse>();
+            if (validation == null) return null;
+
+            return new TokenValidationResult
+            {
+                ClientId = validation.ClientId,
+                UserId = validation.UserId,
+                Scopes = validation.Scopes,
+                ExpiresIn = validation.ExpiresIn
             };
         }
 
@@ -198,6 +238,21 @@ namespace OmniForge.Infrastructure.Services
             public int ExpiresIn { get; set; }
             [JsonPropertyName("token_type")]
             public string TokenType { get; set; } = "";
+        }
+
+        private class TokenValidationResponse
+        {
+            [JsonPropertyName("client_id")]
+            public string ClientId { get; set; } = string.Empty;
+
+            [JsonPropertyName("scopes")]
+            public List<string> Scopes { get; set; } = new();
+
+            [JsonPropertyName("user_id")]
+            public string UserId { get; set; } = string.Empty;
+
+            [JsonPropertyName("expires_in")]
+            public int ExpiresIn { get; set; }
         }
 
         private class TwitchUserResponseInternal

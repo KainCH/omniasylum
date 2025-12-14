@@ -14,25 +14,25 @@ using Xunit;
 
 namespace OmniForge.Tests
 {
-    public class TwitchMessageHandlerDiscordTests
+    public class ChatCommandProcessorDiscordTests
     {
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
-        private readonly Mock<ILogger<TwitchMessageHandler>> _mockLogger;
+        private readonly Mock<ILogger<ChatCommandProcessor>> _mockLogger;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IDiscordService> _mockDiscordService;
-        private readonly TwitchMessageHandler _handler;
+        private readonly ChatCommandProcessor _handler;
 
-        public TwitchMessageHandlerDiscordTests()
+        public ChatCommandProcessorDiscordTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
-            _mockLogger = new Mock<ILogger<TwitchMessageHandler>>();
+            _mockLogger = new Mock<ILogger<ChatCommandProcessor>>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
             _mockDiscordService = new Mock<IDiscordService>();
@@ -52,7 +52,7 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository)))
                 .Returns(_mockCounterRepository.Object);
 
-            _handler = new TwitchMessageHandler(
+            _handler = new ChatCommandProcessor(
                 _mockScopeFactory.Object,
                 _mockOverlayNotifier.Object,
                 _mockLogger.Object);
@@ -115,8 +115,20 @@ namespace OmniForge.Tests
             };
         }
 
+        private static ChatCommandContext ToContext(string userId, ChatMessage message)
+        {
+            return new ChatCommandContext
+            {
+                UserId = userId,
+                Message = message.Message,
+                IsModerator = message.IsModerator,
+                IsBroadcaster = message.IsBroadcaster,
+                IsSubscriber = message.IsSubscriber
+            };
+        }
+
         [Fact]
-        public async Task HandleMessageAsync_ShouldSendDiscordNotification_WhenDeathMilestoneReached()
+        public async Task ProcessAsync_ShouldSendDiscordNotification_WhenDeathMilestoneReached()
         {
             // Arrange
             var userId = "user1";
@@ -132,7 +144,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -142,7 +154,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldSendDiscordNotification_WhenSwearMilestoneReached()
+        public async Task ProcessAsync_ShouldSendDiscordNotification_WhenSwearMilestoneReached()
         {
             // Arrange
             var userId = "user1";
@@ -158,7 +170,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -168,7 +180,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldSendDiscordNotification_WhenScreamMilestoneReached()
+        public async Task ProcessAsync_ShouldSendDiscordNotification_WhenScreamMilestoneReached()
         {
             // Arrange
             var userId = "user1";
@@ -184,7 +196,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -194,7 +206,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotSendDiscordNotification_WhenMilestoneNotReached()
+        public async Task ProcessAsync_ShouldNotSendDiscordNotification_WhenMilestoneNotReached()
         {
             // Arrange
             var userId = "user1";
@@ -210,7 +222,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -220,7 +232,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotSendDiscordNotification_WhenFeatureDisabled()
+        public async Task ProcessAsync_ShouldNotSendDiscordNotification_WhenFeatureDisabled()
         {
             // Arrange
             var userId = "user1";
@@ -236,7 +248,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -246,7 +258,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldNotSendDiscordNotification_WhenWebhookUrlEmpty()
+        public async Task ProcessAsync_ShouldNotSendDiscordNotification_WhenWebhookUrlEmpty()
         {
             // Arrange
             var userId = "user1";
@@ -262,7 +274,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             _mockDiscordService.Verify(x => x.SendNotificationAsync(
@@ -272,7 +284,7 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task HandleMessageAsync_ShouldLogException_WhenDiscordServiceFails()
+        public async Task ProcessAsync_ShouldLogException_WhenDiscordServiceFails()
         {
             // Arrange
             var userId = "user1";
@@ -289,7 +301,7 @@ namespace OmniForge.Tests
             var sendMessageMock = new Mock<Func<string, string, Task>>();
 
             // Act
-            await _handler.HandleMessageAsync(userId, message, sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
 
             // Assert
             // Should not throw exception

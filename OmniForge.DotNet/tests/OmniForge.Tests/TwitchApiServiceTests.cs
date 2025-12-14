@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
-using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Entities;
+using OmniForge.Core.Exceptions;
+using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
@@ -20,6 +22,7 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
+        private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly Mock<ILogger<TwitchApiService>> _mockLogger;
         private readonly TwitchApiService _service;
 
@@ -29,6 +32,7 @@ namespace OmniForge.Tests
             _mockAuthService = new Mock<ITwitchAuthService>();
             _mockConfiguration = new Mock<IConfiguration>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
+            _mockHttpClientFactory = new Mock<IHttpClientFactory>();
             _mockLogger = new Mock<ILogger<TwitchApiService>>();
 
             _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
@@ -38,7 +42,207 @@ namespace OmniForge.Tests
                 _mockAuthService.Object,
                 _mockConfiguration.Object,
                 _mockHelixWrapper.Object,
+                _mockHttpClientFactory.Object,
                 _mockLogger.Object);
+        }
+
+        [Fact]
+        public async Task GetAutomodSettingsAsync_ShouldUseTokenUserIdAsModerator()
+        {
+            var userId = "broadcaster123";
+            var tokenUserId = "mod999";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = tokenUserId,
+                Scopes = new[] { "moderator:read:automod_settings" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var helixResponse = new GetAutomodSettingsResponse();
+            var getDataProp = typeof(GetAutomodSettingsResponse).GetProperty("Data");
+            getDataProp!.SetValue(helixResponse, new[] { new TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettingsResponseModel { OverallLevel = 2 } });
+
+            // Token user mismatch should be rejected (prevents confusing BadScope/BadCreds errors)
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetAutomodSettingsAsync(userId));
+        }
+
+        [Fact]
+        public async Task UpdateAutomodSettingsAsync_ShouldUseTokenUserIdAsModerator()
+        {
+            var userId = "broadcaster123";
+            var tokenUserId = "mod999";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = tokenUserId,
+                Scopes = new[] { "moderator:manage:automod" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var dto = new AutomodSettingsDto { OverallLevel = 3 };
+            var helixResponse = new UpdateAutomodSettingsResponse();
+            var updateDataProp = typeof(UpdateAutomodSettingsResponse).GetProperty("Data");
+            updateDataProp!.SetValue(helixResponse, new[] { new AutomodSettings { OverallLevel = 3 } });
+
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.UpdateAutomodSettingsAsync(userId, dto));
+        }
+
+        [Fact]
+        public async Task GetAutomodSettingsAsync_ShouldUseUserIdAsModerator_WhenTokenUserMatches()
+        {
+            var userId = "broadcaster123";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = userId,
+                Scopes = new[] { "moderator:read:automod_settings" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var helixResponse = new GetAutomodSettingsResponse();
+            var getDataProp = typeof(GetAutomodSettingsResponse).GetProperty("Data");
+            getDataProp!.SetValue(helixResponse, new[] { new TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.AutomodSettingsResponseModel { OverallLevel = 2 } });
+            _mockHelixWrapper.Setup(x => x.GetAutomodSettingsAsync("test_client_id", accessToken, userId, userId))
+                .ReturnsAsync(helixResponse);
+
+            var result = await _service.GetAutomodSettingsAsync(userId);
+
+            Assert.Equal(2, result.OverallLevel);
+            _mockHelixWrapper.Verify(x => x.GetAutomodSettingsAsync("test_client_id", accessToken, userId, userId), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateAutomodSettingsAsync_ShouldUseUserIdAsModerator_WhenTokenUserMatches()
+        {
+            var userId = "broadcaster123";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = userId,
+                Scopes = new[] { "moderator:manage:automod" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var dto = new AutomodSettingsDto { OverallLevel = 3 };
+            var helixResponse = new UpdateAutomodSettingsResponse();
+            var updateDataProp = typeof(UpdateAutomodSettingsResponse).GetProperty("Data");
+            updateDataProp!.SetValue(helixResponse, new[] { new AutomodSettings { OverallLevel = 3 } });
+
+            AutomodSettings? captured = null;
+            _mockHelixWrapper
+                .Setup(x => x.UpdateAutomodSettingsAsync("test_client_id", accessToken, userId, userId, It.IsAny<AutomodSettings>()))
+                .Callback<string, string, string, string, AutomodSettings>((_, _, _, _, s) => captured = s)
+                .ReturnsAsync(helixResponse);
+
+            var result = await _service.UpdateAutomodSettingsAsync(userId, dto);
+
+            Assert.Equal(3, result.OverallLevel);
+            Assert.NotNull(captured);
+            Assert.Equal(3, captured!.OverallLevel);
+            Assert.Null(captured.Aggression);
+            Assert.Null(captured.Bullying);
+            Assert.Null(captured.Disability);
+            Assert.Null(captured.Misogyny);
+            Assert.Null(captured.RaceEthnicityOrReligion);
+            Assert.Null(captured.SexBasedTerms);
+            Assert.Null(captured.SexualitySexOrGender);
+            Assert.Null(captured.Swearing);
+            _mockHelixWrapper.Verify(x => x.UpdateAutomodSettingsAsync("test_client_id", accessToken, userId, userId, It.IsAny<AutomodSettings>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateAutomodSettingsAsync_ShouldAllowManageAutomodSettingsScope_WhenTokenUserMatches()
+        {
+            var userId = "broadcaster123";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = userId,
+                Scopes = new[] { "moderator:manage:automod_settings" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var dto = new AutomodSettingsDto { OverallLevel = 2 };
+            var helixResponse = new UpdateAutomodSettingsResponse();
+            var updateDataProp = typeof(UpdateAutomodSettingsResponse).GetProperty("Data");
+            updateDataProp!.SetValue(helixResponse, new[] { new AutomodSettings { OverallLevel = 2 } });
+
+            _mockHelixWrapper
+                .Setup(x => x.UpdateAutomodSettingsAsync("test_client_id", accessToken, userId, userId, It.IsAny<AutomodSettings>()))
+                .ReturnsAsync(helixResponse);
+
+            var result = await _service.UpdateAutomodSettingsAsync(userId, dto);
+
+            Assert.Equal(2, result.OverallLevel);
+            _mockHelixWrapper.Verify(x => x.UpdateAutomodSettingsAsync("test_client_id", accessToken, userId, userId, It.IsAny<AutomodSettings>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateAutomodSettingsAsync_ShouldSendIndividualSettings_WhenOverallLevelIsNull()
+        {
+            var userId = "broadcaster123";
+            var accessToken = "token";
+
+            var validation = new TokenValidationResult
+            {
+                UserId = userId,
+                Scopes = new[] { "moderator:manage:automod" }
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(new User { TwitchUserId = userId, AccessToken = accessToken, TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) });
+            _mockAuthService.Setup(x => x.ValidateTokenAsync(accessToken)).ReturnsAsync(validation);
+
+            var dto = new AutomodSettingsDto
+            {
+                OverallLevel = null,
+                Aggression = 1,
+                Bullying = 2,
+                Disability = 3,
+                Misogyny = 4,
+                RaceEthnicityOrReligion = 0,
+                SexBasedTerms = 1,
+                SexualitySexOrGender = 2,
+                Swearing = 3
+            };
+
+            var helixResponse = new UpdateAutomodSettingsResponse();
+            var updateDataProp = typeof(UpdateAutomodSettingsResponse).GetProperty("Data");
+            updateDataProp!.SetValue(helixResponse, new[] { new AutomodSettings { OverallLevel = null } });
+
+            AutomodSettings? captured = null;
+            _mockHelixWrapper
+                .Setup(x => x.UpdateAutomodSettingsAsync("test_client_id", accessToken, userId, userId, It.IsAny<AutomodSettings>()))
+                .Callback<string, string, string, string, AutomodSettings>((_, _, _, _, s) => captured = s)
+                .ReturnsAsync(helixResponse);
+
+            await _service.UpdateAutomodSettingsAsync(userId, dto);
+
+            Assert.NotNull(captured);
+            Assert.Null(captured!.OverallLevel);
+            Assert.Equal(1, captured.Aggression);
+            Assert.Equal(2, captured.Bullying);
+            Assert.Equal(3, captured.Disability);
+            Assert.Equal(4, captured.Misogyny);
+            Assert.Equal(0, captured.RaceEthnicityOrReligion);
+            Assert.Equal(1, captured.SexBasedTerms);
+            Assert.Equal(2, captured.SexualitySexOrGender);
+            Assert.Equal(3, captured.Swearing);
         }
 
         [Fact]
@@ -171,7 +375,7 @@ namespace OmniForge.Tests
             _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
 
             // Act & Assert
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
         }
 
         [Fact]
@@ -307,7 +511,7 @@ namespace OmniForge.Tests
                 .ThrowsAsync(new Exception("401 Unauthorized"));
 
             // Should throw and NOT retry (no second refresh)
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once); // Only the proactive refresh
             _mockAuthService.Verify(x => x.RefreshTokenAsync("new_refresh"), Times.Never); // No second refresh
@@ -366,7 +570,7 @@ namespace OmniForge.Tests
             _mockHelixWrapper.Setup(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId))
                 .ThrowsAsync(new Exception("401 Unauthorized"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
         }
@@ -392,7 +596,7 @@ namespace OmniForge.Tests
             // Refresh fails
             _mockAuthService.Setup(x => x.RefreshTokenAsync("refresh_token")).ReturnsAsync((TwitchTokenResponse?)null);
 
-            await Assert.ThrowsAsync<Exception>(() => _service.GetCustomRewardsAsync(userId));
+            await Assert.ThrowsAsync<ReauthRequiredException>(() => _service.GetCustomRewardsAsync(userId));
 
             _mockAuthService.Verify(x => x.RefreshTokenAsync("refresh_token"), Times.Once);
             // Should not retry with original token or new token

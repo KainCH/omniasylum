@@ -122,6 +122,12 @@
 </head>
 
 <body>
+  <script>
+    // Silence alert sounds briefly on load/refresh
+    window.omniSilenceInitialMs = 3000;
+    // Set the suppression window immediately so refresh/reconnect doesn't play sounds
+    window.omniSilenceUntil = Date.now() + window.omniSilenceInitialMs;
+  </script>
   <div id="overlay-container" class="counter-overlay" style="top: 20px; right: 20px;">
     <!-- Counters will be injected here -->
   </div>
@@ -143,6 +149,7 @@
     (function () {
       const urlParams = new URLSearchParams(window.location.search);
       const userId = urlParams.get('userId');
+      const preview = urlParams.get('preview') === 'true';
 
       // Store current overlay settings for filtering counters
       let currentSettings = null;
@@ -152,6 +159,11 @@
       if (!userId) {
         document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
         return;
+      }
+
+      // Initialize interop early so any incoming messages during startup are suppressed
+      if (window.overlayInterop) {
+        window.overlayInterop.init();
       }
 
       // Initial Data Load
@@ -190,8 +202,8 @@
           }
         };
 
-        socket.onclose = function () {
-          console.log("WebSocket closed. Reconnecting in 5s...");
+        socket.onclose = function (event) {
+          console.log("WebSocket closed. code=", event.code, "reason=", event.reason, "clean=", event.wasClean, "Reconnecting in 5s...");
           setTimeout(connect, 5000);
         };
 
@@ -306,7 +318,9 @@
         lastCounterData = data;
 
         // Handle visibility based on stream status
-        if (data.streamStarted) {
+        const isStreamStarted = preview || !!data.streamStarted;
+
+        if (isStreamStarted) {
           console.log("✅ Adding 'visible' class to container");
           container.classList.add('visible');
         } else {
@@ -366,10 +380,7 @@
         container.appendChild(div);
       }
 
-      // Initialize Interop
-      if (window.overlayInterop) {
-        window.overlayInterop.init();
-      }
+      // Interop already initialized above
     })();
   </script>
 </body>

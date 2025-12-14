@@ -9,6 +9,7 @@ using OmniForge.Core.Utilities;
 using TwitchLib.Api;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 using TwitchLib.Api.Helix.Models.Streams.GetStreams;
+using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 
 using TwitchLib.Api.Core.Enums; // Added
 
@@ -110,6 +111,22 @@ namespace OmniForge.Infrastructure.Services
             api.Settings.ClientId = clientId;
             api.Settings.AccessToken = accessToken;
             return await api.Helix.Channels.GetChannelInformationAsync(broadcasterId);
+        }
+
+        public async Task<GetAutomodSettingsResponse> GetAutomodSettingsAsync(string clientId, string accessToken, string broadcasterId, string moderatorId)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            return await api.Helix.Moderation.GetAutomodSettingsAsync(broadcasterId, moderatorId);
+        }
+
+        public async Task<UpdateAutomodSettingsResponse> UpdateAutomodSettingsAsync(string clientId, string accessToken, string broadcasterId, string moderatorId, AutomodSettings automodSettings)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            return await api.Helix.Moderation.UpdateAutomodSettingsAsync(broadcasterId, moderatorId, automodSettings);
         }
 
         private static HelixCustomReward MapToEntity(TwitchLib.Api.Helix.Models.ChannelPoints.CustomReward reward)

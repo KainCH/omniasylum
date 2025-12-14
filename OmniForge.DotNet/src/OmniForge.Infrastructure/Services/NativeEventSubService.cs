@@ -120,7 +120,14 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogWarning("🔌 Server closed the EventSub WebSocket connection. CloseStatus: {Status}, Description: {Description}",
                             result.CloseStatus, result.CloseStatusDescription);
-                        await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server closed", CancellationToken.None);
+                        if (_webSocket.State == WebSocketState.Open || _webSocket.State == WebSocketState.CloseReceived)
+                        {
+                            await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server closed", CancellationToken.None);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("🔌 Close skipped; WebSocket state already {State}", _webSocket.State);
+                        }
                         OnDisconnected?.Invoke();
                         break;
                     }

@@ -1,0 +1,261 @@
+@page "/automod"
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Exceptions
+@using OmniForge.Core.Utilities
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject OmniForge.Core.Interfaces.ITwitchApiService TwitchApiService
+@inject Microsoft.Extensions.Logging.ILogger<AutomodSettings> Logger
+@inject Microsoft.AspNetCore.Components.NavigationManager Navigation
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>AutoMod Settings</PageTitle>
+
+<h3>AutoMod Settings</h3>
+
+@if (loading)
+{
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">
+        <div>@errorMessage</div>
+        @if (errorMessage.Contains("re-authorize", StringComparison.OrdinalIgnoreCase))
+        {
+            <a class="btn btn-sm btn-outline-light mt-2" href="/auth/twitch">Re-authorize with Twitch</a>
+        }
+    </div>
+}
+else if (settings != null)
+{
+    <EditForm Model="settings" OnValidSubmit="SaveAsync">
+        <DataAnnotationsValidator />
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="alert alert-secondary">@statusMessage</div>
+        }
+
+        @if (IsOverallLevelSet)
+        {
+            <div class="alert alert-info">
+                Overall Level is set — individual category sliders are disabled and will not be sent.
+            </div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label">Overall Level (optional)</label>
+            <InputNumber class="form-control" @bind-Value="settings.OverallLevel" />
+            <small class="text-muted">Set 0-4 to apply global level; leave null to control individual categories.</small>
+        </div>
+
+        @foreach (var slider in sliders)
+        {
+            <div class="mb-3">
+                <label class="form-label">@slider.Label (@slider.GetValue())</label>
+                <input type="range" min="0" max="4" step="1" class="form-range"
+                       value="@slider.GetValue()"
+                       disabled="@IsOverallLevelSet"
+                       @oninput="e => slider.SetValue(e.Value)" />
+                <div class="d-flex justify-content-between small text-muted">
+                    <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span>
+                </div>
+            </div>
+        }
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" type="submit" disabled="@saving">
+                @if (saving)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <span>Saving...</span>
+                }
+                else
+                {
+                    <span>Save</span>
+                }
+            </button>
+
+            <button class="btn btn-outline-secondary" type="button" @onclick="RefreshAsync" disabled="@(refreshing || saving)">
+                @if (refreshing)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <span>Refreshing...</span>
+                }
+                else
+                {
+                    <span>Refresh</span>
+                }
+            </button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private AutomodSettingsDto? settings;
+    private bool loading = true;
+    private bool saving = false;
+    private bool refreshing = false;
+    private string? errorMessage;
+    private string? statusMessage;
+
+    private bool IsOverallLevelSet => settings?.OverallLevel != null;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    private class Slider
+    {
+        public string Label { get; set; } = string.Empty;
+        public Func<int> GetValue { get; set; } = default!;
+        public Action<object?> SetValue { get; set; } = default!;
+    }
+
+    private List<Slider> sliders = new List<Slider>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadFromTwitchAsync("initial-load");
+        }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod init requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "AutoMod page init failed: {Message}", LogSanitizer.Sanitize(ex.Message));
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (loading || saving) return;
+
+        refreshing = true;
+        errorMessage = null;
+        statusMessage = null;
+
+        try
+        {
+            await LoadFromTwitchAsync("manual-refresh");
+            statusMessage = $"Refreshed from Twitch at {DateTimeOffset.Now:T}.";
+        }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod refresh requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "AutoMod refresh failed: {Message}", LogSanitizer.Sanitize(ex.Message));
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    private async Task LoadFromTwitchAsync(string reason)
+    {
+        var userId = await GetUserIdAsync();
+        if (string.IsNullOrEmpty(userId))
+        {
+            errorMessage = "Not authenticated";
+            return;
+        }
+
+        Logger.LogInformation("AutoMod load requested. Reason={Reason} UserId={UserId}", LogSanitizer.Sanitize(reason), LogSanitizer.Sanitize(userId));
+
+        settings = await TwitchApiService.GetAutomodSettingsAsync(userId);
+        if (settings == null)
+        {
+            errorMessage = "Failed to load settings";
+            return;
+        }
+
+        SetupSliders();
+    }
+
+    private void SetupSliders()
+    {
+        if (settings == null)
+        {
+            sliders = new List<Slider>();
+            return;
+        }
+
+        sliders = new List<Slider>
+        {
+            new Slider { Label = "Aggression", GetValue = () => settings.Aggression, SetValue = v => settings.Aggression = ParseSlider(v) },
+            new Slider { Label = "Bullying", GetValue = () => settings.Bullying, SetValue = v => settings.Bullying = ParseSlider(v) },
+            new Slider { Label = "Disability", GetValue = () => settings.Disability, SetValue = v => settings.Disability = ParseSlider(v) },
+            new Slider { Label = "Misogyny", GetValue = () => settings.Misogyny, SetValue = v => settings.Misogyny = ParseSlider(v) },
+            new Slider { Label = "Race/Ethnicity/Religion", GetValue = () => settings.RaceEthnicityOrReligion, SetValue = v => settings.RaceEthnicityOrReligion = ParseSlider(v) },
+            new Slider { Label = "Sex-based Terms", GetValue = () => settings.SexBasedTerms, SetValue = v => settings.SexBasedTerms = ParseSlider(v) },
+            new Slider { Label = "Sexuality/Sex/Gender", GetValue = () => settings.SexualitySexOrGender, SetValue = v => settings.SexualitySexOrGender = ParseSlider(v) },
+            new Slider { Label = "Swearing", GetValue = () => settings.Swearing, SetValue = v => settings.Swearing = ParseSlider(v) },
+        };
+    }
+
+    private static int ParseSlider(object? value)
+    {
+        if (value == null) return 0;
+        if (value is string s && int.TryParse(s, out var n)) return n;
+        if (value is int i) return i;
+        return 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (settings == null) return;
+        saving = true;
+        errorMessage = null;
+        statusMessage = null;
+        try
+        {
+            var userId = await GetUserIdAsync();
+            if (string.IsNullOrEmpty(userId))
+            {
+                errorMessage = "Not authenticated";
+                return;
+            }
+
+            Logger.LogInformation("AutoMod save requested. UserId={UserId}", LogSanitizer.Sanitize(userId));
+
+            settings = await TwitchApiService.UpdateAutomodSettingsAsync(userId, settings);
+            SetupSliders();
+            statusMessage = $"Saved at {DateTimeOffset.Now:T}.";
+        }
+        catch (ReauthRequiredException ex)
+        {
+            Logger.LogWarning(ex, "AutoMod save requires reauth: {Message}", LogSanitizer.Sanitize(ex.Message));
+            Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "AutoMod save failed: {Message}", LogSanitizer.Sanitize(ex.Message));
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+    private async Task<string?> GetUserIdAsync()
+    {
+        if (authenticationStateTask == null) return null;
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+        return user.FindFirst("userId")?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    }
+}

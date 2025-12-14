@@ -36,8 +36,8 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<TwitchLib.Api.Core.Interfaces.IApiSettings> _mockApiSettings;
         private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
-        private readonly Mock<IEventSubHandlerRegistry> _mockHandlerRegistry;
         private readonly Mock<IDiscordNotificationTracker> _mockDiscordTracker;
+        private readonly Mock<IEventSubHandlerRegistry> _mockHandlerRegistry;
         private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly StreamMonitorService _service;
 
@@ -54,8 +54,8 @@ namespace OmniForge.Tests
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockApiSettings = new Mock<TwitchLib.Api.Core.Interfaces.IApiSettings>();
             _mockHttpClientFactory = new Mock<IHttpClientFactory>();
-            _mockHandlerRegistry = new Mock<IEventSubHandlerRegistry>();
             _mockDiscordTracker = new Mock<IDiscordNotificationTracker>();
+            _mockHandlerRegistry = new Mock<IEventSubHandlerRegistry>();
             _mockAuthService = new Mock<ITwitchAuthService>();
 
             // Setup TwitchAPI mock
@@ -86,6 +86,7 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(IDiscordService))).Returns(_mockDiscordService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchHelixWrapper))).Returns(_mockHelixWrapper.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchAuthService))).Returns(_mockAuthService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IEventSubHandlerRegistry))).Returns(_mockHandlerRegistry.Object);
 
             _service = new StreamMonitorService(
                 _mockEventSubService.Object,
@@ -94,7 +95,6 @@ namespace OmniForge.Tests
                 _mockLogger.Object,
                 _mockScopeFactory.Object,
                 _mockTwitchSettings.Object,
-                _mockHandlerRegistry.Object,
                 _mockDiscordTracker.Object);
         }
 
@@ -123,6 +123,29 @@ namespace OmniForge.Tests
 
             // Assert
             _mockEventSubService.Verify(x => x.DisconnectAsync(), Times.Once);
+        }
+
+        [Fact]
+        public void OnNotification_ShouldInvokeHandlerRegistryHandler()
+        {
+            // Arrange
+            var handlerMock = new Mock<IEventSubHandler>();
+            _mockHandlerRegistry.Setup(x => x.GetHandler("channel.follow")).Returns(handlerMock.Object);
+
+            var message = new EventSubMessage
+            {
+                Payload = new EventSubPayload
+                {
+                    Subscription = new EventSubSubscription { Type = "channel.follow" },
+                    Event = JsonDocument.Parse("{\"broadcaster_user_id\":\"123\"}").RootElement
+                }
+            };
+
+            // Act: simulate EventSub notification
+            _mockEventSubService.Raise(m => m.OnNotification += null, message);
+
+            // Assert
+            handlerMock.Verify(x => x.HandleAsync(It.IsAny<JsonElement>()), Times.Once);
         }
 
         [Fact]

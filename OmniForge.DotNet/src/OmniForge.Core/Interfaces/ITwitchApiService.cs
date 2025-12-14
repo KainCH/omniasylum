@@ -12,6 +12,13 @@ namespace OmniForge.Core.Interfaces
         Task DeleteCustomRewardAsync(string userId, string rewardId);
         Task<StreamInfo?> GetStreamInfoAsync(string userId);
         Task<ClipInfo?> CreateClipAsync(string userId);
+
+        // AutoMod settings
+        Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId);
+        Task<AutomodSettingsDto> UpdateAutomodSettingsAsync(string userId, AutomodSettingsDto settings);
+
+        // Chat
+        Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null);
     }
 
     public class StreamInfo
