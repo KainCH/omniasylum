@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -102,16 +103,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         {
             if (eventData.TryGetProperty("badges", out var badgesElem) && badgesElem.ValueKind == JsonValueKind.Array)
             {
-                foreach (var badge in badgesElem.EnumerateArray())
+                foreach (var badge in badgesElem.EnumerateArray().Where(badge =>
+                             badge.TryGetProperty("set_id", out var setIdProp) &&
+                             setIdProp.ValueKind == JsonValueKind.String &&
+                             string.Equals(setIdProp.GetString(), badgeSetId, StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (badge.TryGetProperty("set_id", out var setIdProp))
-                    {
-                        var setId = setIdProp.GetString();
-                        if (!string.IsNullOrEmpty(setId) && string.Equals(setId, badgeSetId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return true;
-                        }
-                    }
+                    return true;
                 }
             }
             return false;

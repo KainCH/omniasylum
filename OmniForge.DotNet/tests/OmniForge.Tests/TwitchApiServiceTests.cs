@@ -231,7 +231,7 @@ namespace OmniForge.Tests
                 .Callback<string, string, string, string, AutomodSettings>((_, _, _, _, s) => captured = s)
                 .ReturnsAsync(helixResponse);
 
-            var _ = await _service.UpdateAutomodSettingsAsync(userId, dto);
+            await _service.UpdateAutomodSettingsAsync(userId, dto);
 
             Assert.NotNull(captured);
             Assert.Null(captured!.OverallLevel);

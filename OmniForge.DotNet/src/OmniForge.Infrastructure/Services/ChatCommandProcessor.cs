@@ -186,12 +186,9 @@ namespace OmniForge.Infrastructure.Services
                                 var now = DateTimeOffset.UtcNow;
 
                                 bool onCooldown = false;
-                                if (userCooldowns.TryGetValue(command, out var lastUsed))
+                                if (userCooldowns.TryGetValue(command, out var lastUsed) && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
                                 {
-                                    if ((now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
-                                    {
-                                        onCooldown = true;
-                                    }
+                                    onCooldown = true;
                                 }
 
                                 if (!onCooldown)
