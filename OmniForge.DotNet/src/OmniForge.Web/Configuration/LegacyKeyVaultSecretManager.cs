@@ -8,12 +8,16 @@ namespace OmniForge.Web.Configuration
         public override string GetKey(KeyVaultSecret secret)
         {
             var secretName = secret.Name;
+            var normalizedName = secretName.ToUpperInvariant();
 
-            return secretName switch
+            return normalizedName switch
             {
                 "TWITCH-CLIENT-ID" => "Twitch:ClientId",
                 "TWITCH-CLIENT-SECRET" => "Twitch:ClientSecret",
                 "JWT-SECRET" => "Jwt:Secret",
+
+                // Discord bot token (used for Discord notifications)
+                "OMNIFORGE-BOT-KEY" => "DiscordBot:BotToken",
                 _ => base.GetKey(secret)
             };
         }

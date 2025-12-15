@@ -22,6 +22,7 @@ namespace OmniForge.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<TwitchSettings>(configuration.GetSection("Twitch"));
+            services.Configure<DiscordBotSettings>(configuration.GetSection("DiscordBot"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
 
@@ -69,6 +70,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
+            services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();

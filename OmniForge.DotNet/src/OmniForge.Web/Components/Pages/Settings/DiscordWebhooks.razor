@@ -42,25 +42,25 @@
             <div class="col-md-6">
                 <div class="card mb-4 shadow-sm">
                     <div class="card-header">
-                        <h5 class="mb-0">Webhook Configuration</h5>
+                        <h5 class="mb-0">Bot Configuration</h5>
                     </div>
                     <div class="card-body">
                         <p class="text-muted small">
-                            Create a webhook in your Discord server (Server Settings > Integrations > Webhooks) and paste the URL here.
+                            Invite the OmniForge Discord bot to your server and paste the target <strong>Channel ID</strong> here.
                         </p>
                         <div class="mb-3">
-                            <label class="form-label">Webhook URL</label>
+                            <label class="form-label">Channel ID</label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
-                                <input type="text" class="form-control" @bind="user.DiscordWebhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+                                <input type="text" class="form-control" @bind="user.DiscordChannelId" placeholder="123456789012345678" />
                             </div>
                         </div>
                         <div class="d-flex gap-2">
                             <button class="btn btn-primary" @onclick="SaveWebhook" disabled="@isSaving">
-                                @(isSaving ? "Saving..." : "Save Webhook")
+                                @(isSaving ? "Saving..." : "Save Channel")
                             </button>
-                            <button class="btn btn-outline-secondary" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(user.DiscordWebhookUrl) || isTesting)">
-                                @(isTesting ? "Testing..." : "Test Webhook")
+                            <button class="btn btn-outline-secondary" @onclick="TestWebhook" disabled="@((string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) || isTesting)">
+                                @(isTesting ? "Testing..." : "Send Test")
                             </button>
                         </div>
                     </div>
@@ -125,6 +125,23 @@
                             <label class="form-check-label" for="streamStart">Stream Start</label>
                         </div>
 
+                        <div class="mb-3 ms-4">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.MentionEveryoneOnStreamStart" id="mentionEveryoneOnStreamStart">
+                                <label class="form-check-label" for="mentionEveryoneOnStreamStart">Mention @@everyone when going live</label>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small text-muted">Optional role to mention (Role ID)</label>
+                                <input type="text" class="form-control form-control-sm"
+                                       @bind="user.DiscordSettings.MentionRoleIdOnStreamStart"
+                                       placeholder="123456789012345678" />
+                                <div class="form-text">Use a role ID to ping a specific role (e.g. Live Alerts). Leave blank to disable role pings.</div>
+                            </div>
+                            <div class="alert alert-warning py-2 px-3 small mb-0">
+                                <strong>Heads up:</strong> enabling mentions can be noisy. The bot also needs permission to mention @@everyone/roles in that channel.
+                            </div>
+                        </div>
+
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.StreamEnd" id="streamEnd">
                             <label class="form-check-label" for="streamEnd">Stream End</label>
@@ -186,11 +203,11 @@
         try
         {
             await UserRepository.SaveUserAsync(user);
-            ShowMessage("Webhook URL saved successfully!", "success");
+            ShowMessage("Channel ID saved successfully!", "success");
         }
         catch (Exception ex)
         {
-            ShowMessage($"Error saving webhook: {ex.Message}", "danger");
+            ShowMessage($"Error saving channel: {ex.Message}", "danger");
         }
         isSaving = false;
     }

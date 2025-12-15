@@ -7,6 +7,7 @@ namespace OmniForge.Core.Interfaces
     {
         Task SendNotificationAsync(User user, string eventType, object data);
         Task SendTestNotificationAsync(User user);
+        Task<bool> ValidateDiscordChannelAsync(string channelId);
         Task<bool> ValidateWebhookAsync(string webhookUrl);
     }
 }

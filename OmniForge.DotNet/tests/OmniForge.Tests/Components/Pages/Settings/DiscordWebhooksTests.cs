@@ -114,7 +114,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
             {
                 TwitchUserId = "123",
                 Username = "StreamerOne",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/..."
+                DiscordChannelId = "123456789012345678"
             };
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>()))
                 .ReturnsAsync(user);
@@ -133,7 +133,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
 
             // Assert
             cut.WaitForState(() => cut.FindAll("h5").Count > 0);
-            Assert.Contains("Webhook Configuration", cut.Markup);
+            Assert.Contains("Bot Configuration", cut.Markup);
         }
 
         [Fact]
@@ -161,11 +161,11 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 b.CloseComponent();
             });
 
-            cut.WaitForState(() => cut.FindAll("input[placeholder*='https://discord.com/api/webhooks']").Count > 0);
+            cut.WaitForState(() => cut.FindAll("input[placeholder*='123456789012345678']").Count > 0);
 
             // Act
-            var input = cut.Find("input[placeholder*='https://discord.com/api/webhooks']");
-            input.Change("https://discord.com/api/webhooks/new-url");
+            var input = cut.Find("input[placeholder*='123456789012345678']");
+            input.Change("234567890123456789");
 
             var saveBtn = cut.Find("button.btn-primary"); // Assuming the first primary button is Save Webhook
             // Better selector: button that follows the input
@@ -180,14 +180,14 @@ namespace OmniForge.Tests.Components.Pages.Settings
             // I'll use: cut.FindAll("button").First(b => b.TextContent.Contains("Save Webhook")).Click();
 
             var buttons = cut.FindAll("button");
-            var saveWebhookBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Save Webhook"));
+            var saveWebhookBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Save Channel"));
             Assert.NotNull(saveWebhookBtn);
             saveWebhookBtn.Click();
 
             // Assert
-            _mockUserRepo.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == "https://discord.com/api/webhooks/new-url")), Times.Once);
+            _mockUserRepo.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordChannelId == "234567890123456789")), Times.Once);
             cut.WaitForState(() => cut.FindAll(".alert-success").Count > 0);
-            Assert.Contains("Webhook URL saved successfully!", cut.Find(".alert-success").TextContent);
+            Assert.Contains("Channel ID saved successfully!", cut.Find(".alert-success").TextContent);
         }
 
         [Fact]
@@ -200,7 +200,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 new Claim("userId", "123")
             }, "TestAuthType")));
 
-            var user = new User { TwitchUserId = "123", Username = "StreamerOne", DiscordWebhookUrl = "valid-url" };
+            var user = new User { TwitchUserId = "123", Username = "StreamerOne", DiscordChannelId = "123456789012345678" };
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
@@ -219,7 +219,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
 
             // Act
             var buttons = cut.FindAll("button");
-            var testBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Test Webhook"));
+            var testBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Send Test"));
             Assert.NotNull(testBtn);
             testBtn.Click();
 
@@ -349,13 +349,13 @@ namespace OmniForge.Tests.Components.Pages.Settings
 
             // Act
             var buttons = cut.FindAll("button");
-            var saveWebhookBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Save Webhook"));
+            var saveWebhookBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Save Channel"));
             Assert.NotNull(saveWebhookBtn);
             saveWebhookBtn.Click();
 
             // Assert
             cut.WaitForState(() => cut.FindAll(".alert-danger").Count > 0);
-            Assert.Contains("Error saving webhook: Database error", cut.Find(".alert-danger").TextContent);
+            Assert.Contains("Error saving channel: Database error", cut.Find(".alert-danger").TextContent);
         }
 
         [Fact]
@@ -368,7 +368,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 new Claim("userId", "123")
             }, "TestAuthType")));
 
-            var user = new User { TwitchUserId = "123", Username = "StreamerOne", DiscordWebhookUrl = "valid" };
+            var user = new User { TwitchUserId = "123", Username = "StreamerOne", DiscordChannelId = "123456789012345678" };
             _mockUserRepo.Setup(x => x.GetUserAsync(It.IsAny<string>())).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(It.IsAny<User>())).ThrowsAsync(new System.Exception("Network error"));
 
@@ -387,7 +387,7 @@ namespace OmniForge.Tests.Components.Pages.Settings
 
             // Act
             var buttons = cut.FindAll("button");
-            var testBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Test Webhook"));
+            var testBtn = buttons.FirstOrDefault(b => b.TextContent.Contains("Send Test"));
             Assert.NotNull(testBtn);
             testBtn.Click();
 

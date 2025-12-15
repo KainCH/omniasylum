@@ -133,13 +133,20 @@
                             else if (activeTab == "configuration")
                             {
                                 <div class="mb-4">
-                                    <h6 class="border-bottom pb-2">🔧 Webhook Setup</h6>
-                                    <p class="text-muted small">Connect your Discord server to receive stream notifications!</p>
+                                    <h6 class="border-bottom pb-2">🔧 Bot Setup</h6>
+                                    <p class="text-muted small">Connect your Discord server to receive stream notifications using a bot (more secure than webhooks).</p>
 
-                                    @if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                                    @if (!string.IsNullOrEmpty(user.DiscordChannelId))
                                     {
                                         <div class="alert alert-success py-2 px-3 mb-3 small">
                                             <i class="bi bi-check-circle-fill me-2"></i>
+                                            Existing channel configuration detected
+                                        </div>
+                                    }
+                                    else if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                                    {
+                                        <div class="alert alert-warning py-2 px-3 mb-3 small">
+                                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
                                             Existing webhook configuration detected
                                         </div>
                                     }
@@ -149,10 +156,10 @@
                                             <small>
                                                 <strong>Setup Instructions:</strong>
                                                 <ol class="mb-0 ps-3">
-                                                    <li>Go to your Discord server settings</li>
-                                                    <li>Click "Integrations" → "Webhooks"</li>
-                                                    <li>Click "New Webhook" or select an existing one</li>
-                                                    <li>Copy the webhook URL and paste it below</li>
+                                                    <li>Create an app + bot in Discord Developer Portal</li>
+                                                    <li>Invite the bot to your server with Send Messages + Embed Links</li>
+                                                    <li>Enable Developer Mode in Discord</li>
+                                                    <li>Right-click the target channel → Copy Channel ID</li>
                                                 </ol>
                                             </small>
                                         </div>
@@ -160,7 +167,7 @@
 
                                     <div class="mb-3">
                                         <label class="form-label">
-                                            Discord Webhook URL
+                                            Discord Channel ID
                                             @if (user.Features.DiscordWebhook)
                                             {
                                                 <span class="text-success ms-2">(✅ Enabled)</span>
@@ -170,11 +177,11 @@
                                                 <span class="text-danger ms-2">(❌ Disabled)</span>
                                             }
                                         </label>
-                                        <InputText class="form-control font-monospace" @bind-Value="user.DiscordWebhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+                                        <InputText class="form-control font-monospace" @bind-Value="user.DiscordChannelId" placeholder="123456789012345678" />
                                     </div>
 
                                     <div class="d-flex gap-2 mb-4">
-                                        <button type="button" class="btn btn-secondary" @onclick="TestWebhook" disabled="@(string.IsNullOrEmpty(user.DiscordWebhookUrl) || isTesting)">
+                                        <button type="button" class="btn btn-secondary" @onclick="TestWebhook" disabled="@((string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) || isTesting)">
                                             @if (isTesting)
                                             {
                                                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -296,8 +303,8 @@
         isSaving = true;
         try
         {
-            // Auto-enable webhook feature if URL is present
-            if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            // Auto-enable discord feature if a destination is present
+            if (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
                 user.Features.DiscordWebhook = true;
             }
@@ -322,7 +329,7 @@
 
     private async Task TestWebhook()
     {
-        if (string.IsNullOrEmpty(user.DiscordWebhookUrl)) return;
+        if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) return;
 
         isTesting = true;
         try

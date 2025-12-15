@@ -26,6 +26,7 @@ namespace OmniForge.Infrastructure.Entities
         public string overlaySettings { get; set; } = "{}";
         public string discordSettings { get; set; } = "{}";
         public string discordWebhookUrl { get; set; } = string.Empty;
+        public string discordChannelId { get; set; } = string.Empty;
         public string discordInviteLink { get; set; } = string.Empty;
         public string managedStreamers { get; set; } = "[]";
         public bool isActive { get; set; } = true;
@@ -80,6 +81,7 @@ namespace OmniForge.Infrastructure.Entities
                 OverlaySettings = DeserializeSafe<OverlaySettings>(overlaySettings),
                 DiscordSettings = DeserializeSafe<DiscordSettings>(discordSettings),
                 DiscordWebhookUrl = discordWebhookUrl,
+                DiscordChannelId = discordChannelId,
                 DiscordInviteLink = discordInviteLink,
                 ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
                 IsActive = isActive,
@@ -126,6 +128,7 @@ namespace OmniForge.Infrastructure.Entities
                 overlaySettings = GetStringSafe(entity, "overlaySettings", "{}"),
                 discordSettings = GetStringSafe(entity, "discordSettings", "{}"),
                 discordWebhookUrl = GetStringSafe(entity, "discordWebhookUrl"),
+                discordChannelId = GetStringSafe(entity, "discordChannelId"),
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
                 managedStreamers = GetStringSafe(entity, "managedStreamers", "[]"),
                 isActive = GetBoolSafe(entity, "isActive", true),
@@ -188,6 +191,7 @@ namespace OmniForge.Infrastructure.Entities
                 overlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
                 discordSettings = JsonSerializer.Serialize(user.DiscordSettings),
                 discordWebhookUrl = user.DiscordWebhookUrl,
+                discordChannelId = user.DiscordChannelId,
                 discordInviteLink = user.DiscordInviteLink,
                 managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
                 isActive = user.IsActive,

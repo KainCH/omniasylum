@@ -309,7 +309,7 @@ namespace OmniForge.Web.Controllers
             if (user == null) return NotFound("User not found");
 
             var status = _streamMonitorService.GetUserConnectionStatus(userId);
-            var subscriptionsEnabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl);
+            var subscriptionsEnabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl);
 
             return Ok(new
             {
@@ -322,7 +322,10 @@ namespace OmniForge.Web.Controllers
                     lastConnected = status.LastConnected
                 },
                 notificationSettings = user.DiscordSettings,
+                // Backward compatibility: keep legacy field name while introducing channel-based config.
                 discordWebhook = !string.IsNullOrEmpty(user.DiscordWebhookUrl),
+                discordChannel = !string.IsNullOrEmpty(user.DiscordChannelId),
+                discordConfigured = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl),
                 subscriptionsEnabled,
                 timestamp = DateTimeOffset.UtcNow
             });

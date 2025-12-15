@@ -87,7 +87,7 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogInformation("Milestone reached: {CounterType} {Milestone} for user {Username}", LogSanitizer.Sanitize(counterType), milestone, LogSanitizer.Sanitize(user.Username));
 
                     // 4. Send Discord Notification
-                    if (discordEnabledForType && !string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                    if (discordEnabledForType && (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl)))
                     {
                         await _discordService.SendNotificationAsync(user, eventType, new
                         {

@@ -22,6 +22,7 @@ namespace OmniForge.Core.Entities
         public FeatureFlags Features { get; set; } = new FeatureFlags();
         public OverlaySettings OverlaySettings { get; set; } = new OverlaySettings();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
+        public string DiscordChannelId { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
         public DiscordSettings DiscordSettings { get; set; } = new DiscordSettings();
         public bool IsActive { get; set; } = true;
@@ -120,6 +121,10 @@ namespace OmniForge.Core.Entities
         public string TemplateStyle { get; set; } = "asylum_themed";
         public DiscordEnabledNotifications EnabledNotifications { get; set; } = new DiscordEnabledNotifications();
         public DiscordMilestoneThresholds MilestoneThresholds { get; set; } = new DiscordMilestoneThresholds();
+
+        // Stream start mention behavior (opt-in; defaults to no mentions)
+        public bool MentionEveryoneOnStreamStart { get; set; } = false;
+        public string? MentionRoleIdOnStreamStart { get; set; }
 
         // Legacy/Flat properties for backward compatibility if needed,
         // but we should prefer the structured ones.

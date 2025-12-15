@@ -4,9 +4,12 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Core.Entities;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
 using Xunit;
 
@@ -16,6 +19,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<HttpMessageHandler> _mockHttpMessageHandler;
         private readonly Mock<ILogger<DiscordService>> _mockLogger;
+        private readonly Mock<IDiscordBotClient> _mockDiscordBotClient;
         private readonly DiscordService _service;
         private readonly HttpClient _httpClient;
 
@@ -23,19 +27,69 @@ namespace OmniForge.Tests
         {
             _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
             _mockLogger = new Mock<ILogger<DiscordService>>();
+            _mockDiscordBotClient = new Mock<IDiscordBotClient>();
 
             _httpClient = new HttpClient(_mockHttpMessageHandler.Object);
-            _service = new DiscordService(_httpClient, _mockLogger.Object);
+            var botSettings = Options.Create(new DiscordBotSettings
+            {
+                BotToken = "test-bot-token",
+                ApiBaseUrl = "https://discord.com/api/v10"
+            });
+            _service = new DiscordService(_httpClient, _mockLogger.Object, botSettings, _mockDiscordBotClient.Object);
         }
 
         [Fact]
-        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured()
+        public async Task SendTestNotificationAsync_ShouldSendBotMessage_WhenChannelIdConfigured()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
                 DisplayName = "Test User",
+                DiscordChannelId = "123456789012345678"
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _service.SendTestNotificationAsync(user);
+
+            // Assert
+            _mockDiscordBotClient.Verify(
+                x => x.SendMessageAsync(
+                    user.DiscordChannelId,
+                    "test-bot-token",
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()),
+                Times.Once);
+
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured_AndNoChannelId()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordChannelId = string.Empty,
                 DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
             };
 
@@ -72,7 +126,8 @@ namespace OmniForge.Tests
             var user = new User
             {
                 Username = "testuser",
-                DiscordWebhookUrl = string.Empty
+                DiscordWebhookUrl = string.Empty,
+                DiscordChannelId = string.Empty
             };
 
             // Act
