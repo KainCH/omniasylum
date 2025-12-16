@@ -122,6 +122,10 @@ namespace OmniForge.Core.Entities
         public DiscordEnabledNotifications EnabledNotifications { get; set; } = new DiscordEnabledNotifications();
         public DiscordMilestoneThresholds MilestoneThresholds { get; set; } = new DiscordMilestoneThresholds();
 
+        // Per-event templates and per-event channel routing.
+        // Keyed by eventType (e.g., "stream_start", "stream_end", "death_milestone").
+        public Dictionary<string, DiscordMessageTemplate> MessageTemplates { get; set; } = new Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase);
+
         // Stream start mention behavior (opt-in; defaults to no mentions)
         public bool MentionEveryoneOnStreamStart { get; set; } = false;
         public string? MentionRoleIdOnStreamStart { get; set; }
@@ -129,6 +133,18 @@ namespace OmniForge.Core.Entities
         // Legacy/Flat properties for backward compatibility if needed,
         // but we should prefer the structured ones.
         public bool EnableChannelNotifications { get; set; } = false;
+    }
+
+    public class DiscordMessageTemplate
+    {
+        // Optional channel override for this event (works with bot-token mode).
+        public string? ChannelIdOverride { get; set; }
+
+        // Optional message override fields.
+        // Use placeholders like {{displayName}}, {{username}}, {{twitchUrl}}, and event-specific tokens.
+        public string? ContentTemplate { get; set; }
+        public string? TitleTemplate { get; set; }
+        public string? DescriptionTemplate { get; set; }
     }
 
     public class DiscordEnabledNotifications

@@ -98,9 +98,9 @@
                     <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
                         <i class="bi bi-magic"></i> Effects
                     </button>
-                    <button class="btn-custom btn-discord" @onclick="() => showDiscordSettings = true">
+                    <a class="btn-custom btn-discord" href="settings/discord">
                         <i class="bi bi-discord"></i> Discord
-                    </button>
+                    </a>
                 </div>
 
                 <div class="stats-grid">
@@ -192,7 +192,6 @@
                 <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
                 <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
-                <DiscordWebhookSettingsModal @bind-Show="showDiscordSettings" UserId="@TwitchUserId" />
                 <SeriesSaveManagerModal @bind-Show="showSeriesSaves" UserId="@TwitchUserId" OnSeriesLoaded="OnSeriesLoaded" />
             }
         </Authorized>
@@ -213,7 +212,6 @@
     private bool showOverlaySettings = false;
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
-    private bool showDiscordSettings = false;
     private bool showSeriesSaves = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
@@ -277,7 +275,7 @@
 
     private bool IsAnyModalOpen()
     {
-        return showOverlaySettings || showAlertsManager || showAlertEffects || showDiscordSettings || showSeriesSaves;
+        return showOverlaySettings || showAlertsManager || showAlertEffects || showSeriesSaves;
     }
 
     public void Dispose()

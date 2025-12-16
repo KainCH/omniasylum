@@ -1,0 +1,714 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Options
+@using OmniForge.Infrastructure.Configuration
+
+@inject IUserRepository UserRepository
+@inject IDiscordService DiscordService
+@inject IJSRuntime JSRuntime
+@inject IOptions<DiscordBotSettings> DiscordBotOptions
+
+@if (isLoading)
+{
+    <div class="text-center p-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "notifications" ? "active" : "")" @onclick='() => activeTab = "notifications"' style="cursor: pointer;">
+                📢 Notifications
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "designer" ? "active" : "")" @onclick='() => activeTab = "designer"' style="cursor: pointer;">
+                ✍️ Message Designer
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "counters" ? "active" : "")" @onclick='() => activeTab = "counters"' style="cursor: pointer;">
+                🎯 Counters & Milestones
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "configuration" ? "active" : "")" @onclick='() => activeTab = "configuration"' style="cursor: pointer;">
+                ⚙️ Configuration
+            </a>
+        </li>
+    </ul>
+
+    <form @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
+        @if (activeTab == "notifications")
+        {
+            <div class="mb-4">
+                <h6 class="border-bottom pb-2">🔔 Basic Notification Types</h6>
+                <p class="text-muted small">Choose which types of notifications you want to receive from your stream!</p>
+
+                <div class="card mb-3">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="me-3 fs-2">🔔</div>
+                        <div>
+                            <h6 class="mb-0">Discord Notifications</h6>
+                            <small class="text-muted">Enabled when a Discord destination is configured in Configuration tab</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-3 @(user.DiscordSettings.EnableChannelNotifications ? "border-primary" : "")">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <div class="me-3 fs-2">💬</div>
+                            <div>
+                                <h6 class="mb-0">Twitch Chat Notifications</h6>
+                                <small class="text-muted">Announce milestones and events in your Twitch chat</small>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnableChannelNotifications" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (activeTab == "counters")
+        {
+            <div class="mb-4">
+                <h6 class="border-bottom pb-2">🎯 Milestone Notifications</h6>
+
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-secondary bg-opacity-10">
+                        <div class="d-flex align-items-center">
+                            <span class="me-2 fs-4">💀</span>
+                            <div>
+                                <h6 class="mb-0">Death Count Milestones</h6>
+                                <small class="text-muted">Send Discord notifications on configured milestones</small>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.DeathMilestone" />
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <label class="form-label small">Milestone Thresholds</label>
+                        <input class="form-control" type="text" @bind="deathThresholdsString" placeholder="10,25,50,100,250,500" />
+                        <div class="form-text">Comma-separated list of values</div>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-secondary bg-opacity-10">
+                        <div class="d-flex align-items-center">
+                            <span class="me-2 fs-4">🤬</span>
+                            <div>
+                                <h6 class="mb-0">Swear Count Milestones</h6>
+                                <small class="text-muted">Send Discord notifications on configured milestones</small>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.SwearMilestone" />
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <label class="form-label small">Milestone Thresholds</label>
+                        <input class="form-control" type="text" @bind="swearThresholdsString" placeholder="25,50,100,200,500" />
+                        <div class="form-text">Comma-separated list of values</div>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-secondary bg-opacity-10">
+                        <div class="d-flex align-items-center">
+                            <span class="me-2 fs-4">😱</span>
+                            <div>
+                                <h6 class="mb-0">Scream Count Milestones</h6>
+                                <small class="text-muted">Send Discord notifications on configured milestones</small>
+                            </div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.ScreamMilestone" />
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <label class="form-label small">Milestone Thresholds</label>
+                        <input class="form-control" type="text" @bind="screamThresholdsString" placeholder="5,10,15,20" />
+                        <div class="form-text">Comma-separated list of values</div>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (activeTab == "designer")
+        {
+            <div class="mb-4">
+                <h6 class="border-bottom pb-2">✍️ Discord Message Designer</h6>
+                <p class="text-muted small mb-2">
+                    Customize the message text per action, and optionally route each action to a different Discord channel.
+                    Leave fields blank to use the default OmniForge message.
+                </p>
+
+                <div class="alert alert-info d-flex align-items-start">
+                    <i class="bi bi-info-circle-fill me-2 mt-1"></i>
+                    <div class="small">
+                        <div><strong>Channel routing note:</strong> per-action channel overrides work when using bot + Channel ID mode.@if (!HasBotConfiguration) { <span> Webhook mode posts to the webhook’s channel.</span> }</div>
+                        <div class="mt-1"><strong>Template tokens:</strong> use <span class="font-monospace">{{displayName}}</span>, <span class="font-monospace">{{username}}</span>, <span class="font-monospace">{{twitchUrl}}</span>, <span class="font-monospace">{{eventType}}</span>.</div>
+                        <div class="mt-1"><strong>Event tokens:</strong> <span class="font-monospace">{{title}}</span>, <span class="font-monospace">{{game}}</span>, <span class="font-monospace">{{thumbnailUrl}}</span>, <span class="font-monospace">{{duration}}</span>, <span class="font-monospace">{{count}}</span>, <span class="font-monospace">{{previousMilestone}}</span>.</div>
+                        <div class="mt-1"><strong>Stream start mentions:</strong> <span class="font-monospace">{{streamStartMentions}}</span> (honors your mention settings).</div>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <label class="form-label">Action</label>
+                        <select class="form-select" @bind="selectedDesignerEventType">
+                            @foreach (var eventType in supportedDiscordEventTypes)
+                            {
+                                <option value="@eventType">@GetEventDisplayName(eventType)</option>
+                            }
+                        </select>
+                        <div class="form-text">Select an action, then configure its template object below.</div>
+                    </div>
+                </div>
+
+                @{
+                    var template = GetOrCreateTemplate(selectedDesignerEventType);
+                }
+
+                <div class="card mb-3">
+                    <div class="card-header bg-secondary bg-opacity-10 d-flex align-items-center justify-content-between">
+                        <div>
+                            <strong>@GetEventDisplayName(selectedDesignerEventType)</strong>
+                            <div class="text-muted small font-monospace">@selectedDesignerEventType</div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => ResetTemplate(selectedDesignerEventType)'>
+                            Reset to Default
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Channel ID Override (optional)</label>
+                            <input class="form-control font-monospace" type="text" @bind="template.ChannelIdOverride" placeholder="123456789012345678" />
+                            <div class="form-text">If set, this action posts to that channel instead of your default Discord Channel ID.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Message Content (optional)</label>
+                            <textarea class="form-control font-monospace" @bind="template.ContentTemplate" rows="2" placeholder="{{streamStartMentions}} {{displayName}} is live! {{twitchUrl}}"></textarea>
+                            <div class="form-text">This is the plain message content above the embed.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Embed Title (optional)</label>
+                            <input class="form-control font-monospace" type="text" @bind="template.TitleTemplate" placeholder="🔴 {{displayName}} is live!" />
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label">Embed Description (optional)</label>
+                            <textarea class="form-control font-monospace" @bind="template.DescriptionTemplate" rows="3" placeholder="Title: {{title}}&#10;Game: {{game}}"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (activeTab == "configuration")
+        {
+            <div class="mb-4">
+                <h6 class="border-bottom pb-2">🔧 Bot Setup</h6>
+                <p class="text-muted small">Connect your Discord server to receive stream notifications using a bot.</p>
+
+                <div class="card bg-secondary bg-opacity-10 mb-3">
+                    <div class="card-body py-2">
+                        <small>
+                            <strong>Bot Invite Link:</strong>
+                            @if (!string.IsNullOrWhiteSpace(botInviteUrl))
+                            {
+                                <div class="d-flex gap-2 align-items-center mt-1">
+                                    <input class="form-control form-control-sm font-monospace" value="@botInviteUrl" readonly />
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyBotInviteUrl">
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="text-muted mt-1">
+                                    If you click this and choose your server, that installs/authorizes the OmniForge bot.
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-muted mt-1">
+                                    Bot invite link is not configured on the server yet (missing DiscordBot settings).
+                                    <div class="mt-1">
+                                        <a href="https://github.com/KainCH/omniasylum/blob/main/docs/DISCORD-NOTIFICATIONS.md" target="_blank" rel="noopener noreferrer">
+                                            View Discord bot setup guide
+                                        </a>
+                                    </div>
+                                </div>
+                            }
+                        </small>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(user.DiscordChannelId))
+                {
+                    <div class="alert alert-success py-2 px-3 mb-3 small">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        Existing channel configuration detected
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                {
+                    @if (!HasBotConfiguration)
+                    {
+                        <div class="alert alert-warning py-2 px-3 mb-3 small">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            Existing legacy Discord configuration detected
+                        </div>
+                    }
+                }
+
+                <div class="card bg-secondary bg-opacity-10 mb-3">
+                    <div class="card-body py-2">
+                        <small>
+                            <strong>Setup Instructions:</strong>
+                            <ol class="mb-0 ps-3">
+                                <li>Create an app + bot in Discord Developer Portal</li>
+                                <li>Invite the bot to your server with Send Messages + Embed Links</li>
+                                <li>Enable Developer Mode in Discord</li>
+                                <li>Right-click the target channel → Copy Channel ID</li>
+                            </ol>
+                        </small>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Discord Channel ID
+                        @if (IsDiscordDestinationConfigured)
+                        {
+                            <span class="text-success ms-2">(✅ Configured)</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger ms-2">(❌ Not configured)</span>
+                        }
+                    </label>
+                    <input class="form-control font-monospace" type="text" @bind="user.DiscordChannelId" placeholder="123456789012345678" />
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <strong>Bot Status</strong>
+                                <div class="text-muted small">Checks whether the bot can access the configured channel(s).</div>
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="CheckDiscordBotStatus" disabled="@isCheckingBotStatus">
+                                @if (isCheckingBotStatus)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    <span>Checking...</span>
+                                }
+                                else
+                                {
+                                    <span>Check Status</span>
+                                }
+                            </button>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(botStatusSummary))
+                        {
+                            <div class="mt-2 small">@botStatusSummary</div>
+                        }
+
+                        @if (botChannelChecks.Count > 0)
+                        {
+                            <div class="mt-2">
+                                @foreach (var kvp in botChannelChecks)
+                                {
+                                    <div class="small d-flex align-items-center">
+                                        <span class="font-monospace me-2">@kvp.Key</span>
+                                        @if (kvp.Value == true)
+                                        {
+                                            <span class="text-success">✅ Accessible</span>
+                                        }
+                                        else if (kvp.Value == false)
+                                        {
+                                            <span class="text-danger">❌ Not accessible</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">⏳ Unknown</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mb-4">
+                    <button type="button" class="btn btn-secondary" @onclick="TestWebhook" disabled="@((string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) || isTesting)">
+                        @if (isTesting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>Sending...</span>
+                        }
+                        else
+                        {
+                            <span>🧪 Send Test</span>
+                        }
+                    </button>
+                </div>
+
+                <h6 class="border-bottom pb-2 mt-4">🎮 Discord Server Invite</h6>
+                <div class="mb-3">
+                    <label class="form-label">Discord Server Invite URL</label>
+                    <input class="form-control font-monospace" type="text" @bind="user.DiscordInviteLink" placeholder="https://discord.gg/YOUR_INVITE_CODE" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(user.DiscordInviteLink))
+                {
+                    <div class="alert alert-success bg-opacity-10 border-success text-success">
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="fs-5 me-2">🎉</span>
+                            <strong>Invite Link Active!</strong>
+                        </div>
+                        <p class="mb-1 small">
+                            Viewers can use <code class="bg-dark text-light px-1 rounded">!discord</code> in chat to get your server invite.
+                        </p>
+                        <p class="mb-0 small opacity-75 font-monospace">
+                            Current invite: @user.DiscordInviteLink
+                        </p>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="d-flex gap-2">
+            @if (ShowCancel)
+            {
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+            }
+            <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                @if (isSaving)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <span>Save Changes</span>
+                }
+                else
+                {
+                    <span>💾 Save Changes</span>
+                }
+            </button>
+        </div>
+    </form>
+}
+
+@code {
+    [Parameter] public string UserId { get; set; } = string.Empty;
+    [Parameter] public bool ShowCancel { get; set; } = false;
+    [Parameter] public bool CloseOnSave { get; set; } = false;
+    [Parameter] public EventCallback OnCloseRequested { get; set; }
+
+    private User user = new User();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isTesting = false;
+    private string activeTab = "notifications";
+
+    private string selectedDesignerEventType = "stream_start";
+
+    private string? loadedUserId;
+
+    private bool isCheckingBotStatus = false;
+    private string botStatusSummary = string.Empty;
+    private Dictionary<string, bool?> botChannelChecks = new Dictionary<string, bool?>();
+
+    private readonly string[] supportedDiscordEventTypes = new[]
+    {
+        "stream_start",
+        "stream_end",
+        "death_milestone",
+        "swear_milestone",
+        "scream_milestone",
+        "channel_point_redemption",
+        "follower_goal",
+        "subscriber_milestone"
+    };
+
+    private string deathThresholdsString
+    {
+        get => string.Join(",", user.DiscordSettings.MilestoneThresholds.Deaths);
+        set => user.DiscordSettings.MilestoneThresholds.Deaths = ParseIntList(value);
+    }
+
+    private string swearThresholdsString
+    {
+        get => string.Join(",", user.DiscordSettings.MilestoneThresholds.Swears);
+        set => user.DiscordSettings.MilestoneThresholds.Swears = ParseIntList(value);
+    }
+
+    private string screamThresholdsString
+    {
+        get => string.Join(",", user.DiscordSettings.MilestoneThresholds.Screams);
+        set => user.DiscordSettings.MilestoneThresholds.Screams = ParseIntList(value);
+    }
+
+    private string botInviteUrl
+    {
+        get
+        {
+            var settings = DiscordBotOptions?.Value;
+            if (settings == null) return string.Empty;
+            if (string.IsNullOrWhiteSpace(settings.ApplicationId)) return string.Empty;
+
+            var permissions = string.IsNullOrWhiteSpace(settings.InvitePermissions) ? "" : $"&permissions={Uri.EscapeDataString(settings.InvitePermissions)}";
+            return $"https://discord.com/api/oauth2/authorize?client_id={Uri.EscapeDataString(settings.ApplicationId)}{permissions}&scope=bot%20applications.commands";
+        }
+    }
+
+    private bool HasBotConfiguration => !string.IsNullOrWhiteSpace(botInviteUrl);
+
+    private bool IsDiscordDestinationConfigured => !string.IsNullOrWhiteSpace(user.DiscordChannelId) || !string.IsNullOrWhiteSpace(user.DiscordWebhookUrl);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(UserId))
+        {
+            return;
+        }
+
+        if (string.Equals(loadedUserId, UserId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        isLoading = true;
+        try
+        {
+            var loadedUser = await UserRepository.GetUserAsync(UserId);
+            if (loadedUser != null)
+            {
+                user = loadedUser;
+
+                if (user.DiscordSettings == null) user.DiscordSettings = new DiscordSettings();
+                if (user.DiscordSettings.EnabledNotifications == null) user.DiscordSettings.EnabledNotifications = new DiscordEnabledNotifications();
+                if (user.DiscordSettings.MilestoneThresholds == null) user.DiscordSettings.MilestoneThresholds = new DiscordMilestoneThresholds();
+                if (user.DiscordSettings.MessageTemplates == null) user.DiscordSettings.MessageTemplates = new Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            loadedUserId = UserId;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading discord settings: {ex.Message}");
+
+            // Ensure we don't crash the UI if the load failed.
+            user ??= new User();
+            if (user.DiscordSettings == null) user.DiscordSettings = new DiscordSettings();
+            if (user.DiscordSettings.EnabledNotifications == null) user.DiscordSettings.EnabledNotifications = new DiscordEnabledNotifications();
+            if (user.DiscordSettings.MilestoneThresholds == null) user.DiscordSettings.MilestoneThresholds = new DiscordMilestoneThresholds();
+            if (user.DiscordSettings.MessageTemplates == null) user.DiscordSettings.MessageTemplates = new Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        isSaving = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            {
+                user.Features.DiscordWebhook = true;
+            }
+            else
+            {
+                user.Features.DiscordWebhook = false;
+            }
+
+            await UserRepository.SaveUserAsync(user);
+
+            if (CloseOnSave)
+            {
+                await Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving discord settings: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", "Failed to save settings. Please try again.");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task TestWebhook()
+    {
+        if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) return;
+
+        isTesting = true;
+        try
+        {
+            await DiscordService.SendTestNotificationAsync(user);
+            await JSRuntime.InvokeVoidAsync("alert", "Test notification sent successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send test notification: {ex.Message}");
+        }
+        finally
+        {
+            isTesting = false;
+        }
+    }
+
+    private async Task CopyBotInviteUrl()
+    {
+        if (string.IsNullOrWhiteSpace(botInviteUrl)) return;
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", botInviteUrl);
+        await JSRuntime.InvokeVoidAsync("alert", "Bot invite link copied!");
+    }
+
+    private async Task CheckDiscordBotStatus()
+    {
+        isCheckingBotStatus = true;
+        botStatusSummary = string.Empty;
+        botChannelChecks = new Dictionary<string, bool?>();
+
+        try
+        {
+            var channelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(user.DiscordChannelId))
+            {
+                channelIds.Add(user.DiscordChannelId.Trim());
+            }
+
+            if (user.DiscordSettings?.MessageTemplates != null)
+            {
+                foreach (var template in user.DiscordSettings.MessageTemplates.Values)
+                {
+                    if (!string.IsNullOrWhiteSpace(template?.ChannelIdOverride))
+                    {
+                        channelIds.Add(template.ChannelIdOverride.Trim());
+                    }
+                }
+            }
+
+            if (channelIds.Count == 0)
+            {
+                botStatusSummary = "No Channel ID configured yet. Add a Channel ID and re-check.";
+                return;
+            }
+
+            foreach (var channelId in channelIds)
+            {
+                botChannelChecks[channelId] = null;
+            }
+
+            foreach (var channelId in channelIds)
+            {
+                var ok = await DiscordService.ValidateDiscordChannelAsync(channelId);
+                botChannelChecks[channelId] = ok;
+            }
+
+            var allOk = botChannelChecks.Values.All(v => v == true);
+            var anyOk = botChannelChecks.Values.Any(v => v == true);
+
+            if (allOk)
+            {
+                botStatusSummary = "✅ Bot is active and can access all configured channels.";
+            }
+            else if (anyOk)
+            {
+                botStatusSummary = "⚠️ Bot can access some channels, but not all. Check Channel ID(s) and server permissions.";
+            }
+            else
+            {
+                botStatusSummary = "❌ Bot cannot access the configured channel(s). Make sure the bot is invited to the server and has Send Messages + Embed Links.";
+            }
+        }
+        catch (Exception ex)
+        {
+            botStatusSummary = $"❌ Status check failed: {ex.Message}";
+        }
+        finally
+        {
+            isCheckingBotStatus = false;
+        }
+    }
+
+    private List<int> ParseIntList(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new List<int>();
+
+        return value.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => int.TryParse(s, out _))
+            .Select(int.Parse)
+            .OrderBy(i => i)
+            .ToList();
+    }
+
+    private DiscordMessageTemplate GetOrCreateTemplate(string eventType)
+    {
+        if (user.DiscordSettings == null) user.DiscordSettings = new DiscordSettings();
+        if (user.DiscordSettings.MessageTemplates == null) user.DiscordSettings.MessageTemplates = new Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase);
+
+        if (!user.DiscordSettings.MessageTemplates.TryGetValue(eventType, out var template) || template == null)
+        {
+            template = new DiscordMessageTemplate();
+            user.DiscordSettings.MessageTemplates[eventType] = template;
+        }
+
+        return template;
+    }
+
+    private void ResetTemplate(string eventType)
+    {
+        if (user?.DiscordSettings?.MessageTemplates == null) return;
+        user.DiscordSettings.MessageTemplates.Remove(eventType);
+    }
+
+    private static string GetEventDisplayName(string eventType)
+    {
+        return eventType switch
+        {
+            "stream_start" => "Stream Start",
+            "stream_end" => "Stream End",
+            "death_milestone" => "Death Milestone",
+            "swear_milestone" => "Swear Milestone",
+            "scream_milestone" => "Scream Milestone",
+            "channel_point_redemption" => "Channel Point Redemption",
+            "follower_goal" => "Follower Goal",
+            "subscriber_milestone" => "Subscriber Milestone",
+            _ => eventType
+        };
+    }
+
+    private async Task Close()
+    {
+        if (OnCloseRequested.HasDelegate)
+        {
+            await OnCloseRequested.InvokeAsync();
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        await SaveSettings();
+    }
+}

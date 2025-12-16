@@ -243,7 +243,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Existing webhook configuration detected", cut.Markup);
+        Assert.Contains("Existing legacy Discord configuration detected", cut.Markup);
     }
 
     [Fact]
@@ -251,8 +251,11 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId };
-        user.Features.DiscordWebhook = true;
+        var user = new User
+        {
+            TwitchUserId = userId,
+            DiscordChannelId = "123456789012345678"
+        };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>
@@ -270,7 +273,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Enabled", cut.Markup);
+        Assert.Contains("Configured", cut.Markup);
     }
 
     [Fact]
@@ -279,7 +282,6 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         // Arrange
         var userId = "test-user-id";
         var user = new User { TwitchUserId = userId };
-        user.Features.DiscordWebhook = false;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>
@@ -297,7 +299,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Disabled", cut.Markup);
+        Assert.Contains("Not configured", cut.Markup);
     }
 
     [Fact]

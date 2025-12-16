@@ -99,6 +99,10 @@ namespace OmniForge.Infrastructure.Entities
 
             if (user.DiscordSettings.EnabledNotifications == null) user.DiscordSettings.EnabledNotifications = new DiscordEnabledNotifications();
             if (user.DiscordSettings.MilestoneThresholds == null) user.DiscordSettings.MilestoneThresholds = new DiscordMilestoneThresholds();
+            if (user.DiscordSettings.MessageTemplates == null)
+            {
+                user.DiscordSettings.MessageTemplates = new System.Collections.Generic.Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase);
+            }
 
             return user;
         }

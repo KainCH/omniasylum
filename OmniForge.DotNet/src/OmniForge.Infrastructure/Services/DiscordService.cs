@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Discord;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,6 +18,8 @@ namespace OmniForge.Infrastructure.Services
 {
     public class DiscordService : IDiscordService
     {
+        private static readonly Regex _templateTokenRegex = new Regex("{{\\s*(?<key>[a-zA-Z0-9_]+)\\s*}}", RegexOptions.Compiled);
+
         private readonly HttpClient _httpClient;
         private readonly ILogger<DiscordService> _logger;
         private readonly DiscordBotSettings _discordBotSettings;
@@ -48,18 +51,22 @@ namespace OmniForge.Infrastructure.Services
                 options
             );
 
-            await SendDiscordMessageAsync(user, payload, options);
+            var effectiveChannelId = string.IsNullOrWhiteSpace(user.DiscordChannelId) ? null : user.DiscordChannelId;
+            await SendDiscordMessageAsync(user, effectiveChannelId, payload, options);
         }
 
         public async Task SendNotificationAsync(User user, string eventType, object data)
         {
+            var template = GetMessageTemplate(user, eventType);
+            var effectiveChannelId = GetEffectiveChannelId(user, template);
+
             _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, ChannelId={ChannelId}, LegacyWebhookConfigured={LegacyWebhook}",
                 LogSanitizer.Sanitize(user.Username),
                 LogSanitizer.Sanitize(eventType),
-                string.IsNullOrEmpty(user.DiscordChannelId) ? "EMPTY" : LogSanitizer.Sanitize(user.DiscordChannelId),
+                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : LogSanitizer.Sanitize(effectiveChannelId),
                 !string.IsNullOrEmpty(user.DiscordWebhookUrl));
 
-            if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(effectiveChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
                 _logger.LogWarning("⚠️ No Discord destination configured for user {Username}", LogSanitizer.Sanitize(user.Username));
                 return;
@@ -79,6 +86,10 @@ namespace OmniForge.Infrastructure.Services
 
             // Use dynamic to access properties of the anonymous object or dictionary passed as data
             dynamic eventData = data;
+
+            // Build the token map once per event and apply templates (if set)
+            var (streamStartMentions, streamStartAllowedMentions) = eventType == "stream_start" ? BuildStreamStartMentions(user) : (null, AllowedMentions.None);
+            var tokens = BuildTemplateTokens(user, eventType, eventData, streamStartMentions);
 
             switch (eventType)
             {
@@ -105,9 +116,8 @@ namespace OmniForge.Infrastructure.Services
                     description = null;
                     color = 0x00FF00; // Green
 
-                    var (mentionContent, allowedMentions) = BuildStreamStartMentions(user);
-                    options.Content = mentionContent;
-                    options.AllowedMentions = allowedMentions;
+                    options.Content = streamStartMentions;
+                    options.AllowedMentions = streamStartAllowedMentions;
 
                     var streamTitle = !string.IsNullOrEmpty((string?)GetProperty(eventData, "title")) ? (string?)GetProperty(eventData, "title") : "Stream Title Not Set";
                     var gameName = !string.IsNullOrEmpty((string?)GetProperty(eventData, "game")) ? (string?)GetProperty(eventData, "game") : "Unknown Category";
@@ -153,9 +163,108 @@ namespace OmniForge.Infrastructure.Services
                     break;
             }
 
+            // Apply per-event template overrides (if provided). Defaults remain when templates are blank.
+            ApplyTemplateOverrides(template, ref title, ref description, options, tokens);
+
             options.Color = color;
             var payload = CreateDiscordPayload(title, description, user, options);
-            await SendDiscordMessageAsync(user, payload, options);
+            await SendDiscordMessageAsync(user, effectiveChannelId, payload, options);
+        }
+
+        private static DiscordMessageTemplate? GetMessageTemplate(User user, string eventType)
+        {
+            var templates = user.DiscordSettings?.MessageTemplates;
+            if (templates == null) return null;
+
+            return templates.TryGetValue(eventType, out var t) ? t : null;
+        }
+
+        private static string? GetEffectiveChannelId(User user, DiscordMessageTemplate? template)
+        {
+            var overrideId = template?.ChannelIdOverride;
+            if (!string.IsNullOrWhiteSpace(overrideId)) return overrideId.Trim();
+            if (!string.IsNullOrWhiteSpace(user.DiscordChannelId)) return user.DiscordChannelId.Trim();
+            return null;
+        }
+
+        private static Dictionary<string, string> BuildTemplateTokens(User user, string eventType, object eventData, string? streamStartMentions)
+        {
+            var twitchUrl = !string.IsNullOrWhiteSpace(user.Username) ? $"https://twitch.tv/{user.Username}" : string.Empty;
+
+            string GetValue(string key)
+            {
+                if (eventData == null) return string.Empty;
+
+                if (eventData is IDictionary<string, object> dict)
+                {
+                    return dict.TryGetValue(key, out var v) ? (v?.ToString() ?? string.Empty) : string.Empty;
+                }
+
+                if (eventData is JsonElement jsonElement)
+                {
+                    return jsonElement.TryGetProperty(key, out var v) ? (v.ToString() ?? string.Empty) : string.Empty;
+                }
+
+                var prop = eventData.GetType().GetProperty(key);
+                return prop?.GetValue(eventData)?.ToString() ?? string.Empty;
+            }
+
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["eventType"] = eventType,
+                ["displayName"] = user.DisplayName ?? string.Empty,
+                ["username"] = user.Username ?? string.Empty,
+                ["twitchUrl"] = twitchUrl,
+                ["streamStartMentions"] = streamStartMentions ?? string.Empty,
+
+                // Common event payload fields
+                ["count"] = GetValue("count"),
+                ["previousMilestone"] = GetValue("previousMilestone"),
+                ["title"] = GetValue("title"),
+                ["game"] = GetValue("game"),
+                ["thumbnailUrl"] = GetValue("thumbnailUrl"),
+                ["duration"] = GetValue("duration")
+            };
+        }
+
+        private string RenderTemplate(string template, IReadOnlyDictionary<string, string> tokens)
+        {
+            if (string.IsNullOrWhiteSpace(template)) return string.Empty;
+
+            return _templateTokenRegex.Replace(template, m =>
+            {
+                var key = m.Groups["key"].Value;
+                return tokens.TryGetValue(key, out var value) ? value : m.Value;
+            });
+        }
+
+        private void ApplyTemplateOverrides(DiscordMessageTemplate? template, ref string title, ref string? description, DiscordEmbedOptions options, IReadOnlyDictionary<string, string> tokens)
+        {
+            if (template == null) return;
+
+            if (!string.IsNullOrWhiteSpace(template.TitleTemplate))
+            {
+                var rendered = RenderTemplate(template.TitleTemplate, tokens).Trim();
+                if (!string.IsNullOrEmpty(rendered)) title = TrimToMax(rendered, 256);
+            }
+
+            if (!string.IsNullOrWhiteSpace(template.DescriptionTemplate))
+            {
+                var rendered = RenderTemplate(template.DescriptionTemplate, tokens).Trim();
+                description = string.IsNullOrEmpty(rendered) ? null : TrimToMax(rendered, 4096);
+            }
+
+            if (!string.IsNullOrWhiteSpace(template.ContentTemplate))
+            {
+                var rendered = RenderTemplate(template.ContentTemplate, tokens).Trim();
+                options.Content = string.IsNullOrEmpty(rendered) ? null : TrimToMax(rendered, 2000);
+            }
+        }
+
+        private static string TrimToMax(string value, int maxLength)
+        {
+            if (value.Length <= maxLength) return value;
+            return value.Substring(0, maxLength);
         }
 
         private static (string? content, AllowedMentions allowedMentions) BuildStreamStartMentions(User user)
@@ -284,10 +393,10 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task SendDiscordMessageAsync(User user, object embedPayload, DiscordEmbedOptions options)
+        private async Task SendDiscordMessageAsync(User user, string? effectiveChannelId, object embedPayload, DiscordEmbedOptions options)
         {
             // Preferred path: Bot token + channelId
-            if (!string.IsNullOrWhiteSpace(user.DiscordChannelId))
+            if (!string.IsNullOrWhiteSpace(effectiveChannelId))
             {
                 if (string.IsNullOrWhiteSpace(_discordBotSettings.BotToken))
                 {
@@ -298,7 +407,7 @@ namespace OmniForge.Infrastructure.Services
                 var embed = CreateDiscordNetEmbed(title: null, description: null, user: user, options: options, prebuiltWebhookPayload: embedPayload);
                 var components = CreateDiscordNetComponents(options);
                 await _discordBotClient.SendMessageAsync(
-                    user.DiscordChannelId,
+                    effectiveChannelId,
                     _discordBotSettings.BotToken,
                     options.Content,
                     embed,
