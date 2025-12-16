@@ -1,5 +1,37 @@
 window.overlayInterop = {
     init: function() {
+        // If OBS scene switching causes the browser source to be hidden/throttled,
+        // WebSocket messages and timers can effectively "catch up" when visible again.
+        // That can replay old alert audio. We add a short suppression window on resume.
+        const getResumeSilenceMs = () => {
+            const configured = Number(window.omniResumeSilenceMs);
+            return Number.isFinite(configured) && configured >= 0 ? configured : 1500;
+        };
+
+        const bumpResumeSilence = (reason) => {
+            const ms = getResumeSilenceMs();
+            const until = Date.now() + ms;
+
+            window.omniOverlayResumeSuppressUntil = until;
+
+            // Also extend the general silence window so all audio systems agree.
+            if (!window.omniSilenceUntil || window.omniSilenceUntil < until) {
+                window.omniSilenceUntil = until;
+            }
+
+            console.log(`🔇 Resume suppression active for ${ms}ms (${reason})`);
+        };
+
+        if (!window.__omniOverlayVisibilityHandlerRegistered) {
+            window.__omniOverlayVisibilityHandlerRegistered = true;
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    bumpResumeSilence('visibilitychange');
+                }
+            });
+        }
+
         if (window.asylumEffects) {
             console.log("AsylumEffects initialized via Interop");
         } else {
@@ -11,14 +43,30 @@ window.overlayInterop = {
             console.warn("NotificationAudio not found! Audio will not play.");
         }
 
-        // Silence alerts briefly on initial load to avoid replay sounds on refresh
-        if (!window.omniSilenceUntil) {
-            const silenceMs = window.omniSilenceInitialMs || 3000;
-            window.omniSilenceUntil = Date.now() + silenceMs;
+        // Silence alerts briefly on initial load and on resume.
+        // overlay.html sets an initial silence window, but other entry points may not.
+        const initialMs = Number(window.omniSilenceInitialMs) || 3000;
+        const initialUntil = Date.now() + initialMs;
+        if (!window.omniSilenceUntil || window.omniSilenceUntil < initialUntil) {
+            window.omniSilenceUntil = initialUntil;
         }
+
+        bumpResumeSilence('init');
     },
 
     triggerAlert: function(type, payload) {
+        // If the page is not visible, ignore alerts (prevents backlog replay on resume).
+        if (document.visibilityState !== 'visible') {
+            console.log("🔇 Alert suppressed because overlay is not visible:", type);
+            return;
+        }
+
+        // Suppress alerts briefly after resume to avoid playing buffered messages.
+        if (window.omniOverlayResumeSuppressUntil && Date.now() < window.omniOverlayResumeSuppressUntil) {
+            console.log("🔇 Alert suppressed during resume window:", type);
+            return;
+        }
+
         // Skip playing alerts if we're still in the initial silence window
         if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
             console.log("🔇 Alert suppressed during initial silence window:", type);
