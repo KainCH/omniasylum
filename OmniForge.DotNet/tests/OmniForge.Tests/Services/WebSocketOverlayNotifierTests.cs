@@ -1,7 +1,11 @@
 using Moq;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Services;
+using System.Collections.Generic;
+using System.Text.Json;
 using Xunit;
 
 namespace OmniForge.Tests.Services;
@@ -9,12 +13,33 @@ namespace OmniForge.Tests.Services;
 public class WebSocketOverlayNotifierTests
 {
     private readonly Mock<IWebSocketOverlayManager> _mockWebSocketManager;
+    private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
+    private readonly Mock<IServiceScope> _mockScope;
+    private readonly Mock<IServiceProvider> _mockServiceProvider;
+    private readonly Mock<IAlertRepository> _mockAlertRepository;
+    private readonly Mock<ILogger<WebSocketOverlayNotifier>> _mockLogger;
     private readonly WebSocketOverlayNotifier _notifier;
 
     public WebSocketOverlayNotifierTests()
     {
         _mockWebSocketManager = new Mock<IWebSocketOverlayManager>();
-        _notifier = new WebSocketOverlayNotifier(_mockWebSocketManager.Object);
+        _mockScopeFactory = new Mock<IServiceScopeFactory>();
+        _mockScope = new Mock<IServiceScope>();
+        _mockServiceProvider = new Mock<IServiceProvider>();
+        _mockAlertRepository = new Mock<IAlertRepository>();
+        _mockLogger = new Mock<ILogger<WebSocketOverlayNotifier>>();
+
+        _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
+        _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
+        _mockServiceProvider.Setup(x => x.GetService(typeof(IAlertRepository))).Returns(_mockAlertRepository.Object);
+
+        // Default: no templates available, notifier should passthrough.
+        _mockAlertRepository.Setup(x => x.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
+
+        _notifier = new WebSocketOverlayNotifier(
+            _mockWebSocketManager.Object,
+            _mockScopeFactory.Object,
+            _mockLogger.Object);
     }
 
     [Fact]
@@ -234,6 +259,42 @@ public class WebSocketOverlayNotifierTests
         // Assert
         _mockWebSocketManager.Verify(
             m => m.SendToUserAsync(userId, "customAlert", It.IsAny<object>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyCustomAlertAsync_WhenMatchingAlertExists_ShouldHydrateTemplateAndSubstitutePlaceholders()
+    {
+        // Arrange
+        var userId = "user123";
+        var alertType = "subscription";
+
+        _mockAlertRepository.Setup(x => x.GetAlertsAsync(userId)).ReturnsAsync(new List<Alert>
+        {
+            new Alert
+            {
+                Id = "user123_alert1",
+                UserId = userId,
+                Type = alertType,
+                Name = "Sub Alert",
+                TextPrompt = "Thanks [User] for the [Tier]!",
+                IsEnabled = true,
+                Effects = "{}"
+            }
+        });
+
+        var data = new { displayName = "Alice", tier = "Tier 1" };
+
+        // Act
+        await _notifier.NotifyCustomAlertAsync(userId, alertType, data);
+
+        // Assert
+        _mockWebSocketManager.Verify(
+            m => m.SendToUserAsync(userId, "customAlert",
+                It.Is<object>(o =>
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("subscription") &&
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("Thanks Alice for the Tier 1!")
+                )),
             Times.Once);
     }
 

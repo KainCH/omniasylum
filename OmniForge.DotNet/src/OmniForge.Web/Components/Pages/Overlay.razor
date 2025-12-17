@@ -3,6 +3,7 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
 @inject NavigationManager NavigationManager
 @inject ICounterRepository CounterRepository
@@ -601,7 +602,72 @@ else
              }
         }
 
+        // Apply placeholder substitution after we have merged event data.
+        if (payload.TryGetValue("textPrompt", out var promptObj) && promptObj is string templatePrompt && !string.IsNullOrWhiteSpace(templatePrompt))
+        {
+            payload["textPrompt"] = ApplyTemplate(templatePrompt, payload);
+        }
+
         await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+    }
+
+    private static string ApplyTemplate(string template, IReadOnlyDictionary<string, object> payload)
+    {
+        string GetString(string key)
+        {
+            if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
+            if (value is JsonElement je)
+            {
+                if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
+                return je.ToString();
+            }
+            return value.ToString() ?? string.Empty;
+        }
+
+        string GetNumberString(string key)
+        {
+            if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
+            if (value is JsonElement je)
+            {
+                if (je.ValueKind == JsonValueKind.Number) return je.ToString();
+                if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
+                return je.ToString();
+            }
+            return value.ToString() ?? string.Empty;
+        }
+
+        // Build token map (case-insensitive).
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["User"] = FirstNonEmpty(GetString("user"), GetString("displayName"), GetString("name"), GetString("gifterName"), GetString("raiderName")),
+            ["Tier"] = GetString("tier"),
+            ["Months"] = GetNumberString("months"),
+            ["Amount"] = FirstNonEmpty(GetNumberString("amount"), GetNumberString("bits")),
+            ["Viewers"] = FirstNonEmpty(GetNumberString("viewers"), GetNumberString("viewerCount")),
+            ["Recipient"] = FirstNonEmpty(GetString("recipientName"), GetString("recipient")),
+            ["Message"] = GetString("message"),
+            ["Level"] = GetNumberString("level"),
+            ["Percent"] = GetNumberString("percent")
+        };
+
+        return Regex.Replace(template, "\\[(?<token>[A-Za-z]+)\\]", match =>
+        {
+            var token = match.Groups["token"].Value;
+            if (tokens.TryGetValue(token, out var replacement) && !string.IsNullOrEmpty(replacement))
+            {
+                return replacement;
+            }
+            return match.Value;
+        });
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+        }
+        return string.Empty;
     }
 
     private string GetPositionStyle()

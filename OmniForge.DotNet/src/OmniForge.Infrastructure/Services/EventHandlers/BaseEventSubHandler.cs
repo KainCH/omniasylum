@@ -37,11 +37,28 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         protected bool TryGetBroadcasterId(JsonElement eventData, out string? broadcasterId)
         {
             broadcasterId = null;
+            eventData = UnwrapEvent(eventData);
             if (eventData.TryGetProperty("broadcaster_user_id", out var idProp))
             {
                 broadcasterId = idProp.GetString();
             }
             return broadcasterId != null;
+        }
+
+        /// <summary>
+        /// EventSub notifications may arrive as the full envelope ({ subscription, event }).
+        /// Handlers typically care about the inner "event" object.
+        /// </summary>
+        protected static JsonElement UnwrapEvent(JsonElement eventData)
+        {
+            if (eventData.ValueKind == JsonValueKind.Object &&
+                eventData.TryGetProperty("event", out var evt) &&
+                evt.ValueKind == JsonValueKind.Object)
+            {
+                return evt;
+            }
+
+            return eventData;
         }
 
         /// <summary>

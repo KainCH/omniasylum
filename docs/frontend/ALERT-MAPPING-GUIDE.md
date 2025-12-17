@@ -266,15 +266,15 @@ API/
 {
   "mappings": {
     "channel.follow": "follow-alert-id",
-    "channel.subscribe": "sub-alert-id"
+    "chat_notification_subscribe": "sub-alert-id"
   },
   "defaultMappings": {
     "channel.follow": "follow",
-    "channel.subscribe": "subscription"
+    "chat_notification_subscribe": "subscription"
   },
   "availableEvents": [
     "channel.follow",
-    "channel.subscribe",
+    "chat_notification_subscribe",
     "channel.subscription.gift",
     "channel.subscription.message",
     "channel.cheer",
@@ -288,7 +288,7 @@ API/
 ```json
 {
   "channel.follow": "custom-follow-alert-id",
-  "channel.subscribe": "custom-sub-alert-id"
+  "chat_notification_subscribe": "custom-sub-alert-id"
 }
 ```
 

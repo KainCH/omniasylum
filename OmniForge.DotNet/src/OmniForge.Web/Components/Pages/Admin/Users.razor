@@ -144,10 +144,10 @@
                                     <button class="btn btn-sm btn-secondary" @onclick="() => OpenAlertSettings(user)" title="Alert Settings">
                                         <i class="bi bi-megaphone"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenDiscordSettings(user)" title="Discord Settings">
+                                    <button class="btn btn-sm btn-secondary" @onclick="@(() => NavigationManager.NavigateTo($"/admin/users/{user.TwitchUserId}/discord"))" title="Discord Settings">
                                         <i class="bi bi-discord"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-secondary" @onclick="() => OpenSeriesSettings(user)" title="Series Saves">
+                                    <button class="btn btn-sm btn-secondary" @onclick="@(() => NavigationManager.NavigateTo($"/admin/users/{user.TwitchUserId}/series"))" title="Series Saves">
                                         <i class="bi bi-save"></i>
                                     </button>
                                     @if (user.Role != "admin" && currentUser != null && AdminService.CanDeleteUser(user.TwitchUserId, currentUser))
@@ -178,16 +178,6 @@
     @if (selectedAlertUser != null)
     {
         <AlertsManagerModal @bind-Show="showAlertModal" UserId="@selectedAlertUser.TwitchUserId" />
-    }
-
-    @if (selectedDiscordUser != null)
-    {
-        <DiscordWebhookSettingsModal @bind-Show="showDiscordModal" UserId="@selectedDiscordUser.TwitchUserId" />
-    }
-
-    @if (selectedSeriesUser != null)
-    {
-        <SeriesSaveManagerModal @bind-Show="showSeriesModal" UserId="@selectedSeriesUser.TwitchUserId" />
     }
 
     @* Delete Confirmation Modal *@
@@ -239,12 +229,6 @@
 
     private bool showAlertModal = false;
     private User? selectedAlertUser;
-
-    private bool showDiscordModal = false;
-    private User? selectedDiscordUser;
-
-    private bool showSeriesModal = false;
-    private User? selectedSeriesUser;
 
     private bool showDeleteConfirmModal = false;
     private User? userToDelete;
@@ -326,18 +310,6 @@
     {
         selectedAlertUser = user;
         showAlertModal = true;
-    }
-
-    private void OpenDiscordSettings(User user)
-    {
-        selectedDiscordUser = user;
-        showDiscordModal = true;
-    }
-
-    private void OpenSeriesSettings(User user)
-    {
-        selectedSeriesUser = user;
-        showSeriesModal = true;
     }
 
     private void ConfirmDeleteUser(User user)

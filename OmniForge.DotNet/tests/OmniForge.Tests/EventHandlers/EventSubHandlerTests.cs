@@ -415,7 +415,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
         private readonly Mock<ILogger<FollowHandler>> _mockLogger;
-        private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IAlertEventRouter> _mockAlertEventRouter;
         private readonly FollowHandler _handler;
 
         public FollowHandlerTests()
@@ -424,11 +424,11 @@ namespace OmniForge.Tests.EventHandlers
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
             _mockLogger = new Mock<ILogger<FollowHandler>>();
-            _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockAlertEventRouter = new Mock<IAlertEventRouter>();
 
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
-            _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(_mockOverlayNotifier.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IAlertEventRouter))).Returns(_mockAlertEventRouter.Object);
 
             _handler = new FollowHandler(_mockScopeFactory.Object, _mockLogger.Object);
         }
@@ -444,7 +444,7 @@ namespace OmniForge.Tests.EventHandlers
         {
             var eventData = JsonDocument.Parse("{}").RootElement;
             await _handler.HandleAsync(eventData);
-            _mockOverlayNotifier.Verify(x => x.NotifyFollowerAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockAlertEventRouter.Verify(x => x.RouteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
         }
 
         [Fact]
@@ -457,7 +457,53 @@ namespace OmniForge.Tests.EventHandlers
 
             await _handler.HandleAsync(eventData);
 
-            _mockOverlayNotifier.Verify(x => x.NotifyFollowerAsync("123", "NewFollower"), Times.Once);
+            _mockAlertEventRouter.Verify(x => x.RouteAsync(
+                "123",
+                "channel.follow",
+                "follow",
+                It.Is<object>(o => JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("NewFollower"))),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenEnvelopeFollowReceived_ShouldNotifyOverlay()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""subscription"": {
+                    ""id"": ""f1c2a387-161a-49f9-a165-0f21d7a4e1c4"",
+                    ""type"": ""channel.follow"",
+                    ""version"": ""2"",
+                    ""status"": ""enabled"",
+                    ""cost"": 0,
+                    ""condition"": {
+                        ""broadcaster_user_id"": ""1337"",
+                        ""moderator_user_id"": ""1337""
+                    },
+                    ""transport"": {
+                        ""method"": ""webhook"",
+                        ""callback"": ""https://example.com/webhooks/callback""
+                    },
+                    ""created_at"": ""2019-11-16T10:11:12.634234626Z""
+                },
+                ""event"": {
+                    ""user_id"": ""1234"",
+                    ""user_login"": ""cool_user"",
+                    ""user_name"": ""Cool_User"",
+                    ""broadcaster_user_id"": ""1337"",
+                    ""broadcaster_user_login"": ""cooler_user"",
+                    ""broadcaster_user_name"": ""Cooler_User"",
+                    ""followed_at"": ""2020-07-15T18:16:11.17106713Z""
+                }
+            }").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockAlertEventRouter.Verify(x => x.RouteAsync(
+                "1337",
+                "channel.follow",
+                "follow",
+                It.Is<object>(o => JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("Cool_User"))),
+                Times.Once);
         }
 
         [Fact]
@@ -469,68 +515,75 @@ namespace OmniForge.Tests.EventHandlers
 
             await _handler.HandleAsync(eventData);
 
-            _mockOverlayNotifier.Verify(x => x.NotifyFollowerAsync("123", "Someone"), Times.Once);
+            _mockAlertEventRouter.Verify(x => x.RouteAsync(
+                "123",
+                "channel.follow",
+                "follow",
+                It.Is<object>(o => JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("Someone"))),
+                Times.Once);
         }
     }
 
-    public class SubscribeHandlerTests
+    public class ChatNotificationEventSubHandlerTests
     {
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
-        private readonly Mock<ILogger<SubscribeHandler>> _mockLogger;
+        private readonly Mock<ILogger<ChatNotificationHandler>> _mockLogger;
+        private readonly Mock<IDiscordInviteSender> _mockDiscordInviteSender;
+        private readonly Mock<IAlertEventRouter> _mockAlertEventRouter;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
-        private readonly SubscribeHandler _handler;
+        private readonly ChatNotificationHandler _handler;
 
-        public SubscribeHandlerTests()
+        public ChatNotificationEventSubHandlerTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
-            _mockLogger = new Mock<ILogger<SubscribeHandler>>();
+            _mockLogger = new Mock<ILogger<ChatNotificationHandler>>();
+            _mockDiscordInviteSender = new Mock<IDiscordInviteSender>();
+            _mockAlertEventRouter = new Mock<IAlertEventRouter>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
 
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IAlertEventRouter))).Returns(_mockAlertEventRouter.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(_mockOverlayNotifier.Object);
 
-            _handler = new SubscribeHandler(_mockScopeFactory.Object, _mockLogger.Object);
+            _handler = new ChatNotificationHandler(_mockScopeFactory.Object, _mockLogger.Object, _mockDiscordInviteSender.Object);
         }
 
         [Fact]
-        public void SubscriptionType_ShouldBeChannelSubscribe()
+        public void SubscriptionType_ShouldBeChannelChatNotification()
         {
-            Assert.Equal("channel.subscribe", _handler.SubscriptionType);
+            Assert.Equal("channel.chat.notification", _handler.SubscriptionType);
         }
 
         [Fact]
-        public async Task HandleAsync_WhenSubscribeReceived_ShouldNotifyWithTier()
+        public async Task HandleAsync_WhenResubUsesSubPlan_ShouldRouteWithReadableTierAndMonths()
         {
             var eventData = JsonDocument.Parse(@"{
-                ""broadcaster_user_id"": ""123"",
-                ""user_name"": ""NewSub"",
-                ""tier"": ""2000"",
-                ""is_gift"": false
+                ""broadcaster_user_id"": ""1971641"",
+                ""chatter_user_name"": ""viewer23"",
+                ""notice_type"": ""resub"",
+                ""message"": { ""text"": """", ""fragments"": [] },
+                ""resub"": {
+                    ""cumulative_months"": 10,
+                    ""sub_plan"": ""1000"",
+                    ""is_gift"": false
+                }
             }").RootElement;
 
             await _handler.HandleAsync(eventData);
 
-            _mockOverlayNotifier.Verify(x => x.NotifySubscriberAsync("123", "NewSub", "Tier 2", false), Times.Once);
-        }
-
-        [Fact]
-        public async Task HandleAsync_WhenGiftSub_ShouldMarkAsGift()
-        {
-            var eventData = JsonDocument.Parse(@"{
-                ""broadcaster_user_id"": ""123"",
-                ""user_name"": ""GiftedSub"",
-                ""tier"": ""1000"",
-                ""is_gift"": true
-            }").RootElement;
-
-            await _handler.HandleAsync(eventData);
-
-            _mockOverlayNotifier.Verify(x => x.NotifySubscriberAsync("123", "GiftedSub", "Tier 1", true), Times.Once);
+            _mockAlertEventRouter.Verify(x => x.RouteAsync(
+                "1971641",
+                "chat_notification_resub",
+                "resub",
+                It.Is<object>(o =>
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("Tier 1") &&
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("10"))),
+                Times.Once);
         }
     }
 

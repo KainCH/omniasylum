@@ -1,0 +1,362 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject ISeriesRepository SeriesRepository
+@inject ICounterRepository CounterRepository
+@inject IOverlayNotifier OverlayNotifier
+
+@if (isLoading)
+{
+    <div class="text-center p-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>@successMessage
+            <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+            <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+        </div>
+    }
+
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        Manage saved counter states for different game series. Save your current counters, load previous saves, or update existing saves.
+    </div>
+
+    <div class="card bg-success bg-opacity-10 border-success mb-3">
+        <div class="card-header bg-success bg-opacity-25">
+            <i class="bi bi-plus-circle me-2"></i>Create New Save
+        </div>
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <input type="text" class="form-control" placeholder="Series Name (e.g., Dark Souls Run)"
+                           @bind="newSeriesName" @bind:event="oninput" maxlength="100" />
+                </div>
+                <div class="col-md-5">
+                    <input type="text" class="form-control" placeholder="Description (optional)"
+                           @bind="newSeriesDescription" @bind:event="oninput" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-success w-100" @onclick="CreateNewSave"
+                            disabled="@(string.IsNullOrWhiteSpace(newSeriesName) || isSaving)">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-save me-1"></i>
+                        }
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (seriesList.Count == 0)
+    {
+        <div class="text-center text-muted p-4">
+            <i class="bi bi-folder2-open fs-1 d-block mb-2"></i>
+            No saved series yet. Create your first save above!
+        </div>
+    }
+    else
+    {
+        <h6 class="mb-3"><i class="bi bi-collection me-2"></i>Saved Series (@seriesList.Count)</h6>
+        <div class="list-group">
+            @foreach (var series in seriesList.OrderByDescending(s => s.LastUpdated))
+            {
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">
+                                @series.Name
+                                @if (series.IsActive)
+                                {
+                                    <span class="badge bg-primary ms-2">Active</span>
+                                }
+                            </h6>
+                            @if (!string.IsNullOrEmpty(series.Description))
+                            {
+                                <p class="mb-1 text-muted small">@series.Description</p>
+                            }
+                            <div class="d-flex gap-3 mt-2 flex-wrap">
+                                <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Deaths: @(series.Snapshot?.Deaths ?? 0)</span>
+                                <span class="badge bg-warning text-dark"><i class="bi bi-chat-dots me-1"></i>Swears: @(series.Snapshot?.Swears ?? 0)</span>
+                                <span class="badge bg-info text-dark"><i class="bi bi-emoji-dizzy me-1"></i>Screams: @(series.Snapshot?.Screams ?? 0)</span>
+                                @if ((series.Snapshot?.Bits ?? 0) > 0)
+                                {
+                                    <span class="badge bg-secondary"><i class="bi bi-gem me-1"></i>Bits: @(series.Snapshot?.Bits ?? 0)</span>
+                                }
+                            </div>
+                            <small class="text-muted">
+                                Saved: @series.LastUpdated.ToLocalTime().ToString("g")
+                            </small>
+                        </div>
+                        <div class="btn-group-vertical btn-group-sm">
+                            <button class="btn btn-outline-primary" @onclick="() => BeginAction(series, PendingAction.Load)" disabled="@isProcessing" title="Load this save">
+                                <i class="bi bi-box-arrow-in-down"></i> Load
+                            </button>
+                            <button class="btn btn-outline-warning" @onclick="() => BeginAction(series, PendingAction.Overwrite)" disabled="@isProcessing" title="Overwrite with current counters">
+                                <i class="bi bi-arrow-repeat"></i> Overwrite
+                            </button>
+                            <button class="btn btn-outline-danger" @onclick="() => BeginAction(series, PendingAction.Delete)" disabled="@isProcessing" title="Delete this save">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (pendingSeries != null && string.Equals(pendingSeries.Id, series.Id, StringComparison.Ordinal) && pendingAction != PendingAction.None)
+                    {
+                        <div class="mt-3 border rounded p-3 bg-body-tertiary">
+                            @switch (pendingAction)
+                            {
+                                case PendingAction.Load:
+                                    <div>
+                                        <div class="fw-bold mb-2"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Load</div>
+                                        <p class="mb-2">Load <strong>"@series.Name"</strong>? This will replace current counter values.</p>
+                                    </div>
+                                    break;
+                                case PendingAction.Overwrite:
+                                    <div>
+                                        <div class="fw-bold mb-2"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Overwrite</div>
+                                        <p class="mb-2">Overwrite <strong>"@series.Name"</strong> with current counter values?</p>
+                                    </div>
+                                    break;
+                                case PendingAction.Delete:
+                                    <div>
+                                        <div class="fw-bold mb-2 text-danger"><i class="bi bi-trash me-2"></i>Confirm Delete</div>
+                                        <p class="mb-2">Delete <strong>"@series.Name"</strong>? This cannot be undone.</p>
+                                    </div>
+                                    break;
+                            }
+
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-secondary" @onclick="CancelAction" disabled="@isProcessing">Cancel</button>
+                                <button type="button" class="btn @(pendingAction == PendingAction.Delete ? "btn-danger" : "btn-warning")" @onclick="ConfirmPendingAction" disabled="@isProcessing">
+                                    @if (isProcessing)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    @(pendingAction == PendingAction.Delete ? "Delete" : "Confirm")
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string UserId { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnSeriesLoaded { get; set; }
+
+    private enum PendingAction
+    {
+        None,
+        Load,
+        Overwrite,
+        Delete
+    }
+
+    private List<Series> seriesList = new();
+    private bool isLoading = false;
+    private bool isSaving = false;
+    private bool isProcessing = false;
+    private string? successMessage;
+    private string? errorMessage;
+
+    private string newSeriesName = string.Empty;
+    private string newSeriesDescription = string.Empty;
+
+    private string? loadedUserId;
+    private PendingAction pendingAction = PendingAction.None;
+    private Series? pendingSeries;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(UserId))
+        {
+            return;
+        }
+
+        if (string.Equals(loadedUserId, UserId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        loadedUserId = UserId;
+        await LoadSeriesList();
+    }
+
+    private async Task LoadSeriesList()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            var series = await SeriesRepository.GetSeriesAsync(UserId);
+            seriesList = series.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load series: {ex.Message}";
+            seriesList = new List<Series>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task CreateNewSave()
+    {
+        if (string.IsNullOrWhiteSpace(newSeriesName)) return;
+
+        isSaving = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            var currentCounters = await CounterRepository.GetCountersAsync(UserId);
+            var series = new Series
+            {
+                UserId = UserId,
+                Name = newSeriesName.Trim(),
+                Description = newSeriesDescription?.Trim() ?? string.Empty,
+                Snapshot = currentCounters ?? new Counter { TwitchUserId = UserId },
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUpdated = DateTimeOffset.UtcNow,
+                IsActive = false
+            };
+
+            await SeriesRepository.CreateSeriesAsync(series);
+
+            successMessage = $"Series '{newSeriesName}' saved successfully!";
+            newSeriesName = string.Empty;
+            newSeriesDescription = string.Empty;
+            await LoadSeriesList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error saving series: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void BeginAction(Series series, PendingAction action)
+    {
+        pendingSeries = series;
+        pendingAction = action;
+    }
+
+    private void CancelAction()
+    {
+        pendingSeries = null;
+        pendingAction = PendingAction.None;
+    }
+
+    private async Task ConfirmPendingAction()
+    {
+        if (pendingSeries == null || pendingAction == PendingAction.None) return;
+
+        isProcessing = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            switch (pendingAction)
+            {
+                case PendingAction.Load:
+                    await ConfirmLoad(pendingSeries);
+                    break;
+                case PendingAction.Overwrite:
+                    await ConfirmOverwrite(pendingSeries);
+                    break;
+                case PendingAction.Delete:
+                    await ConfirmDelete(pendingSeries);
+                    break;
+            }
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task ConfirmLoad(Series series)
+    {
+        var restoredCounter = new Counter
+        {
+            TwitchUserId = UserId,
+            Deaths = series.Snapshot.Deaths,
+            Swears = series.Snapshot.Swears,
+            Screams = series.Snapshot.Screams,
+            Bits = series.Snapshot.Bits,
+            CustomCounters = series.Snapshot.CustomCounters ?? new Dictionary<string, int>(),
+            LastUpdated = DateTimeOffset.UtcNow,
+            StreamStarted = null,
+            LastNotifiedStreamId = null
+        };
+
+        await CounterRepository.SaveCountersAsync(restoredCounter);
+        await OverlayNotifier.NotifyCounterUpdateAsync(UserId, restoredCounter);
+
+        series.IsActive = true;
+        series.LastUpdated = DateTimeOffset.UtcNow;
+        await SeriesRepository.UpdateSeriesAsync(series);
+
+        successMessage = $"Loaded '{series.Name}' successfully! Counters updated.";
+        CancelAction();
+        await LoadSeriesList();
+
+        if (OnSeriesLoaded.HasDelegate)
+        {
+            await OnSeriesLoaded.InvokeAsync();
+        }
+    }
+
+    private async Task ConfirmOverwrite(Series series)
+    {
+        var currentCounters = await CounterRepository.GetCountersAsync(UserId);
+
+        series.Snapshot = currentCounters ?? new Counter { TwitchUserId = UserId };
+        series.LastUpdated = DateTimeOffset.UtcNow;
+
+        await SeriesRepository.UpdateSeriesAsync(series);
+
+        successMessage = $"'{series.Name}' updated with current counter values!";
+        CancelAction();
+        await LoadSeriesList();
+    }
+
+    private async Task ConfirmDelete(Series series)
+    {
+        await SeriesRepository.DeleteSeriesAsync(UserId, series.Id);
+
+        successMessage = $"'{series.Name}' deleted successfully.";
+        CancelAction();
+        await LoadSeriesList();
+    }
+}

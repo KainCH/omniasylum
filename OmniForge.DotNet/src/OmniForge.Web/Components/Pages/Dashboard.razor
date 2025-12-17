@@ -86,9 +86,6 @@
                         }
                         <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
                     </button>
-                    <button class="btn-custom btn-series" @onclick="() => showSeriesSaves = true">
-                        <i class="bi bi-save"></i> Series Saves
-                    </button>
                     <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
@@ -189,7 +186,6 @@
                 <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
                 <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
-                <SeriesSaveManagerModal @bind-Show="showSeriesSaves" UserId="@TwitchUserId" OnSeriesLoaded="OnSeriesLoaded" />
             }
         </Authorized>
     </AuthorizeView>
@@ -209,7 +205,6 @@
     private bool showOverlaySettings = false;
     private bool showAlertsManager = false;
     private bool showAlertEffects = false;
-    private bool showSeriesSaves = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
     private Timer? _refreshTimer;
@@ -272,7 +267,7 @@
 
     private bool IsAnyModalOpen()
     {
-        return showOverlaySettings || showAlertsManager || showAlertEffects || showSeriesSaves;
+        return showOverlaySettings || showAlertsManager || showAlertEffects;
     }
 
     public void Dispose()
@@ -401,13 +396,4 @@
         }
     }
 
-    private async Task OnSeriesLoaded()
-    {
-        // Reload counters after a series is loaded
-        if (!string.IsNullOrEmpty(TwitchUserId))
-        {
-            counter = await CounterRepository.GetCountersAsync(TwitchUserId);
-            StateHasChanged();
-        }
-    }
 }

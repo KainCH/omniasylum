@@ -22,18 +22,30 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
         public override async Task HandleAsync(JsonElement eventData)
         {
-            if (!TryGetBroadcasterId(eventData, out var broadcasterId) || broadcasterId == null)
+            var payload = UnwrapEvent(eventData);
+
+            if (!TryGetBroadcasterId(payload, out var broadcasterId) || broadcasterId == null)
             {
                 return;
             }
 
-            string displayName = GetStringProperty(eventData, "user_name", "Someone");
+            string displayName = GetStringProperty(payload, "user_name", "Someone");
 
             Logger.LogInformation("New follower {DisplayName} for broadcaster {BroadcasterId}", displayName, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();
+            var alertRouter = scope.ServiceProvider.GetService<IAlertEventRouter>();
             var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
 
+            var alertData = new { user = displayName, displayName };
+
+            if (alertRouter != null)
+            {
+                await alertRouter.RouteAsync(broadcasterId, "channel.follow", "follow", alertData);
+                return;
+            }
+
+            // Fallback if alert router isn't available
             if (overlayNotifier != null)
             {
                 await overlayNotifier.NotifyFollowerAsync(broadcasterId, displayName);

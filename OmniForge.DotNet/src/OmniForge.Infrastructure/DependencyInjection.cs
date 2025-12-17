@@ -67,6 +67,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
             services.AddScoped<ISeriesRepository, SeriesRepository>();
+            services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
@@ -83,7 +84,6 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IEventSubHandler, StreamOnlineHandler>();
             services.AddScoped<IEventSubHandler, StreamOfflineHandler>();
             services.AddScoped<IEventSubHandler, FollowHandler>();
-            services.AddScoped<IEventSubHandler, SubscribeHandler>();
             services.AddScoped<IEventSubHandler, SubscriptionGiftHandler>();
             services.AddScoped<IEventSubHandler, SubscriptionMessageHandler>();
             services.AddScoped<IEventSubHandler, CheerHandler>();
