@@ -118,6 +118,35 @@
       pointer-events: none;
       z-index: 900;
     }
+
+    .interaction-banner {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%) scale(0.5);
+      background: rgba(0, 0, 0, 0.9);
+      border: 2px solid #d4af37;
+      border-radius: 12px;
+      padding: 12px 18px;
+      color: white;
+      font-size: 22px;
+      font-weight: bold;
+      opacity: 0;
+      transition: all 0.35s ease;
+      z-index: 950;
+      pointer-events: none;
+      min-width: 300px;
+      text-align: center;
+    }
+
+    .interaction-banner.show {
+      opacity: 1;
+      transform: translateX(-50%) scale(1);
+    }
+
+    .interaction-banner.hide {
+      opacity: 0;
+      transform: translateX(-50%) scale(0.5);
+    }
   </style>
 </head>
 
@@ -131,6 +160,8 @@
   <div id="overlay-container" class="counter-overlay">
     <!-- Counters will be injected here -->
   </div>
+
+  <div class="interaction-banner hide" id="interaction-banner"></div>
 
   <div class="counter-alert" id="alert-popup">
     <div class="alert-title" id="alert-title">ALERT</div>
@@ -255,6 +286,12 @@
           case 'ping':
             // Ignore ping messages
             break;
+          case 'customAlert':
+            // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
+            if (window.overlayInterop && data && data.alertType) {
+              window.overlayInterop.triggerAlert(data.alertType, data.data || {});
+            }
+            break;
           default:
             console.log("🔔 Alert message:", method, JSON.stringify(data));
             // Handle alerts
@@ -267,6 +304,7 @@
 
       function applySettings(settings) {
         const container = document.getElementById('overlay-container');
+        const interactionBanner = document.getElementById('interaction-banner');
 
         const scale = (settings && settings.scale != null) ? Number(settings.scale) : 1;
         const position = (settings && settings.position) ? String(settings.position) : 'top-right';
@@ -277,6 +315,11 @@
         container.style.left = '';
         container.style.right = '';
 
+        if (interactionBanner) {
+          interactionBanner.style.top = '';
+          interactionBanner.style.bottom = '';
+        }
+
         // Compute position + translate
         let translate = '';
         switch (position) {
@@ -284,33 +327,39 @@
             container.style.top = '20px';
             container.style.left = '20px';
             container.style.transformOrigin = 'top left';
+            if (interactionBanner) interactionBanner.style.bottom = '20px';
             break;
           case 'top-right':
             container.style.top = '20px';
             container.style.right = '20px';
             container.style.transformOrigin = 'top right';
+            if (interactionBanner) interactionBanner.style.bottom = '20px';
             break;
           case 'bottom-left':
             container.style.bottom = '20px';
             container.style.left = '20px';
             container.style.transformOrigin = 'bottom left';
+            if (interactionBanner) interactionBanner.style.top = '20px';
             break;
           case 'bottom-right':
             container.style.bottom = '20px';
             container.style.right = '20px';
             container.style.transformOrigin = 'bottom right';
+            if (interactionBanner) interactionBanner.style.top = '20px';
             break;
           case 'top-center':
             container.style.top = '20px';
             container.style.left = '50%';
             translate = 'translateX(-50%)';
             container.style.transformOrigin = 'top center';
+            if (interactionBanner) interactionBanner.style.bottom = '20px';
             break;
           case 'bottom-center':
             container.style.bottom = '20px';
             container.style.left = '50%';
             translate = 'translateX(-50%)';
             container.style.transformOrigin = 'bottom center';
+            if (interactionBanner) interactionBanner.style.top = '20px';
             break;
           case 'custom':
             // Custom positioning is handled elsewhere (if used)
@@ -320,6 +369,7 @@
             container.style.top = '20px';
             container.style.right = '20px';
             container.style.transformOrigin = 'top right';
+            if (interactionBanner) interactionBanner.style.bottom = '20px';
             break;
         }
 

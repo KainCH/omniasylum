@@ -273,11 +273,28 @@ else
                         <small>
                             <strong>Setup Instructions:</strong>
                             <ol class="mb-0 ps-3">
-                                <li>Create an app + bot in Discord Developer Portal</li>
-                                <li>Invite the bot to your server with Send Messages + Embed Links</li>
-                                <li>Enable Developer Mode in Discord</li>
+                                <li>
+                                    Install the OmniForge bot:
+                                    @if (HasBotConfiguration)
+                                    {
+                                        <a href="@botInviteUrl" target="_blank" rel="noopener noreferrer">click this invite link</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">(invite link not configured on the server yet)</span>
+                                    }
+                                </li>
+                                <li>In Discord: enable Developer Mode (User Settings → Advanced)</li>
                                 <li>Right-click the target channel → Copy Channel ID</li>
+                                <li>In OmniForge: paste the Channel ID and click Send Test</li>
                             </ol>
+
+                            <div class="mt-2">
+                                Want to see what the bot can do?
+                                <a href="https://github.com/KainCH/omniasylum/blob/main/docs/DISCORD-NOTIFICATIONS.md#bot-features" target="_blank" rel="noopener noreferrer">
+                                    View bot features
+                                </a>
+                            </div>
                         </small>
                     </div>
                 </div>

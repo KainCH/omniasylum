@@ -4,6 +4,10 @@ namespace OmniForge.Core.Entities
 {
     public class ChatCommandConfiguration
     {
+        // Max allowed numeric increment in chat for action-based commands.
+        // Default 1 preserves legacy behavior.
+        public int MaxIncrementAmount { get; set; } = 1;
+
         public Dictionary<string, ChatCommandDefinition> Commands { get; set; } = new Dictionary<string, ChatCommandDefinition>();
     }
 

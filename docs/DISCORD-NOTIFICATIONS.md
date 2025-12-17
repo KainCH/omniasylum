@@ -26,6 +26,23 @@ Then:
 
 That’s it — once configured, OmniForge will post to that channel.
 
+## Bot Features
+
+The OmniForge bot is used to post notifications into a Discord channel you choose. Common notification types include:
+
+- Stream start / stream end
+- Counter milestones (deaths, swears, screams)
+- Follower goal updates
+- Subscriber milestones
+- Channel point redemptions (when enabled)
+
+You can also:
+
+- Customize message templates per action (Message Designer)
+- Route different actions to different channels (per-action channel override)
+
+For setup help, see “Streamer Setup” above.
+
 ## Developer / Self-Hosting Notes
 
 If you are running your own OmniForge instance (not using the hosted bot), you’ll need your own Discord application/bot and to configure the bot token.

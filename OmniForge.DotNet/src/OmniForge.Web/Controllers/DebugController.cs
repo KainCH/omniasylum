@@ -17,18 +17,48 @@ namespace OmniForge.Web.Controllers
         private readonly IUserRepository _userRepository;
         private readonly IDiscordService _discordService;
         private readonly ISeriesRepository _seriesRepository;
+        private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<DebugController> _logger;
 
         public DebugController(
             IUserRepository userRepository,
             IDiscordService discordService,
             ISeriesRepository seriesRepository,
+            IOverlayNotifier overlayNotifier,
             ILogger<DebugController> logger)
         {
             _userRepository = userRepository;
             _discordService = discordService;
             _seriesRepository = seriesRepository;
+            _overlayNotifier = overlayNotifier;
             _logger = logger;
+        }
+
+        [HttpPost("interaction-banner")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> SendInteractionBanner([FromBody] InteractionBannerRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.TwitchUserId))
+            {
+                return BadRequest(new { success = false, error = "TwitchUserId is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.TextPrompt))
+            {
+                return BadRequest(new { success = false, error = "TextPrompt is required" });
+            }
+
+            var duration = request.DurationMs.HasValue ? Math.Clamp(request.DurationMs.Value, 500, 30000) : 5000;
+
+            _logger.LogInformation("🧪 DEBUG: Sending interaction banner to {TargetUserId}", LogSanitizer.Sanitize(request.TwitchUserId));
+
+            await _overlayNotifier.NotifyCustomAlertAsync(request.TwitchUserId, "interactionBanner", new
+            {
+                textPrompt = request.TextPrompt,
+                duration
+            });
+
+            return Ok(new { success = true, userId = request.TwitchUserId, duration });
         }
 
         [HttpPost("restore-series-save")]
@@ -231,6 +261,13 @@ namespace OmniForge.Web.Controllers
                 user = new { user.TwitchUserId, user.DiscordWebhookUrl }
             });
         }
+    }
+
+    public class InteractionBannerRequest
+    {
+        public string TwitchUserId { get; set; } = string.Empty;
+        public string TextPrompt { get; set; } = string.Empty;
+        public int? DurationMs { get; set; }
     }
 
     public class RestoreSeriesRequest

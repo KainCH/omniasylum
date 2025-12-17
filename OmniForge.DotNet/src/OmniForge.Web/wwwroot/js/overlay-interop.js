@@ -74,6 +74,15 @@ window.overlayInterop = {
         }
         console.log("Triggering alert:", type, payload);
 
+        // Interaction banners are UI-only and should not require an alert definition.
+        if (type === 'interactionBanner') {
+            const text = payload?.textPrompt || payload?.text || payload?.message;
+            if (text) {
+                this.showInteractionBanner(text, payload?.duration || 5000);
+            }
+            return;
+        }
+
         // Play audio if available
         if (window.notificationAudio) {
             // Map alert types to audio types if needed
@@ -163,6 +172,27 @@ window.overlayInterop = {
             banner.classList.remove('show');
             banner.classList.add('hide');
         }, 5000);
+    },
+
+    showInteractionBanner: function(text, durationMs) {
+        const banner = document.getElementById('interaction-banner');
+        if (!banner) return;
+
+        const safeDuration = Number(durationMs);
+        const duration = Number.isFinite(safeDuration) ? Math.max(500, safeDuration) : 5000;
+
+        banner.textContent = text;
+        banner.classList.remove('hide');
+        banner.classList.add('show');
+
+        if (banner.__omniInteractionTimer) {
+            clearTimeout(banner.__omniInteractionTimer);
+        }
+
+        banner.__omniInteractionTimer = setTimeout(() => {
+            banner.classList.remove('show');
+            banner.classList.add('hide');
+        }, duration);
     },
 
     triggerBitsGoalCelebration: function() {

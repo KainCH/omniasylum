@@ -54,6 +54,10 @@ namespace OmniForge.Tests
                     DiscordSettings = new DiscordSettings() // Ensure this is not null for milestone checks
                 });
 
+            // Default chat commands config
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(It.IsAny<string>()))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 1 });
+
             _handler = new ChatCommandProcessor(
                 _mockScopeFactory.Object,
                 _mockOverlayNotifier.Object,
@@ -280,6 +284,80 @@ namespace OmniForge.Tests
 
             // Assert
             Assert.Equal(11, counters.Deaths);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, counters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIncrementDeaths_ByAmount_WhenMod_AndWithinMax()
+        {
+            var userId = "user1";
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            var message = CreateMessage("!death+ 3", isMod: true);
+            var counters = new Counter { Deaths = 10 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            Assert.Equal(13, counters.Deaths);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldClampIncrementAmount_ToMax()
+        {
+            var userId = "user1";
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 5 });
+
+            var message = CreateMessage("!death+ 50", isMod: true);
+            var counters = new Counter { Deaths = 10 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            Assert.Equal(15, counters.Deaths);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIncrementMultipleCounters_ForActionCommand()
+        {
+            var userId = "user1";
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration
+                {
+                    MaxIncrementAmount = 10,
+                    Commands = new Dictionary<string, ChatCommandDefinition>
+                    {
+                        {
+                            "!both",
+                            new ChatCommandDefinition
+                            {
+                                Enabled = true,
+                                Permission = "moderator",
+                                Cooldown = 0,
+                                Action = "increment",
+                                Counter = "deaths, swears"
+                            }
+                        }
+                    }
+                });
+
+            var message = CreateMessage("!both 2", isMod: true);
+            var counters = new Counter { Deaths = 1, Swears = 2 };
+            _mockCounterRepository.Setup(x => x.GetCountersAsync(userId)).ReturnsAsync(counters);
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            Assert.Equal(3, counters.Deaths);
+            Assert.Equal(4, counters.Swears);
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(counters), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, counters), Times.Once);
             sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);

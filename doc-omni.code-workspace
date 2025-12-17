@@ -32,7 +32,9 @@
     },
     "javascript.preferences.quoteStyle": "single",
     "typescript.preferences.quoteStyle": "single",
-    "omnisharp.disableMSBuildDiagnosticWarning": true
+    "omnisharp.disableMSBuildDiagnosticWarning": true,
+    "dotnet.projects.enableAutomaticRestore": false,
+    "csharp.showOmnisharpLogOnError": false
   },
   "extensions": {
     "recommendations": [

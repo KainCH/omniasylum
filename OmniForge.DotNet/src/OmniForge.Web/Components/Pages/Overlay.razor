@@ -95,6 +95,9 @@ else
 
     <!-- Subscriber banner -->
     <div class="sub-banner" id="sub-banner"></div>
+
+    <!-- Interaction banner (admin-only feature for now) -->
+    <div class="interaction-banner hide" id="interaction-banner" style="@GetInteractionBannerPositionStyle()"></div>
 }
 
 <style>
@@ -207,6 +210,35 @@ else
     .counter-alert.hide {
         opacity: 0;
         transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    .interaction-banner {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%) scale(0.5);
+        background: rgba(0, 0, 0, 0.9);
+        border: 2px solid #d4af37;
+        border-radius: 12px;
+        padding: 12px 18px;
+        color: white;
+        font-size: 22px;
+        font-weight: bold;
+        opacity: 0;
+        transition: all 0.35s ease;
+        z-index: 950;
+        pointer-events: none;
+        min-width: 300px;
+        text-align: center;
+    }
+
+    .interaction-banner.show {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+    }
+
+    .interaction-banner.hide {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.5);
     }
 
     /* Pulse animation for counter updates */
@@ -487,6 +519,40 @@ else
 
     private async Task TriggerAlert(string type, object data)
     {
+        if (string.Equals(type, "interactionBanner", StringComparison.OrdinalIgnoreCase))
+        {
+            string? text = null;
+            int? duration = null;
+
+            try
+            {
+                if (data is JsonElement interactionJson)
+                {
+                    if (interactionJson.TryGetProperty("textPrompt", out var prompt))
+                    {
+                        text = prompt.GetString();
+                    }
+                    else if (interactionJson.TryGetProperty("text", out var textProp))
+                    {
+                        text = textProp.GetString();
+                    }
+
+                    if (interactionJson.TryGetProperty("duration", out var durationProp) && durationProp.ValueKind == JsonValueKind.Number)
+                    {
+                        duration = durationProp.GetInt32();
+                    }
+                }
+            }
+            catch { }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                await JSRuntime.InvokeVoidAsync("overlayInterop.showInteractionBanner", text, duration ?? 5000);
+            }
+
+            return;
+        }
+
         var alert = alerts.FirstOrDefault(a => a.Type == type && a.IsEnabled);
         if (alert == null) return;
 
@@ -584,6 +650,19 @@ else
         style += StreamStatus == "live" ? " opacity: 1;" : " opacity: 0;";
 
         return style;
+    }
+
+    private string GetInteractionBannerPositionStyle()
+    {
+        if (user?.OverlaySettings == null) return string.Empty;
+
+        var pos = (user.OverlaySettings.Position ?? "top-right").ToLowerInvariant();
+        var countersAreTop = pos.Contains("top");
+
+        // Banner should appear opposite the counters (top vs bottom).
+        return countersAreTop
+            ? "bottom: 20px;"
+            : "top: 20px;";
     }
 
     private string GetItemStyle()
