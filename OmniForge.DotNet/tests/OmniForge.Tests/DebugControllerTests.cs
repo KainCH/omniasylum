@@ -199,5 +199,125 @@ namespace OmniForge.Tests
             var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
             Assert.Equal("TwitchUserId and SeriesName are required", badRequestResult.Value);
         }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldReturnBadRequest_WhenTwitchUserIdMissing()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "",
+                TextPrompt = "Test prompt"
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            var value = badRequestResult.Value;
+            Assert.NotNull(value);
+            var errorProperty = value!.GetType().GetProperty("error");
+            Assert.NotNull(errorProperty);
+            Assert.Equal("TwitchUserId is required", errorProperty!.GetValue(value));
+        }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldReturnBadRequest_WhenTextPromptMissing()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "12345",
+                TextPrompt = ""
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            var value = badRequestResult.Value;
+            Assert.NotNull(value);
+
+            // Verify success is false and error message is set correctly
+            var successProperty = value!.GetType().GetProperty("success");
+            Assert.NotNull(successProperty);
+            Assert.False((bool)successProperty!.GetValue(value)!);
+
+            var errorProperty = value!.GetType().GetProperty("error");
+            Assert.NotNull(errorProperty);
+            Assert.Equal("TextPrompt is required", errorProperty!.GetValue(value));
+        }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldReturnOk_WhenValidRequest()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "12345",
+                TextPrompt = "Press F to pay respects",
+                DurationMs = 5000
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            Assert.IsType<OkObjectResult>(result);
+            _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "interactionBanner", It.IsAny<object>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldClampDuration_WhenTooLow()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "12345",
+                TextPrompt = "Test prompt",
+                DurationMs = 100 // Below minimum of 500
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var value = okResult.Value;
+            Assert.NotNull(value);
+            var durationProperty = value!.GetType().GetProperty("duration");
+            Assert.NotNull(durationProperty);
+            Assert.Equal(500, durationProperty!.GetValue(value)); // Should be clamped to minimum
+        }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldClampDuration_WhenTooHigh()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "12345",
+                TextPrompt = "Test prompt",
+                DurationMs = 50000 // Above maximum of 30000
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var value = okResult.Value;
+            Assert.NotNull(value);
+            var durationProperty = value!.GetType().GetProperty("duration");
+            Assert.NotNull(durationProperty);
+            Assert.Equal(30000, durationProperty!.GetValue(value)); // Should be clamped to maximum
+        }
+
+        [Fact]
+        public async Task SendInteractionBanner_ShouldUseDefaultDuration_WhenNotProvided()
+        {
+            var request = new InteractionBannerRequest
+            {
+                TwitchUserId = "12345",
+                TextPrompt = "Test prompt"
+                // DurationMs not set
+            };
+
+            var result = await _controller.SendInteractionBanner(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var value = okResult.Value;
+            Assert.NotNull(value);
+            var durationProperty = value!.GetType().GetProperty("duration");
+            Assert.NotNull(durationProperty);
+            Assert.Equal(5000, durationProperty!.GetValue(value)); // Default duration
+        }
     }
 }

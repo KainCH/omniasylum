@@ -1,171 +1,556 @@
 @page "/admin/debug"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Core.Utilities
+@using OmniForge.Web.Components.Shared
 @attribute [Authorize(Roles = "admin")]
 @inject IUserRepository UserRepository
 @inject IOverlayNotifier OverlayNotifier
+@inject IDiscordService DiscordService
 @inject IJSRuntime JSRuntime
+@inject ILogger<Debug> Logger
 
 <PageTitle>Admin - Debug</PageTitle>
 
 <div class="container">
-    <h1>Debug Tools</h1>
+    <h1>🛠️ Debug Tools</h1>
+    <p class="text-muted">Simulate events and test integrations without real Twitch/Discord activity.</p>
 
-    <div class="row mt-4">
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5>Webhook Tests</h5>
-                </div>
-                <div class="card-body">
-                    <p>Test saving a Discord webhook URL to the database.</p>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="testUserId" />
-                        <button class="btn btn-primary" @onclick="TestWebhookSave">Test Save</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(webhookResult))
-                    {
-                        <div class="alert alert-info">
-                            <pre>@webhookResult</pre>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
+    <!-- Tab Navigation -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "eventsub" ? "active" : "")"
+                    id="eventsub-tab"
+                    @onclick="@(() => activeTab = "eventsub")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "eventsub"))"
+                    type="button"
+                    role="tab"
+                    tabindex="@(activeTab == "eventsub" ? "0" : "-1")"
+                    aria-controls="eventsub-panel"
+                    aria-selected="@(activeTab == "eventsub" ? "true" : "false")">
+                <span class="me-1">📡</span> EventSub Testing
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "discord" ? "active" : "")"
+                    id="discord-tab"
+                    @onclick="@(() => activeTab = "discord")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "discord"))"
+                    type="button"
+                    role="tab"
+                    tabindex="@(activeTab == "discord" ? "0" : "-1")"
+                    aria-controls="discord-panel"
+                    aria-selected="@(activeTab == "discord" ? "true" : "false")">
+                <span class="me-1">🤖</span> Discord Bot
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "forge" ? "active" : "")"
+                    id="forge-tab"
+                    @onclick="@(() => activeTab = "forge")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "forge"))"
+                    type="button"
+                    role="tab"
+                    tabindex="@(activeTab == "forge" ? "0" : "-1")"
+                    aria-controls="forge-panel"
+                    aria-selected="@(activeTab == "forge" ? "true" : "false")">
+                <span class="me-1">🔥</span> Forge Testing
+            </button>
+        </li>
+    </ul>
 
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5>Stream Notification Tests</h5>
-                </div>
-                <div class="card-body">
-                    <p>Simulate a stream going live event.</p>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="notificationUserId" />
-                        <button class="btn btn-success" @onclick="TestStreamNotification">Trigger Live</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(notificationResult))
-                    {
-                        <div class="alert alert-info">
-                            @notificationResult
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- ARIA live region for screen reader tab change announcements -->
+    <p id="admin-debug-tab-status"
+       class="visually-hidden"
+       aria-live="polite"
+       role="status">
+        @(activeTab == "eventsub" ? "EventSub Testing tab selected"
+            : activeTab == "discord" ? "Discord Bot tab selected"
+            : activeTab == "forge" ? "Forge Testing tab selected"
+            : string.Empty)
+    </p>
 
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5>Asylum Effects Tests</h5>
+    <!-- Tab Content -->
+    <div class="tab-content">
+        <!-- EventSub Testing Tab -->
+        @if (activeTab == "eventsub")
+        {
+            <div class="tab-pane fade show active" id="eventsub-panel" role="tabpanel" aria-labelledby="eventsub-tab">
+                <div class="alert alert-info mb-4">
+                    <strong>📡 EventSub Testing</strong> - Simulate Twitch EventSub webhook events to trigger overlay alerts without real Twitch activity.
                 </div>
-                <div class="card-body">
-                    <p>Trigger custom Asylum Effects (Sound & Visuals).</p>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label">Target User ID</label>
-                                <input type="text" class="form-control" @bind="effectsUserId" placeholder="Twitch User ID" />
+
+                <!-- Target User Selection -->
+                <TargetUserCard UserId="@eventSubUserId" UserIdChanged="@((value) => eventSubUserId = value)" AvailableUsers="@availableUsers" />
+
+                <div class="row">
+                    <!-- Follow Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>👋 Follow Event</h5>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label">Sound Trigger (e.g., scream1, thunder)</label>
-                                <input type="text" class="form-control" @bind="soundTrigger" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Animation (e.g., shake, pulse)</label>
-                                <input type="text" class="form-control" @bind="animationName" />
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Visual Effects</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" @bind="enableScreenShake" id="chkShake">
-                                <label class="form-check-label" for="chkShake">Screen Shake</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" @bind="enableScreenFlicker" id="chkFlicker">
-                                <label class="form-check-label" for="chkFlicker">Screen Flicker</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" @bind="enableRedAlert" id="chkRed">
-                                <label class="form-check-label" for="chkRed">Red Alert</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" @bind="enableHeartbeat" id="chkHeart">
-                                <label class="form-check-label" for="chkHeart">Heartbeat Line</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" @bind="enableSilhouette" id="chkSil">
-                                <label class="form-check-label" for="chkSil">Silhouette</label>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Follower Name</label>
+                                    <input type="text" class="form-control" @bind="followUsername" placeholder="TestFollower" />
+                                </div>
+                                <button class="btn btn-success" @onclick="TriggerFollowEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Follow
+                                </button>
                             </div>
                         </div>
                     </div>
-                    <button class="btn btn-danger mt-3" @onclick="TriggerAsylumEffect">Trigger Effect</button>
-                    @if (!string.IsNullOrEmpty(effectsResult))
-                    {
-                        <div class="alert alert-info mt-2">
-                            @effectsResult
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
 
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5>Overlay Tests</h5>
-                </div>
-                <div class="card-body">
-                    <p>Trigger overlay animations.</p>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="overlayUserId" />
-                        <button class="btn btn-warning" @onclick="TriggerDeathAnimation">Trigger Death</button>
+                    <!-- Subscribe Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>⭐ Subscribe Event</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Subscriber Name</label>
+                                    <input type="text" class="form-control" @bind="subUsername" placeholder="TestSubscriber" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Tier</label>
+                                    <select class="form-select" @bind="subTier">
+                                        <option value="Tier 1">Tier 1 ($4.99)</option>
+                                        <option value="Tier 2">Tier 2 ($9.99)</option>
+                                        <option value="Tier 3">Tier 3 ($24.99)</option>
+                                        <option value="Prime">Prime</option>
+                                    </select>
+                                </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" @bind="subIsGift" id="chkSubGift">
+                                    <label class="form-check-label" for="chkSubGift">Is Gift Sub</label>
+                                </div>
+                                <button class="btn btn-primary" @onclick="TriggerSubscribeEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Subscribe
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resub Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🔄 Resub Event</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Subscriber Name</label>
+                                    <input type="text" class="form-control" @bind="resubUsername" placeholder="LoyalViewer" />
+                                </div>
+                                <div class="row">
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Months</label>
+                                        <input type="number" class="form-control" @bind="resubMonths" min="1" max="999" />
+                                    </div>
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Tier</label>
+                                        <select class="form-select" @bind="resubTier">
+                                            <option value="Tier 1">Tier 1</option>
+                                            <option value="Tier 2">Tier 2</option>
+                                            <option value="Tier 3">Tier 3</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Message (optional)</label>
+                                    <input type="text" class="form-control" @bind="resubMessage" placeholder="Great stream!" />
+                                </div>
+                                <button class="btn btn-info" @onclick="TriggerResubEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Resub
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gift Sub Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🎁 Gift Sub Event</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Gifter Name</label>
+                                    <input type="text" class="form-control" @bind="giftGifterName" placeholder="GenerousViewer" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Recipient Name</label>
+                                    <input type="text" class="form-control" @bind="giftRecipientName" placeholder="LuckyViewer" />
+                                </div>
+                                <div class="row">
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Tier</label>
+                                        <select class="form-select" @bind="giftTier">
+                                            <option value="Tier 1">Tier 1</option>
+                                            <option value="Tier 2">Tier 2</option>
+                                            <option value="Tier 3">Tier 3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Total Gifts</label>
+                                        <input type="number" class="form-control" @bind="giftTotalGifts" min="1" max="999" />
+                                    </div>
+                                </div>
+                                <button class="btn btn-warning" @onclick="TriggerGiftSubEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Gift Sub
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bits/Cheer Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>💎 Bits/Cheer Event</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Cheerer Name</label>
+                                    <input type="text" class="form-control" @bind="bitsUsername" placeholder="BitsCheerer" />
+                                </div>
+                                <div class="row">
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Bits Amount</label>
+                                        <input type="number" class="form-control" @bind="bitsAmount" min="1" max="1000000" />
+                                    </div>
+                                    <div class="col-6 mb-3">
+                                        <label class="form-label">Total Bits</label>
+                                        <input type="number" class="form-control" @bind="bitsTotalBits" min="0" />
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Message</label>
+                                    <input type="text" class="form-control" @bind="bitsMessage" placeholder="Cheer100 Great stream!" />
+                                </div>
+                                <button class="btn btn-danger" @onclick="TriggerBitsEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Bits
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Raid Event -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🚀 Raid Event</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Raider Channel Name</label>
+                                    <input type="text" class="form-control" @bind="raidChannelName" placeholder="RaiderChannel" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Viewer Count</label>
+                                    <input type="number" class="form-control" @bind="raidViewers" min="1" max="100000" />
+                                </div>
+                                <button class="btn btn-secondary" @onclick="TriggerRaidEvent" disabled="@string.IsNullOrEmpty(eventSubUserId)">
+                                    Trigger Raid
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5>Stream Status Tools</h5>
-                </div>
-                <div class="card-body">
-                    <p>Force a user's stream status to offline.</p>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" placeholder="Twitch User ID" @bind="offlineUserId" />
-                        <button class="btn btn-danger" @onclick="ForceOffline">Force Offline</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(offlineResult))
-                    {
-                        <div class="alert alert-info">
-                            @offlineResult
-                        </div>
-                    }
-                </div>
+                <!-- EventSub Result -->
+                <ResultAlert Message="@eventSubResult" IsSuccess="@eventSubSuccess" />
             </div>
-        </div>
+        }
+
+        <!-- Discord Bot Tab -->
+        @if (activeTab == "discord")
+        {
+            <div class="tab-pane fade show active" id="discord-panel" role="tabpanel" aria-labelledby="discord-tab">
+                <div class="alert alert-info mb-4">
+                    <strong>🤖 Discord Bot Testing</strong> - Test Discord webhook notifications and bot functionality.
+                </div>
+
+                <!-- Target User Selection -->
+                <TargetUserCard UserId="@discordUserId" UserIdChanged="@((value) => discordUserId = value)" AvailableUsers="@availableUsers" />
+
+                <div class="row">
+                    <!-- Webhook Test -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🔗 Webhook Tests</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Test saving and reading Discord webhook URLs.</p>
+                                <div class="btn-group-vertical w-100">
+                                    <button class="btn btn-outline-primary" @onclick="TestWebhookSave" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                        💾 Test Webhook Save
+                                    </button>
+                                    <button class="btn btn-outline-info mt-2" @onclick="TestWebhookRead" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                        📖 Test Webhook Read
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stream Notification Test -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>📺 Stream Notifications</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Simulate stream going live/offline notifications.</p>
+                                <div class="btn-group-vertical w-100">
+                                    <button class="btn btn-success" @onclick="TestStreamLiveNotification" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                        🟢 Trigger "Stream Live" Notification
+                                    </button>
+                                    <button class="btn btn-secondary mt-2" @onclick="TestStreamOfflineNotification" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                        ⚫ Trigger "Stream Offline" Notification
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Test Notification -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🧪 Test Notification</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Send a test notification to Discord.</p>
+                                <button class="btn btn-warning w-100" @onclick="SendDiscordTestNotification" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                    📤 Send Test Notification
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Milestone Notification -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🏆 Milestone Notification</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Counter Type</label>
+                                    <select class="form-select" @bind="milestoneCounterType">
+                                        <option value="deaths">Deaths</option>
+                                        <option value="swears">Swears</option>
+                                        <option value="screams">Screams</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Milestone Value</label>
+                                    <input type="number" class="form-control" @bind="milestoneValue" min="1" />
+                                </div>
+                                <button class="btn btn-info w-100" @onclick="TriggerMilestoneNotification" disabled="@string.IsNullOrEmpty(discordUserId)">
+                                    🎉 Trigger Milestone
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discord Result -->
+                <ResultAlert Message="@discordResult" IsSuccess="@discordSuccess" UsePreformatted="true" />
+            </div>
+        }
+
+        <!-- Forge Testing Tab -->
+        @if (activeTab == "forge")
+        {
+            <div class="tab-pane fade show active" id="forge-panel" role="tabpanel" aria-labelledby="forge-tab">
+                <div class="alert alert-info mb-4">
+                    <strong>🔥 Forge Testing</strong> - Test overlay effects, animations, and counter integrations.
+                </div>
+
+                <!-- Target User Selection -->
+                <TargetUserCard UserId="@forgeUserId" UserIdChanged="@((value) => forgeUserId = value)" AvailableUsers="@availableUsers" />
+
+                <div class="row">
+                    <!-- Asylum Effects -->
+                    <div class="col-md-12 mb-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>👻 Asylum Effects</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Trigger custom Asylum Effects (Sound & Visuals).</p>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Sound Trigger (e.g., scream1, thunder)</label>
+                                            <input type="text" class="form-control" @bind="soundTrigger" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Animation (e.g., shake, pulse)</label>
+                                            <input type="text" class="form-control" @bind="animationName" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Visual Effects</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="enableScreenShake" id="chkShake">
+                                            <label class="form-check-label" for="chkShake">Screen Shake</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="enableScreenFlicker" id="chkFlicker">
+                                            <label class="form-check-label" for="chkFlicker">Screen Flicker</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="enableRedAlert" id="chkRed">
+                                            <label class="form-check-label" for="chkRed">Red Alert</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="enableHeartbeat" id="chkHeart">
+                                            <label class="form-check-label" for="chkHeart">Heartbeat Line</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" @bind="enableSilhouette" id="chkSil">
+                                            <label class="form-check-label" for="chkSil">Silhouette</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-danger mt-3" @onclick="TriggerAsylumEffect" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                    👻 Trigger Asylum Effect
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overlay Tests -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>🎬 Overlay Tests</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Trigger overlay animations and updates.</p>
+                                <div class="btn-group-vertical w-100">
+                                    <button class="btn btn-warning" @onclick="TriggerDeathAnimation" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                        💀 Trigger Death Animation
+                                    </button>
+                                    <button class="btn btn-outline-info mt-2" @onclick="TriggerCounterUpdate" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                        🔢 Trigger Counter Update
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interaction Banner -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>📢 Interaction Banner</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Text Prompt</label>
+                                    <input type="text" class="form-control" @bind="bannerText" placeholder="Press F to pay respects" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Duration (ms)</label>
+                                    <input type="number" class="form-control" @bind="bannerDuration" min="500" max="30000" />
+                                </div>
+                                <button class="btn btn-primary" @onclick="TriggerInteractionBanner" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                    📢 Show Banner
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stream Status -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>📡 Stream Status</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Force stream status changes.</p>
+                                <div class="btn-group-vertical w-100">
+                                    <button class="btn btn-success" @onclick="ForceOnline" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                        🟢 Force Online
+                                    </button>
+                                    <button class="btn btn-secondary mt-2" @onclick="ForceOffline" disabled="@string.IsNullOrEmpty(forgeUserId)">
+                                        ⚫ Force Offline
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Forge Result -->
+                <ResultAlert Message="@forgeResult" IsSuccess="@forgeSuccess" />
+            </div>
+        }
     </div>
 </div>
 
 @code {
-    private string testUserId = "";
-    private string webhookResult = "";
+    // Tab state
+    private string activeTab = "eventsub";
+    private List<User>? availableUsers;
 
-    private string notificationUserId = "";
-    private string notificationResult = "";
+    // EventSub Testing
+    private string eventSubUserId = "";
+    private string eventSubResult = "";
+    private bool eventSubSuccess = false;
 
-    private string overlayUserId = "";
+    // Follow
+    private string followUsername = "TestFollower";
 
-    private string offlineUserId = "";
-    private string offlineResult = "";
+    // Subscribe
+    private string subUsername = "TestSubscriber";
+    private string subTier = "Tier 1";
+    private bool subIsGift = false;
+
+    // Resub
+    private string resubUsername = "LoyalViewer";
+    private int resubMonths = 12;
+    private string resubTier = "Tier 1";
+    private string resubMessage = "Great stream!";
+
+    // Gift Sub
+    private string giftGifterName = "GenerousViewer";
+    private string giftRecipientName = "LuckyViewer";
+    private string giftTier = "Tier 1";
+    private int giftTotalGifts = 5;
+
+    // Bits
+    private string bitsUsername = "BitsCheerer";
+    private int bitsAmount = 100;
+    private int bitsTotalBits = 500;
+    private string bitsMessage = "Cheer100 Great stream!";
+
+    // Raid
+    private string raidChannelName = "RaiderChannel";
+    private int raidViewers = 50;
+
+    // Discord Testing
+    private string discordUserId = "";
+    private string discordResult = "";
+    private bool discordSuccess = false;
+    private string milestoneCounterType = "deaths";
+    private int milestoneValue = 100;
+
+    // Forge Testing
+    private string forgeUserId = "";
+    private string forgeResult = "";
+    private bool forgeSuccess = false;
 
     // Asylum Effects
-    private string effectsUserId = "";
     private string soundTrigger = "";
     private string animationName = "";
     private bool enableScreenShake = false;
@@ -173,24 +558,288 @@
     private bool enableRedAlert = false;
     private bool enableHeartbeat = false;
     private bool enableSilhouette = false;
-    private string effectsResult = "";
+
+    // Interaction Banner
+    private string bannerText = "Press F to pay respects";
+    private int bannerDuration = 5000;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            availableUsers = (await UserRepository.GetAllUsersAsync())?.ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Failed to load users in OnInitializedAsync for Admin/Debug page.");
+            availableUsers = new List<User>();
+        }
+    }
+
+    // ============== Tab Navigation ==============
+
+    private static readonly string[] TabOrder = { "eventsub", "discord", "forge" };
+
+    /// <summary>
+    /// Handles keyboard navigation for tabs (Arrow keys for switching, Home/End for first/last).
+    /// </summary>
+    private async Task HandleTabKeyDown(KeyboardEventArgs e, string currentTab)
+    {
+        var currentIndex = Array.IndexOf(TabOrder, currentTab);
+        string? newTab = null;
+
+        switch (e.Key)
+        {
+            case "ArrowRight":
+            case "ArrowDown":
+                newTab = TabOrder[(currentIndex + 1) % TabOrder.Length];
+                break;
+            case "ArrowLeft":
+            case "ArrowUp":
+                newTab = TabOrder[(currentIndex - 1 + TabOrder.Length) % TabOrder.Length];
+                break;
+            case "Home":
+                newTab = TabOrder[0];
+                break;
+            case "End":
+                newTab = TabOrder[^1];
+                break;
+        }
+
+        if (newTab != null && newTab != activeTab)
+        {
+            activeTab = newTab;
+            // Trigger StateHasChanged to ensure ARIA live region announces the tab change
+            StateHasChanged();
+            // Focus the new tab button using safe JS interop
+            await JSRuntime.InvokeVoidAsync("focusElement", $"{newTab}-tab");
+        }
+    }
+
+    // ============== Validation Helpers ==============
+
+    /// <summary>
+    /// Validates that a user ID is provided. Sets the appropriate error result if not.
+    /// </summary>
+    /// <param name="userId">The user ID to validate</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>True if valid, false otherwise</returns>
+    private static bool ValidateUserIdProvided(string userId, Action<bool> setSuccess, Action<string> setResult)
+    {
+        // Parameters are required - callers must provide valid actions
+        if (string.IsNullOrEmpty(userId))
+        {
+            setSuccess(false);
+            setResult("❌ Please enter a User ID");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Validates that a user exists in the database. Sets the appropriate error result if not found.
+    /// </summary>
+    /// <param name="user">The user object (may be null)</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>True if user exists, false otherwise</returns>
+    private static bool ValidateUserExists(User? user, Action<bool> setSuccess, Action<string> setResult)
+    {
+        // Parameters are required - callers must provide valid actions
+        if (user == null)
+        {
+            setSuccess(false);
+            setResult("❌ User not found");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Validates user ID is provided and user exists. Combined validation for common pattern.
+    /// </summary>
+    /// <param name="userId">The user ID to validate</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>The user if valid, null otherwise</returns>
+    private async Task<User?> ValidateAndGetUserAsync(string userId, Action<bool> setSuccess, Action<string> setResult)
+    {
+        if (!ValidateUserIdProvided(userId, setSuccess, setResult))
+            return null;
+
+        var user = await UserRepository.GetUserAsync(userId);
+        if (!ValidateUserExists(user, setSuccess, setResult))
+            return null;
+
+        return user;
+    }
+
+    // ============== EventSub Testing ==============
+
+    private async Task TriggerFollowEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var username = string.IsNullOrWhiteSpace(followUsername) ? "TestFollower" : followUsername;
+            Logger.LogInformation("🧪 DEBUG: Triggering Follow event for user {UserId} - Follower: {Follower}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username));
+            await OverlayNotifier.NotifyFollowerAsync(eventSubUserId, username);
+            Logger.LogInformation("✅ DEBUG: Follow event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Follow event triggered! Follower: {username}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Follow event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerSubscribeEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var username = string.IsNullOrWhiteSpace(subUsername) ? "TestSubscriber" : subUsername;
+            Logger.LogInformation("🧪 DEBUG: Triggering Subscribe event for user {UserId} - Subscriber: {Subscriber}, Tier: {Tier}, IsGift: {IsGift}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), subTier, subIsGift);
+            await OverlayNotifier.NotifySubscriberAsync(eventSubUserId, username, subTier, subIsGift);
+            Logger.LogInformation("✅ DEBUG: Subscribe event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Subscribe event triggered! Subscriber: {username}, Tier: {subTier}, Gift: {subIsGift}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Subscribe event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerResubEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var username = string.IsNullOrWhiteSpace(resubUsername) ? "LoyalViewer" : resubUsername;
+            var message = string.IsNullOrWhiteSpace(resubMessage) ? "" : resubMessage;
+            Logger.LogInformation("🧪 DEBUG: Triggering Resub event for user {UserId} - Subscriber: {Subscriber}, Months: {Months}, Tier: {Tier}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), resubMonths, resubTier);
+            await OverlayNotifier.NotifyResubAsync(eventSubUserId, username, resubMonths, resubTier, message);
+            Logger.LogInformation("✅ DEBUG: Resub event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Resub event triggered! Subscriber: {username}, Months: {resubMonths}, Tier: {resubTier}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Resub event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerGiftSubEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var gifter = string.IsNullOrWhiteSpace(giftGifterName) ? "GenerousViewer" : giftGifterName;
+            var recipient = string.IsNullOrWhiteSpace(giftRecipientName) ? "LuckyViewer" : giftRecipientName;
+            Logger.LogInformation("🧪 DEBUG: Triggering Gift Sub event for user {UserId} - Gifter: {Gifter}, Recipient: {Recipient}, Tier: {Tier}, TotalGifts: {Total}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(gifter), LogSanitizer.Sanitize(recipient), giftTier, giftTotalGifts);
+            await OverlayNotifier.NotifyGiftSubAsync(eventSubUserId, gifter, recipient, giftTier, giftTotalGifts);
+            Logger.LogInformation("✅ DEBUG: Gift Sub event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Gift sub event triggered! Gifter: {gifter} → {recipient}, Tier: {giftTier}, Total: {giftTotalGifts}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Gift Sub event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerBitsEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var username = string.IsNullOrWhiteSpace(bitsUsername) ? "BitsCheerer" : bitsUsername;
+            var message = string.IsNullOrWhiteSpace(bitsMessage) ? "" : bitsMessage;
+            Logger.LogInformation("🧪 DEBUG: Triggering Bits event for user {UserId} - Cheerer: {Cheerer}, Bits: {Bits}, TotalBits: {Total}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), bitsAmount, bitsTotalBits);
+            await OverlayNotifier.NotifyBitsAsync(eventSubUserId, username, bitsAmount, message, bitsTotalBits);
+            Logger.LogInformation("✅ DEBUG: Bits event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Bits event triggered! Cheerer: {username}, Bits: {bitsAmount}, Total: {bitsTotalBits}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Bits event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerRaidEvent()
+    {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
+        try
+        {
+            var channelName = string.IsNullOrWhiteSpace(raidChannelName) ? "RaiderChannel" : raidChannelName;
+            Logger.LogInformation("🧪 DEBUG: Triggering Raid event for user {UserId} - Raider: {Raider}, Viewers: {Viewers}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(channelName), raidViewers);
+            await OverlayNotifier.NotifyRaidAsync(eventSubUserId, channelName, raidViewers);
+            Logger.LogInformation("✅ DEBUG: Raid event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = true;
+            eventSubResult = $"✅ Raid event triggered! Raider: {channelName}, Viewers: {raidViewers}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Raid event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
+            eventSubSuccess = false;
+            eventSubResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    // ============== Discord Testing ==============
 
     private async Task TestWebhookSave()
     {
         try
         {
-            if (string.IsNullOrEmpty(testUserId))
-            {
-                webhookResult = "Please enter a User ID";
-                return;
-            }
-
-            var user = await UserRepository.GetUserAsync(testUserId);
-            if (user == null)
-            {
-                webhookResult = "User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             var originalUrl = user.DiscordWebhookUrl;
             var testUrl = "https://discord.com/api/webhooks/1234567890/test-token";
@@ -198,77 +847,164 @@
             user.DiscordWebhookUrl = testUrl;
             await UserRepository.SaveUserAsync(user);
 
-            var savedUser = await UserRepository.GetUserAsync(testUserId);
+            var savedUser = await UserRepository.GetUserAsync(discordUserId);
 
             // Restore
             user.DiscordWebhookUrl = originalUrl;
             await UserRepository.SaveUserAsync(user);
 
-            webhookResult = $"Success!\nOriginal: {originalUrl}\nSaved: {savedUser?.DiscordWebhookUrl}\nRestored.";
+            discordSuccess = true;
+            discordResult = $"✅ Success!\nOriginal: {originalUrl}\nSaved: {savedUser?.DiscordWebhookUrl}\nRestored.";
         }
         catch (Exception ex)
         {
-            webhookResult = $"Error: {ex.Message}";
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
         }
     }
 
-    private async Task TestStreamNotification()
-    {
-        // This would normally trigger a real notification service
-        // For now we just log it or maybe use OverlayNotifier if applicable
-        notificationResult = "Simulation triggered (check logs)";
-        await Task.CompletedTask;
-    }
-
-    private async Task TriggerDeathAnimation()
-    {
-        if (!string.IsNullOrEmpty(overlayUserId))
-        {
-            var counter = new Counter { Deaths = 999, Swears = 0 }; // Dummy data
-            await OverlayNotifier.NotifyCounterUpdateAsync(overlayUserId, counter);
-        }
-    }
-
-    private async Task ForceOffline()
+    private async Task TestWebhookRead()
     {
         try
         {
-            if (string.IsNullOrEmpty(offlineUserId))
-            {
-                offlineResult = "Please enter a User ID";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
-            var user = await UserRepository.GetUserAsync(offlineUserId);
-            if (user == null)
-            {
-                offlineResult = "User not found";
-                return;
-            }
-
-            user.StreamStatus = "offline";
-            await UserRepository.SaveUserAsync(user);
-
-            // Notify clients via SignalR/Socket if possible
-            // For now, just DB update
-
-            offlineResult = $"Successfully forced {user.DisplayName} offline.";
+            discordSuccess = true;
+            discordResult = $"✅ Webhook URL: {(string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "(not configured)" : user.DiscordWebhookUrl)}\nChannel ID: {(string.IsNullOrEmpty(user.DiscordChannelId) ? "(not configured)" : user.DiscordChannelId)}";
         }
         catch (Exception ex)
         {
-            offlineResult = $"Error: {ex.Message}";
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
         }
     }
+
+    private async Task TestStreamLiveNotification()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
+
+            // Mock StreamOnline event structure - matches Twitch EventSub stream.online payload
+            // Required fields for DiscordService.SendNotificationAsync:
+            // - broadcaster_user_id: The user's Twitch ID
+            // - broadcaster_user_name: The user's Twitch username
+            // - started_at: ISO 8601 timestamp when the stream started
+            var mockEvent = new
+            {
+                id = $"test_stream_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+                broadcaster_user_id = discordUserId,
+                broadcaster_user_name = user.Username,
+                started_at = DateTimeOffset.UtcNow.ToString("o")
+            };
+
+            Logger.LogInformation("🧪 DEBUG: Triggering Stream Live notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            await DiscordService.SendNotificationAsync(user, "stream-online", mockEvent);
+            Logger.LogInformation("✅ DEBUG: Stream Live notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            discordSuccess = true;
+            discordResult = $"✅ Stream live notification sent for {user.DisplayName}!";
+        }
+        catch (Exception ex)
+        {
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TestStreamOfflineNotification()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
+
+            // Mock StreamOffline event structure - matches Twitch EventSub stream.offline payload
+            // Required fields for DiscordService.SendNotificationAsync:
+            // - broadcaster_user_id: The user's Twitch ID
+            // - broadcaster_user_name: The user's Twitch username
+            var mockEvent = new
+            {
+                broadcaster_user_id = discordUserId,
+                broadcaster_user_name = user.Username
+            };
+
+            Logger.LogInformation("🧪 DEBUG: Triggering Stream Offline notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            await DiscordService.SendNotificationAsync(user, "stream-offline", mockEvent);
+            Logger.LogInformation("✅ DEBUG: Stream Offline notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            discordSuccess = true;
+            discordResult = $"✅ Stream offline notification sent for {user.DisplayName}!";
+        }
+        catch (Exception ex)
+        {
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task SendDiscordTestNotification()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
+
+            Logger.LogInformation("🧪 DEBUG: Sending Discord test notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            await DiscordService.SendTestNotificationAsync(user);
+            Logger.LogInformation("✅ DEBUG: Discord test notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            discordSuccess = true;
+            discordResult = $"✅ Test notification sent to Discord for {user.DisplayName}!";
+        }
+        catch (Exception ex)
+        {
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerMilestoneNotification()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
+
+            var previousMilestone = Math.Max(0, milestoneValue - 50);
+            Logger.LogInformation("🧪 DEBUG: Triggering Milestone notification for user {UserId} - Type: {Type}, Value: {Value}",
+                LogSanitizer.Sanitize(discordUserId), milestoneCounterType, milestoneValue);
+            await OverlayNotifier.NotifyMilestoneReachedAsync(discordUserId, milestoneCounterType, milestoneValue, milestoneValue, previousMilestone);
+            Logger.LogInformation("✅ DEBUG: Milestone notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
+            discordSuccess = true;
+            discordResult = $"✅ Milestone notification triggered! {milestoneCounterType}: {milestoneValue}";
+        }
+        catch (Exception ex)
+        {
+            discordSuccess = false;
+            discordResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    // ============== Forge Testing ==============
 
     private async Task TriggerAsylumEffect()
     {
         try
         {
-            if (string.IsNullOrEmpty(effectsUserId))
-            {
-                effectsResult = "Please enter a User ID";
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
                 return;
-            }
 
             var payload = new
             {
@@ -282,17 +1018,154 @@
                     heartbeatLine = enableHeartbeat,
                     silhouette = enableSilhouette
                 },
-                duration = 5000 // Default duration
+                duration = 5000
             };
 
-            // Use "customAlert" as the type, which maps to overlay-interop.js handling
-            await OverlayNotifier.NotifyCustomAlertAsync(effectsUserId, "customAlert", payload);
-
-            effectsResult = "Effect triggered successfully!";
+            Logger.LogInformation("🧪 DEBUG: Triggering Asylum Effect for user {UserId} - Sound: {Sound}, Animation: {Animation}, Shake: {Shake}, Flicker: {Flicker}, RedAlert: {Red}, Heartbeat: {Heart}, Silhouette: {Sil}",
+                LogSanitizer.Sanitize(forgeUserId), soundTrigger ?? "(none)", animationName ?? "(none)", enableScreenShake, enableScreenFlicker, enableRedAlert, enableHeartbeat, enableSilhouette);
+            await OverlayNotifier.NotifyCustomAlertAsync(forgeUserId, "customAlert", payload);
+            Logger.LogInformation("✅ DEBUG: Asylum Effect sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = "✅ Asylum effect triggered successfully!";
         }
         catch (Exception ex)
         {
-            effectsResult = $"Error: {ex.Message}";
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerDeathAnimation()
+    {
+        try
+        {
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
+                return;
+
+            var counter = new Counter { Deaths = 999, Swears = 0 };
+            Logger.LogInformation("🧪 DEBUG: Triggering Death Animation for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            await OverlayNotifier.NotifyCounterUpdateAsync(forgeUserId, counter);
+            Logger.LogInformation("✅ DEBUG: Death Animation sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = "✅ Death animation triggered!";
+        }
+        catch (Exception ex)
+        {
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerCounterUpdate()
+    {
+        try
+        {
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
+                return;
+
+            var counter = new Counter
+            {
+                TwitchUserId = forgeUserId,
+                Deaths = 42,
+                Swears = 13,
+                Screams = 7,
+                LastUpdated = DateTimeOffset.UtcNow
+            };
+            Logger.LogInformation("🧪 DEBUG: Triggering Counter Update for user {UserId} - Deaths: {Deaths}, Swears: {Swears}, Screams: {Screams}",
+                LogSanitizer.Sanitize(forgeUserId), counter.Deaths, counter.Swears, counter.Screams);
+            await OverlayNotifier.NotifyCounterUpdateAsync(forgeUserId, counter);
+            Logger.LogInformation("✅ DEBUG: Counter Update sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = "✅ Counter update sent! (Deaths: 42, Swears: 13, Screams: 7)";
+        }
+        catch (Exception ex)
+        {
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerInteractionBanner()
+    {
+        try
+        {
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
+                return;
+
+            var text = string.IsNullOrWhiteSpace(bannerText) ? "Press F to pay respects" : bannerText;
+            var duration = Math.Clamp(bannerDuration, 500, 30000);
+
+            Logger.LogInformation("🧪 DEBUG: Triggering Interaction Banner for user {UserId} - Text: {Text}, Duration: {Duration}ms",
+                LogSanitizer.Sanitize(forgeUserId), text, duration);
+            await OverlayNotifier.NotifyCustomAlertAsync(forgeUserId, "interactionBanner", new
+            {
+                textPrompt = text,
+                duration
+            });
+            Logger.LogInformation("✅ DEBUG: Interaction Banner sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = $"✅ Interaction banner sent! Text: \"{text}\", Duration: {duration}ms";
+        }
+        catch (Exception ex)
+        {
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task ForceOnline()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result);
+            if (user == null) return;
+
+            user.StreamStatus = "live";
+            Logger.LogInformation("🧪 DEBUG: Forcing stream status to ONLINE for user {UserId} ({DisplayName})",
+                LogSanitizer.Sanitize(forgeUserId), LogSanitizer.Sanitize(user.DisplayName));
+            await UserRepository.SaveUserAsync(user);
+            await OverlayNotifier.NotifyStreamStatusUpdateAsync(forgeUserId, "live");
+            Logger.LogInformation("✅ DEBUG: Stream status forced to ONLINE successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = $"✅ Successfully forced {user.DisplayName} online!";
+        }
+        catch (Exception ex)
+        {
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    private async Task ForceOffline()
+    {
+        try
+        {
+            var user = await ValidateAndGetUserAsync(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result);
+            if (user == null) return;
+
+            user.StreamStatus = "offline";
+            Logger.LogInformation("🧪 DEBUG: Forcing stream status to OFFLINE for user {UserId} ({DisplayName})",
+                LogSanitizer.Sanitize(forgeUserId), LogSanitizer.Sanitize(user.DisplayName));
+            await UserRepository.SaveUserAsync(user);
+            await OverlayNotifier.NotifyStreamStatusUpdateAsync(forgeUserId, "offline");
+            Logger.LogInformation("✅ DEBUG: Stream status forced to OFFLINE successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
+            forgeSuccess = true;
+            forgeResult = $"✅ Successfully forced {user.DisplayName} offline!";
+        }
+        catch (Exception ex)
+        {
+            forgeSuccess = false;
+            forgeResult = $"❌ Error: {ex.Message}";
         }
     }
 }

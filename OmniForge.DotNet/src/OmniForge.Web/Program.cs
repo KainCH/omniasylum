@@ -1,3 +1,4 @@
+using OmniForge.Web;
 using OmniForge.Web.Components;
 using OmniForge.Infrastructure;
 using OmniForge.Web.Hubs;
@@ -189,6 +190,12 @@ app.MapControllers();
 // app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
 
 // Health check endpoint for deployment verification
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "healthy",
+    timestamp = DateTimeOffset.UtcNow,
+    serverInstanceId = ServerInstance.Id,
+    serverStartTime = ServerInstance.StartTime
+}));
 
 app.Run();

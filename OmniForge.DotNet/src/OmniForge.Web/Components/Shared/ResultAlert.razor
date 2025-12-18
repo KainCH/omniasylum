@@ -1,0 +1,33 @@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") mt-3">
+        @if (UsePreformatted)
+        {
+            <pre class="mb-0">@Message</pre>
+        }
+        else
+        {
+            @Message
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// The message to display in the alert.
+    /// </summary>
+    [Parameter]
+    public string Message { get; set; } = "";
+
+    /// <summary>
+    /// Whether the result represents a success (green) or failure (red).
+    /// </summary>
+    [Parameter]
+    public bool IsSuccess { get; set; }
+
+    /// <summary>
+    /// Whether to wrap the message in a pre tag for preformatted text.
+    /// </summary>
+    [Parameter]
+    public bool UsePreformatted { get; set; }
+}
