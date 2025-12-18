@@ -259,9 +259,17 @@
           // Check for server restart on successful reconnect
           if (reconnectAttempts > 0) {
             console.log("🔍 Checking for server restart after reconnection...");
-            checkServerRestart();
+            const attemptsBeforeCheck = reconnectAttempts;
+            checkServerRestart()
+              .finally(() => {
+                // Only reset if no new reconnect attempts occurred during the health check
+                if (reconnectAttempts === attemptsBeforeCheck) {
+                  reconnectAttempts = 0;
+                }
+              });
+          } else {
+            reconnectAttempts = 0;
           }
-          reconnectAttempts = 0;
         };
 
         socket.onmessage = function (event) {
