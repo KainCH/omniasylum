@@ -19,7 +19,7 @@ namespace OmniForge.Tests
             foreach (var c in ServerInstance.Id)
             {
                 Assert.True(char.IsLetterOrDigit(c), $"Character '{c}' is not alphanumeric");
-                Assert.True((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'), 
+                Assert.True((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'),
                     $"Character '{c}' is not a valid hexadecimal character");
             }
         }
