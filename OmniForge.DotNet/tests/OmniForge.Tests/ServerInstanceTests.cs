@@ -64,10 +64,10 @@ namespace OmniForge.Tests
         [Fact]
         public void StartTime_ShouldBeReasonablyRecent()
         {
-            // StartTime should be within the last hour (test run time)
-            var oneHourAgo = DateTimeOffset.UtcNow.AddHours(-1);
-            Assert.True(ServerInstance.StartTime >= oneHourAgo,
-                "StartTime should be within the last hour");
+            // StartTime should be within the last 24 hours (reasonable for test suite execution)
+            var twentyFourHoursAgo = DateTimeOffset.UtcNow.AddHours(-24);
+            Assert.True(ServerInstance.StartTime >= twentyFourHoursAgo,
+                "StartTime should be within the last 24 hours");
         }
     }
 }

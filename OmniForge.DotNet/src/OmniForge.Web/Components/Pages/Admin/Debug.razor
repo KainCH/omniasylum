@@ -24,8 +24,10 @@
             <button class="nav-link @(activeTab == "eventsub" ? "active" : "")"
                     id="eventsub-tab"
                     @onclick="@(() => activeTab = "eventsub")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "eventsub"))"
                     type="button"
                     role="tab"
+                    tabindex="@(activeTab == "eventsub" ? "0" : "-1")"
                     aria-controls="eventsub-panel"
                     aria-selected="@(activeTab == "eventsub" ? "true" : "false")">
                 <span class="me-1">📡</span> EventSub Testing
@@ -35,8 +37,10 @@
             <button class="nav-link @(activeTab == "discord" ? "active" : "")"
                     id="discord-tab"
                     @onclick="@(() => activeTab = "discord")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "discord"))"
                     type="button"
                     role="tab"
+                    tabindex="@(activeTab == "discord" ? "0" : "-1")"
                     aria-controls="discord-panel"
                     aria-selected="@(activeTab == "discord" ? "true" : "false")">
                 <span class="me-1">🤖</span> Discord Bot
@@ -46,8 +50,10 @@
             <button class="nav-link @(activeTab == "forge" ? "active" : "")"
                     id="forge-tab"
                     @onclick="@(() => activeTab = "forge")"
+                    @onkeydown="@(e => HandleTabKeyDown(e, "forge"))"
                     type="button"
                     role="tab"
+                    tabindex="@(activeTab == "forge" ? "0" : "-1")"
                     aria-controls="forge-panel"
                     aria-selected="@(activeTab == "forge" ? "true" : "false")">
                 <span class="me-1">🔥</span> Forge Testing
@@ -556,6 +562,44 @@
         {
             Logger.LogError(ex, "❌ Failed to load users in OnInitializedAsync for Admin/Debug page.");
             availableUsers = new List<User>();
+        }
+    }
+
+    // ============== Tab Navigation ==============
+
+    private static readonly string[] TabOrder = { "eventsub", "discord", "forge" };
+
+    /// <summary>
+    /// Handles keyboard navigation for tabs (Arrow keys for switching, Home/End for first/last).
+    /// </summary>
+    private async Task HandleTabKeyDown(KeyboardEventArgs e, string currentTab)
+    {
+        var currentIndex = Array.IndexOf(TabOrder, currentTab);
+        string? newTab = null;
+
+        switch (e.Key)
+        {
+            case "ArrowRight":
+            case "ArrowDown":
+                newTab = TabOrder[(currentIndex + 1) % TabOrder.Length];
+                break;
+            case "ArrowLeft":
+            case "ArrowUp":
+                newTab = TabOrder[(currentIndex - 1 + TabOrder.Length) % TabOrder.Length];
+                break;
+            case "Home":
+                newTab = TabOrder[0];
+                break;
+            case "End":
+                newTab = TabOrder[^1];
+                break;
+        }
+
+        if (newTab != null && newTab != activeTab)
+        {
+            activeTab = newTab;
+            // Focus the new tab button
+            await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{newTab}-tab')?.focus()");
         }
     }
 

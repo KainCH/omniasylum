@@ -233,6 +233,12 @@ namespace OmniForge.Tests
             var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
             var value = badRequestResult.Value;
             Assert.NotNull(value);
+
+            // Verify both success and error properties
+            var successProperty = value!.GetType().GetProperty("success");
+            Assert.NotNull(successProperty);
+            Assert.False((bool)successProperty!.GetValue(value)!);
+
             var errorProperty = value!.GetType().GetProperty("error");
             Assert.NotNull(errorProperty);
             Assert.Equal("TextPrompt is required", errorProperty!.GetValue(value));
@@ -250,7 +256,7 @@ namespace OmniForge.Tests
 
             var result = await _controller.SendInteractionBanner(request);
 
-            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.IsType<OkObjectResult>(result);
             _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync("12345", "interactionBanner", It.IsAny<object>()), Times.Once);
         }
 

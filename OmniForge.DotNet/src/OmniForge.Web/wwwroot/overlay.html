@@ -219,9 +219,17 @@
       // Server Instance ID tracking for silent refresh on server restart
       let knownServerInstanceId = null;
       let reconnectAttempts = 0;
+      let isHealthCheckInProgress = false; // Prevent concurrent health checks
       const MAX_RECONNECT_BEFORE_HEALTH_CHECK = 3;
 
       async function checkServerRestart() {
+        // Prevent concurrent health checks to avoid race conditions
+        if (isHealthCheckInProgress) {
+          console.log("⏳ Health check already in progress, skipping...");
+          return;
+        }
+
+        isHealthCheckInProgress = true;
         try {
           const response = await fetch('/health');
           const data = await response.json();
@@ -239,6 +247,8 @@
           reconnectAttempts = 0; // Reset on successful health check
         } catch (err) {
           console.warn("⚠️ Health check failed:", err.message);
+        } finally {
+          isHealthCheckInProgress = false;
         }
       }
 
@@ -267,9 +277,8 @@
                   reconnectAttempts = 0;
                 }
               });
-          } else {
-            reconnectAttempts = 0;
           }
+          // Note: No else block needed - reconnectAttempts is already 0 on initial connection
         };
 
         socket.onmessage = function (event) {
