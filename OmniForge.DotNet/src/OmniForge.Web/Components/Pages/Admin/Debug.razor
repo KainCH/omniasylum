@@ -1,12 +1,15 @@
 @page "/admin/debug"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Core.Utilities
 @attribute [Authorize(Roles = "admin")]
 @inject IUserRepository UserRepository
 @inject IOverlayNotifier OverlayNotifier
 @inject IDiscordService DiscordService
 @inject IJSRuntime JSRuntime
+@inject ILogger<Debug> Logger
 
 <PageTitle>Admin - Debug</PageTitle>
 
@@ -649,11 +652,15 @@
         try
         {
             var username = string.IsNullOrWhiteSpace(followUsername) ? "TestFollower" : followUsername;
+            Logger.LogInformation("🧪 DEBUG: Triggering Follow event for user {UserId} - Follower: {Follower}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username));
             await OverlayNotifier.NotifyFollowerAsync(eventSubUserId, username);
+            Logger.LogInformation("✅ DEBUG: Follow event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Follow event triggered! Follower: {username}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Follow event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -663,11 +670,15 @@
         try
         {
             var username = string.IsNullOrWhiteSpace(subUsername) ? "TestSubscriber" : subUsername;
+            Logger.LogInformation("🧪 DEBUG: Triggering Subscribe event for user {UserId} - Subscriber: {Subscriber}, Tier: {Tier}, IsGift: {IsGift}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), subTier, subIsGift);
             await OverlayNotifier.NotifySubscriberAsync(eventSubUserId, username, subTier, subIsGift);
+            Logger.LogInformation("✅ DEBUG: Subscribe event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Subscribe event triggered! Subscriber: {username}, Tier: {subTier}, Gift: {subIsGift}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Subscribe event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -678,11 +689,15 @@
         {
             var username = string.IsNullOrWhiteSpace(resubUsername) ? "LoyalViewer" : resubUsername;
             var message = string.IsNullOrWhiteSpace(resubMessage) ? "" : resubMessage;
+            Logger.LogInformation("🧪 DEBUG: Triggering Resub event for user {UserId} - Subscriber: {Subscriber}, Months: {Months}, Tier: {Tier}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), resubMonths, resubTier);
             await OverlayNotifier.NotifyResubAsync(eventSubUserId, username, resubMonths, resubTier, message);
+            Logger.LogInformation("✅ DEBUG: Resub event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Resub event triggered! Subscriber: {username}, Months: {resubMonths}, Tier: {resubTier}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Resub event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -693,11 +708,15 @@
         {
             var gifter = string.IsNullOrWhiteSpace(giftGifterName) ? "GenerousViewer" : giftGifterName;
             var recipient = string.IsNullOrWhiteSpace(giftRecipientName) ? "LuckyViewer" : giftRecipientName;
+            Logger.LogInformation("🧪 DEBUG: Triggering Gift Sub event for user {UserId} - Gifter: {Gifter}, Recipient: {Recipient}, Tier: {Tier}, TotalGifts: {Total}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(gifter), LogSanitizer.Sanitize(recipient), giftTier, giftTotalGifts);
             await OverlayNotifier.NotifyGiftSubAsync(eventSubUserId, gifter, recipient, giftTier, giftTotalGifts);
+            Logger.LogInformation("✅ DEBUG: Gift Sub event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Gift sub event triggered! Gifter: {gifter} → {recipient}, Tier: {giftTier}, Total: {giftTotalGifts}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Gift Sub event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -708,11 +727,15 @@
         {
             var username = string.IsNullOrWhiteSpace(bitsUsername) ? "BitsCheerer" : bitsUsername;
             var message = string.IsNullOrWhiteSpace(bitsMessage) ? "" : bitsMessage;
+            Logger.LogInformation("🧪 DEBUG: Triggering Bits event for user {UserId} - Cheerer: {Cheerer}, Bits: {Bits}, TotalBits: {Total}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(username), bitsAmount, bitsTotalBits);
             await OverlayNotifier.NotifyBitsAsync(eventSubUserId, username, bitsAmount, message, bitsTotalBits);
+            Logger.LogInformation("✅ DEBUG: Bits event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Bits event triggered! Cheerer: {username}, Bits: {bitsAmount}, Total: {bitsTotalBits}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Bits event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -722,11 +745,15 @@
         try
         {
             var channelName = string.IsNullOrWhiteSpace(raidChannelName) ? "RaiderChannel" : raidChannelName;
+            Logger.LogInformation("🧪 DEBUG: Triggering Raid event for user {UserId} - Raider: {Raider}, Viewers: {Viewers}",
+                LogSanitizer.Sanitize(eventSubUserId), LogSanitizer.Sanitize(channelName), raidViewers);
             await OverlayNotifier.NotifyRaidAsync(eventSubUserId, channelName, raidViewers);
+            Logger.LogInformation("✅ DEBUG: Raid event sent successfully for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"✅ Raid event triggered! Raider: {channelName}, Viewers: {raidViewers}";
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "❌ DEBUG: Failed to trigger Raid event for user {UserId}", LogSanitizer.Sanitize(eventSubUserId));
             eventSubResult = $"❌ Error: {ex.Message}";
         }
     }
@@ -814,7 +841,9 @@
                 started_at = DateTimeOffset.UtcNow.ToString("o")
             };
 
+            Logger.LogInformation("🧪 DEBUG: Triggering Stream Live notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             await DiscordService.SendNotificationAsync(user, "stream-online", mockEvent);
+            Logger.LogInformation("✅ DEBUG: Stream Live notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             discordResult = $"✅ Stream live notification sent for {user.DisplayName}!";
         }
         catch (Exception ex)
@@ -840,7 +869,9 @@
                 broadcaster_user_name = user.Username
             };
 
+            Logger.LogInformation("🧪 DEBUG: Triggering Stream Offline notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             await DiscordService.SendNotificationAsync(user, "stream-offline", mockEvent);
+            Logger.LogInformation("✅ DEBUG: Stream Offline notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             discordResult = $"✅ Stream offline notification sent for {user.DisplayName}!";
         }
         catch (Exception ex)
@@ -860,7 +891,9 @@
                 return;
             }
 
+            Logger.LogInformation("🧪 DEBUG: Sending Discord test notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             await DiscordService.SendTestNotificationAsync(user);
+            Logger.LogInformation("✅ DEBUG: Discord test notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             discordResult = $"✅ Test notification sent to Discord for {user.DisplayName}!";
         }
         catch (Exception ex)
@@ -881,7 +914,10 @@
             }
 
             var previousMilestone = milestoneValue - 50;
+            Logger.LogInformation("🧪 DEBUG: Triggering Milestone notification for user {UserId} - Type: {Type}, Value: {Value}",
+                LogSanitizer.Sanitize(discordUserId), milestoneCounterType, milestoneValue);
             await OverlayNotifier.NotifyMilestoneReachedAsync(discordUserId, milestoneCounterType, milestoneValue, milestoneValue, previousMilestone);
+            Logger.LogInformation("✅ DEBUG: Milestone notification sent successfully for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             discordResult = $"✅ Milestone notification triggered! {milestoneCounterType}: {milestoneValue}";
         }
         catch (Exception ex)
@@ -917,7 +953,10 @@
                 duration = 5000
             };
 
+            Logger.LogInformation("🧪 DEBUG: Triggering Asylum Effect for user {UserId} - Sound: {Sound}, Animation: {Animation}, Shake: {Shake}, Flicker: {Flicker}, RedAlert: {Red}, Heartbeat: {Heart}, Silhouette: {Sil}",
+                LogSanitizer.Sanitize(forgeUserId), soundTrigger ?? "(none)", animationName ?? "(none)", enableScreenShake, enableScreenFlicker, enableRedAlert, enableHeartbeat, enableSilhouette);
             await OverlayNotifier.NotifyCustomAlertAsync(forgeUserId, "customAlert", payload);
+            Logger.LogInformation("✅ DEBUG: Asylum Effect sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = "✅ Asylum effect triggered successfully!";
         }
         catch (Exception ex)
@@ -937,7 +976,9 @@
             }
 
             var counter = new Counter { Deaths = 999, Swears = 0 };
+            Logger.LogInformation("🧪 DEBUG: Triggering Death Animation for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             await OverlayNotifier.NotifyCounterUpdateAsync(forgeUserId, counter);
+            Logger.LogInformation("✅ DEBUG: Death Animation sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = "✅ Death animation triggered!";
         }
         catch (Exception ex)
@@ -964,7 +1005,10 @@
                 Screams = 7,
                 LastUpdated = DateTimeOffset.UtcNow
             };
+            Logger.LogInformation("🧪 DEBUG: Triggering Counter Update for user {UserId} - Deaths: {Deaths}, Swears: {Swears}, Screams: {Screams}",
+                LogSanitizer.Sanitize(forgeUserId), counter.Deaths, counter.Swears, counter.Screams);
             await OverlayNotifier.NotifyCounterUpdateAsync(forgeUserId, counter);
+            Logger.LogInformation("✅ DEBUG: Counter Update sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = "✅ Counter update sent! (Deaths: 42, Swears: 13, Screams: 7)";
         }
         catch (Exception ex)
@@ -986,12 +1030,14 @@
             var text = string.IsNullOrWhiteSpace(bannerText) ? "Press F to pay respects" : bannerText;
             var duration = Math.Clamp(bannerDuration, 500, 30000);
 
+            Logger.LogInformation("🧪 DEBUG: Triggering Interaction Banner for user {UserId} - Text: {Text}, Duration: {Duration}ms",
+                LogSanitizer.Sanitize(forgeUserId), text, duration);
             await OverlayNotifier.NotifyCustomAlertAsync(forgeUserId, "interactionBanner", new
             {
                 textPrompt = text,
                 duration
             });
-
+            Logger.LogInformation("✅ DEBUG: Interaction Banner sent successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = $"✅ Interaction banner sent! Text: \"{text}\", Duration: {duration}ms";
         }
         catch (Exception ex)
@@ -1018,9 +1064,11 @@
             }
 
             user.StreamStatus = "live";
+            Logger.LogInformation("🧪 DEBUG: Forcing stream status to ONLINE for user {UserId} ({DisplayName})",
+                LogSanitizer.Sanitize(forgeUserId), LogSanitizer.Sanitize(user.DisplayName));
             await UserRepository.SaveUserAsync(user);
             await OverlayNotifier.NotifyStreamStatusUpdateAsync(forgeUserId, "live");
-
+            Logger.LogInformation("✅ DEBUG: Stream status forced to ONLINE successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = $"✅ Successfully forced {user.DisplayName} online!";
         }
         catch (Exception ex)
@@ -1047,9 +1095,11 @@
             }
 
             user.StreamStatus = "offline";
+            Logger.LogInformation("🧪 DEBUG: Forcing stream status to OFFLINE for user {UserId} ({DisplayName})",
+                LogSanitizer.Sanitize(forgeUserId), LogSanitizer.Sanitize(user.DisplayName));
             await UserRepository.SaveUserAsync(user);
             await OverlayNotifier.NotifyStreamStatusUpdateAsync(forgeUserId, "offline");
-
+            Logger.LogInformation("✅ DEBUG: Stream status forced to OFFLINE successfully for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
             forgeResult = $"✅ Successfully forced {user.DisplayName} offline!";
         }
         catch (Exception ex)

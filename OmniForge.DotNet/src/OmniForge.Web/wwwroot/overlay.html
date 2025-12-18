@@ -216,6 +216,35 @@
         })
         .catch(err => console.error("Error loading initial data:", err));
 
+      // Server Instance ID tracking for silent refresh on server restart
+      let knownServerInstanceId = null;
+      let reconnectAttempts = 0;
+      const MAX_RECONNECT_BEFORE_HEALTH_CHECK = 3;
+
+      async function checkServerRestart() {
+        try {
+          const response = await fetch('/health');
+          const data = await response.json();
+
+          if (knownServerInstanceId === null) {
+            // First time - store the server instance ID
+            knownServerInstanceId = data.serverInstanceId;
+            console.log("🔑 Server instance ID stored:", knownServerInstanceId);
+          } else if (data.serverInstanceId !== knownServerInstanceId) {
+            // Server has restarted - refresh the page silently
+            console.log("🔄 Server restart detected! Old:", knownServerInstanceId, "New:", data.serverInstanceId);
+            console.log("🔄 Refreshing overlay silently...");
+            window.location.reload();
+          }
+          reconnectAttempts = 0; // Reset on successful health check
+        } catch (err) {
+          console.warn("⚠️ Health check failed:", err.message);
+        }
+      }
+
+      // Initial health check to get server instance ID
+      checkServerRestart();
+
       // WebSocket Connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/overlay?userId=${userId}`;
@@ -227,6 +256,12 @@
 
         socket.onopen = function () {
           console.log("Connected to Overlay WebSocket");
+          // Check for server restart on successful reconnect
+          if (reconnectAttempts > 0) {
+            console.log("🔍 Checking for server restart after reconnection...");
+            checkServerRestart();
+          }
+          reconnectAttempts = 0;
         };
 
         socket.onmessage = function (event) {
@@ -240,6 +275,14 @@
 
         socket.onclose = function (event) {
           console.log("WebSocket closed. code=", event.code, "reason=", event.reason, "clean=", event.wasClean, "Reconnecting in 5s...");
+          reconnectAttempts++;
+
+          // After multiple reconnect attempts, check if server restarted
+          if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK) {
+            console.log("🔍 Multiple reconnect attempts, checking server health...");
+            checkServerRestart();
+          }
+
           setTimeout(connect, 5000);
         };
 

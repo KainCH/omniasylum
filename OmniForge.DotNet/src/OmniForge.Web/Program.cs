@@ -20,6 +20,14 @@ using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
+// Server instance ID - changes on each server restart
+// Overlays use this to detect server restarts and refresh silently
+public static class ServerInstance
+{
+    public static readonly string Id = Guid.NewGuid().ToString("N")[..8];
+    public static readonly DateTimeOffset StartTime = DateTimeOffset.UtcNow;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Forwarded Headers for Azure Container Apps
@@ -189,6 +197,12 @@ app.MapControllers();
 // app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
 
 // Health check endpoint for deployment verification
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "healthy",
+    timestamp = DateTimeOffset.UtcNow,
+    serverInstanceId = ServerInstance.Id,
+    serverStartTime = ServerInstance.StartTime
+}));
 
 app.Run();
