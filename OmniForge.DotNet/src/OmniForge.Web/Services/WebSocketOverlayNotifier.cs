@@ -154,12 +154,9 @@ namespace OmniForge.Web.Services
                     var element = JsonSerializer.SerializeToElement(data);
                     if (element.ValueKind == JsonValueKind.Object)
                     {
-                        foreach (var prop in element.EnumerateObject())
+                        foreach (var prop in element.EnumerateObject().Where(p => !payload.ContainsKey(p.Name)))
                         {
-                            if (!payload.ContainsKey(prop.Name))
-                            {
-                                payload[prop.Name] = prop.Value;
-                            }
+                            payload[prop.Name] = prop.Value;
                         }
                     }
                 }

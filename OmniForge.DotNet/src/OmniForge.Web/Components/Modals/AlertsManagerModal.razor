@@ -7,303 +7,307 @@
 
 @if (Show)
 {
-    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-bell-fill me-2"></i>Manage Alerts</h5>
-                    <button type="button" class="btn-close" @onclick="Close"></button>
-                </div>
-                <div class="modal-body">
-                    @if (isLoading)
-                    {
-                        <div class="text-center p-5">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                        </div>
-                    }
-                    else if (!streamAlertsEnabled)
-                    {
-                        <div class="alert alert-warning">
-                            Stream alerts feature not enabled.
-                        </div>
-                    }
-                    else if (alerts == null || !alerts.Any())
-                    {
-                        <div class="alert alert-danger">
-                            Failed to load alerts.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Type</th>
-                                        <th>Visual Cue</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var alert in alerts)
-                                    {
-                                        <tr>
-                                            <td>@alert.Name</td>
-                                            <td><span class="badge bg-secondary">@alert.Type</span></td>
-                                            <td>@alert.VisualCue</td>
-                                            <td>
-                                                <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled" @onchange="@(e => ToggleAlert(alert, e))" />
-                                                    <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <!-- Future: Edit/Delete buttons -->
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <hr />
-
-                        <div class="d-flex align-items-center justify-content-between">
-                            <h6 class="mb-2"><i class="bi bi-diagram-3-fill me-2"></i>Event Mappings</h6>
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ResetMappings" disabled="@isSavingMappings">Reset to Defaults</button>
-                                <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMappings" disabled="@isSavingMappings">Save Mappings</button>
-                            </div>
-                        </div>
-
-                        @if (!string.IsNullOrWhiteSpace(mappingsStatusMessage))
-                        {
-                            <div class="alert @(mappingsStatusIsError ? "alert-danger" : "alert-success") py-2 mb-2">
-                                @mappingsStatusMessage
-                            </div>
-                        }
-
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 55%;">Event</th>
-                                        <th style="width: 45%;">Alert Type</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var eventKey in availableEvents)
-                                    {
-                                        <tr>
-                                            <td><code>@eventKey</code></td>
-                                            <td>
-                                                <select class="form-select form-select-sm" value="@GetMappingValue(eventKey)" @onchange="(e => OnMappingChanged(eventKey, e))">
-                                                    @foreach (var alertType in availableAlertTypes)
-                                                    {
-                                                        <option value="@alertType">@alertType</option>
-                                                    }
-                                                </select>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
-                </div>
-            </div>
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bell-fill me-2"></i>Manage Alerts</h5>
+          <button type="button" class="btn-close" @onclick="Close"></button>
         </div>
+        <div class="modal-body">
+          @if (isLoading)
+          {
+            <div class="text-center p-5">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          }
+          else if (!streamAlertsEnabled)
+          {
+            <div class="alert alert-warning">
+              Stream alerts feature not enabled.
+            </div>
+          }
+          else if (alerts == null || !alerts.Any())
+          {
+            <div class="alert alert-danger">
+              Failed to load alerts.
+            </div>
+          }
+          else
+          {
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Visual Cue</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @foreach (var alert in alerts)
+                  {
+                    <tr>
+                      <td>@alert.Name</td>
+                      <td><span class="badge bg-secondary">@alert.Type</span></td>
+                      <td>@alert.VisualCue</td>
+                      <td>
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled"
+                            @onchange="@(e => ToggleAlert(alert, e))" />
+                          <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
+                        </div>
+                      </td>
+                      <td>
+                        <!-- Future: Edit/Delete buttons -->
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <hr />
+
+            <div class="d-flex align-items-center justify-content-between">
+              <h6 class="mb-2"><i class="bi bi-diagram-3-fill me-2"></i>Event Mappings</h6>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ResetMappings"
+                  disabled="@isSavingMappings">Reset to Defaults</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMappings"
+                  disabled="@isSavingMappings">Save Mappings</button>
+              </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(mappingsStatusMessage))
+            {
+              <div class="alert @(mappingsStatusIsError ? "alert-danger" : "alert-success") py-2 mb-2">
+                @mappingsStatusMessage
+              </div>
+            }
+
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th style="width: 55%;">Event</th>
+                    <th style="width: 45%;">Alert Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @foreach (var eventKey in availableEvents)
+                  {
+                    <tr>
+                      <td><code>@eventKey</code></td>
+                      <td>
+                        <select class="form-select form-select-sm" value="@GetMappingValue(eventKey)"
+                          @onchange="(e => OnMappingChanged(eventKey, e))">
+                          @foreach (var alertType in availableAlertTypes)
+                          {
+                            <option value="@alertType">@alertType</option>
+                          }
+                        </select>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+        </div>
+      </div>
     </div>
+  </div>
 }
 
 @code {
-    [Parameter]
-    public bool Show { get; set; }
+  [Parameter]
+  public bool Show { get; set; }
 
-    [Parameter]
-    public EventCallback<bool> ShowChanged { get; set; }
+  [Parameter]
+  public EventCallback<bool> ShowChanged { get; set; }
 
-    [Parameter]
-    public string UserId { get; set; } = string.Empty;
+  [Parameter]
+  public string UserId { get; set; } = string.Empty;
 
-    private List<Alert> alerts = new();
-    private bool isLoading = true;
-    private Dictionary<string, string> eventMappings = new();
-    private List<string> availableEvents = new();
-    private List<string> availableAlertTypes = new();
-    private bool isSavingMappings = false;
-    private string? mappingsStatusMessage;
-    private bool mappingsStatusIsError = false;
-    private bool streamAlertsEnabled = true;
+  private List<Alert> alerts = new();
+  private bool isLoading = true;
+  private Dictionary<string, string> eventMappings = new();
+  private List<string> availableEvents = new();
+  private List<string> availableAlertTypes = new();
+  private bool isSavingMappings = false;
+  private string? mappingsStatusMessage;
+  private bool mappingsStatusIsError = false;
+  private bool streamAlertsEnabled = true;
 
-    protected override async Task OnParametersSetAsync()
+  protected override async Task OnParametersSetAsync()
+  {
+    if (Show && !string.IsNullOrEmpty(UserId))
     {
-        if (Show && !string.IsNullOrEmpty(UserId))
+      await LoadAlerts();
+    }
+  }
+
+  private async Task LoadAlerts()
+  {
+    isLoading = true;
+    try
+    {
+      var userEntity = await UserRepository.GetUserAsync(UserId);
+      if (userEntity == null || !userEntity.Features.StreamAlerts)
+      {
+        streamAlertsEnabled = false;
+        alerts = new();
+        eventMappings = new();
+        availableEvents = new();
+        availableAlertTypes = new();
+        return;
+      }
+
+      streamAlertsEnabled = true;
+
+      var result = await AlertRepository.GetAlertsAsync(UserId);
+      if (result == null || !result.Any())
+      {
+        var defaultTemplates = AlertTemplates.GetDefaultTemplates();
+        foreach (var template in defaultTemplates)
         {
-            await LoadAlerts();
+          template.UserId = UserId;
+          template.Id = $"{UserId}_{template.Id}";
+          await AlertRepository.SaveAlertAsync(template);
         }
+
+        result = await AlertRepository.GetAlertsAsync(UserId);
+      }
+
+      alerts = (result ?? Enumerable.Empty<Alert>()).OrderBy(a => a.Name).ToList();
+
+      availableEvents = AlertTemplates.GetAllAvailableEvents();
+
+      var defaultTemplateTypes = AlertTemplates.GetDefaultTemplates().Select(t => t.Type);
+      var userAlertTypes = alerts.Select(a => a.Type);
+
+      availableAlertTypes = new List<string> { "none" };
+      availableAlertTypes.AddRange(defaultTemplateTypes);
+      availableAlertTypes.AddRange(userAlertTypes);
+      availableAlertTypes = availableAlertTypes
+      .Where(t => !string.IsNullOrWhiteSpace(t))
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .OrderBy(t => t)
+      .ToList();
+
+      eventMappings = await AlertRepository.GetEventMappingsAsync(UserId);
+      if (eventMappings == null || eventMappings.Count == 0)
+      {
+        eventMappings = AlertTemplates.GetDefaultEventMappings();
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error loading alerts: {ex.Message}");
+      alerts = new();
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
+
+  private string GetMappingValue(string eventKey)
+  {
+    if (eventMappings.TryGetValue(eventKey, out var value) && !string.IsNullOrWhiteSpace(value))
+    {
+      return value;
     }
 
-    private async Task LoadAlerts()
+    return "none";
+  }
+
+  private void OnMappingChanged(string eventKey, ChangeEventArgs e)
+  {
+    var selected = e.Value?.ToString() ?? "none";
+    eventMappings[eventKey] = selected;
+  }
+
+  private async Task SaveMappings()
+  {
+    isSavingMappings = true;
+    mappingsStatusMessage = null;
+    mappingsStatusIsError = false;
+
+    try
     {
-        isLoading = true;
-        try
-        {
-            var userEntity = await UserRepository.GetUserAsync(UserId);
-            if (userEntity == null || !userEntity.Features.StreamAlerts)
-            {
-                streamAlertsEnabled = false;
-                alerts = new();
-                eventMappings = new();
-                availableEvents = new();
-                availableAlertTypes = new();
-                return;
-            }
+      var sanitized = new Dictionary<string, string>();
+      foreach (var eventKey in availableEvents)
+      {
+        var value = GetMappingValue(eventKey);
+        sanitized[eventKey] = value;
+      }
 
-            streamAlertsEnabled = true;
-
-            var result = await AlertRepository.GetAlertsAsync(UserId);
-            if (result == null || !result.Any())
-            {
-                var defaultTemplates = AlertTemplates.GetDefaultTemplates();
-                foreach (var template in defaultTemplates)
-                {
-                    template.UserId = UserId;
-                    template.Id = $"{UserId}_{template.Id}";
-                    await AlertRepository.SaveAlertAsync(template);
-                }
-
-                result = await AlertRepository.GetAlertsAsync(UserId);
-            }
-
-            alerts = (result ?? Enumerable.Empty<Alert>()).OrderBy(a => a.Name).ToList();
-
-            availableEvents = AlertTemplates.GetAllAvailableEvents();
-
-            var defaultTemplateTypes = AlertTemplates.GetDefaultTemplates().Select(t => t.Type);
-            var userAlertTypes = alerts.Select(a => a.Type);
-
-            availableAlertTypes = new List<string> { "none" };
-            availableAlertTypes.AddRange(defaultTemplateTypes);
-            availableAlertTypes.AddRange(userAlertTypes);
-            availableAlertTypes = availableAlertTypes
-                .Where(t => !string.IsNullOrWhiteSpace(t))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(t => t)
-                .ToList();
-
-            eventMappings = await AlertRepository.GetEventMappingsAsync(UserId);
-            if (eventMappings == null || eventMappings.Count == 0)
-            {
-                eventMappings = AlertTemplates.GetDefaultEventMappings();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading alerts: {ex.Message}");
-            alerts = new();
-        }
-        finally
-        {
-            isLoading = false;
-        }
+      await AlertRepository.SaveEventMappingsAsync(UserId, sanitized);
+      eventMappings = sanitized;
+      mappingsStatusMessage = "Event mappings saved.";
     }
-
-    private string GetMappingValue(string eventKey)
+    catch (Exception ex)
     {
-        if (eventMappings.TryGetValue(eventKey, out var value) && !string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        return "none";
+      mappingsStatusIsError = true;
+      mappingsStatusMessage = $"Failed to save mappings: {ex.Message}";
     }
-
-    private void OnMappingChanged(string eventKey, ChangeEventArgs e)
+    finally
     {
-        var selected = e.Value?.ToString() ?? "none";
-        eventMappings[eventKey] = selected;
+      isSavingMappings = false;
     }
+  }
 
-    private async Task SaveMappings()
+  private async Task ResetMappings()
+  {
+    isSavingMappings = true;
+    mappingsStatusMessage = null;
+    mappingsStatusIsError = false;
+
+    try
     {
-        isSavingMappings = true;
-        mappingsStatusMessage = null;
-        mappingsStatusIsError = false;
+      var defaults = AlertTemplates.GetDefaultEventMappings();
+      foreach (var eventKey in availableEvents.Where(e => !defaults.ContainsKey(e)))
+      {
+        defaults[eventKey] = "none";
+      }
 
-        try
-        {
-            var sanitized = new Dictionary<string, string>();
-            foreach (var eventKey in availableEvents)
-            {
-                var value = GetMappingValue(eventKey);
-                sanitized[eventKey] = value;
-            }
-
-            await AlertRepository.SaveEventMappingsAsync(UserId, sanitized);
-            eventMappings = sanitized;
-            mappingsStatusMessage = "Event mappings saved.";
-        }
-        catch (Exception ex)
-        {
-            mappingsStatusIsError = true;
-            mappingsStatusMessage = $"Failed to save mappings: {ex.Message}";
-        }
-        finally
-        {
-            isSavingMappings = false;
-        }
+      await AlertRepository.SaveEventMappingsAsync(UserId, defaults);
+      eventMappings = defaults;
+      mappingsStatusMessage = "Event mappings reset to defaults.";
     }
-
-    private async Task ResetMappings()
+    catch (Exception ex)
     {
-        isSavingMappings = true;
-        mappingsStatusMessage = null;
-        mappingsStatusIsError = false;
-
-        try
-        {
-            var defaults = AlertTemplates.GetDefaultEventMappings();
-            foreach (var eventKey in availableEvents.Where(e => !defaults.ContainsKey(e)))
-            {
-                defaults[eventKey] = "none";
-            }
-
-            await AlertRepository.SaveEventMappingsAsync(UserId, defaults);
-            eventMappings = defaults;
-            mappingsStatusMessage = "Event mappings reset to defaults.";
-        }
-        catch (Exception ex)
-        {
-            mappingsStatusIsError = true;
-            mappingsStatusMessage = $"Failed to reset mappings: {ex.Message}";
-        }
-        finally
-        {
-            isSavingMappings = false;
-        }
+      mappingsStatusIsError = true;
+      mappingsStatusMessage = $"Failed to reset mappings: {ex.Message}";
     }
-
-    private async Task ToggleAlert(Alert alert, ChangeEventArgs e)
+    finally
     {
-        if (e.Value is bool isEnabled)
-        {
-            alert.IsEnabled = isEnabled;
-            alert.UpdatedAt = DateTimeOffset.UtcNow;
-            await AlertRepository.SaveAlertAsync(alert);
-        }
+      isSavingMappings = false;
     }
+  }
 
-    private async Task Close()
+  private async Task ToggleAlert(Alert alert, ChangeEventArgs e)
+  {
+    if (e.Value is bool isEnabled)
     {
-        Show = false;
-        await ShowChanged.InvokeAsync(false);
+      alert.IsEnabled = isEnabled;
+      alert.UpdatedAt = DateTimeOffset.UtcNow;
+      await AlertRepository.SaveAlertAsync(alert);
     }
+  }
+
+  private async Task Close()
+  {
+    Show = false;
+    await ShowChanged.InvokeAsync(false);
+  }
 }
