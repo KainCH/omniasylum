@@ -1,0 +1,51 @@
+@using OmniForge.Core.Entities
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">🎯 Target User</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <label class="form-label">Twitch User ID</label>
+                <input type="text" class="form-control" value="@UserId" @oninput="OnUserIdInput" placeholder="Enter Twitch User ID" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Quick Select</label>
+                <select class="form-select" @onchange="OnUserSelected">
+                    <option value="">-- Select User --</option>
+                    @if (AvailableUsers != null)
+                    {
+                        @foreach (var user in AvailableUsers)
+                        {
+                            <option value="@user.TwitchUserId">@user.DisplayName (@user.TwitchUserId)</option>
+                        }
+                    }
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string UserId { get; set; } = "";
+
+    [Parameter]
+    public EventCallback<string> UserIdChanged { get; set; }
+
+    [Parameter]
+    public IEnumerable<User>? AvailableUsers { get; set; }
+
+    private async Task OnUserIdInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        await UserIdChanged.InvokeAsync(value);
+    }
+
+    private async Task OnUserSelected(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        await UserIdChanged.InvokeAsync(value);
+    }
+}

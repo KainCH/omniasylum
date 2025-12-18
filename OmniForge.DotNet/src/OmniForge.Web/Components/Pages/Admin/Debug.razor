@@ -4,6 +4,7 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using OmniForge.Core.Utilities
+@using OmniForge.Web.Components.Shared
 @attribute [Authorize(Roles = "admin")]
 @inject IUserRepository UserRepository
 @inject IOverlayNotifier OverlayNotifier
@@ -65,32 +66,7 @@
                 </div>
 
                 <!-- Target User Selection -->
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">🎯 Target User</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label class="form-label">Twitch User ID</label>
-                                <input type="text" class="form-control" @bind="eventSubUserId" placeholder="Enter Twitch User ID" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Quick Select</label>
-                                <select class="form-select" @onchange="OnUserSelected">
-                                    <option value="">-- Select User --</option>
-                                    @if (availableUsers != null)
-                                    {
-                                        @foreach (var user in availableUsers)
-                                        {
-                                            <option value="@user.TwitchUserId">@user.DisplayName (@user.TwitchUserId)</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <TargetUserCard UserId="@eventSubUserId" UserIdChanged="@((value) => eventSubUserId = value)" AvailableUsers="@availableUsers" />
 
                 <div class="row">
                     <!-- Follow Event -->
@@ -270,12 +246,7 @@
                 </div>
 
                 <!-- EventSub Result -->
-                @if (!string.IsNullOrEmpty(eventSubResult))
-                {
-                    <div class="alert @(eventSubSuccess ? "alert-success" : "alert-danger") mt-3">
-                        @eventSubResult
-                    </div>
-                }
+                <ResultAlert Message="@eventSubResult" IsSuccess="@eventSubSuccess" />
             </div>
         }
 
@@ -288,32 +259,7 @@
                 </div>
 
                 <!-- Target User Selection -->
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">🎯 Target User</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label class="form-label">Twitch User ID</label>
-                                <input type="text" class="form-control" @bind="discordUserId" placeholder="Enter Twitch User ID" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Quick Select</label>
-                                <select class="form-select" @onchange="OnDiscordUserSelected">
-                                    <option value="">-- Select User --</option>
-                                    @if (availableUsers != null)
-                                    {
-                                        @foreach (var user in availableUsers)
-                                        {
-                                            <option value="@user.TwitchUserId">@user.DisplayName (@user.TwitchUserId)</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <TargetUserCard UserId="@discordUserId" UserIdChanged="@((value) => discordUserId = value)" AvailableUsers="@availableUsers" />
 
                 <div class="row">
                     <!-- Webhook Test -->
@@ -399,12 +345,7 @@
                 </div>
 
                 <!-- Discord Result -->
-                @if (!string.IsNullOrEmpty(discordResult))
-                {
-                    <div class="alert @(discordSuccess ? "alert-success" : "alert-danger") mt-3">
-                        <pre class="mb-0">@discordResult</pre>
-                    </div>
-                }
+                <ResultAlert Message="@discordResult" IsSuccess="@discordSuccess" UsePreformatted="true" />
             </div>
         }
 
@@ -417,32 +358,7 @@
                 </div>
 
                 <!-- Target User Selection -->
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">🎯 Target User</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label class="form-label">Twitch User ID</label>
-                                <input type="text" class="form-control" @bind="forgeUserId" placeholder="Enter Twitch User ID" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Quick Select</label>
-                                <select class="form-select" @onchange="OnForgeUserSelected">
-                                    <option value="">-- Select User --</option>
-                                    @if (availableUsers != null)
-                                    {
-                                        @foreach (var user in availableUsers)
-                                        {
-                                            <option value="@user.TwitchUserId">@user.DisplayName (@user.TwitchUserId)</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <TargetUserCard UserId="@forgeUserId" UserIdChanged="@((value) => forgeUserId = value)" AvailableUsers="@availableUsers" />
 
                 <div class="row">
                     <!-- Asylum Effects -->
@@ -559,12 +475,7 @@
                 </div>
 
                 <!-- Forge Result -->
-                @if (!string.IsNullOrEmpty(forgeResult))
-                {
-                    <div class="alert @(forgeSuccess ? "alert-success" : "alert-danger") mt-3">
-                        @forgeResult
-                    </div>
-                }
+                <ResultAlert Message="@forgeResult" IsSuccess="@forgeSuccess" />
             </div>
         }
     </div>
@@ -648,20 +559,61 @@
         }
     }
 
-    // User Selection Handlers
-    private void OnUserSelected(ChangeEventArgs e)
+    // ============== Validation Helpers ==============
+
+    /// <summary>
+    /// Validates that a user ID is provided. Sets the appropriate error result if not.
+    /// </summary>
+    /// <param name="userId">The user ID to validate</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>True if valid, false otherwise</returns>
+    private bool ValidateUserIdProvided(string userId, Action<bool> setSuccess, Action<string> setResult)
     {
-        eventSubUserId = e.Value?.ToString() ?? "";
+        if (string.IsNullOrEmpty(userId))
+        {
+            setSuccess(false);
+            setResult("❌ Please enter a User ID");
+            return false;
+        }
+        return true;
     }
 
-    private void OnDiscordUserSelected(ChangeEventArgs e)
+    /// <summary>
+    /// Validates that a user exists in the database. Sets the appropriate error result if not found.
+    /// </summary>
+    /// <param name="user">The user object (may be null)</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>True if user exists, false otherwise</returns>
+    private bool ValidateUserExists(User? user, Action<bool> setSuccess, Action<string> setResult)
     {
-        discordUserId = e.Value?.ToString() ?? "";
+        if (user == null)
+        {
+            setSuccess(false);
+            setResult("❌ User not found");
+            return false;
+        }
+        return true;
     }
 
-    private void OnForgeUserSelected(ChangeEventArgs e)
+    /// <summary>
+    /// Validates user ID is provided and user exists. Combined validation for common pattern.
+    /// </summary>
+    /// <param name="userId">The user ID to validate</param>
+    /// <param name="setSuccess">Action to set the success flag</param>
+    /// <param name="setResult">Action to set the result message</param>
+    /// <returns>The user if valid, null otherwise</returns>
+    private async Task<User?> ValidateAndGetUserAsync(string userId, Action<bool> setSuccess, Action<string> setResult)
     {
-        forgeUserId = e.Value?.ToString() ?? "";
+        if (!ValidateUserIdProvided(userId, setSuccess, setResult))
+            return null;
+
+        var user = await UserRepository.GetUserAsync(userId);
+        if (!ValidateUserExists(user, setSuccess, setResult))
+            return null;
+
+        return user;
     }
 
     // ============== EventSub Testing ==============
@@ -795,20 +747,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(discordUserId))
-            {
-                discordSuccess = false;
-                discordResult = "❌ Please enter a User ID";
-                return;
-            }
-
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             var originalUrl = user.DiscordWebhookUrl;
             var testUrl = "https://discord.com/api/webhooks/1234567890/test-token";
@@ -836,20 +778,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(discordUserId))
-            {
-                discordSuccess = false;
-                discordResult = "❌ Please enter a User ID";
-                return;
-            }
-
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             discordSuccess = true;
             discordResult = $"✅ Webhook URL: {(string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "(not configured)" : user.DiscordWebhookUrl)}\nChannel ID: {(string.IsNullOrEmpty(user.DiscordChannelId) ? "(not configured)" : user.DiscordChannelId)}";
@@ -865,13 +797,10 @@
     {
         try
         {
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             // Mock StreamOnline event structure - matches Twitch EventSub stream.online payload
             // Required fields for DiscordService.SendNotificationAsync:
@@ -903,13 +832,10 @@
     {
         try
         {
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             // Mock StreamOffline event structure - matches Twitch EventSub stream.offline payload
             // Required fields for DiscordService.SendNotificationAsync:
@@ -938,13 +864,10 @@
     {
         try
         {
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             Logger.LogInformation("🧪 DEBUG: Sending Discord test notification for user {UserId}", LogSanitizer.Sanitize(discordUserId));
             await DiscordService.SendTestNotificationAsync(user);
@@ -963,13 +886,10 @@
     {
         try
         {
-            var user = await UserRepository.GetUserAsync(discordUserId);
-            if (user == null)
-            {
-                discordSuccess = false;
-                discordResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(discordUserId,
+                success => discordSuccess = success,
+                result => discordResult = result);
+            if (user == null) return;
 
             var previousMilestone = Math.Max(0, milestoneValue - 50);
             Logger.LogInformation("🧪 DEBUG: Triggering Milestone notification for user {UserId} - Type: {Type}, Value: {Value}",
@@ -992,12 +912,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
                 return;
-            }
 
             var payload = new
             {
@@ -1032,12 +950,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
                 return;
-            }
 
             var counter = new Counter { Deaths = 999, Swears = 0 };
             Logger.LogInformation("🧪 DEBUG: Triggering Death Animation for user {UserId}", LogSanitizer.Sanitize(forgeUserId));
@@ -1057,12 +973,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
                 return;
-            }
 
             var counter = new Counter
             {
@@ -1090,12 +1004,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
+            if (!ValidateUserIdProvided(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result))
                 return;
-            }
 
             var text = string.IsNullOrWhiteSpace(bannerText) ? "Press F to pay respects" : bannerText;
             var duration = Math.Clamp(bannerDuration, 500, 30000);
@@ -1122,20 +1034,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
-                return;
-            }
-
-            var user = await UserRepository.GetUserAsync(forgeUserId);
-            if (user == null)
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result);
+            if (user == null) return;
 
             user.StreamStatus = "live";
             Logger.LogInformation("🧪 DEBUG: Forcing stream status to ONLINE for user {UserId} ({DisplayName})",
@@ -1157,20 +1059,10 @@
     {
         try
         {
-            if (string.IsNullOrEmpty(forgeUserId))
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ Please enter a User ID";
-                return;
-            }
-
-            var user = await UserRepository.GetUserAsync(forgeUserId);
-            if (user == null)
-            {
-                forgeSuccess = false;
-                forgeResult = "❌ User not found";
-                return;
-            }
+            var user = await ValidateAndGetUserAsync(forgeUserId,
+                success => forgeSuccess = success,
+                result => forgeResult = result);
+            if (user == null) return;
 
             user.StreamStatus = "offline";
             Logger.LogInformation("🧪 DEBUG: Forcing stream status to OFFLINE for user {UserId} ({DisplayName})",
