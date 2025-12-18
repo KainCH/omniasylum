@@ -51,16 +51,16 @@ public class MainLayoutTests : BunitContext
             b.CloseComponent();
         });
 
-                // Assert
-                var brand = cut.Find(".navbar-brand");
-                Assert.Equal("/portal", brand.GetAttribute("href"));
+        // Assert
+        var brand = cut.Find(".navbar-brand");
+        Assert.Equal("/portal", brand.GetAttribute("href"));
 
-                var homeLink = cut.Find(".nav-link");
-                Assert.Equal("portal", homeLink.GetAttribute("href"));
-                Assert.Contains("Home", homeLink.TextContent);
+        var homeLink = cut.Find(".nav-link");
+        Assert.Equal("portal", homeLink.GetAttribute("href"));
+        Assert.Contains("Home", homeLink.TextContent);
 
-                Assert.NotNull(cut.Find("a[href='auth/twitch']"));
-                Assert.NotNull(cut.Find("a[href='https://learn.microsoft.com/aspnet/core/']"));
+        Assert.NotNull(cut.Find("a[href='auth/twitch']"));
+        Assert.NotNull(cut.Find("a[href='https://learn.microsoft.com/aspnet/core/']"));
     }
 
     [Fact]
