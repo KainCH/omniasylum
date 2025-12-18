@@ -497,6 +497,138 @@ namespace OmniForge.Infrastructure.Services
             };
         }
 
+        public async Task<HelixChattersResponse> GetChattersAsync(string broadcasterId)
+        {
+            return await ExecuteWithRetryAsync(broadcasterId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var result = new HelixChattersResponse();
+                string? cursor = null;
+
+                do
+                {
+                    // Build URL with pagination
+                    var url = $"https://api.twitch.tv/helix/chat/chatters?broadcaster_id={broadcasterId}&moderator_id={broadcasterId}&first=1000";
+                    if (!string.IsNullOrEmpty(cursor))
+                    {
+                        url += $"&after={cursor}";
+                    }
+
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Add("Client-ID", clientId);
+                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var json = await response.Content.ReadAsStringAsync();
+                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+                    // Parse response
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("total", out var totalProp))
+                    {
+                        result.Total = totalProp.GetInt32();
+                    }
+
+                    if (root.TryGetProperty("data", out var dataProp))
+                    {
+                        foreach (var item in dataProp.EnumerateArray())
+                        {
+                            result.Data.Add(new HelixChatter
+                            {
+                                UserId = item.GetProperty("user_id").GetString() ?? string.Empty,
+                                UserLogin = item.GetProperty("user_login").GetString() ?? string.Empty,
+                                UserName = item.GetProperty("user_name").GetString() ?? string.Empty
+                            });
+                        }
+                    }
+
+                    // Get next cursor
+                    cursor = null;
+                    if (root.TryGetProperty("pagination", out var paginationProp) &&
+                        paginationProp.TryGetProperty("cursor", out var cursorProp))
+                    {
+                        cursor = cursorProp.GetString();
+                    }
+
+                } while (!string.IsNullOrEmpty(cursor));
+
+                _logger.LogInformation("📋 Retrieved {Count} chatters for broadcaster {BroadcasterId}", result.Data.Count, LogSanitizer.Sanitize(broadcasterId));
+                return result;
+            });
+        }
+
+        public async Task<HelixUsersResponse> GetUsersByIdsAsync(IEnumerable<string> userIds)
+        {
+            var userIdList = userIds.ToList();
+            if (!userIdList.Any())
+            {
+                return new HelixUsersResponse();
+            }
+
+            // Need to use the first user's token - this is a limitation
+            // In practice, for PayPal matching, we'll call this in the context of a broadcaster
+            var firstUserId = userIdList.First();
+
+            return await ExecuteWithRetryAsync(firstUserId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var result = new HelixUsersResponse();
+
+                // Process in batches of 100 (Twitch API limit)
+                var batches = userIdList
+                    .Select((id, index) => new { id, index })
+                    .GroupBy(x => x.index / 100)
+                    .Select(g => g.Select(x => x.id).ToList());
+
+                foreach (var batch in batches)
+                {
+                    var queryParams = string.Join("&", batch.Select(id => $"id={id}"));
+                    var url = $"https://api.twitch.tv/helix/users?{queryParams}";
+
+                    var client = _httpClientFactory.CreateClient();
+                    client.DefaultRequestHeaders.Clear();
+                    client.DefaultRequestHeaders.Add("Client-ID", clientId);
+                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var json = await response.Content.ReadAsStringAsync();
+
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("data", out var dataProp))
+                    {
+                        foreach (var item in dataProp.EnumerateArray())
+                        {
+                            result.Data.Add(new HelixUser
+                            {
+                                Id = item.GetProperty("id").GetString() ?? string.Empty,
+                                Login = item.GetProperty("login").GetString() ?? string.Empty,
+                                DisplayName = item.GetProperty("display_name").GetString() ?? string.Empty,
+                                Email = item.TryGetProperty("email", out var emailProp) ? emailProp.GetString() ?? string.Empty : string.Empty,
+                                ProfileImageUrl = item.TryGetProperty("profile_image_url", out var imgProp) ? imgProp.GetString() ?? string.Empty : string.Empty,
+                                BroadcasterType = item.TryGetProperty("broadcaster_type", out var btProp) ? btProp.GetString() ?? string.Empty : string.Empty,
+                                Description = item.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? string.Empty : string.Empty
+                            });
+                        }
+                    }
+                }
+
+                _logger.LogInformation("👥 Retrieved {Count} users from Twitch API", result.Data.Count);
+                return result;
+            });
+        }
+
         private static void ValidateAutomodValue(string name, int value)
         {
             if (value < 0 || value > 4)

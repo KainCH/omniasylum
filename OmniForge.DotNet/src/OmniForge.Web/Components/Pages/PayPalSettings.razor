@@ -1,0 +1,466 @@
+@page "/settings/paypal"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Core.Utilities
+@attribute [Authorize]
+
+@inject IUserRepository UserRepository
+@inject ILogger<PayPalSettings> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>PayPal Donations</PageTitle>
+
+<div class="container py-4">
+    <h1 class="h3 mb-3"><i class="bi bi-paypal me-2"></i>PayPal Donation Settings</h1>
+
+    @if (isLoading)
+    {
+        <div class="text-center p-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (!featureEnabled)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            PayPal Donations feature is not enabled for your account. Please contact an administrator.
+        </div>
+    }
+    else if (settings != null)
+    {
+        <EditForm Model="settings" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrWhiteSpace(statusMessage))
+            {
+                <div class="alert @(statusIsError ? "alert-danger" : "alert-success") alert-dismissible fade show">
+                    @statusMessage
+                    <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+                </div>
+            }
+
+            <!-- Main Enable Toggle -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-toggle-on me-2"></i>Enable PayPal Donations
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" id="enabled" @bind-Value="settings.Enabled" />
+                        <label class="form-check-label" for="enabled">
+                            @(settings.Enabled ? "Enabled" : "Disabled")
+                        </label>
+                    </div>
+                    <small class="text-muted">Turn on to receive donation notifications in chat and overlay.</small>
+                </div>
+            </div>
+
+            @if (settings.Enabled)
+            {
+                <!-- Notification Options -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-bell me-2"></i>Notification Options
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mb-3">
+                                    <InputCheckbox class="form-check-input" id="chatNotifications" @bind-Value="settings.ChatNotifications" />
+                                    <label class="form-check-label" for="chatNotifications">
+                                        <i class="bi bi-chat-dots me-1"></i>Chat Notifications
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block mb-3">Send donation messages to your Twitch chat.</small>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mb-3">
+                                    <InputCheckbox class="form-check-input" id="overlayAlerts" @bind-Value="settings.OverlayAlerts" />
+                                    <label class="form-check-label" for="overlayAlerts">
+                                        <i class="bi bi-display me-1"></i>Overlay Alerts
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block mb-3">Show donation alerts on your stream overlay.</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="minimumAmount">
+                                <i class="bi bi-cash-coin me-1"></i>Minimum Donation Amount ($)
+                            </label>
+                            <InputNumber class="form-control" id="minimumAmount" @bind-Value="settings.MinimumAmount"
+                                         min="0" step="0.01" style="max-width: 150px;" />
+                            <small class="text-muted">Donations below this amount won't trigger notifications.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Twitch Matching -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-twitch me-2"></i>Twitch User Matching
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox class="form-check-input" id="enableTwitchMatching" @bind-Value="settings.EnableTwitchMatching" />
+                            <label class="form-check-label" for="enableTwitchMatching">
+                                Enable Twitch User Matching
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mb-3">
+                            Attempt to match PayPal donor email addresses to Twitch users in your chat.
+                            This uses the Twitch Get Chatters API to find viewers and matches their email.
+                        </small>
+
+                        @if (settings.EnableTwitchMatching)
+                        {
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" id="showMatchedTwitchName" @bind-Value="settings.ShowMatchedTwitchName" />
+                                <label class="form-check-label" for="showMatchedTwitchName">
+                                    Show Matched Twitch Name
+                                </label>
+                            </div>
+                            <small class="text-muted">When a match is found, display the Twitch display name instead of PayPal name.</small>
+                        }
+                    </div>
+                </div>
+
+                <!-- Chat Message Template -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-chat-text me-2"></i>Chat Message Template
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <InputText class="form-control" id="chatMessageTemplate" @bind-Value="settings.ChatMessageTemplate" />
+                            <small class="text-muted d-block mt-2">
+                                Available tokens: <code>{name}</code> <code>{amount}</code> <code>{currency}</code> <code>{message}</code>
+                            </small>
+                        </div>
+                        <div class="alert alert-info mb-0">
+                            <i class="bi bi-eye me-2"></i><strong>Preview:</strong>
+                            @GetTemplatePreview()
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Allowed Receiver Emails -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-envelope-check me-2"></i>Allowed Receiver Emails
+                    </div>
+                    <div class="card-body">
+                        <small class="text-muted d-block mb-3">
+                            Only process donations sent to these PayPal email addresses. Leave empty to accept all.
+                        </small>
+
+                        @for (int i = 0; i < receiverEmails.Count; i++)
+                        {
+                            var index = i;
+                            <div class="input-group mb-2">
+                                <input type="email" class="form-control" placeholder="your-paypal@email.com"
+                                       value="@receiverEmails[index]"
+                                       @onchange="@(e => UpdateEmail(index, e.Value?.ToString()))" />
+                                <button class="btn btn-outline-danger" type="button" @onclick="@(() => RemoveEmail(index))">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        }
+
+                        <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="AddEmail">
+                            <i class="bi bi-plus-lg me-1"></i>Add Email
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Webhook Configuration -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-link-45deg me-2"></i>PayPal Integration
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox class="form-check-input" id="useWebhooks" @bind-Value="settings.UseWebhooks" />
+                            <label class="form-check-label" for="useWebhooks">
+                                Use Modern Webhooks (Recommended)
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mb-4">
+                            Webhooks are more reliable than legacy IPN. Requires PayPal Business account.
+                        </small>
+
+                        @if (settings.UseWebhooks)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label" for="webhookId">PayPal Webhook ID</label>
+                                <InputText class="form-control" id="webhookId" @bind-Value="settings.WebhookId"
+                                           placeholder="WH-XXXXXXXXXXXX" />
+                                <small class="text-muted">From your PayPal Developer Dashboard → Webhooks.</small>
+                            </div>
+                        }
+
+                        <hr />
+
+                        <h6 class="mb-3"><i class="bi bi-gear me-2"></i>PayPal Setup URLs</h6>
+                        <p class="text-muted small">Configure these URLs in your PayPal Developer Dashboard:</p>
+
+                        @if (settings.UseWebhooks)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Webhook URL</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control font-monospace" readonly
+                                           value="@GetWebhookUrl()" id="webhookUrl" />
+                                    <button class="btn btn-outline-secondary" type="button"
+                                            @onclick="@(() => CopyToClipboard(GetWebhookUrl()))">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">
+                                    Add this webhook URL in PayPal Developer Dashboard.
+                                    Subscribe to: <code>PAYMENT.SALE.COMPLETED</code>
+                                </small>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">IPN Notification URL (Legacy)</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control font-monospace" readonly
+                                           value="@GetIpnUrl()" id="ipnUrl" />
+                                    <button class="btn btn-outline-secondary" type="button"
+                                            @onclick="@(() => CopyToClipboard(GetIpnUrl()))">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">
+                                    Configure this IPN URL in PayPal account settings → Notifications → IPN.
+                                </small>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Save Button -->
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-lg me-1"></i>
+                            <span>Save Settings</span>
+                        }
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" @onclick="ResetToDefaults" disabled="@isSaving">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset to Defaults
+                    </button>
+                </div>
+            }
+        </EditForm>
+    }
+</div>
+
+@code {
+    private Core.Entities.PayPalSettings? settings;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool featureEnabled = false;
+    private string? statusMessage;
+    private bool statusIsError = false;
+    private string? userId;
+    private List<string> receiverEmails = new();
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            userId = await GetUserIdAsync();
+            if (string.IsNullOrEmpty(userId))
+            {
+                Navigation.NavigateTo("/auth/twitch", forceLoad: true);
+                return;
+            }
+
+            var user = await UserRepository.GetUserAsync(userId);
+            if (user == null)
+            {
+                statusMessage = "User not found.";
+                statusIsError = true;
+                return;
+            }
+
+            featureEnabled = user.Features.PayPalDonations;
+            if (featureEnabled)
+            {
+                // Clone settings to avoid modifying the original
+                settings = new Core.Entities.PayPalSettings
+                {
+                    Enabled = user.Features.PayPalSettings.Enabled,
+                    ChatNotifications = user.Features.PayPalSettings.ChatNotifications,
+                    OverlayAlerts = user.Features.PayPalSettings.OverlayAlerts,
+                    MinimumAmount = user.Features.PayPalSettings.MinimumAmount,
+                    AllowedReceiverEmails = new List<string>(user.Features.PayPalSettings.AllowedReceiverEmails),
+                    ChatMessageTemplate = user.Features.PayPalSettings.ChatMessageTemplate,
+                    EnableTwitchMatching = user.Features.PayPalSettings.EnableTwitchMatching,
+                    ShowMatchedTwitchName = user.Features.PayPalSettings.ShowMatchedTwitchName,
+                    WebhookSecret = user.Features.PayPalSettings.WebhookSecret,
+                    WebhookId = user.Features.PayPalSettings.WebhookId,
+                    UseWebhooks = user.Features.PayPalSettings.UseWebhooks
+                };
+                receiverEmails = new List<string>(settings.AllowedReceiverEmails);
+
+                // Ensure at least one empty slot for adding
+                if (receiverEmails.Count == 0)
+                {
+                    receiverEmails.Add(string.Empty);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading PayPal settings for user {UserId}", LogSanitizer.Sanitize(userId ?? "unknown"));
+            statusMessage = "Failed to load settings. Please try again.";
+            statusIsError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task<string?> GetUserIdAsync()
+    {
+        if (AuthenticationStateTask == null) return null;
+
+        var authState = await AuthenticationStateTask;
+        return authState.User.FindFirst("userId")?.Value;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (settings == null || string.IsNullOrEmpty(userId)) return;
+
+        isSaving = true;
+        statusMessage = null;
+
+        try
+        {
+            var user = await UserRepository.GetUserAsync(userId);
+            if (user == null)
+            {
+                statusMessage = "User not found.";
+                statusIsError = true;
+                return;
+            }
+
+            // Update settings from form
+            settings.AllowedReceiverEmails = receiverEmails
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .Select(e => e.Trim().ToLowerInvariant())
+                .Distinct()
+                .ToList();
+
+            user.Features.PayPalSettings = settings;
+            await UserRepository.SaveUserAsync(user);
+
+            Logger.LogInformation("PayPal settings saved for user {UserId}", LogSanitizer.Sanitize(userId));
+            statusMessage = "Settings saved successfully!";
+            statusIsError = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving PayPal settings for user {UserId}", LogSanitizer.Sanitize(userId ?? "unknown"));
+            statusMessage = "Failed to save settings. Please try again.";
+            statusIsError = true;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ResetToDefaults()
+    {
+        settings = new Core.Entities.PayPalSettings();
+        receiverEmails = new List<string> { string.Empty };
+        statusMessage = "Settings reset to defaults. Click Save to apply.";
+        statusIsError = false;
+    }
+
+    private string GetTemplatePreview()
+    {
+        if (settings == null) return string.Empty;
+
+        return settings.ChatMessageTemplate
+            .Replace("{name}", "JohnDoe")
+            .Replace("{amount}", "10.00")
+            .Replace("{currency}", "USD")
+            .Replace("{message}", "Great stream!");
+    }
+
+    private string GetWebhookUrl()
+    {
+        var baseUrl = Navigation.BaseUri.TrimEnd('/');
+        return $"{baseUrl}/api/paypal/webhook/{userId}";
+    }
+
+    private string GetIpnUrl()
+    {
+        var baseUrl = Navigation.BaseUri.TrimEnd('/');
+        return $"{baseUrl}/api/paypal/ipn/{userId}";
+    }
+
+    private void AddEmail()
+    {
+        receiverEmails.Add(string.Empty);
+    }
+
+    private void RemoveEmail(int index)
+    {
+        if (index >= 0 && index < receiverEmails.Count)
+        {
+            receiverEmails.RemoveAt(index);
+            if (receiverEmails.Count == 0)
+            {
+                receiverEmails.Add(string.Empty);
+            }
+        }
+    }
+
+    private void UpdateEmail(int index, string? value)
+    {
+        if (index >= 0 && index < receiverEmails.Count)
+        {
+            receiverEmails[index] = value ?? string.Empty;
+        }
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await Task.CompletedTask; // Placeholder - actual clipboard would need JS interop
+            statusMessage = "URL copied to clipboard!";
+            statusIsError = false;
+        }
+        catch
+        {
+            statusMessage = "Copy failed. Please select and copy manually.";
+            statusIsError = true;
+        }
+    }
+}

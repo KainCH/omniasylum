@@ -47,7 +47,38 @@ namespace OmniForge.Core.Entities
         public bool DiscordWebhook { get; set; } = false;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
+        public bool PayPalDonations { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
+        public PayPalSettings PayPalSettings { get; set; } = new PayPalSettings();
+    }
+
+    public class PayPalSettings
+    {
+        public bool Enabled { get; set; } = false;
+        public bool ChatNotifications { get; set; } = true;
+        public bool OverlayAlerts { get; set; } = true;
+        public decimal MinimumAmount { get; set; } = 1.00m;
+        public List<string> AllowedReceiverEmails { get; set; } = new List<string>();
+        public string ChatMessageTemplate { get; set; } = "💸 Thanks {name} for the ${amount} donation!";
+        public bool EnableTwitchMatching { get; set; } = true;
+        public bool ShowMatchedTwitchName { get; set; } = true;
+
+        /// <summary>
+        /// Unique identifier for this user's PayPal webhook endpoint.
+        /// Used to route incoming webhooks to the correct user.
+        /// </summary>
+        public string WebhookSecret { get; set; } = string.Empty;
+
+        /// <summary>
+        /// PayPal Webhook ID from PayPal developer dashboard.
+        /// Required for webhook signature verification.
+        /// </summary>
+        public string WebhookId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Whether to use modern webhooks (true) or legacy IPN (false).
+        /// </summary>
+        public bool UseWebhooks { get; set; } = true;
     }
 
     public class StreamSettings

@@ -314,4 +314,91 @@ public class WebSocketOverlayNotifierTests
             m => m.SendToUserAsync(userId, "templateChanged", It.IsAny<object>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task NotifyPayPalDonationAsync_ShouldCallWebSocketManager()
+    {
+        // Arrange
+        var userId = "user123";
+        var donorName = "GenerousDonor";
+        var amount = 25.00m;
+        var currency = "USD";
+        var message = "Thanks for the stream!";
+        var matchedTwitchUser = false;
+
+        // Act
+        await _notifier.NotifyPayPalDonationAsync(userId, donorName, amount, currency, message, matchedTwitchUser);
+
+        // Assert - Uses "paypal_donation" event type (not "customAlert")
+        _mockWebSocketManager.Verify(
+            m => m.SendToUserAsync(userId, "paypal_donation", It.IsAny<object>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyPayPalDonationAsync_ShouldIncludeDonationDetails()
+    {
+        // Arrange
+        var userId = "user123";
+        var donorName = "BigSpender";
+        var amount = 100.50m;
+        var currency = "USD";
+        var message = "Great content!";
+        var matchedTwitchUser = true;
+
+        // Act
+        await _notifier.NotifyPayPalDonationAsync(userId, donorName, amount, currency, message, matchedTwitchUser);
+
+        // Assert - Verify donation details in payload
+        _mockWebSocketManager.Verify(
+            m => m.SendToUserAsync(userId, "paypal_donation",
+                It.Is<object>(o =>
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("BigSpender") &&
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("100.5")
+                )),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyPayPalDonationAsync_ShouldHandleEmptyMessage()
+    {
+        // Arrange
+        var userId = "user123";
+        var donorName = "SilentDonor";
+        var amount = 5.00m;
+        var currency = "USD";
+        var message = "";
+        var matchedTwitchUser = false;
+
+        // Act
+        await _notifier.NotifyPayPalDonationAsync(userId, donorName, amount, currency, message, matchedTwitchUser);
+
+        // Assert
+        _mockWebSocketManager.Verify(
+            m => m.SendToUserAsync(userId, "paypal_donation", It.IsAny<object>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyPayPalDonationAsync_ShouldIndicateTwitchMatch()
+    {
+        // Arrange
+        var userId = "user123";
+        var donorName = "TwitchUser42";
+        var amount = 50.00m;
+        var currency = "EUR";
+        var message = "From Europe!";
+        var matchedTwitchUser = true;
+
+        // Act
+        await _notifier.NotifyPayPalDonationAsync(userId, donorName, amount, currency, message, matchedTwitchUser);
+
+        // Assert - matchedTwitchUser should be True in payload
+        _mockWebSocketManager.Verify(
+            m => m.SendToUserAsync(userId, "paypal_donation",
+                It.Is<object>(o =>
+                    JsonSerializer.Serialize(o, (JsonSerializerOptions?)null).Contains("True", StringComparison.OrdinalIgnoreCase)
+                )),
+            Times.Once);
+    }
 }

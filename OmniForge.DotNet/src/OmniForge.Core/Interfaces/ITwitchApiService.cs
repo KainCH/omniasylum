@@ -19,6 +19,24 @@ namespace OmniForge.Core.Interfaces
 
         // Chat
         Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null);
+
+        // Chatters - for PayPal email matching
+        /// <summary>
+        /// Get all chatters currently in the broadcaster's chat.
+        /// Requires moderator:read:chatters scope.
+        /// </summary>
+        /// <param name="broadcasterId">The broadcaster's Twitch user ID.</param>
+        /// <returns>List of chatters with user IDs and display names.</returns>
+        Task<HelixChattersResponse> GetChattersAsync(string broadcasterId);
+
+        // Users - for email lookup
+        /// <summary>
+        /// Get user details for multiple user IDs (up to 100 per request).
+        /// Requires user:read:email scope to get email addresses.
+        /// </summary>
+        /// <param name="userIds">List of Twitch user IDs to lookup.</param>
+        /// <returns>List of users with their details including email if scope permits.</returns>
+        Task<HelixUsersResponse> GetUsersByIdsAsync(IEnumerable<string> userIds);
     }
 
     public class StreamInfo

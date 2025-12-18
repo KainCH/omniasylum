@@ -25,5 +25,37 @@ namespace OmniForge.Core.Utilities
             }
             return Sanitize(input.ToString());
         }
+
+        /// <summary>
+        /// Sanitizes an email address for logging by masking the local part.
+        /// Example: "john.doe@example.com" becomes "j***e@example.com"
+        /// </summary>
+        public static string SanitizeEmail(string? email)
+        {
+            if (string.IsNullOrEmpty(email))
+            {
+                return string.Empty;
+            }
+
+            var sanitized = Sanitize(email);
+            var atIndex = sanitized.IndexOf('@');
+
+            if (atIndex <= 0)
+            {
+                // Not a valid email format, just mask most of it
+                return sanitized.Length <= 2 ? "***" : $"{sanitized[0]}***";
+            }
+
+            var localPart = sanitized.Substring(0, atIndex);
+            var domain = sanitized.Substring(atIndex);
+
+            // Mask the local part, keeping first and last character
+            if (localPart.Length <= 2)
+            {
+                return $"***{domain}";
+            }
+
+            return $"{localPart[0]}***{localPart[localPart.Length - 1]}{domain}";
+        }
     }
 }

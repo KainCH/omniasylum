@@ -91,7 +91,9 @@ window.overlayInterop = {
                               type === 'subscription' ? 'subscription' :
                               type === 'bits' ? 'bits' :
                               type === 'follow' ? 'follow' :
-                              type === 'milestone' ? 'milestone' : type;
+                              type === 'milestone' ? 'milestone' :
+                              type === 'paypal_donation' ? 'donation' :
+                              type === 'paypalDonation' ? 'donation' : type;
 
             window.notificationAudio.playNotification(audioType, payload);
         }
@@ -103,6 +105,12 @@ window.overlayInterop = {
             this.triggerSubCelebration();
             if (payload.textPrompt) {
                 this.showSubBanner(payload.textPrompt);
+            }
+        } else if (type === 'paypal_donation' || type === 'paypalDonation') {
+            // PayPal donation celebration
+            this.triggerDonationCelebration(payload.amount || 10);
+            if (payload.textPrompt) {
+                this.showDonationBanner(payload.textPrompt);
             }
         } else if (type === 'milestone') {
              // Milestone specific logic if any
@@ -172,6 +180,101 @@ window.overlayInterop = {
             banner.classList.remove('show');
             banner.classList.add('hide');
         }, 5000);
+    },
+
+    triggerDonationCelebration: function(amount) {
+        // Create or get donation celebration container
+        let container = document.getElementById('donation-celebration');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'donation-celebration';
+            container.className = 'donation-celebration';
+            document.body.appendChild(container);
+        }
+
+        // Scale particle count based on donation amount (5-50 particles)
+        const particleCount = Math.min(Math.max(Math.floor(amount / 2), 5), 50);
+
+        // Money symbols to rain down
+        const moneySymbols = ['💵', '💰', '💸', '🤑', '💲'];
+
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'money-particle';
+            particle.textContent = moneySymbols[Math.floor(Math.random() * moneySymbols.length)];
+            particle.style.left = Math.random() * 100 + 'vw';
+            particle.style.animationDuration = (Math.random() * 2 + 2) + 's';
+            particle.style.animationDelay = (Math.random() * 1) + 's';
+            particle.style.fontSize = (Math.random() * 1.5 + 1) + 'rem';
+            container.appendChild(particle);
+
+            setTimeout(() => {
+                particle.remove();
+            }, 5000);
+        }
+
+        // Add keyframes if not exists
+        if (!document.getElementById('money-rain-keyframes')) {
+            const style = document.createElement('style');
+            style.id = 'money-rain-keyframes';
+            style.textContent = `
+                .donation-celebration {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    pointer-events: none;
+                    z-index: 1000;
+                    overflow: hidden;
+                }
+                .money-particle {
+                    position: absolute;
+                    top: -50px;
+                    animation: moneyRain linear forwards;
+                    filter: drop-shadow(0 0 5px rgba(0, 255, 0, 0.5));
+                }
+                @keyframes moneyRain {
+                    0% {
+                        transform: translateY(0) rotate(0deg) scale(1);
+                        opacity: 1;
+                    }
+                    50% {
+                        transform: translateY(50vh) rotate(180deg) scale(1.2);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: translateY(110vh) rotate(360deg) scale(0.8);
+                        opacity: 0;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    },
+
+    showDonationBanner: function(text) {
+        // Use the interaction banner for donation messages
+        const banner = document.getElementById('interaction-banner');
+        if (!banner) return;
+
+        banner.textContent = text;
+        banner.style.background = 'linear-gradient(135deg, #1a472a 0%, #2d5a3f 100%)';
+        banner.style.borderColor = '#4CAF50';
+        banner.classList.remove('hide');
+        banner.classList.add('show');
+
+        if (banner.__omniDonationTimer) {
+            clearTimeout(banner.__omniDonationTimer);
+        }
+
+        banner.__omniDonationTimer = setTimeout(() => {
+            banner.classList.remove('show');
+            banner.classList.add('hide');
+            // Reset banner style
+            banner.style.background = '';
+            banner.style.borderColor = '';
+        }, 6000);
     },
 
     showInteractionBanner: function(text, durationMs) {

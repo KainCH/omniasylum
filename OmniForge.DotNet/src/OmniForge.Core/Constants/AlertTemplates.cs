@@ -120,6 +120,22 @@ namespace OmniForge.Core.Constants
                     BorderColor = "#8b008b",
                     IsDefault = true,
                     Effects = "{\"animation\":\"trainMove\",\"svgMask\":\"steam\",\"particle\":\"smoke\",\"soundTrigger\":\"train.wav\"}"
+                },
+                new Alert
+                {
+                    Id = "paypal_donation",
+                    Type = "paypal_donation",
+                    Name = "PayPal Donation",
+                    VisualCue = "Cash register ringing",
+                    Sound = "cash-register",
+                    SoundDescription = "Ka-ching cash register sound",
+                    TextPrompt = "💸 [User] donated $[Amount]! [Message]",
+                    Duration = 6000,
+                    BackgroundColor = "#0d1a0d",
+                    TextColor = "#00ff00",
+                    BorderColor = "#228b22",
+                    IsDefault = true,
+                    Effects = "{\"animation\":\"moneyRain\",\"svgMask\":\"none\",\"particle\":\"dollars\",\"screenShake\":true,\"glowIntensity\":\"medium\",\"soundTrigger\":\"cashregister.wav\"}"
                 }
             };
         }
@@ -136,7 +152,8 @@ namespace OmniForge.Core.Constants
                 { "chat_notification_community_gift", "giftsub" },
                 { "chat_notification_raid", "raid" },
                 { "chat_notification_bits_badge", "bits" },
-                { "chat_notification_announcement", "announcement" }
+                { "chat_notification_announcement", "announcement" },
+                { "paypal_donation", "paypal_donation" }
             };
         }
 
@@ -155,7 +172,8 @@ namespace OmniForge.Core.Constants
                 "chat_notification_raid",
                 "chat_notification_announcement",
                 "chat_notification_bits_badge",
-                "chat_notification_charity_donation"
+                "chat_notification_charity_donation",
+                "paypal_donation"
             };
         }
     }

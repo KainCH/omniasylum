@@ -20,5 +20,16 @@ namespace OmniForge.Core.Interfaces
         Task NotifyRaidAsync(string userId, string raiderName, int viewers);
         Task NotifyCustomAlertAsync(string userId, string alertType, object data);
         Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template);
+
+        /// <summary>
+        /// Notify overlay of a PayPal donation.
+        /// </summary>
+        /// <param name="userId">Broadcaster's Twitch user ID.</param>
+        /// <param name="donorName">Display name of donor (Twitch name if matched, PayPal name otherwise).</param>
+        /// <param name="amount">Donation amount.</param>
+        /// <param name="currency">Currency code (e.g., "USD").</param>
+        /// <param name="message">Optional donation message.</param>
+        /// <param name="matchedTwitchUser">Whether donor was matched to a Twitch user.</param>
+        Task NotifyPayPalDonationAsync(string userId, string donorName, decimal amount, string currency, string message, bool matchedTwitchUser);
     }
 }

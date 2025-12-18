@@ -237,5 +237,19 @@ namespace OmniForge.Web.Services
         {
             await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
         }
+
+        public async Task NotifyPayPalDonationAsync(string userId, string donorName, decimal amount, string currency, string message, bool matchedTwitchUser)
+        {
+            await _webSocketManager.SendToUserAsync(userId, "paypal_donation", new
+            {
+                name = donorName,
+                donorName,
+                amount,
+                currency,
+                message = message ?? string.Empty,
+                matchedTwitchUser,
+                textPrompt = $"💸 {donorName} donated ${amount:F2}! {message}"
+            });
+        }
     }
 }

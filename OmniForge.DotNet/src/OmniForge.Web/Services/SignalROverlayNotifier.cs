@@ -100,5 +100,18 @@ namespace OmniForge.Web.Services
         {
             await _hubContext.Clients.Group($"user:{userId}").SendAsync("templateChanged", new { templateStyle, template });
         }
+
+        public async Task NotifyPayPalDonationAsync(string userId, string donorName, decimal amount, string currency, string message, bool matchedTwitchUser)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("paypalDonation", new
+            {
+                donorName,
+                amount,
+                currency,
+                message,
+                matchedTwitchUser,
+                timestamp = System.DateTime.UtcNow
+            });
+        }
     }
 }

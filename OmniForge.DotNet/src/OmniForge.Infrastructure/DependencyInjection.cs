@@ -13,6 +13,7 @@ using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api;
 using TwitchLib.EventSub.Websockets.Extensions;
+using PayPalConfig = OmniForge.Core.Configuration.PayPalSettings;
 
 namespace OmniForge.Infrastructure
 {
@@ -25,6 +26,7 @@ namespace OmniForge.Infrastructure
             services.Configure<DiscordBotSettings>(configuration.GetSection("DiscordBot"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
+            services.Configure<PayPalConfig>(configuration.GetSection(PayPalConfig.SectionName));
 
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
             services.AddScoped<IJwtService, JwtService>();
@@ -67,10 +69,14 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
             services.AddScoped<ISeriesRepository, SeriesRepository>();
+            services.AddScoped<IPayPalRepository, PayPalRepository>();
+            services.AddHttpClient<IPayPalVerificationService, PayPalVerificationService>();
+            services.AddScoped<IPayPalNotificationService, PayPalNotificationService>();
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
+            services.AddSingleton<IChatterEmailCache, ChatterEmailCacheService>();
             services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
