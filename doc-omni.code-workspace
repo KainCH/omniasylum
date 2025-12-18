@@ -34,7 +34,10 @@
     "typescript.preferences.quoteStyle": "single",
     "omnisharp.disableMSBuildDiagnosticWarning": true,
     "dotnet.projects.enableAutomaticRestore": false,
-    "csharp.showOmnisharpLogOnError": false
+    "csharp.showOmnisharpLogOnError": false,
+    "[aspnetcorerazor]": {
+      "editor.defaultFormatter": "ms-dotnettools.csharp"
+    }
   },
   "extensions": {
     "recommendations": [

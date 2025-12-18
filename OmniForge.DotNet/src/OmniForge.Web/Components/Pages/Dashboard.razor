@@ -89,7 +89,7 @@
                     <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
                         <i class="bi bi-gear-fill"></i> Settings
                     </button>
-                    <button class="btn-custom btn-alerts" @onclick="() => showAlertsManager = true">
+                    <button class="btn-custom btn-alerts" @onclick="NavigateToAlerts">
                         <i class="bi bi-bell-fill"></i> Alerts
                     </button>
                     <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
@@ -184,7 +184,6 @@
                 </div>
 
                 <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
-                <AlertsManagerModal @bind-Show="showAlertsManager" UserId="@TwitchUserId" />
                 <AlertEffectsModal @bind-Show="showAlertEffects" />
             }
         </Authorized>
@@ -203,7 +202,6 @@
     private bool savingOfflinePreview = false;
     private bool resettingCounters = false;
     private bool showOverlaySettings = false;
-    private bool showAlertsManager = false;
     private bool showAlertEffects = false;
     private bool isMonitoring = false;
     private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
@@ -256,6 +254,11 @@
         }
     }
 
+    private void NavigateToAlerts()
+    {
+        NavigationManager.NavigateTo("alerts");
+    }
+
     private void RefreshStatus()
     {
         if (!string.IsNullOrEmpty(TwitchUserId))
@@ -267,7 +270,7 @@
 
     private bool IsAnyModalOpen()
     {
-        return showOverlaySettings || showAlertsManager || showAlertEffects;
+        return showOverlaySettings || showAlertEffects;
     }
 
     public void Dispose()

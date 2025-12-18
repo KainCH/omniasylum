@@ -453,6 +453,31 @@ namespace OmniForge.Tests
 
             Assert.NotNull(domain.Features);
             Assert.NotNull(domain.OverlaySettings);
+            // Verify defaults are applied (StreamAlerts should default to true)
+            Assert.True(domain.Features.StreamAlerts);
+            Assert.True(domain.Features.ChatCommands);
+            Assert.True(domain.Features.DiscordNotifications);
+        }
+
+        [Fact]
+        public void UserTableEntity_ToDomain_ShouldHandleEmptyObjectJsonFeatures()
+        {
+            var entity = new UserTableEntity
+            {
+                twitchUserId = "123",
+                username = "testuser",
+                features = "{}",
+                overlaySettings = "{}"
+            };
+
+            var domain = entity.ToDomain();
+
+            Assert.NotNull(domain.Features);
+            Assert.NotNull(domain.OverlaySettings);
+            // Verify defaults are applied even when JSON is {}
+            Assert.True(domain.Features.StreamAlerts);
+            Assert.True(domain.Features.ChatCommands);
+            Assert.True(domain.Features.DiscordNotifications);
         }
 
         [Fact]

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Azure;
 using Azure.Data.Tables;
 using OmniForge.Core.Entities;
@@ -77,7 +78,7 @@ namespace OmniForge.Infrastructure.Entities
                 RefreshToken = refreshToken,
                 TokenExpiry = ParseDateTimeOffset(tokenExpiry),
                 Role = role,
-                Features = DeserializeSafe<FeatureFlags>(features),
+                Features = DeserializeFeatureFlags(features),
                 OverlaySettings = DeserializeSafe<OverlaySettings>(overlaySettings),
                 DiscordSettings = DeserializeSafe<DiscordSettings>(discordSettings),
                 DiscordWebhookUrl = discordWebhookUrl,
@@ -105,6 +106,69 @@ namespace OmniForge.Infrastructure.Entities
             }
 
             return user;
+        }
+
+        /// <summary>
+        /// Deserialize FeatureFlags with proper defaults applied.
+        /// JSON deserialization doesn't invoke property initializers for missing properties,
+        /// so we need to merge with defaults to ensure features like StreamAlerts default to true.
+        /// </summary>
+        private FeatureFlags DeserializeFeatureFlags(string json)
+        {
+            var defaults = new FeatureFlags();
+
+            if (string.IsNullOrEmpty(json) || json.Trim() == "{}")
+            {
+                return defaults;
+            }
+
+            try
+            {
+                // Use the same case-insensitive options as other deserializations
+                var deserialized = JsonSerializer.Deserialize<FeatureFlags>(json, _jsonOptions);
+                if (deserialized == null)
+                {
+                    return defaults;
+                }
+
+                // The issue is that JSON deserialization doesn't apply property initializers for missing properties.
+                // However, since we now use _jsonOptions which has PropertyNameCaseInsensitive = true,
+                // and FeatureFlags has proper defaults, we need to check which properties were NOT in the JSON
+                // and apply defaults for those.
+
+                // Parse the JSON to see which properties are explicitly set
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                // Build a case-insensitive lookup of properties in the JSON
+                var jsonProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in root.EnumerateObject())
+                {
+                    jsonProps.Add(prop.Name);
+                }
+
+                // Apply defaults for properties NOT in the JSON
+                if (!jsonProps.Contains("ChatCommands")) deserialized.ChatCommands = defaults.ChatCommands;
+                if (!jsonProps.Contains("ChannelPoints")) deserialized.ChannelPoints = defaults.ChannelPoints;
+                if (!jsonProps.Contains("AutoClip")) deserialized.AutoClip = defaults.AutoClip;
+                if (!jsonProps.Contains("CustomCommands")) deserialized.CustomCommands = defaults.CustomCommands;
+                if (!jsonProps.Contains("Analytics")) deserialized.Analytics = defaults.Analytics;
+                if (!jsonProps.Contains("Webhooks")) deserialized.Webhooks = defaults.Webhooks;
+                if (!jsonProps.Contains("BitsIntegration")) deserialized.BitsIntegration = defaults.BitsIntegration;
+                if (!jsonProps.Contains("StreamOverlay")) deserialized.StreamOverlay = defaults.StreamOverlay;
+                if (!jsonProps.Contains("AlertAnimations")) deserialized.AlertAnimations = defaults.AlertAnimations;
+                if (!jsonProps.Contains("DiscordNotifications")) deserialized.DiscordNotifications = defaults.DiscordNotifications;
+                if (!jsonProps.Contains("DiscordWebhook")) deserialized.DiscordWebhook = defaults.DiscordWebhook;
+                if (!jsonProps.Contains("TemplateStyle")) deserialized.TemplateStyle = defaults.TemplateStyle;
+                if (!jsonProps.Contains("StreamAlerts")) deserialized.StreamAlerts = defaults.StreamAlerts;
+                if (!jsonProps.Contains("StreamSettings")) deserialized.StreamSettings = defaults.StreamSettings;
+
+                return deserialized;
+            }
+            catch
+            {
+                return defaults;
+            }
         }
 
         /// <summary>

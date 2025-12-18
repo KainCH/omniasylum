@@ -30,7 +30,7 @@ public class HomeTests : BunitContext
     }
 
     [Fact]
-    public void Home_ShouldRenderAuthCard_WhenAuthenticated()
+    public void Home_ShouldRedirectToPortal_WhenAuthenticated()
     {
         // Arrange - Create authenticated user
         var claims = new List<Claim>
@@ -45,39 +45,7 @@ public class HomeTests : BunitContext
         var authStateProvider = new Mock<AuthenticationStateProvider>();
         authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
         Services.AddSingleton(authStateProvider.Object);
-
-        // Act
-        var cut = Render(b =>
-        {
-            b.OpenComponent<CascadingAuthenticationState>(0);
-            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
-            {
-                builder.OpenComponent<Home>(2);
-                builder.CloseComponent();
-            }));
-            b.CloseComponent();
-        });
-
-        // Assert - Should contain portal link when authenticated
-        Assert.Contains("auth-card", cut.Markup);
-    }
-
-    [Fact]
-    public void Home_ShouldRenderPortalLink_WhenAuthenticated()
-    {
-        // Arrange - Create authenticated user
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "TestUser"),
-            new Claim(ClaimTypes.NameIdentifier, "12345")
-        };
-        var identity = new ClaimsIdentity(claims, "TestAuth");
-        var user = new ClaimsPrincipal(identity);
-        var authState = Task.FromResult(new AuthenticationState(user));
-
-        var authStateProvider = new Mock<AuthenticationStateProvider>();
-        authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
-        Services.AddSingleton(authStateProvider.Object);
+        var nav = Services.GetRequiredService<NavigationManager>();
 
         // Act
         var cut = Render(b =>
@@ -92,26 +60,21 @@ public class HomeTests : BunitContext
         });
 
         // Assert
-        var portalLink = cut.Find("a.twitch-login-btn");
-        Assert.Contains("Go to User Portal", portalLink.TextContent);
+        cut.WaitForAssertion(() => Assert.EndsWith("/portal", nav.Uri));
     }
 
     [Fact]
-    public void Home_ShouldShowWelcomeMessage_WhenAuthenticated()
+    public void Home_ShouldRedirectToLogin_WhenNotAuthenticated()
     {
-        // Arrange
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "TestUser"),
-            new Claim(ClaimTypes.NameIdentifier, "12345")
-        };
-        var identity = new ClaimsIdentity(claims, "TestAuth");
+        // Arrange - unauthenticated user
+        var identity = new ClaimsIdentity();
         var user = new ClaimsPrincipal(identity);
         var authState = Task.FromResult(new AuthenticationState(user));
 
         var authStateProvider = new Mock<AuthenticationStateProvider>();
         authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
         Services.AddSingleton(authStateProvider.Object);
+        var nav = Services.GetRequiredService<NavigationManager>();
 
         // Act
         var cut = Render(b =>
@@ -126,110 +89,6 @@ public class HomeTests : BunitContext
         });
 
         // Assert
-        var subtitle = cut.Find(".auth-subtitle");
-        Assert.Contains("Welcome back, TestUser", subtitle.TextContent);
-    }
-
-    [Fact]
-    public void Home_ShouldShowLogoutButton_WhenAuthenticated()
-    {
-        // Arrange
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "TestUser"),
-            new Claim(ClaimTypes.NameIdentifier, "12345")
-        };
-        var identity = new ClaimsIdentity(claims, "TestAuth");
-        var user = new ClaimsPrincipal(identity);
-        var authState = Task.FromResult(new AuthenticationState(user));
-
-        var authStateProvider = new Mock<AuthenticationStateProvider>();
-        authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
-        Services.AddSingleton(authStateProvider.Object);
-
-        // Act
-        var cut = Render(b =>
-        {
-            b.OpenComponent<CascadingAuthenticationState>(0);
-            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
-            {
-                builder.OpenComponent<Home>(2);
-                builder.CloseComponent();
-            }));
-            b.CloseComponent();
-        });
-
-        // Assert
-        var logoutButton = cut.Find("a.btn-outline-danger");
-        Assert.Contains("Logout", logoutButton.TextContent);
-        Assert.Contains("auth/logout", logoutButton.GetAttribute("href"));
-    }
-
-    [Fact]
-    public void Home_ShouldShowPageTitle_WhenAuthenticated()
-    {
-        // Arrange
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "TestUser"),
-            new Claim(ClaimTypes.NameIdentifier, "12345")
-        };
-        var identity = new ClaimsIdentity(claims, "TestAuth");
-        var user = new ClaimsPrincipal(identity);
-        var authState = Task.FromResult(new AuthenticationState(user));
-
-        var authStateProvider = new Mock<AuthenticationStateProvider>();
-        authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
-        Services.AddSingleton(authStateProvider.Object);
-
-        // Act
-        var cut = Render(b =>
-        {
-            b.OpenComponent<CascadingAuthenticationState>(0);
-            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
-            {
-                builder.OpenComponent<Home>(2);
-                builder.CloseComponent();
-            }));
-            b.CloseComponent();
-        });
-
-        // Assert
-        var header = cut.Find(".auth-header h1");
-        Assert.Contains("OmniForgeStream", header.TextContent);
-    }
-
-    [Fact]
-    public void Home_ShouldNotShowPrivacyNote_WhenAuthenticated()
-    {
-        // Arrange
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.Name, "TestUser"),
-            new Claim(ClaimTypes.NameIdentifier, "12345")
-        };
-        var identity = new ClaimsIdentity(claims, "TestAuth");
-        var user = new ClaimsPrincipal(identity);
-        var authState = Task.FromResult(new AuthenticationState(user));
-
-        var authStateProvider = new Mock<AuthenticationStateProvider>();
-        authStateProvider.Setup(x => x.GetAuthenticationStateAsync()).Returns(authState);
-        Services.AddSingleton(authStateProvider.Object);
-
-        // Act
-        var cut = Render(b =>
-        {
-            b.OpenComponent<CascadingAuthenticationState>(0);
-            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
-            {
-                builder.OpenComponent<Home>(2);
-                builder.CloseComponent();
-            }));
-            b.CloseComponent();
-        });
-
-        // Assert
-        var privacyNotes = cut.FindAll(".privacy-note");
-        Assert.Empty(privacyNotes);
+        cut.WaitForAssertion(() => Assert.EndsWith("/auth/twitch", nav.Uri));
     }
 }

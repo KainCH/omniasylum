@@ -1,0 +1,344 @@
+@page "/alerts"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.Extensions.Logging
+@using System.Security.Claims
+@using OmniForge.Core.Constants
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize]
+
+@inject IAlertRepository AlertRepository
+@inject IUserRepository UserRepository
+@inject ILogger<Alerts> Logger
+
+<div class="container py-4">
+  <h1 class="h3 mb-3"><i class="bi bi-bell-fill me-2"></i>Manage Alerts</h1>
+
+  @if (isLoading)
+  {
+    <div class="text-center p-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  }
+  else if (!streamAlertsEnabled)
+  {
+    <div class="alert alert-warning">
+      Stream alerts feature not enabled.
+    </div>
+  }
+  else if (alerts == null || !alerts.Any())
+  {
+    <div class="alert alert-danger">
+      Failed to load alerts.
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Visual Cue</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var alert in alerts)
+          {
+            <tr>
+              <td>@alert.Name</td>
+              <td><span class="badge bg-secondary">@alert.Type</span></td>
+              <td>@alert.VisualCue</td>
+              <td>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled"
+                    @onchange="@(e => ToggleAlert(alert, e))" />
+                  <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
+                </div>
+              </td>
+              <td>
+                <!-- Future: Edit/Delete buttons -->
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <hr />
+
+    <div class="d-flex align-items-center justify-content-between">
+      <h2 class="h6 mb-2"><i class="bi bi-diagram-3-fill me-2"></i>Event Mappings</h2>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ResetMappings"
+          disabled="@isSavingMappings">Reset to Defaults</button>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMappings" disabled="@isSavingMappings">Save
+          Mappings</button>
+      </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(mappingsStatusMessage))
+    {
+      <div class="alert @(mappingsStatusIsError ? "alert-danger" : "alert-success") py-2 mb-2">
+        @mappingsStatusMessage
+      </div>
+    }
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th style="width: 55%;">Event</th>
+            <th style="width: 45%;">Alert Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var eventKey in availableEvents)
+          {
+            <tr>
+              <td><code>@eventKey</code></td>
+              <td>
+                <select class="form-select form-select-sm" value="@GetMappingValue(eventKey)"
+                  @onchange="(e => OnMappingChanged(eventKey, e))">
+                  @foreach (var alertType in availableAlertTypes)
+                  {
+                    <option value="@alertType">@alertType</option>
+                  }
+                </select>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+@code {
+  [CascadingParameter]
+  private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+  private string? TwitchUserId;
+  private bool isLoading = true;
+  private bool streamAlertsEnabled = true;
+
+  private List<Alert> alerts = new();
+
+  private Dictionary<string, string> eventMappings = new();
+  private List<string> availableEvents = new();
+  private List<string> availableAlertTypes = new();
+
+  private bool isSavingMappings = false;
+  private string? mappingsStatusMessage;
+  private bool mappingsStatusIsError = false;
+
+  protected override async Task OnInitializedAsync()
+  {
+    Logger.LogDebug("🔔 Alerts page OnInitializedAsync started");
+
+    if (authenticationStateTask == null)
+    {
+      Logger.LogWarning("⚠️ authenticationStateTask is null");
+      isLoading = false;
+      return;
+    }
+
+    var authState = await authenticationStateTask;
+    var user = authState.User;
+
+    if (user.Identity?.IsAuthenticated != true)
+    {
+      Logger.LogWarning("⚠️ User is not authenticated");
+      isLoading = false;
+      return;
+    }
+
+    TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(TwitchUserId))
+    {
+      Logger.LogWarning("⚠️ TwitchUserId claim not found");
+      isLoading = false;
+      return;
+    }
+
+    Logger.LogDebug("📥 Loading user {UserId} for alerts page", TwitchUserId);
+    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    if (userEntity == null)
+    {
+      Logger.LogWarning("⚠️ User entity not found for {UserId}", TwitchUserId);
+      streamAlertsEnabled = false;
+      isLoading = false;
+      return;
+    }
+
+    Logger.LogDebug("📋 User {UserId} Features.StreamAlerts = {StreamAlerts}", TwitchUserId,
+    userEntity.Features.StreamAlerts);
+    if (!userEntity.Features.StreamAlerts)
+    {
+      Logger.LogWarning("⚠️ StreamAlerts feature disabled for user {UserId}", TwitchUserId);
+      streamAlertsEnabled = false;
+      isLoading = false;
+      return;
+    }
+
+    Logger.LogDebug("✅ StreamAlerts enabled, loading alerts for user {UserId}", TwitchUserId);
+    await LoadAlertsAndMappings();
+  }
+
+  private async Task LoadAlertsAndMappings()
+  {
+    isLoading = true;
+    try
+    {
+      Logger.LogDebug("📥 Fetching alerts from repository for user {UserId}", TwitchUserId);
+      var loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
+      Logger.LogDebug("📋 Loaded {Count} alerts from repository", loadedAlerts?.Count() ?? 0);
+
+      if (loadedAlerts == null || !loadedAlerts.Any())
+      {
+        Logger.LogInformation("🌱 No alerts found, seeding defaults for user {UserId}", TwitchUserId);
+        await SeedDefaultAlertsAsync(TwitchUserId!);
+        loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
+      }
+
+      alerts = (loadedAlerts ?? Enumerable.Empty<Alert>()).OrderBy(a => a.Name).ToList();
+
+      availableEvents = AlertTemplates.GetAllAvailableEvents();
+
+      var defaultTemplateTypes = AlertTemplates.GetDefaultTemplates().Select(t => t.Type);
+      var userAlertTypes = alerts.Select(a => a.Type);
+
+      availableAlertTypes = new List<string> { "none" };
+      availableAlertTypes.AddRange(defaultTemplateTypes);
+      availableAlertTypes.AddRange(userAlertTypes);
+      availableAlertTypes = availableAlertTypes
+      .Where(t => !string.IsNullOrWhiteSpace(t))
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .OrderBy(t => t)
+      .ToList();
+
+      eventMappings = await AlertRepository.GetEventMappingsAsync(TwitchUserId!);
+      if (eventMappings == null || eventMappings.Count == 0)
+      {
+        eventMappings = AlertTemplates.GetDefaultEventMappings();
+      }
+
+      Logger.LogDebug("✅ Alerts page loaded {AlertCount} alerts and {MappingCount} mappings", alerts.Count,
+      eventMappings.Count);
+    }
+    catch (Exception ex)
+    {
+      Logger.LogError(ex, "❌ Error loading alerts for user {UserId}", TwitchUserId);
+      alerts = new();
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
+
+  private async Task SeedDefaultAlertsAsync(string userId)
+  {
+    var defaultTemplates = AlertTemplates.GetDefaultTemplates();
+    foreach (var template in defaultTemplates)
+    {
+      template.UserId = userId;
+      template.Id = $"{userId}_{template.Id}";
+      await AlertRepository.SaveAlertAsync(template);
+    }
+  }
+
+  private async Task ToggleAlert(Alert alert, ChangeEventArgs e)
+  {
+    if (e.Value is bool isEnabled)
+    {
+      alert.IsEnabled = isEnabled;
+      alert.UpdatedAt = DateTimeOffset.UtcNow;
+      await AlertRepository.SaveAlertAsync(alert);
+    }
+  }
+
+  private string GetMappingValue(string eventKey)
+  {
+    if (eventMappings.TryGetValue(eventKey, out var value) && !string.IsNullOrWhiteSpace(value))
+    {
+      return value;
+    }
+
+    return "none";
+  }
+
+  private void OnMappingChanged(string eventKey, ChangeEventArgs e)
+  {
+    var selected = e.Value?.ToString() ?? "none";
+    eventMappings[eventKey] = selected;
+  }
+
+  private async Task SaveMappings()
+  {
+    isSavingMappings = true;
+    mappingsStatusMessage = null;
+    mappingsStatusIsError = false;
+
+    try
+    {
+      var sanitized = new Dictionary<string, string>();
+      foreach (var eventKey in availableEvents)
+      {
+        sanitized[eventKey] = GetMappingValue(eventKey);
+      }
+
+      await AlertRepository.SaveEventMappingsAsync(TwitchUserId!, sanitized);
+      eventMappings = sanitized;
+      mappingsStatusMessage = "Event mappings saved.";
+    }
+    catch (Exception ex)
+    {
+      mappingsStatusIsError = true;
+      mappingsStatusMessage = $"Failed to save mappings: {ex.Message}";
+    }
+    finally
+    {
+      isSavingMappings = false;
+    }
+  }
+
+  private async Task ResetMappings()
+  {
+    isSavingMappings = true;
+    mappingsStatusMessage = null;
+    mappingsStatusIsError = false;
+
+    try
+    {
+      var defaults = AlertTemplates.GetDefaultEventMappings();
+      foreach (var eventKey in availableEvents)
+      {
+        if (!defaults.ContainsKey(eventKey))
+        {
+          defaults[eventKey] = "none";
+        }
+      }
+
+      await AlertRepository.SaveEventMappingsAsync(TwitchUserId!, defaults);
+      eventMappings = defaults;
+      mappingsStatusMessage = "Event mappings reset to defaults.";
+    }
+    catch (Exception ex)
+    {
+      mappingsStatusIsError = true;
+      mappingsStatusMessage = $"Failed to reset mappings: {ex.Message}";
+    }
+    finally
+    {
+      isSavingMappings = false;
+    }
+  }
+}
