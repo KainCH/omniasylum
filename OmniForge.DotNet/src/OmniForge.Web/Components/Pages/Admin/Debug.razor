@@ -21,19 +21,34 @@
     <ul class="nav nav-tabs mb-4" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link @(activeTab == "eventsub" ? "active" : "")"
-                    @onclick="@(() => activeTab = "eventsub")" type="button">
+                    id="eventsub-tab"
+                    @onclick="@(() => activeTab = "eventsub")"
+                    type="button"
+                    role="tab"
+                    aria-controls="eventsub-panel"
+                    aria-selected="@(activeTab == "eventsub" ? "true" : "false")">
                 <span class="me-1">📡</span> EventSub Testing
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link @(activeTab == "discord" ? "active" : "")"
-                    @onclick="@(() => activeTab = "discord")" type="button">
+                    id="discord-tab"
+                    @onclick="@(() => activeTab = "discord")"
+                    type="button"
+                    role="tab"
+                    aria-controls="discord-panel"
+                    aria-selected="@(activeTab == "discord" ? "true" : "false")">
                 <span class="me-1">🤖</span> Discord Bot
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link @(activeTab == "forge" ? "active" : "")"
-                    @onclick="@(() => activeTab = "forge")" type="button">
+                    id="forge-tab"
+                    @onclick="@(() => activeTab = "forge")"
+                    type="button"
+                    role="tab"
+                    aria-controls="forge-panel"
+                    aria-selected="@(activeTab == "forge" ? "true" : "false")">
                 <span class="me-1">🔥</span> Forge Testing
             </button>
         </li>
@@ -44,7 +59,7 @@
         <!-- EventSub Testing Tab -->
         @if (activeTab == "eventsub")
         {
-            <div class="tab-pane fade show active">
+            <div class="tab-pane fade show active" id="eventsub-panel" role="tabpanel" aria-labelledby="eventsub-tab">
                 <div class="alert alert-info mb-4">
                     <strong>📡 EventSub Testing</strong> - Simulate Twitch EventSub webhook events to trigger overlay alerts without real Twitch activity.
                 </div>
@@ -267,7 +282,7 @@
         <!-- Discord Bot Tab -->
         @if (activeTab == "discord")
         {
-            <div class="tab-pane fade show active">
+            <div class="tab-pane fade show active" id="discord-panel" role="tabpanel" aria-labelledby="discord-tab">
                 <div class="alert alert-info mb-4">
                     <strong>🤖 Discord Bot Testing</strong> - Test Discord webhook notifications and bot functionality.
                 </div>
@@ -396,7 +411,7 @@
         <!-- Forge Testing Tab -->
         @if (activeTab == "forge")
         {
-            <div class="tab-pane fade show active">
+            <div class="tab-pane fade show active" id="forge-panel" role="tabpanel" aria-labelledby="forge-tab">
                 <div class="alert alert-info mb-4">
                     <strong>🔥 Forge Testing</strong> - Test overlay effects, animations, and counter integrations.
                 </div>
@@ -858,6 +873,11 @@
                 return;
             }
 
+            // Mock StreamOnline event structure - matches Twitch EventSub stream.online payload
+            // Required fields for DiscordService.SendNotificationAsync:
+            // - broadcaster_user_id: The user's Twitch ID
+            // - broadcaster_user_name: The user's Twitch username
+            // - started_at: ISO 8601 timestamp when the stream started
             var mockEvent = new
             {
                 id = $"test_stream_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
@@ -891,6 +911,10 @@
                 return;
             }
 
+            // Mock StreamOffline event structure - matches Twitch EventSub stream.offline payload
+            // Required fields for DiscordService.SendNotificationAsync:
+            // - broadcaster_user_id: The user's Twitch ID
+            // - broadcaster_user_name: The user's Twitch username
             var mockEvent = new
             {
                 broadcaster_user_id = discordUserId,
