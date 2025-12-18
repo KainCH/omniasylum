@@ -545,14 +545,7 @@ else
         isSaving = true;
         try
         {
-            if (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl))
-            {
-                user.Features.DiscordWebhook = true;
-            }
-            else
-            {
-                user.Features.DiscordWebhook = false;
-            }
+            user.Features.DiscordWebhook = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl);
 
             await UserRepository.SaveUserAsync(user);
 
@@ -616,12 +609,9 @@ else
 
             if (user.DiscordSettings?.MessageTemplates != null)
             {
-                foreach (var template in user.DiscordSettings.MessageTemplates.Values)
+                foreach (var template in user.DiscordSettings.MessageTemplates.Values.Where(t => !string.IsNullOrWhiteSpace(t?.ChannelIdOverride)))
                 {
-                    if (!string.IsNullOrWhiteSpace(template?.ChannelIdOverride))
-                    {
-                        channelIds.Add(template.ChannelIdOverride.Trim());
-                    }
+                    channelIds.Add(template!.ChannelIdOverride!.Trim());
                 }
             }
 

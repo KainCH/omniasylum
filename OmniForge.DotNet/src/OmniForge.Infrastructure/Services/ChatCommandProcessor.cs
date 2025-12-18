@@ -250,16 +250,13 @@ namespace OmniForge.Infrastructure.Services
                                 if (discordSettings.EnabledNotifications.DeathMilestone && counters.Deaths > previousDeaths)
                                 {
                                     var thresholds = discordSettings.MilestoneThresholds.Deaths;
-                                    foreach (var threshold in thresholds)
+                                    foreach (var threshold in thresholds.Where(t => t > previousDeaths && t <= counters.Deaths))
                                     {
-                                        if (threshold > previousDeaths && threshold <= counters.Deaths)
+                                        await discordService.SendNotificationAsync(user, "death_milestone", new
                                         {
-                                            await discordService.SendNotificationAsync(user, "death_milestone", new
-                                            {
-                                                count = threshold,
-                                                previousMilestone = previousDeaths
-                                            });
-                                        }
+                                            count = threshold,
+                                            previousMilestone = previousDeaths
+                                        });
                                     }
                                 }
 
@@ -267,16 +264,13 @@ namespace OmniForge.Infrastructure.Services
                                 if (discordSettings.EnabledNotifications.SwearMilestone && counters.Swears > previousSwears)
                                 {
                                     var thresholds = discordSettings.MilestoneThresholds.Swears;
-                                    foreach (var threshold in thresholds)
+                                    foreach (var threshold in thresholds.Where(t => t > previousSwears && t <= counters.Swears))
                                     {
-                                        if (threshold > previousSwears && threshold <= counters.Swears)
+                                        await discordService.SendNotificationAsync(user, "swear_milestone", new
                                         {
-                                            await discordService.SendNotificationAsync(user, "swear_milestone", new
-                                            {
-                                                count = threshold,
-                                                previousMilestone = previousSwears
-                                            });
-                                        }
+                                            count = threshold,
+                                            previousMilestone = previousSwears
+                                        });
                                     }
                                 }
 
@@ -284,16 +278,13 @@ namespace OmniForge.Infrastructure.Services
                                 if (discordSettings.EnabledNotifications.ScreamMilestone && counters.Screams > previousScreams)
                                 {
                                     var thresholds = discordSettings.MilestoneThresholds.Screams;
-                                    foreach (var threshold in thresholds)
+                                    foreach (var threshold in thresholds.Where(t => t > previousScreams && t <= counters.Screams))
                                     {
-                                        if (threshold > previousScreams && threshold <= counters.Screams)
+                                        await discordService.SendNotificationAsync(user, "scream_milestone", new
                                         {
-                                            await discordService.SendNotificationAsync(user, "scream_milestone", new
-                                            {
-                                                count = threshold,
-                                                previousMilestone = previousScreams
-                                            });
-                                        }
+                                            count = threshold,
+                                            previousMilestone = previousScreams
+                                        });
                                     }
                                 }
                             }

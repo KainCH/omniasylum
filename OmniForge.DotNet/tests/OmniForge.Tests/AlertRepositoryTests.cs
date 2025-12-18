@@ -324,7 +324,7 @@ namespace OmniForge.Tests
                     e.type == "sound" &&
                     e.sound == "sounds/test.mp3" &&
                     (int)e.duration! == 5000 &&
-                    (bool)e.isDefault! == true),
+                    (bool)e.isDefault!),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }

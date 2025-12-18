@@ -544,7 +544,10 @@ else
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing interaction banner: {ex.Message}");
+            }
 
             if (!string.IsNullOrWhiteSpace(text))
             {
@@ -663,11 +666,7 @@ else
 
     private static string FirstNonEmpty(params string[] values)
     {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value)) return value;
-        }
-        return string.Empty;
+        return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
     }
 
     private string GetPositionStyle()

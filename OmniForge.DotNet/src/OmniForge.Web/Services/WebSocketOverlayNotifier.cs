@@ -143,7 +143,10 @@ namespace OmniForge.Web.Services
                         }
                     }
                 }
-                catch { }
+                catch (JsonException)
+                {
+                    // Effects field contains invalid JSON - skip silently as effects are optional
+                }
 
                 // Merge event data into payload (do not overwrite base alert fields).
                 try
@@ -160,7 +163,10 @@ namespace OmniForge.Web.Services
                         }
                     }
                 }
-                catch { }
+                catch (JsonException)
+                {
+                    // Event data serialization failed - continue with base payload
+                }
 
                 if (payload.TryGetValue("textPrompt", out var promptObj) && promptObj is string template && !string.IsNullOrWhiteSpace(template))
                 {
@@ -227,11 +233,7 @@ namespace OmniForge.Web.Services
 
         private static string FirstNonEmpty(params string[] values)
         {
-            foreach (var value in values)
-            {
-                if (!string.IsNullOrWhiteSpace(value)) return value;
-            }
-            return string.Empty;
+            return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
         }
 
         public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)

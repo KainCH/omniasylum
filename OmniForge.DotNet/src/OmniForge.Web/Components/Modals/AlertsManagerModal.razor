@@ -271,12 +271,9 @@
         try
         {
             var defaults = AlertTemplates.GetDefaultEventMappings();
-            foreach (var eventKey in availableEvents)
+            foreach (var eventKey in availableEvents.Where(e => !defaults.ContainsKey(e)))
             {
-                if (!defaults.ContainsKey(eventKey))
-                {
-                    defaults[eventKey] = "none";
-                }
+                defaults[eventKey] = "none";
             }
 
             await AlertRepository.SaveEventMappingsAsync(UserId, defaults);

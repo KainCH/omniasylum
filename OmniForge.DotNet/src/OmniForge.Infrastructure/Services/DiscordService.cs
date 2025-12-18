@@ -489,14 +489,7 @@ namespace OmniForge.Infrastructure.Services
                     embedBuilder.Title = extractedTitle ?? title ?? string.Empty;
                     embedBuilder.Description = extractedDescription ?? description;
                     embedBuilder.Url = extractedUrl;
-                    if (extractedColor is int c)
-                    {
-                        embedBuilder.Color = new Color((uint)c);
-                    }
-                    else
-                    {
-                        embedBuilder.Color = new Color((uint)options.Color);
-                    }
+                    embedBuilder.Color = new Color((uint)(extractedColor is int c ? c : options.Color));
 
                     if (DateTimeOffset.TryParse(extractedTimestamp, out var dto))
                     {
