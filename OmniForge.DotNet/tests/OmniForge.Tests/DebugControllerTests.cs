@@ -234,7 +234,7 @@ namespace OmniForge.Tests
             var value = badRequestResult.Value;
             Assert.NotNull(value);
 
-            // Verify both success and error properties
+            // Verify success is false and error message is set correctly
             var successProperty = value!.GetType().GetProperty("success");
             Assert.NotNull(successProperty);
             Assert.False((bool)successProperty!.GetValue(value)!);

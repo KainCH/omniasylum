@@ -249,7 +249,8 @@
             console.log("🔄 Refreshing overlay silently...");
             window.location.reload();
           }
-          // Note: reconnectAttempts is only reset in onopen handler after successful reconnection
+          // Note: reconnectAttempts is reset in the WebSocket onopen handler, and only if no new reconnect attempts
+          // were initiated during this health check (see the conditional guard in the onopen logic).
         } catch (err) {
           healthCheckFailures++;
           console.warn(`⚠️ Health check failed (${healthCheckFailures}/${MAX_HEALTH_CHECK_FAILURES}):`, err.message);
@@ -276,6 +277,8 @@
 
         socket.onopen = function () {
           console.log("Connected to Overlay WebSocket");
+          // Reset health check failure counter on successful connection
+          healthCheckFailures = 0;
           // Check for server restart on successful reconnect
           if (reconnectAttempts > 0) {
             console.log("🔍 Checking for server restart after reconnection...");
@@ -306,7 +309,7 @@
 
           // After multiple reconnect attempts, check if server restarted
           // Note: Health check is informational only here - reconnectAttempts reset happens in onopen
-          if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK) {
+          if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK && !isHealthCheckInProgress) {
             console.log("🔍 Multiple reconnect attempts, checking server health...");
             // Don't await - let reconnect continue while health check runs
             checkServerRestart();

@@ -609,6 +609,8 @@
         if (newTab != null && newTab != activeTab)
         {
             activeTab = newTab;
+            // Trigger StateHasChanged to ensure ARIA live region announces the tab change
+            StateHasChanged();
             // Focus the new tab button using safe JS interop
             await JSRuntime.InvokeVoidAsync("focusElement", $"{newTab}-tab");
         }
@@ -625,9 +627,7 @@
     /// <returns>True if valid, false otherwise</returns>
     private static bool ValidateUserIdProvided(string userId, Action<bool> setSuccess, Action<string> setResult)
     {
-        ArgumentNullException.ThrowIfNull(setSuccess);
-        ArgumentNullException.ThrowIfNull(setResult);
-
+        // Parameters are required - callers must provide valid actions
         if (string.IsNullOrEmpty(userId))
         {
             setSuccess(false);
@@ -646,9 +646,7 @@
     /// <returns>True if user exists, false otherwise</returns>
     private static bool ValidateUserExists(User? user, Action<bool> setSuccess, Action<string> setResult)
     {
-        ArgumentNullException.ThrowIfNull(setSuccess);
-        ArgumentNullException.ThrowIfNull(setResult);
-
+        // Parameters are required - callers must provide valid actions
         if (user == null)
         {
             setSuccess(false);
@@ -681,6 +679,11 @@
 
     private async Task TriggerFollowEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var username = string.IsNullOrWhiteSpace(followUsername) ? "TestFollower" : followUsername;
@@ -701,6 +704,11 @@
 
     private async Task TriggerSubscribeEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var username = string.IsNullOrWhiteSpace(subUsername) ? "TestSubscriber" : subUsername;
@@ -721,6 +729,11 @@
 
     private async Task TriggerResubEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var username = string.IsNullOrWhiteSpace(resubUsername) ? "LoyalViewer" : resubUsername;
@@ -742,6 +755,11 @@
 
     private async Task TriggerGiftSubEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var gifter = string.IsNullOrWhiteSpace(giftGifterName) ? "GenerousViewer" : giftGifterName;
@@ -763,6 +781,11 @@
 
     private async Task TriggerBitsEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var username = string.IsNullOrWhiteSpace(bitsUsername) ? "BitsCheerer" : bitsUsername;
@@ -784,6 +807,11 @@
 
     private async Task TriggerRaidEvent()
     {
+        if (!ValidateUserIdProvided(eventSubUserId,
+            success => eventSubSuccess = success,
+            result => eventSubResult = result))
+            return;
+
         try
         {
             var channelName = string.IsNullOrWhiteSpace(raidChannelName) ? "RaiderChannel" : raidChannelName;

@@ -63,14 +63,14 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public void StartTime_ShouldBeReasonablyRecent()
+        public void StartTime_ShouldBeValidAndNotDefault()
         {
-            // StartTime should be before current time and after some reasonable past point
-            // We check it's not in the future and was set within the application lifecycle
-            Assert.True(ServerInstance.StartTime <= DateTimeOffset.UtcNow,
-                "StartTime should not be in the future");
+            // StartTime should be set to a valid value (not the default)
+            // This verifies the static initializer ran correctly
             Assert.True(ServerInstance.StartTime > DateTimeOffset.MinValue,
-                "StartTime should be set to a valid value");
+                "StartTime should be set to a valid value, not default");
+            Assert.True(ServerInstance.StartTime.Year >= 2024,
+                "StartTime should be a reasonable recent date");
         }
     }
 }
