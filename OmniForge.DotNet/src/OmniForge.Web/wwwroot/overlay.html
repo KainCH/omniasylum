@@ -220,7 +220,9 @@
       let knownServerInstanceId = null;
       let reconnectAttempts = 0;
       let isHealthCheckInProgress = false; // Prevent concurrent health checks
+      let healthCheckFailures = 0; // Track consecutive health check failures
       const MAX_RECONNECT_BEFORE_HEALTH_CHECK = 3;
+      const MAX_HEALTH_CHECK_FAILURES = 5; // After this many failures, show warning
 
       async function checkServerRestart() {
         // Prevent concurrent health checks to avoid race conditions
@@ -234,6 +236,9 @@
           const response = await fetch('/health');
           const data = await response.json();
 
+          // Reset failure counter on success
+          healthCheckFailures = 0;
+
           if (knownServerInstanceId === null) {
             // First time - store the server instance ID
             knownServerInstanceId = data.serverInstanceId;
@@ -244,9 +249,14 @@
             console.log("🔄 Refreshing overlay silently...");
             window.location.reload();
           }
-          reconnectAttempts = 0; // Reset on successful health check
+          // Note: reconnectAttempts is only reset in onopen handler after successful reconnection
         } catch (err) {
-          console.warn("⚠️ Health check failed:", err.message);
+          healthCheckFailures++;
+          console.warn(`⚠️ Health check failed (${healthCheckFailures}/${MAX_HEALTH_CHECK_FAILURES}):`, err.message);
+
+          if (healthCheckFailures >= MAX_HEALTH_CHECK_FAILURES) {
+            console.error("❌ Multiple health check failures. Server may be down or network issues.");
+          }
         } finally {
           isHealthCheckInProgress = false;
         }
@@ -295,8 +305,10 @@
           reconnectAttempts++;
 
           // After multiple reconnect attempts, check if server restarted
+          // Note: Health check is informational only here - reconnectAttempts reset happens in onopen
           if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK) {
             console.log("🔍 Multiple reconnect attempts, checking server health...");
+            // Don't await - let reconnect continue while health check runs
             checkServerRestart();
           }
 

@@ -1,3 +1,4 @@
+using OmniForge.Web;
 using OmniForge.Web.Components;
 using OmniForge.Infrastructure;
 using OmniForge.Web.Hubs;
@@ -198,11 +199,3 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.Run();
-
-// Server instance ID - changes on each server restart
-// Overlays use this to detect server restarts and refresh silently
-public static class ServerInstance
-{
-    public static readonly string Id = Guid.NewGuid().ToString("N")[..8];
-    public static readonly DateTimeOffset StartTime = DateTimeOffset.UtcNow;
-}

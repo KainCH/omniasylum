@@ -61,6 +61,17 @@
         </li>
     </ul>
 
+    <!-- ARIA live region for screen reader tab change announcements -->
+    <p id="admin-debug-tab-status"
+       class="visually-hidden"
+       aria-live="polite"
+       role="status">
+        @(activeTab == "eventsub" ? "EventSub Testing tab selected"
+            : activeTab == "discord" ? "Discord Bot tab selected"
+            : activeTab == "forge" ? "Forge Testing tab selected"
+            : string.Empty)
+    </p>
+
     <!-- Tab Content -->
     <div class="tab-content">
         <!-- EventSub Testing Tab -->
@@ -598,8 +609,8 @@
         if (newTab != null && newTab != activeTab)
         {
             activeTab = newTab;
-            // Focus the new tab button
-            await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{newTab}-tab')?.focus()");
+            // Focus the new tab button using safe JS interop
+            await JSRuntime.InvokeVoidAsync("focusElement", $"{newTab}-tab");
         }
     }
 
@@ -612,8 +623,11 @@
     /// <param name="setSuccess">Action to set the success flag</param>
     /// <param name="setResult">Action to set the result message</param>
     /// <returns>True if valid, false otherwise</returns>
-    private bool ValidateUserIdProvided(string userId, Action<bool> setSuccess, Action<string> setResult)
+    private static bool ValidateUserIdProvided(string userId, Action<bool> setSuccess, Action<string> setResult)
     {
+        ArgumentNullException.ThrowIfNull(setSuccess);
+        ArgumentNullException.ThrowIfNull(setResult);
+
         if (string.IsNullOrEmpty(userId))
         {
             setSuccess(false);
@@ -630,8 +644,11 @@
     /// <param name="setSuccess">Action to set the success flag</param>
     /// <param name="setResult">Action to set the result message</param>
     /// <returns>True if user exists, false otherwise</returns>
-    private bool ValidateUserExists(User? user, Action<bool> setSuccess, Action<string> setResult)
+    private static bool ValidateUserExists(User? user, Action<bool> setSuccess, Action<string> setResult)
     {
+        ArgumentNullException.ThrowIfNull(setSuccess);
+        ArgumentNullException.ThrowIfNull(setResult);
+
         if (user == null)
         {
             setSuccess(false);
