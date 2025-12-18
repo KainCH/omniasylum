@@ -20,14 +20,6 @@ using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
-// Server instance ID - changes on each server restart
-// Overlays use this to detect server restarts and refresh silently
-public static class ServerInstance
-{
-    public static readonly string Id = Guid.NewGuid().ToString("N")[..8];
-    public static readonly DateTimeOffset StartTime = DateTimeOffset.UtcNow;
-}
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Forwarded Headers for Azure Container Apps
@@ -206,3 +198,11 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.Run();
+
+// Server instance ID - changes on each server restart
+// Overlays use this to detect server restarts and refresh silently
+public static class ServerInstance
+{
+    public static readonly string Id = Guid.NewGuid().ToString("N")[..8];
+    public static readonly DateTimeOffset StartTime = DateTimeOffset.UtcNow;
+}
