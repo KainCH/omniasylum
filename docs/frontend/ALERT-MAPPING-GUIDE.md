@@ -92,8 +92,11 @@ For each event type:
 1. Add **Browser Source** to your OBS scene
 2. URL: `https://your-api-url.com/overlay/{yourTwitchUserId}`
 3. Width: 1920, Height: 1080
-4. Check "Shutdown source when not visible"
-5. Check "Refresh browser when scene becomes active"
+4. Uncheck "Shutdown source when not visible" (recommended)
+5. Uncheck "Refresh browser when scene becomes active" (recommended)
+
+These overlays receive updates via WebSockets and auto-reconnect.
+Forced refresh/recreate on scene activation can cause alert/audio replays.
 
 ## Event Types & Descriptions
 
@@ -263,15 +266,15 @@ API/
 {
   "mappings": {
     "channel.follow": "follow-alert-id",
-    "channel.subscribe": "sub-alert-id"
+    "chat_notification_subscribe": "sub-alert-id"
   },
   "defaultMappings": {
     "channel.follow": "follow",
-    "channel.subscribe": "subscription"
+    "chat_notification_subscribe": "subscription"
   },
   "availableEvents": [
     "channel.follow",
-    "channel.subscribe",
+    "chat_notification_subscribe",
     "channel.subscription.gift",
     "channel.subscription.message",
     "channel.cheer",
@@ -285,7 +288,7 @@ API/
 ```json
 {
   "channel.follow": "custom-follow-alert-id",
-  "channel.subscribe": "custom-sub-alert-id"
+  "chat_notification_subscribe": "custom-sub-alert-id"
 }
 ```
 

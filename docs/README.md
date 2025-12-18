@@ -42,7 +42,7 @@ This folder contains all documentation for the OmniAsylum Stream Counter project
 - [Copilot Instructions](streaming/copilot-instructions.md) - AI assistant setup
 
 ### 🔔 Notifications
-- [Discord Notifications](DISCORD-NOTIFICATIONS.md) - Discord webhook setup
+- [Discord Notifications](DISCORD-NOTIFICATIONS.md) - Discord bot + channel ID setup
 
 ## 📁 Folder Structure
 

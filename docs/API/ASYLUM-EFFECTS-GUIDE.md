@@ -328,8 +328,11 @@ Each alert template includes an `effects` object:
 1. Add Browser Source
 2. URL: `https://your-domain.com/overlay/YOUR_USER_ID`
 3. Width: `1920`, Height: `1080`
-4. **Check:** ✅ Shutdown source when not visible
-5. **Check:** ✅ Refresh browser when scene becomes active
+4. **Check:** ❌ Shutdown source when not visible (recommended)
+5. **Check:** ❌ Refresh browser when scene becomes active (recommended)
+
+These overlays use WebSockets and auto-reconnect.
+Forcing the browser source to refresh/recreate on scene activation can cause alert/audio replays.
 6. **Custom CSS:** (Optional) Override effects
 
 ### **Testing Alerts:**

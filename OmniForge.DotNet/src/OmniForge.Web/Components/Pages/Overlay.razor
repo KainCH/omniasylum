@@ -3,6 +3,7 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
 @inject NavigationManager NavigationManager
 @inject ICounterRepository CounterRepository
@@ -95,6 +96,9 @@ else
 
     <!-- Subscriber banner -->
     <div class="sub-banner" id="sub-banner"></div>
+
+    <!-- Interaction banner (admin-only feature for now) -->
+    <div class="interaction-banner hide" id="interaction-banner" style="@GetInteractionBannerPositionStyle()"></div>
 }
 
 <style>
@@ -207,6 +211,35 @@ else
     .counter-alert.hide {
         opacity: 0;
         transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    .interaction-banner {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%) scale(0.5);
+        background: rgba(0, 0, 0, 0.9);
+        border: 2px solid #d4af37;
+        border-radius: 12px;
+        padding: 12px 18px;
+        color: white;
+        font-size: 22px;
+        font-weight: bold;
+        opacity: 0;
+        transition: all 0.35s ease;
+        z-index: 950;
+        pointer-events: none;
+        min-width: 300px;
+        text-align: center;
+    }
+
+    .interaction-banner.show {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+    }
+
+    .interaction-banner.hide {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.5);
     }
 
     /* Pulse animation for counter updates */
@@ -487,6 +520,43 @@ else
 
     private async Task TriggerAlert(string type, object data)
     {
+        if (string.Equals(type, "interactionBanner", StringComparison.OrdinalIgnoreCase))
+        {
+            string? text = null;
+            int? duration = null;
+
+            try
+            {
+                if (data is JsonElement interactionJson)
+                {
+                    if (interactionJson.TryGetProperty("textPrompt", out var prompt))
+                    {
+                        text = prompt.GetString();
+                    }
+                    else if (interactionJson.TryGetProperty("text", out var textProp))
+                    {
+                        text = textProp.GetString();
+                    }
+
+                    if (interactionJson.TryGetProperty("duration", out var durationProp) && durationProp.ValueKind == JsonValueKind.Number)
+                    {
+                        duration = durationProp.GetInt32();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing interaction banner: {ex.Message}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                await JSRuntime.InvokeVoidAsync("overlayInterop.showInteractionBanner", text, duration ?? 5000);
+            }
+
+            return;
+        }
+
         var alert = alerts.FirstOrDefault(a => a.Type == type && a.IsEnabled);
         if (alert == null) return;
 
@@ -535,7 +605,68 @@ else
              }
         }
 
+        // Apply placeholder substitution after we have merged event data.
+        if (payload.TryGetValue("textPrompt", out var promptObj) && promptObj is string templatePrompt && !string.IsNullOrWhiteSpace(templatePrompt))
+        {
+            payload["textPrompt"] = ApplyTemplate(templatePrompt, payload);
+        }
+
         await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+    }
+
+    private static string ApplyTemplate(string template, IReadOnlyDictionary<string, object> payload)
+    {
+        string GetString(string key)
+        {
+            if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
+            if (value is JsonElement je)
+            {
+                if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
+                return je.ToString();
+            }
+            return value.ToString() ?? string.Empty;
+        }
+
+        string GetNumberString(string key)
+        {
+            if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
+            if (value is JsonElement je)
+            {
+                if (je.ValueKind == JsonValueKind.Number) return je.ToString();
+                if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
+                return je.ToString();
+            }
+            return value.ToString() ?? string.Empty;
+        }
+
+        // Build token map (case-insensitive).
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["User"] = FirstNonEmpty(GetString("user"), GetString("displayName"), GetString("name"), GetString("gifterName"), GetString("raiderName")),
+            ["Tier"] = GetString("tier"),
+            ["Months"] = GetNumberString("months"),
+            ["Amount"] = FirstNonEmpty(GetNumberString("amount"), GetNumberString("bits")),
+            ["Viewers"] = FirstNonEmpty(GetNumberString("viewers"), GetNumberString("viewerCount")),
+            ["Recipient"] = FirstNonEmpty(GetString("recipientName"), GetString("recipient")),
+            ["Message"] = GetString("message"),
+            ["Level"] = GetNumberString("level"),
+            ["Percent"] = GetNumberString("percent")
+        };
+
+        return Regex.Replace(template, "\\[(?<token>[A-Za-z]+)\\]", match =>
+        {
+            var token = match.Groups["token"].Value;
+            if (tokens.TryGetValue(token, out var replacement) && !string.IsNullOrEmpty(replacement))
+            {
+                return replacement;
+            }
+            return match.Value;
+        });
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
     }
 
     private string GetPositionStyle()
@@ -584,6 +715,19 @@ else
         style += StreamStatus == "live" ? " opacity: 1;" : " opacity: 0;";
 
         return style;
+    }
+
+    private string GetInteractionBannerPositionStyle()
+    {
+        if (user?.OverlaySettings == null) return string.Empty;
+
+        var pos = (user.OverlaySettings.Position ?? "top-right").ToLowerInvariant();
+        var countersAreTop = pos.Contains("top");
+
+        // Banner should appear opposite the counters (top vs bottom).
+        return countersAreTop
+            ? "bottom: 20px;"
+            : "top: 20px;";
     }
 
     private string GetItemStyle()

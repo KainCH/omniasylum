@@ -1,6 +1,16 @@
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
+    const normalizeOverlaySettings = (data) => {
+        // We have two payload shapes in the wild:
+        // 1) WebSocketOverlayNotifier => method: "settingsUpdate", data: OverlaySettings
+        // 2) SignalROverlayNotifier   => method: "overlaySettingsUpdate", data: { overlaySettings: OverlaySettings }
+        if (!data) return null;
+        if (data.overlaySettings) return data.overlaySettings;
+        if (data.settings) return data.settings;
+        return data;
+    };
+
     socket.onopen = function(e) {
         console.log("[WebSocket] Connection established");
     };
@@ -35,9 +45,14 @@ export function connect(url, dotNetHelper) {
                 if (window.overlayInterop) window.overlayInterop.triggerAlert('milestone', data);
             } else if (method === "streamStarted") {
                 try { dotNetHelper.invokeMethodAsync("OnStreamStarted", data); } catch (e) {}
-            } else if (method === "overlaySettingsUpdate") {
-                try { dotNetHelper.invokeMethodAsync("OnOverlaySettingsUpdate", data); } catch (e) {}
-                if (window.overlayInterop) window.overlayInterop.updateOverlaySettings(data);
+            } else if (method === "overlaySettingsUpdate" || method === "settingsUpdate") {
+                const settings = normalizeOverlaySettings(data);
+                if (settings) {
+                    try { dotNetHelper.invokeMethodAsync("OnOverlaySettingsUpdate", settings); } catch (e) {}
+                    if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+                        window.overlayInterop.updateOverlaySettings(settings);
+                    }
+                }
             } else {
                 // Standard alerts
                 triggerAlert(method, data, dotNetHelper);

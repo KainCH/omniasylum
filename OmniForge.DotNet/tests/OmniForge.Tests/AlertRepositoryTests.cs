@@ -35,7 +35,8 @@ namespace OmniForge.Tests
             _mockTableServiceClient.Setup(x => x.GetTableClient("users"))
                 .Returns(_mockUsersClient.Object);
 
-            _repository = new AlertRepository(_mockTableServiceClient.Object, tableConfig);
+            var mockLogger = new Mock<Microsoft.Extensions.Logging.ILogger<AlertRepository>>();
+            _repository = new AlertRepository(_mockTableServiceClient.Object, tableConfig, mockLogger.Object);
         }
 
         [Fact]
@@ -322,8 +323,8 @@ namespace OmniForge.Tests
                     e.name == "Complex Alert" &&
                     e.type == "sound" &&
                     e.sound == "sounds/test.mp3" &&
-                    e.duration == 5000 &&
-                    e.isDefault == true),
+                    (int)e.duration! == 5000 &&
+                    (bool)e.isDefault!),
                 TableUpdateMode.Replace,
                 It.IsAny<CancellationToken>()), Times.Once);
         }

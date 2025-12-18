@@ -66,8 +66,11 @@ http://your-domain.com/overlay/YOUR_TWITCH_USER_ID
    - **Width**: 400
    - **Height**: 300
    - **Custom CSS**: Leave blank
-   - **Shutdown source when not visible**: ✅
-   - **Refresh browser when scene becomes active**: ✅
+   - **Shutdown source when not visible**: ❌ (recommended)
+   - **Refresh browser when scene becomes active**: ❌ (recommended)
+
+   These overlays maintain state via a WebSocket connection and auto-reconnect.
+   Forcing refresh/recreate on scene activation can cause alert/audio replays and is usually unnecessary.
 
 3. **Position the Overlay**:
    - Drag to desired screen position

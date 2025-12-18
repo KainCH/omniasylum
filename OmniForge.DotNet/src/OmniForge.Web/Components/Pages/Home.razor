@@ -1,162 +1,21 @@
 ﻿@page "/"
 @using Microsoft.AspNetCore.Components.Authorization
-@using OmniForge.Web.Components.Layout
-@layout EmptyLayout
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
-<PageTitle>OmniAsylum Stream Tools</PageTitle>
+@code {
+  protected override async Task OnInitializedAsync()
+  {
+    var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+    var user = authState.User;
 
-<AuthorizeView>
-    <Authorized>
-        <div class="auth-container">
-            <div class="auth-card">
-                <div class="auth-header">
-                    <h1>🎮 OmniForgeStream</h1>
-                    <p class="auth-subtitle">Welcome back, @context.User.Identity?.Name!</p>
-                </div>
-                <div class="auth-content">
-                    <div class="auth-login">
-                        <a href="portal" class="twitch-login-btn" style="text-decoration: none; justify-content: center;">
-                            Go to User Portal
-                        </a>
-                        <div style="margin-top: 15px;">
-                            <a href="auth/logout" class="btn btn-outline-danger">Logout</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </Authorized>
-    <NotAuthorized>
-        <div class="auth-container">
-            <div class="auth-card">
-                <div class="auth-header">
-                    <h1>🎮 OmniForgeStream</h1>
-                    <p class="auth-subtitle">Multi-Tenant Stream Counter</p>
-                </div>
-
-                <div class="auth-content">
-                    <div class="auth-features">
-                        <h3>✨ Features</h3>
-                        <ul>
-                            <li>🔄 Real-time counter sync across devices</li>
-                            <li>💬 Twitch chat commands (!deaths, !swears)</li>
-                            <li>📱 Mobile-friendly interface</li>
-                            <li>🔐 Secure per-user data isolation</li>
-                            <li>☁️ Cloud-powered reliability</li>
-                        </ul>
-                    </div>
-
-                    <div class="auth-login">
-                        <p>Connect with your Twitch account to get started:</p>
-                        <a href="auth/twitch" class="twitch-login-btn" style="text-decoration: none; color: white;">
-                            <span class="twitch-icon">🟣</span>
-                            Login with Twitch
-                        </a>
-                    </div>
-
-                    <div class="auth-info">
-                        <p class="privacy-note">
-                            🔒 Your Twitch credentials are securely stored and only used for authentication and chat integration.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </NotAuthorized>
-</AuthorizeView>
-
-<style>
-    .auth-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
-        padding: 20px;
+    if (user.Identity?.IsAuthenticated == true)
+    {
+      NavigationManager.NavigateTo("/portal", forceLoad: true);
+      return;
     }
 
-    .auth-card {
-        background: rgba(255, 255, 255, 0.95);
-        border: none;
-        border-radius: 20px;
-        padding: 40px;
-        max-width: 500px;
-        width: 100%;
-        text-align: center;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    }
-
-    .auth-header h1 {
-        margin: 0 0 10px 0;
-        font-size: 2.5rem;
-        color: #333;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-        background: none;
-        -webkit-text-fill-color: initial;
-    }
-
-    .auth-subtitle {
-        color: #666;
-        font-size: 1.2rem;
-        margin-bottom: 30px;
-        opacity: 0.8;
-    }
-
-    .auth-features {
-        text-align: left;
-        margin: 30px 0;
-    }
-
-    .auth-features h3 {
-        color: #667eea;
-        margin-bottom: 15px;
-        text-align: center;
-    }
-
-    .auth-features ul {
-        list-style: none;
-        padding: 0;
-    }
-
-    .auth-features li {
-        padding: 5px 0;
-        color: #555;
-    }
-
-    .auth-login {
-        margin: 30px 0;
-    }
-
-    .auth-login p {
-        color: #666;
-        margin-bottom: 20px;
-    }
-
-    .twitch-login-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 15px 30px;
-        background: linear-gradient(135deg, #9146ff, #b19dff);
-        color: white;
-        border: none;
-        border-radius: 50px;
-        font-size: 1.1rem;
-        font-weight: bold;
-        cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.2s;
-        box-shadow: 0 5px 15px rgba(145, 70, 255, 0.3);
-    }
-
-    .twitch-login-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(145, 70, 255, 0.4);
-        color: white;
-    }
-
-    .privacy-note {
-        font-size: 0.9rem;
-        color: #888;
-        opacity: 0.7;
-        margin-top: 20px;
-    }
-</style>
+    // If login isn't detected (or token refresh forced sign-out), route to login.
+    NavigationManager.NavigateTo("/auth/twitch", forceLoad: true);
+  }
+}

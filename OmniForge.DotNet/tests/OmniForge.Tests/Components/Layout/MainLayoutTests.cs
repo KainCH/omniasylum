@@ -52,46 +52,15 @@ public class MainLayoutTests : BunitContext
         });
 
         // Assert
-        cut.MarkupMatches(@"
-            <div class=""page"">
-                <div class=""sidebar"">
-                  <div class=""top-row ps-3 navbar navbar-dark"">
-                    <div class=""container-fluid"">
-                      <a class=""navbar-brand"" href=""/"">OmniForge</a>
-                    </div>
-                  </div>
-                  <input type=""checkbox"" title=""Navigation menu"" class=""navbar-toggler"" />
-                  <div class=""nav-scrollable"" onclick=""document.querySelector('.navbar-toggler').click()"">
-                    <nav class=""nav flex-column"">
-                      <div class=""nav-item px-3"">
-                        <a href="""" class=""nav-link active"" aria-current=""page"">
-                          <i class=""bi bi-house-door-fill me-2"" aria-hidden=""true""></i>
-                          Home
-                        </a>
-                      </div>
-                    </nav>
-                  </div>
-                </div>
-                <main>
-                    <div class=""top-row px-4"">
-                        <button class=""btn btn-link me-3"">
-                            <span class=""bi bi-moon-fill"" aria-hidden=""true""></span>
-                            Dark Mode
-                        </button>
-                        <a href=""auth/twitch"">Log in with Twitch</a>
-                        <a href=""https://learn.microsoft.com/aspnet/core/"" target=""_blank"" class=""ms-3"">About</a>
-                    </div>
-                    <article class=""content px-4"">
-                        <div>Body</div>
-                    </article>
-                </main>
-            </div>
-            <div id=""blazor-error-ui"" data-nosnippet="""">
-                An unhandled error has occurred.
-                <a href=""."" class=""reload"">Reload</a>
-                <span class=""dismiss"">🗙</span>
-            </div>
-        ");
+        var brand = cut.Find(".navbar-brand");
+        Assert.Equal("/portal", brand.GetAttribute("href"));
+
+        var homeLink = cut.Find(".nav-link");
+        Assert.Equal("portal", homeLink.GetAttribute("href"));
+        Assert.Contains("Home", homeLink.TextContent);
+
+        Assert.NotNull(cut.Find("a[href='auth/twitch']"));
+        Assert.NotNull(cut.Find("a[href='https://learn.microsoft.com/aspnet/core/']"));
     }
 
     [Fact]

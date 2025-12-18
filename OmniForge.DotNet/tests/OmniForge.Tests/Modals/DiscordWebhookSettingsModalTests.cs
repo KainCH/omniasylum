@@ -44,7 +44,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId, DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+        var user = new User { TwitchUserId = userId, DiscordChannelId = "123456789012345678" };
         user.Features.DiscordWebhook = true;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
@@ -64,7 +64,8 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
         configTab.Click();
 
-        Assert.Contains(user.DiscordWebhookUrl, cut.Find("input.form-control").GetAttribute("value"));
+        var channelIdInput = cut.Find("input[placeholder*='123456789012345678']");
+        Assert.Contains(user.DiscordChannelId, channelIdInput.GetAttribute("value"));
     }
 
     [Fact]
@@ -91,14 +92,14 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Act
-        var urlInput = cut.Find("input.form-control");
-        urlInput.Change("https://new-webhook-url");
+        var channelIdInput = cut.Find("input[placeholder*='123456789012345678']");
+        channelIdInput.Change("234567890123456789");
 
         var form = cut.Find("form");
         form.Submit();
 
         // Assert
-        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == "https://new-webhook-url")), Times.Once);
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.DiscordChannelId == "234567890123456789")), Times.Once);
     }
 
     [Fact]
@@ -242,7 +243,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Existing webhook configuration detected", cut.Markup);
+        Assert.Contains("Existing legacy Discord configuration detected", cut.Markup);
     }
 
     [Fact]
@@ -250,8 +251,11 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId };
-        user.Features.DiscordWebhook = true;
+        var user = new User
+        {
+            TwitchUserId = userId,
+            DiscordChannelId = "123456789012345678"
+        };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>
@@ -269,7 +273,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Enabled", cut.Markup);
+        Assert.Contains("Configured", cut.Markup);
     }
 
     [Fact]
@@ -278,7 +282,6 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         // Arrange
         var userId = "test-user-id";
         var user = new User { TwitchUserId = userId };
-        user.Features.DiscordWebhook = false;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>
@@ -296,7 +299,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Disabled", cut.Markup);
+        Assert.Contains("Not configured", cut.Markup);
     }
 
     [Fact]
@@ -355,16 +358,16 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
         configTab.Click();
 
-        // Act - Set webhook URL
-        var urlInput = cut.Find("input.form-control");
-        urlInput.Change("https://discord.com/api/webhooks/new");
+        // Act - Set channel ID
+        var channelIdInput = cut.Find("input[placeholder*='123456789012345678']");
+        channelIdInput.Change("234567890123456789");
 
         var form = cut.Find("form");
         form.Submit();
 
         // Assert - Should auto-enable webhook feature
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
-            u.DiscordWebhookUrl == "https://discord.com/api/webhooks/new" &&
+            u.DiscordChannelId == "234567890123456789" &&
             u.Features.DiscordWebhook == true
         )), Times.Once);
     }
@@ -377,7 +380,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var user = new User
         {
             TwitchUserId = userId,
-            DiscordWebhookUrl = "https://existing-webhook"
+            DiscordChannelId = "123456789012345678"
         };
         user.Features.DiscordWebhook = true;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
@@ -397,15 +400,16 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var configTab = cut.FindAll(".nav-link").First(e => e.TextContent.Contains("Configuration"));
         configTab.Click();
 
-        // Act - Clear webhook URL
-        var urlInput = cut.Find("input.form-control");
-        urlInput.Change("");
+        // Act - Clear channel ID
+        var channelIdInput = cut.Find("input[placeholder*='123456789012345678']");
+        channelIdInput.Change("");
 
         var form = cut.Find("form");
         form.Submit();
 
         // Assert - Should auto-disable webhook feature
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
+            string.IsNullOrEmpty(u.DiscordChannelId) &&
             string.IsNullOrEmpty(u.DiscordWebhookUrl) &&
             u.Features.DiscordWebhook == false
         )), Times.Once);

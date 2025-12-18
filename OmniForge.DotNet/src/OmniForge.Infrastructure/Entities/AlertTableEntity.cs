@@ -18,13 +18,13 @@ namespace OmniForge.Infrastructure.Entities
         public string sound { get; set; } = string.Empty;
         public string soundDescription { get; set; } = string.Empty;
         public string textPrompt { get; set; } = string.Empty;
-        public int duration { get; set; }
+        public object? duration { get; set; } // Can be int or string from legacy data
         public string backgroundColor { get; set; } = string.Empty;
         public string textColor { get; set; } = string.Empty;
         public string borderColor { get; set; } = string.Empty;
         public string effects { get; set; } = string.Empty;
-        public bool isEnabled { get; set; }
-        public bool isDefault { get; set; }
+        public object? isEnabled { get; set; } // Can be bool or string from legacy data
+        public object? isDefault { get; set; } // Can be bool or string from legacy data
         public object? createdAt { get; set; }
         public object? updatedAt { get; set; }
 
@@ -35,6 +35,21 @@ namespace OmniForge.Infrastructure.Entities
             if (value is string s && DateTimeOffset.TryParse(s, out var result)) return result;
             // Return current time as fallback - Azure Table Storage doesn't accept dates before 1601
             return DateTimeOffset.UtcNow;
+        }
+
+        private static int ParseInt(object? value, int defaultValue = 5000)
+        {
+            if (value is int i) return i;
+            if (value is long l) return (int)l;
+            if (value is string s && int.TryParse(s, out var parsed)) return parsed;
+            return defaultValue;
+        }
+
+        private static bool ParseBool(object? value, bool defaultValue = false)
+        {
+            if (value is bool b) return b;
+            if (value is string s && bool.TryParse(s, out var parsed)) return parsed;
+            return defaultValue;
         }
 
         public Alert ToAlert()
@@ -49,13 +64,13 @@ namespace OmniForge.Infrastructure.Entities
                 Sound = sound,
                 SoundDescription = soundDescription,
                 TextPrompt = textPrompt,
-                Duration = duration,
+                Duration = ParseInt(duration, 5000),
                 BackgroundColor = backgroundColor,
                 TextColor = textColor,
                 BorderColor = borderColor,
                 Effects = effects,
-                IsEnabled = isEnabled,
-                IsDefault = isDefault,
+                IsEnabled = ParseBool(isEnabled, true),
+                IsDefault = ParseBool(isDefault, false),
                 CreatedAt = ParseDateTimeOffset(createdAt),
                 UpdatedAt = ParseDateTimeOffset(updatedAt)
             };

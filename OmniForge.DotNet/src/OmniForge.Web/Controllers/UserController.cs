@@ -75,7 +75,8 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 webhookUrl = user.DiscordWebhookUrl,
-                enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl)
+                channelId = user.DiscordChannelId,
+                enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl)
             });
         }
 
@@ -88,10 +89,44 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            // Handle backward compatibility
+            // Handle backward compatibility (legacy webhook) + new bot channelId
             string actualWebhookUrl = request.WebhookUrl ?? request.DiscordWebhookUrl ?? string.Empty;
+            string actualChannelId = request.ChannelId ?? request.DiscordChannelId ?? string.Empty;
 
-            // Basic validation
+            // Clearing
+            if (string.IsNullOrEmpty(actualWebhookUrl) && string.IsNullOrEmpty(actualChannelId))
+            {
+                user.DiscordWebhookUrl = string.Empty;
+                user.DiscordChannelId = string.Empty;
+                await _userRepository.SaveUserAsync(user);
+
+                return Ok(new
+                {
+                    message = "Discord destination cleared successfully",
+                    webhookUrl = user.DiscordWebhookUrl,
+                    channelId = user.DiscordChannelId,
+                    verified = new { webhookUrl = user.DiscordWebhookUrl, channelId = user.DiscordChannelId, enabled = false }
+                });
+            }
+
+            // Preferred: channelId validation
+            if (!string.IsNullOrEmpty(actualChannelId))
+            {
+                if (!IsValidSnowflake(actualChannelId))
+                {
+                    return BadRequest(new { error = "Invalid Discord channel ID format" });
+                }
+
+                var channelValid = await _discordService.ValidateDiscordChannelAsync(actualChannelId);
+                if (!channelValid)
+                {
+                    return BadRequest(new { error = "The Discord channel ID is invalid or the bot does not have access. Ensure the bot is invited and has Send Messages + Embed Links." });
+                }
+
+                user.DiscordChannelId = actualChannelId;
+            }
+
+            // Legacy: webhook URL validation (kept for migration)
             if (!string.IsNullOrEmpty(actualWebhookUrl))
             {
                 if (!actualWebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
@@ -105,18 +140,26 @@ namespace OmniForge.Web.Controllers
                 {
                     return BadRequest(new { error = "The Discord webhook URL is invalid or does not exist. Please create a new webhook in Discord." });
                 }
-            }
 
-            user.DiscordWebhookUrl = actualWebhookUrl;
+                user.DiscordWebhookUrl = actualWebhookUrl;
+            }
 
             await _userRepository.SaveUserAsync(user);
 
             return Ok(new
             {
-                message = "Discord webhook updated successfully",
+                message = "Discord destination updated successfully",
                 webhookUrl = user.DiscordWebhookUrl,
-                verified = new { webhookUrl = user.DiscordWebhookUrl, enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl) }
+                channelId = user.DiscordChannelId,
+                verified = new { webhookUrl = user.DiscordWebhookUrl, channelId = user.DiscordChannelId, enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl) }
             });
+        }
+
+        private static bool IsValidSnowflake(string value)
+        {
+            // Discord snowflakes are numeric strings (typically 17-20 digits). Keep validation permissive.
+            if (value.Length < 15 || value.Length > 25) return false;
+            return value.All(char.IsDigit);
         }
 
         [HttpPost("discord-webhook/test")]
@@ -128,9 +171,9 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            if (string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                return BadRequest(new { error = "No Discord webhook URL configured" });
+                return BadRequest(new { error = "No Discord destination configured" });
             }
 
             try
@@ -160,7 +203,8 @@ namespace OmniForge.Web.Controllers
             var response = new
             {
                 webhookUrl = user.DiscordWebhookUrl,
-                enabled = !string.IsNullOrEmpty(user.DiscordWebhookUrl),
+                channelId = user.DiscordChannelId,
+                enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl),
                 templateStyle = user.Features.TemplateStyle ?? ds.TemplateStyle ?? "asylum_themed",
 
                 enableChannelNotifications = ds.EnableChannelNotifications,
@@ -333,6 +377,8 @@ namespace OmniForge.Web.Controllers
     {
         public string? WebhookUrl { get; set; }
         public string? DiscordWebhookUrl { get; set; }
+        public string? ChannelId { get; set; }
+        public string? DiscordChannelId { get; set; }
         public bool Enabled { get; set; }
     }
 

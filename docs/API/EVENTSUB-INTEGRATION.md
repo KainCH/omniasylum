@@ -9,7 +9,7 @@ This application integrates with Twitch EventSub WebSocket to receive real-time 
 | Event Type | EventSub Subscription          | Alert Type     | Description                                 |
 | ---------- | ------------------------------ | -------------- | ------------------------------------------- |
 | Follow     | `channel.follow`               | `follow`       | User follows the channel                    |
-| Subscribe  | `channel.subscribe`            | `subscription` | User subscribes (new or gift)               |
+| Subscribe  | `channel.chat.notification`    | `subscription` | User subscribes (handled via chat notice)   |
 | Gift Sub   | `channel.subscription.gift`    | `giftsub`      | User gifts subs to community                |
 | Resub      | `channel.subscription.message` | `resub`        | User resubscribes with message              |
 | Cheer/Bits | `channel.cheer`                | `bits`         | User cheers bits                            |
@@ -90,7 +90,7 @@ streamMonitor.on('newCheer', ...)                // Cheer event
 ```javascript
 {
   "channel.follow": "follow",
-  "channel.subscribe": "subscription",
+  "chat_notification_subscribe": "subscription",
   "channel.subscription.gift": "giftsub",
   "channel.subscription.message": "resub",
   "channel.cheer": "bits",
@@ -196,12 +196,12 @@ Authorization: Bearer <jwt_token>
 {
   "mappings": {
     "channel.follow": "follow",
-    "channel.subscribe": "subscription"
+    "chat_notification_subscribe": "subscription"
   },
   "defaultMappings": { /* ... */ },
   "availableEvents": [
     "channel.follow",
-    "channel.subscribe",
+    "chat_notification_subscribe",
     "channel.subscription.gift",
     "channel.subscription.message",
     "channel.cheer",
@@ -219,7 +219,7 @@ Content-Type: application/json
 
 {
   "channel.follow": "custom-follow-alert",
-  "channel.subscribe": "custom-sub-alert"
+  "chat_notification_subscribe": "custom-sub-alert"
 }
 ```
 
@@ -424,7 +424,7 @@ function EventMappingManager() {
 Monitor server logs when user authenticates:
 ```
 ✅ EventSub listener created for user: streamer_name
-✅ Subscribed to channel.subscribe for user streamer_name
+✅ Subscribed to channel.chat.notification for user streamer_name
 ✅ Subscribed to channel.subscription.gift for user streamer_name
 ✅ Subscribed to channel.subscription.message for user streamer_name
 ✅ Subscribed to channel.cheer for user streamer_name
@@ -484,7 +484,7 @@ twitch event trigger cheer -F https://your-api.com/webhooks/callback
 
 2. **Verify alert is enabled:**
    ```javascript
-   const alert = await database.getAlertForEvent(userId, 'channel.subscribe');
+  const alert = await database.getAlertForEvent(userId, 'chat_notification_subscribe');
    console.log('Alert enabled:', alert?.enabled);
    ```
 

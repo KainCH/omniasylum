@@ -68,7 +68,6 @@ namespace OmniForge.Tests.Components.Pages.Admin
             ComponentFactories.AddStub<OverlaySettingsModal>();
             ComponentFactories.AddStub<AlertsManagerModal>();
             ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
-            ComponentFactories.AddStub<SeriesSaveManagerModal>();
         }
 
         private IRenderedComponent<Users> RenderUsers()
@@ -334,8 +333,8 @@ namespace OmniForge.Tests.Components.Pages.Admin
             await Task.Delay(50);
 
             // Assert
-            var modal = cut.FindComponent<Stub<DiscordWebhookSettingsModal>>();
-            Assert.Equal("101", modal.Instance.Parameters.Get(x => x.UserId));
+            var nav = Services.GetRequiredService<NavigationManager>();
+            Assert.EndsWith("/admin/users/101/discord", nav.Uri, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -362,8 +361,8 @@ namespace OmniForge.Tests.Components.Pages.Admin
             await Task.Delay(50);
 
             // Assert
-            var modal = cut.FindComponent<Stub<SeriesSaveManagerModal>>();
-            Assert.Equal("202", modal.Instance.Parameters.Get(x => x.UserId));
+            var nav = Services.GetRequiredService<NavigationManager>();
+            Assert.EndsWith("/admin/users/202/series", nav.Uri, StringComparison.OrdinalIgnoreCase);
         }
     }
 

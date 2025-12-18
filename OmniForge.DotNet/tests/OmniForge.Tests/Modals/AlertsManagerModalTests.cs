@@ -11,11 +11,23 @@ namespace OmniForge.Tests.Modals;
 public class AlertsManagerModalTests : BunitContext
 {
     private readonly Mock<IAlertRepository> _mockAlertRepository;
+    private readonly Mock<IUserRepository> _mockUserRepository;
 
     public AlertsManagerModalTests()
     {
         _mockAlertRepository = new Mock<IAlertRepository>();
+        _mockUserRepository = new Mock<IUserRepository>();
         Services.AddSingleton(_mockAlertRepository.Object);
+        Services.AddSingleton(_mockUserRepository.Object);
+
+        _mockUserRepository
+            .Setup(r => r.GetUserAsync(It.IsAny<string>()))
+            .ReturnsAsync((string userId) => new User
+            {
+                TwitchUserId = userId,
+                Features = new FeatureFlags { StreamAlerts = true }
+            });
+
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -85,7 +97,16 @@ public class AlertsManagerModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        _mockAlertRepository.Setup(r => r.GetAlertsAsync(userId)).ReturnsAsync(new List<Alert>());
+        _mockAlertRepository
+            .SetupSequence(r => r.GetAlertsAsync(userId))
+            .ReturnsAsync(new List<Alert>())
+            .ReturnsAsync(new List<Alert>
+            {
+                new Alert { Id = "seeded", UserId = userId, Name = "New Follower", Type = "follow", VisualCue = "door", IsEnabled = true }
+            });
+
+        _mockAlertRepository.Setup(r => r.SaveAlertAsync(It.IsAny<Alert>())).Returns(Task.CompletedTask);
+        _mockAlertRepository.Setup(r => r.GetEventMappingsAsync(userId)).ReturnsAsync(new Dictionary<string, string>());
 
         var cut = Render(b =>
         {
@@ -96,8 +117,8 @@ public class AlertsManagerModalTests : BunitContext
         });
 
         // Assert
-        cut.WaitForState(() => cut.FindAll(".alert-info").Count > 0);
-        Assert.Contains("No alerts found", cut.Markup);
+        cut.WaitForState(() => cut.FindAll("table").Count > 0);
+        _mockAlertRepository.Verify(r => r.SaveAlertAsync(It.IsAny<Alert>()), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -132,7 +153,16 @@ public class AlertsManagerModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        _mockAlertRepository.Setup(r => r.GetAlertsAsync(userId)).ReturnsAsync(new List<Alert>());
+        _mockAlertRepository
+            .SetupSequence(r => r.GetAlertsAsync(userId))
+            .ReturnsAsync(new List<Alert>())
+            .ReturnsAsync(new List<Alert>
+            {
+                new Alert { Id = "seeded", UserId = userId, Name = "New Follower", Type = "follow", VisualCue = "door", IsEnabled = true }
+            });
+
+        _mockAlertRepository.Setup(r => r.SaveAlertAsync(It.IsAny<Alert>())).Returns(Task.CompletedTask);
+        _mockAlertRepository.Setup(r => r.GetEventMappingsAsync(userId)).ReturnsAsync(new Dictionary<string, string>());
         bool showChangedInvoked = false;
 
         var cut = Render(b =>

@@ -531,6 +531,19 @@ class AsylumEffects {
 
   // Enhanced playSound with retry tracking to prevent infinite loops
   playSound(soundTrigger, retryCount = 0) {
+    // If the overlay/page is not visible, do not play sounds.
+    // This prevents "catch-up" audio when OBS resumes a hidden/throttled browser source.
+    if (document.visibilityState !== 'visible') {
+      this.log('normal', '🔇 AsylumEffects sound suppressed because overlay is not visible:', soundTrigger);
+      return;
+    }
+
+    // Suppress briefly after resume (shared with overlay interop).
+    if (window.omniOverlayResumeSuppressUntil && Date.now() < window.omniOverlayResumeSuppressUntil) {
+      this.log('normal', '🔇 AsylumEffects sound suppressed during resume window:', soundTrigger);
+      return;
+    }
+
     if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
       this.log('normal', '🔇 AsylumEffects sound suppressed during silence window:', soundTrigger);
       return;

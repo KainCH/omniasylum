@@ -6,6 +6,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using System.Collections.Concurrent;
+using System.Linq;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -46,7 +47,16 @@ namespace OmniForge.Infrastructure.Services
         {
             if (!context.Message.StartsWith("!")) return;
 
-            var command = context.Message.ToLower().Split(' ')[0];
+            var parts = context.Message.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return;
+
+            var command = parts[0].ToLowerInvariant();
+            int? requestedAmount = null;
+            if (parts.Length > 1 && int.TryParse(parts[1], out var parsedAmount) && parsedAmount > 0)
+            {
+                requestedAmount = parsedAmount;
+            }
+
             var isMod = context.IsModerator || context.IsBroadcaster;
             var isSubscriber = context.IsSubscriber;
 
@@ -58,6 +68,10 @@ namespace OmniForge.Infrastructure.Services
                     var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                     var counters = await counterRepository.GetCountersAsync(context.UserId) ?? new Counter { TwitchUserId = context.UserId };
                     var user = await userRepository.GetUserAsync(context.UserId);
+
+                    var chatCommands = await userRepository.GetChatCommandsConfigAsync(context.UserId) ?? new ChatCommandConfiguration();
+                    var maxIncrement = Math.Clamp(chatCommands.MaxIncrementAmount, 1, 10);
+                    var amount = Math.Clamp(requestedAmount ?? 1, 1, maxIncrement);
 
                     var previousDeaths = counters.Deaths;
                     var previousSwears = counters.Swears;
@@ -90,7 +104,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!d+":
                             if (isMod)
                             {
-                                counters.Deaths++;
+                                counters.Deaths += amount;
                                 changed = true;
                             }
                             handled = true;
@@ -99,7 +113,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!d-":
                             if (isMod && counters.Deaths > 0)
                             {
-                                counters.Deaths--;
+                                counters.Deaths = Math.Max(0, counters.Deaths - amount);
                                 changed = true;
                             }
                             handled = true;
@@ -108,7 +122,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!sw+":
                             if (isMod)
                             {
-                                counters.Swears++;
+                                counters.Swears += amount;
                                 changed = true;
                             }
                             handled = true;
@@ -117,7 +131,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!sw-":
                             if (isMod && counters.Swears > 0)
                             {
-                                counters.Swears--;
+                                counters.Swears = Math.Max(0, counters.Swears - amount);
                                 changed = true;
                             }
                             handled = true;
@@ -126,7 +140,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!sc+":
                             if (isMod && user != null && user.OverlaySettings.Counters.Screams)
                             {
-                                counters.Screams++;
+                                counters.Screams += amount;
                                 changed = true;
                             }
                             handled = true;
@@ -135,7 +149,7 @@ namespace OmniForge.Infrastructure.Services
                         case "!sc-":
                             if (isMod && counters.Screams > 0 && user != null && user.OverlaySettings.Counters.Screams)
                             {
-                                counters.Screams--;
+                                counters.Screams = Math.Max(0, counters.Screams - amount);
                                 changed = true;
                             }
                             handled = true;
@@ -155,9 +169,10 @@ namespace OmniForge.Infrastructure.Services
                     // Handle Custom Commands
                     if (!handled)
                     {
-                        var chatCommands = await userRepository.GetChatCommandsConfigAsync(context.UserId);
                         if (chatCommands.Commands.TryGetValue(command, out var cmdConfig))
                         {
+                            if (!cmdConfig.Enabled) return;
+
                             // Check Permission
                             bool hasPermission = false;
                             switch (cmdConfig.Permission.ToLower())
@@ -193,7 +208,16 @@ namespace OmniForge.Infrastructure.Services
 
                                 if (!onCooldown)
                                 {
-                                    await TrySend(sendMessage, context.UserId, cmdConfig.Response);
+                                    var action = cmdConfig.Action?.ToLowerInvariant();
+                                    if (!string.IsNullOrWhiteSpace(action))
+                                    {
+                                        changed = ApplyActionToCounters(user, counters, action, cmdConfig.Counter, amount) || changed;
+                                    }
+                                    else
+                                    {
+                                        await TrySend(sendMessage, context.UserId, cmdConfig.Response);
+                                    }
+
                                     userCooldowns[command] = now;
                                 }
                             }
@@ -209,47 +233,56 @@ namespace OmniForge.Infrastructure.Services
                         // Check for milestones
                         try
                         {
-                            var discordService = scope.ServiceProvider.GetRequiredService<IDiscordService>();
-
-                            if (user != null && user.Features.DiscordWebhook && !string.IsNullOrEmpty(user.DiscordWebhookUrl))
+                            if (user != null && user.Features.DiscordNotifications)
                             {
-                                // Check Death Milestones
-                                if (counters.Deaths > previousDeaths)
+                                var discordSettings = user.DiscordSettings ?? new DiscordSettings();
+                                var hasChannelOverride = discordSettings.MessageTemplates?.Values.Any(t => !string.IsNullOrWhiteSpace(t.ChannelIdOverride)) == true;
+                                var hasDestination = !string.IsNullOrWhiteSpace(user.DiscordChannelId) || !string.IsNullOrWhiteSpace(user.DiscordWebhookUrl) || hasChannelOverride;
+                                if (!hasDestination)
                                 {
-                                    var thresholds = user.DiscordSettings.MilestoneThresholds.Deaths;
-                                    if (thresholds.Contains(counters.Deaths))
+                                    // DiscordService also no-ops without a destination, but avoid invoking it at all.
+                                    return;
+                                }
+
+                                var discordService = scope.ServiceProvider.GetRequiredService<IDiscordService>();
+
+                                // Check Death Milestones
+                                if (discordSettings.EnabledNotifications.DeathMilestone && counters.Deaths > previousDeaths)
+                                {
+                                    var thresholds = discordSettings.MilestoneThresholds.Deaths;
+                                    foreach (var threshold in thresholds.Where(t => t > previousDeaths && t <= counters.Deaths))
                                     {
                                         await discordService.SendNotificationAsync(user, "death_milestone", new
                                         {
-                                            count = counters.Deaths,
+                                            count = threshold,
                                             previousMilestone = previousDeaths
                                         });
                                     }
                                 }
 
                                 // Check Swear Milestones
-                                if (counters.Swears > previousSwears)
+                                if (discordSettings.EnabledNotifications.SwearMilestone && counters.Swears > previousSwears)
                                 {
-                                    var thresholds = user.DiscordSettings.MilestoneThresholds.Swears;
-                                    if (thresholds.Contains(counters.Swears))
+                                    var thresholds = discordSettings.MilestoneThresholds.Swears;
+                                    foreach (var threshold in thresholds.Where(t => t > previousSwears && t <= counters.Swears))
                                     {
                                         await discordService.SendNotificationAsync(user, "swear_milestone", new
                                         {
-                                            count = counters.Swears,
+                                            count = threshold,
                                             previousMilestone = previousSwears
                                         });
                                     }
                                 }
 
                                 // Check Scream Milestones
-                                if (counters.Screams > previousScreams)
+                                if (discordSettings.EnabledNotifications.ScreamMilestone && counters.Screams > previousScreams)
                                 {
-                                    var thresholds = user.DiscordSettings.MilestoneThresholds.Screams;
-                                    if (thresholds.Contains(counters.Screams))
+                                    var thresholds = discordSettings.MilestoneThresholds.Screams;
+                                    foreach (var threshold in thresholds.Where(t => t > previousScreams && t <= counters.Screams))
                                     {
                                         await discordService.SendNotificationAsync(user, "scream_milestone", new
                                         {
-                                            count = counters.Screams,
+                                            count = threshold,
                                             previousMilestone = previousScreams
                                         });
                                     }
@@ -266,6 +299,72 @@ namespace OmniForge.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing chat command for {UserId}", LogSanitizer.Sanitize(context.UserId));
+            }
+        }
+
+        private static bool ApplyActionToCounters(User? user, Counter counters, string action, string? counterTargets, int amount)
+        {
+            var targets = (counterTargets ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            if (targets.Length == 0 && action != "reset")
+            {
+                return false;
+            }
+
+            if (action == "reset")
+            {
+                // If targets specified, reset only those; else reset core counters.
+                if (targets.Length == 0)
+                {
+                    counters.Deaths = 0;
+                    counters.Swears = 0;
+                    counters.Screams = 0;
+                    return true;
+                }
+
+                foreach (var target in targets)
+                {
+                    ApplyDelta(counters, target.ToLowerInvariant(), 0, isReset: true, user: user);
+                }
+
+                return true;
+            }
+
+            var delta = action == "decrement" ? -amount : amount;
+
+            foreach (var target in targets)
+            {
+                ApplyDelta(counters, target.ToLowerInvariant(), delta, isReset: false, user: user);
+            }
+
+            return true;
+        }
+
+        private static void ApplyDelta(Counter counters, string target, int delta, bool isReset, User? user)
+        {
+            switch (target)
+            {
+                case "deaths":
+                    counters.Deaths = isReset ? 0 : Math.Max(0, counters.Deaths + delta);
+                    break;
+                case "swears":
+                    counters.Swears = isReset ? 0 : Math.Max(0, counters.Swears + delta);
+                    break;
+                case "screams":
+                    if (user != null && user.OverlaySettings.Counters.Screams)
+                    {
+                        counters.Screams = isReset ? 0 : Math.Max(0, counters.Screams + delta);
+                    }
+                    break;
+                case "bits":
+                    counters.Bits = isReset ? 0 : Math.Max(0, counters.Bits + delta);
+                    break;
+                default:
+                    counters.CustomCounters ??= new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    var current = counters.CustomCounters.TryGetValue(target, out var existing) ? existing : 0;
+                    counters.CustomCounters[target] = isReset ? 0 : Math.Max(0, current + delta);
+                    break;
             }
         }
 

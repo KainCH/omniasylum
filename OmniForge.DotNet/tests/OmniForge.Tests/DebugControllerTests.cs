@@ -16,6 +16,7 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<IDiscordService> _mockDiscordService;
         private readonly Mock<ISeriesRepository> _mockSeriesRepository;
+        private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ILogger<DebugController>> _mockLogger;
         private readonly DebugController _controller;
 
@@ -24,12 +25,14 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockDiscordService = new Mock<IDiscordService>();
             _mockSeriesRepository = new Mock<ISeriesRepository>();
+            _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockLogger = new Mock<ILogger<DebugController>>();
 
             _controller = new DebugController(
                 _mockUserRepository.Object,
                 _mockDiscordService.Object,
                 _mockSeriesRepository.Object,
+                _mockOverlayNotifier.Object,
                 _mockLogger.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]

@@ -22,6 +22,7 @@ namespace OmniForge.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<TwitchSettings>(configuration.GetSection("Twitch"));
+            services.Configure<DiscordBotSettings>(configuration.GetSection("DiscordBot"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
 
@@ -66,9 +67,11 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
             services.AddScoped<ISeriesRepository, SeriesRepository>();
+            services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
             services.AddScoped<INotificationService, NotificationService>();
+            services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
@@ -81,7 +84,6 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IEventSubHandler, StreamOnlineHandler>();
             services.AddScoped<IEventSubHandler, StreamOfflineHandler>();
             services.AddScoped<IEventSubHandler, FollowHandler>();
-            services.AddScoped<IEventSubHandler, SubscribeHandler>();
             services.AddScoped<IEventSubHandler, SubscriptionGiftHandler>();
             services.AddScoped<IEventSubHandler, SubscriptionMessageHandler>();
             services.AddScoped<IEventSubHandler, CheerHandler>();

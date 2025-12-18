@@ -97,7 +97,7 @@ namespace OmniForge.Tests
             return new User
             {
                 TwitchUserId = "user1",
-                Features = new FeatureFlags { DiscordWebhook = enabled },
+                Features = new FeatureFlags { DiscordNotifications = enabled },
                 DiscordWebhookUrl = webhookUrl,
                 DiscordSettings = new DiscordSettings
                 {

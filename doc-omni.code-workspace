@@ -31,7 +31,13 @@
       "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "javascript.preferences.quoteStyle": "single",
-    "typescript.preferences.quoteStyle": "single"
+    "typescript.preferences.quoteStyle": "single",
+    "omnisharp.disableMSBuildDiagnosticWarning": true,
+    "dotnet.projects.enableAutomaticRestore": false,
+    "csharp.showOmnisharpLogOnError": false,
+    "[aspnetcorerazor]": {
+      "editor.defaultFormatter": "ms-dotnettools.csharp"
+    }
   },
   "extensions": {
     "recommendations": [
@@ -53,7 +59,9 @@
         "type": "node",
         "request": "launch",
         "name": "Launch API Server",
-        "skipFiles": ["<node_internals>/**"],
+        "skipFiles": [
+          "<node_internals>/**"
+        ],
         "program": "${workspaceFolder}/API/server.js",
         "cwd": "${workspaceFolder}/API",
         "envFile": "${workspaceFolder}/API/.env",
@@ -65,7 +73,9 @@
         "name": "Attach to API Server",
         "port": 9229,
         "restart": true,
-        "skipFiles": ["<node_internals>/**"]
+        "skipFiles": [
+          "<node_internals>/**"
+        ]
       }
     ]
   },

@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
-using OmniForge.Web.Components.Pages.Settings;
+using OmniForge.Web.Components.Settings;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Xunit;
@@ -48,12 +48,6 @@ namespace OmniForge.Tests.Components.Pages.Settings
         public void RendersLoadingState_Initially()
         {
             // Arrange
-            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "StreamerOne"),
-                new Claim("userId", "123")
-            }, "TestAuthType")));
-
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync(It.IsAny<string>()))
                 .Returns(async () => { await Task.Delay(100); return new List<Series>(); });
 
@@ -63,7 +57,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 b.OpenComponent<CascadingAuthenticationState>(0);
                 b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
                 {
-                    builder.OpenComponent<SeriesManager>(2);
+                    builder.OpenComponent<SeriesSaveManager>(2);
+                    builder.AddAttribute(3, "UserId", "123");
                     builder.CloseComponent();
                 }));
                 b.CloseComponent();
@@ -77,12 +72,6 @@ namespace OmniForge.Tests.Components.Pages.Settings
         public void RendersList_WhenLoaded()
         {
             // Arrange
-            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "StreamerOne"),
-                new Claim("userId", "123")
-            }, "TestAuthType")));
-
             var seriesList = new List<Series>
             {
                 new Series { Id = "1", Name = "Elden Ring", Description = "Run 1", Snapshot = new Counter { Deaths = 10 } }
@@ -95,7 +84,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 b.OpenComponent<CascadingAuthenticationState>(0);
                 b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
                 {
-                    builder.OpenComponent<SeriesManager>(2);
+                    builder.OpenComponent<SeriesSaveManager>(2);
+                    builder.AddAttribute(3, "UserId", "123");
                     builder.CloseComponent();
                 }));
                 b.CloseComponent();
@@ -112,12 +102,6 @@ namespace OmniForge.Tests.Components.Pages.Settings
         public void SaveSeries_CreatesNewSeries()
         {
             // Arrange
-            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "StreamerOne"),
-                new Claim("userId", "123")
-            }, "TestAuthType")));
-
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync("123")).ReturnsAsync(new List<Series>());
             _mockCounterRepo.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(new Counter { Deaths = 5, Swears = 2 });
             _mockSeriesRepo.Setup(x => x.CreateSeriesAsync(It.IsAny<Series>())).Returns(Task.CompletedTask);
@@ -127,7 +111,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 b.OpenComponent<CascadingAuthenticationState>(0);
                 b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
                 {
-                    builder.OpenComponent<SeriesManager>(2);
+                    builder.OpenComponent<SeriesSaveManager>(2);
+                    builder.AddAttribute(3, "UserId", "123");
                     builder.CloseComponent();
                 }));
                 b.CloseComponent();
@@ -136,10 +121,10 @@ namespace OmniForge.Tests.Components.Pages.Settings
             cut.WaitForState(() => cut.FindAll("input").Count > 0);
 
             // Act
-            cut.Find("input[placeholder*='Elden Ring']").Change("Dark Souls");
-            cut.Find("textarea").Change("No hit run");
+            cut.Find("input[placeholder*='Series Name']").Input("Dark Souls");
+            cut.Find("input[placeholder*='Description']").Input("No hit run");
 
-            var saveBtn = cut.Find("button.btn-info");
+            var saveBtn = cut.Find("button.btn-success");
             saveBtn.Click();
 
             // Assert
@@ -151,30 +136,26 @@ namespace OmniForge.Tests.Components.Pages.Settings
             )), Times.Once);
 
             cut.WaitForState(() => cut.FindAll(".alert-success").Count > 0);
-            Assert.Contains("Series saved successfully!", cut.Find(".alert-success").TextContent);
+            Assert.Contains("Series 'Dark Souls' saved successfully!", cut.Find(".alert-success").TextContent);
         }
 
         [Fact]
         public void LoadSeries_UpdatesCountersAndNotifies()
         {
             // Arrange
-            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "StreamerOne"),
-                new Claim("userId", "123")
-            }, "TestAuthType")));
-
-            var series = new Series { Id = "1", Name = "Elden Ring", Snapshot = new Counter { Deaths = 100 } };
+            var series = new Series { Id = "1", Name = "Elden Ring", Snapshot = new Counter { Deaths = 100, Swears = 0, Screams = 0, Bits = 0 } };
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync("123")).ReturnsAsync(new List<Series> { series });
             _mockCounterRepo.Setup(x => x.SaveCountersAsync(It.IsAny<Counter>())).Returns(Task.CompletedTask);
             _mockOverlayNotifier.Setup(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>())).Returns(Task.CompletedTask);
+            _mockSeriesRepo.Setup(x => x.UpdateSeriesAsync(It.IsAny<Series>())).Returns(Task.CompletedTask);
 
             var cut = Render(b =>
             {
                 b.OpenComponent<CascadingAuthenticationState>(0);
                 b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
                 {
-                    builder.OpenComponent<SeriesManager>(2);
+                    builder.OpenComponent<SeriesSaveManager>(2);
+                    builder.AddAttribute(3, "UserId", "123");
                     builder.CloseComponent();
                 }));
                 b.CloseComponent();
@@ -186,24 +167,21 @@ namespace OmniForge.Tests.Components.Pages.Settings
             var loadBtn = cut.Find("button.btn-outline-primary");
             loadBtn.Click();
 
+            cut.WaitForState(() => cut.FindAll(".bg-body-tertiary").Count > 0);
+            cut.Find("button.btn-warning").Click();
+
             // Assert
             _mockCounterRepo.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Deaths == 100 && c.TwitchUserId == "123")), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("123", It.Is<Counter>(c => c.Deaths == 100)), Times.Once);
 
             cut.WaitForState(() => cut.FindAll(".alert-success").Count > 0);
-            Assert.Contains("Loaded series 'Elden Ring' successfully!", cut.Find(".alert-success").TextContent);
+            Assert.Contains("Loaded 'Elden Ring' successfully!", cut.Find(".alert-success").TextContent);
         }
 
         [Fact]
         public void DeleteSeries_RemovesSeries()
         {
             // Arrange
-            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, "StreamerOne"),
-                new Claim("userId", "123")
-            }, "TestAuthType")));
-
             var series = new Series { Id = "1", Name = "Elden Ring" };
             _mockSeriesRepo.Setup(x => x.GetSeriesAsync("123")).ReturnsAsync(new List<Series> { series });
             _mockSeriesRepo.Setup(x => x.DeleteSeriesAsync("123", "1")).Returns(Task.CompletedTask);
@@ -213,7 +191,8 @@ namespace OmniForge.Tests.Components.Pages.Settings
                 b.OpenComponent<CascadingAuthenticationState>(0);
                 b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
                 {
-                    builder.OpenComponent<SeriesManager>(2);
+                    builder.OpenComponent<SeriesSaveManager>(2);
+                    builder.AddAttribute(3, "UserId", "123");
                     builder.CloseComponent();
                 }));
                 b.CloseComponent();
@@ -225,11 +204,14 @@ namespace OmniForge.Tests.Components.Pages.Settings
             var deleteBtn = cut.Find("button.btn-outline-danger");
             deleteBtn.Click();
 
+            cut.WaitForState(() => cut.FindAll(".bg-body-tertiary").Count > 0);
+            cut.Find("button.btn-danger").Click();
+
             // Assert
             _mockSeriesRepo.Verify(x => x.DeleteSeriesAsync("123", "1"), Times.Once);
 
-            cut.WaitForState(() => cut.FindAll(".alert-info").Count > 0);
-            Assert.Contains("Series deleted.", cut.Find(".alert-info").TextContent);
+            cut.WaitForState(() => cut.FindAll(".alert-success").Count > 0);
+            Assert.Contains("'Elden Ring' deleted successfully.", cut.Find(".alert-success").TextContent);
         }
     }
 }

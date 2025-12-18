@@ -4,9 +4,12 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Core.Entities;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
 using Xunit;
 
@@ -16,6 +19,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<HttpMessageHandler> _mockHttpMessageHandler;
         private readonly Mock<ILogger<DiscordService>> _mockLogger;
+        private readonly Mock<IDiscordBotClient> _mockDiscordBotClient;
         private readonly DiscordService _service;
         private readonly HttpClient _httpClient;
 
@@ -23,19 +27,227 @@ namespace OmniForge.Tests
         {
             _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
             _mockLogger = new Mock<ILogger<DiscordService>>();
+            _mockDiscordBotClient = new Mock<IDiscordBotClient>();
 
             _httpClient = new HttpClient(_mockHttpMessageHandler.Object);
-            _service = new DiscordService(_httpClient, _mockLogger.Object);
+            var botSettings = Options.Create(new DiscordBotSettings
+            {
+                BotToken = "test-bot-token",
+                ApiBaseUrl = "https://discord.com/api/v10"
+            });
+            _service = new DiscordService(_httpClient, _mockLogger.Object, botSettings, _mockDiscordBotClient.Object);
         }
 
         [Fact]
-        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured()
+        public async Task SendNotificationAsync_ShouldUseChannelOverride_WhenBotModeConfigured()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
                 DisplayName = "Test User",
+                DiscordChannelId = "111111111111111111",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { StreamEnd = true },
+                    MessageTemplates = new System.Collections.Generic.Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["stream_end"] = new DiscordMessageTemplate { ChannelIdOverride = "222222222222222222" }
+                    }
+                }
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _service.SendNotificationAsync(user, "stream_end", new { duration = "2h" });
+
+            // Assert
+            _mockDiscordBotClient.Verify(
+                x => x.SendMessageAsync(
+                    "222222222222222222",
+                    "test-bot-token",
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()),
+                Times.Once);
+
+            // No webhook should be used
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_ShouldApplyTemplates_ForTitleDescriptionAndContent()
+        {
+            // Arrange
+            Discord.Embed? capturedEmbed = null;
+            string? capturedContent = null;
+
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordChannelId = "123456789012345678",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { StreamEnd = true },
+                    MessageTemplates = new System.Collections.Generic.Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["stream_end"] = new DiscordMessageTemplate
+                        {
+                            ContentTemplate = "Custom content for {{displayName}} ({{eventType}})",
+                            TitleTemplate = "Custom title: {{displayName}}",
+                            DescriptionTemplate = "Duration was {{duration}}"
+                        }
+                    }
+                }
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Callback<string, string, string?, Discord.Embed, Discord.MessageComponent, Discord.AllowedMentions>((_, _, content, embed, _, _) =>
+                {
+                    capturedContent = content;
+                    capturedEmbed = embed;
+                })
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _service.SendNotificationAsync(user, "stream_end", new { duration = "2h 30m" });
+
+            // Assert
+            Assert.Equal("Custom content for Test User (stream_end)", capturedContent);
+            Assert.NotNull(capturedEmbed);
+            Assert.Equal("Custom title: Test User", capturedEmbed!.Title);
+            Assert.Equal("Duration was 2h 30m", capturedEmbed.Description);
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_StreamStart_ContentTemplate_CanIncludeMentionsToken()
+        {
+            // Arrange
+            string? capturedContent = null;
+            Discord.AllowedMentions? capturedMentions = null;
+
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordChannelId = "123456789012345678",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { StreamStart = true },
+                    MentionEveryoneOnStreamStart = true,
+                    MessageTemplates = new System.Collections.Generic.Dictionary<string, DiscordMessageTemplate>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["stream_start"] = new DiscordMessageTemplate
+                        {
+                            ContentTemplate = "{{streamStartMentions}} {{displayName}} is live! {{twitchUrl}}"
+                        }
+                    }
+                }
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Callback<string, string, string?, Discord.Embed, Discord.MessageComponent, Discord.AllowedMentions>((_, _, content, _, _, mentions) =>
+                {
+                    capturedContent = content;
+                    capturedMentions = mentions;
+                })
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _service.SendNotificationAsync(user, "stream_start", new { title = "Test Stream", game = "Just Chatting" });
+
+            // Assert
+            Assert.NotNull(capturedContent);
+            Assert.Contains("@everyone", capturedContent);
+            Assert.Contains("Test User is live!", capturedContent);
+            Assert.Contains("https://twitch.tv/testuser", capturedContent);
+
+            Assert.NotNull(capturedMentions);
+            Assert.True((capturedMentions!.AllowedTypes & Discord.AllowedMentionTypes.Everyone) == Discord.AllowedMentionTypes.Everyone);
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldSendBotMessage_WhenChannelIdConfigured()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordChannelId = "123456789012345678"
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _service.SendTestNotificationAsync(user);
+
+            // Assert
+            _mockDiscordBotClient.Verify(
+                x => x.SendMessageAsync(
+                    user.DiscordChannelId,
+                    "test-bot-token",
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()),
+                Times.Once);
+
+            _mockHttpMessageHandler.Protected().Verify(
+                "SendAsync",
+                Times.Never(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            );
+        }
+
+        [Fact]
+        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured_AndNoChannelId()
+        {
+            // Arrange
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordChannelId = string.Empty,
                 DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
             };
 
@@ -72,7 +284,8 @@ namespace OmniForge.Tests
             var user = new User
             {
                 Username = "testuser",
-                DiscordWebhookUrl = string.Empty
+                DiscordWebhookUrl = string.Empty,
+                DiscordChannelId = string.Empty
             };
 
             // Act
