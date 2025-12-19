@@ -87,6 +87,46 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task SaveChatCommands_ShouldUpdateMaxIncrementAmount_WhenProvided()
+        {
+            var commands = new Dictionary<string, ChatCommandDefinition>
+            {
+                { "!test", new ChatCommandDefinition { Response = "Test" } }
+            };
+
+            var request = new SaveChatCommandsRequest
+            {
+                Commands = commands,
+                MaxIncrementAmount = 10
+            };
+
+            var result = await _controller.SaveChatCommands(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveChatCommandsConfigAsync("12345", It.Is<ChatCommandConfiguration>(c => c.MaxIncrementAmount == 10)), Times.Once);
+        }
+
+        [Fact]
+        public async Task SaveChatCommands_ShouldPreserveMaxIncrementAmount_WhenNotProvided()
+        {
+            var existingConfig = new ChatCommandConfiguration { MaxIncrementAmount = 5 };
+            _mockUserRepository.Setup(x => x.GetChatCommandsConfigAsync("12345"))
+                .ReturnsAsync(existingConfig);
+
+            var commands = new Dictionary<string, ChatCommandDefinition>
+            {
+                { "!test", new ChatCommandDefinition { Response = "Test" } }
+            };
+
+            var request = new SaveChatCommandsRequest { Commands = commands };
+
+            var result = await _controller.SaveChatCommands(request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveChatCommandsConfigAsync("12345", It.Is<ChatCommandConfiguration>(c => c.MaxIncrementAmount == 5)), Times.Once);
+        }
+
+        [Fact]
         public async Task AddChatCommand_ShouldReturnOk_WhenNewCommand()
         {
             var config = new ChatCommandConfiguration();
@@ -278,6 +318,8 @@ namespace OmniForge.Tests
             Assert.Contains("!stats", defaults.Keys);
             Assert.Contains("!death+", defaults.Keys);
             Assert.Contains("!death-", defaults.Keys);
+            Assert.Contains("!d+", defaults.Keys);
+            Assert.Contains("!d-", defaults.Keys);
             Assert.Contains("!swear+", defaults.Keys);
             Assert.Contains("!swear-", defaults.Keys);
             Assert.Contains("!sw+", defaults.Keys);

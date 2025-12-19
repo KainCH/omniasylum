@@ -1,100 +1,102 @@
-# OmniAsylum API - Multi-Tenant Edition
+# OmniForge - Multi-Tenant Stream Counter Platform
 
-Backend server for OmniAsylum stream counter with **Twitch OAuth authentication**, **multi-tenant support**, and **Azure deployment**.
+A comprehensive **multi-tenant Twitch stream counter application** built with **.NET 8** and deployed to **Azure Container Apps**. OmniForge provides real-time stream counters, chat bot integration, Discord notifications, stream overlays, and much more for content creators.
 
-## 🌟 New Features
+## 🌟 Features
 
-- ✅ **Twitch OAuth** - Streamers login with their Twitch account
-- ✅ **Multi-Tenant** - Multiple streamers can use the same instance
-- ✅ **Per-User Bots** - Each streamer gets their own chat bot
-- ✅ **Azure Ready** - Deploy to Azure Container Apps with Key Vault
-- ✅ **Secure** - All secrets in Key Vault, managed identity authentication
-- ✅ **Scalable** - Auto-scale to zero, pay only for usage
+### Core Features
+- ✅ **Twitch OAuth 2.0** - Secure authentication with Twitch accounts
+- ✅ **Multi-Tenant Architecture** - Multiple streamers share a single instance
+- ✅ **Per-User Twitch Bots** - Each streamer gets their own chat bot
+- ✅ **Real-Time Sync** - WebSocket-powered updates across all devices via SignalR
+- ✅ **Azure Deployment** - Container Apps with Key Vault secrets management
 
-## 📋 Prerequisites
+### Counter System
+- ✅ **Built-in Counters** - Deaths, Swears, Screams, Bits
+- ✅ **Custom Counters** - Define your own counters with custom icons, milestones, and increment values
+- ✅ **Series Save States** - Save/load counter states for different game series
+- ✅ **Milestone Notifications** - Celebrate reaching counter milestones
 
-- Node.js 18+ installed
-- npm package manager
+### Stream Integration
+- ✅ **Twitch EventSub** - Real-time follows, subscriptions, gift subs, resubs, cheers, and raids
+- ✅ **Channel Points** - Create custom rewards that control counters
+- ✅ **Bits Integration** - Configurable thresholds for counter increments
+- ✅ **Stream Status Management** - Prep → Live → End workflow
+
+### Chat Commands
+- ✅ **Default Commands** - `!deaths`, `!swears`, `!screams`, `!stats`, `!d+`, `!d-`, etc.
+- ✅ **Custom Commands** - Create your own chat commands with variables
+- ✅ **Permission Levels** - Everyone, Subscriber, Moderator, Broadcaster
+
+### Discord Integration
+- ✅ **OmniForge Bot** - Official Discord bot for notifications
+- ✅ **Milestone Alerts** - Post to Discord when counters hit milestones
+- ✅ **Stream Notifications** - Stream start/end announcements
+- ✅ **Customizable Templates** - Multiple themes (Asylum, Minimal, Detailed, etc.)
+- ✅ **Per-Event Channel Routing** - Different notifications to different channels
+
+### Stream Overlays
+- ✅ **Browser Source Overlay** - Transparent overlay for OBS/Streamlabs
+- ✅ **Alert Animations** - Animated notifications with sound effects
+- ✅ **Customizable Themes** - Colors, fonts, positions, effects
+- ✅ **Celebration Effects** - Particles, screen effects, SVG filters
+
+### Moderator System
+- ✅ **Delegated Access** - Grant moderators access to manage your counters
+- ✅ **Mod Dashboard** - Moderators can manage multiple streamers
+- ✅ **Series Management** - Mods can save/load series for streamers they manage
+
+### AutoMod Integration
+- ✅ **View AutoMod Settings** - See current Twitch AutoMod configuration
+- ✅ **Update AutoMod** - Adjust moderation levels from OmniForge
+
+## 📋 Tech Stack
+
+- **Backend**: .NET 8 (ASP.NET Core, SignalR)
+- **Database**: Azure Table Storage
+- **Authentication**: Twitch OAuth 2.0 + JWT
+- **Real-Time**: SignalR WebSockets
+- **Twitch**: EventSub WebSocket, Helix API, TMI.js chat
+- **Discord**: Discord.Net REST SDK
+- **Infrastructure**: Azure Container Apps, Key Vault, Application Insights
+- **CI/CD**: Bicep Infrastructure as Code
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- .NET 8 SDK
+- Azure CLI (for deployment)
 - Twitch Developer Account
-- (Optional) Azure account for cloud deployment
+- (Optional) Discord Bot Token for notifications
 
-## 🚀 Quick Start (Local Development)
-
-### 1. Install Dependencies
+### Local Development
 
 ```powershell
-cd API
-npm install
+# Clone repository
+git clone https://github.com/KainCH/omniasylum.git
+cd OmniForge
+
+# Navigate to web project
+cd OmniForge.DotNet/src/OmniForge.Web
+
+# Set environment variables (or use user-secrets)
+$env:Twitch__ClientId = "your_client_id"
+$env:Twitch__ClientSecret = "your_client_secret"
+$env:Jwt__Secret = "your_jwt_secret_min_32_chars"
+
+# Run the application
+dotnet run
 ```
 
-### 2. Create Twitch Application
+### Create Twitch Application
 
 1. Go to [Twitch Developer Console](https://dev.twitch.tv/console/apps)
-2. Click "Register Your Application"
-3. Fill in:
-   - **Name**: OmniAsylum Counter
-   - **OAuth Redirect URLs**: `http://localhost:3000/auth/twitch/callback`
+2. Register your application:
+   - **Name**: OmniForge (or your preferred name)
+   - **OAuth Redirect URLs**: `http://localhost:5000/auth/twitch/callback`
    - **Category**: Application Integration
-4. Save and copy your **Client ID** and **Client Secret**
-
-### 3. Configure Environment
-
-```powershell
-cp .env.example .env
-```
-
-Edit `.env` and add your Twitch credentials:
-
-```env
-TWITCH_CLIENT_ID=your_client_id_here
-TWITCH_CLIENT_SECRET=your_client_secret_here
-JWT_SECRET=generate_a_random_secret_here
-```
-
-Generate a secure JWT secret:
-
-```powershell
-# PowerShell
--join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | % {[char]$_})
-```
-
-### 4. Start the Server
-
-```powershell
-npm start
-```
-
-Or for development with auto-reload:
-
-```powershell
-npm run dev
-```
-
-### 5. Test Authentication
-
-1. Open browser to `http://localhost:3000/auth/twitch`
-2. Login with your Twitch account
-3. You'll be redirected to frontend with a JWT token
-
-## 🔐 Authentication Flow
-
-```
-User clicks "Login with Twitch"
-    ↓
-Redirect to /auth/twitch
-    ↓
-Twitch OAuth page (user authorizes)
-    ↓
-Callback to /auth/twitch/callback
-    ↓
-Server exchanges code for access token
-    ↓
-User data saved to database
-    ↓
-JWT token created and sent to frontend
-    ↓
-Frontend stores token, uses for all API calls
-```
+3. Copy **Client ID** and **Client Secret**
 
 ## 🔌 API Endpoints
 
@@ -108,96 +110,116 @@ Frontend stores token, uses for all API calls
 | POST   | `/auth/refresh`         | Refresh Twitch access token           |
 | POST   | `/auth/logout`          | Logout current user                   |
 
-### Counters (All require authentication)
+### Counters
 
-| Method | Endpoint                         | Description              |
-| ------ | -------------------------------- | ------------------------ |
-| GET    | `/api/counters`                  | Get user's counter state |
-| POST   | `/api/counters/deaths/increment` | Increment deaths         |
-| POST   | `/api/counters/deaths/decrement` | Decrement deaths         |
-| POST   | `/api/counters/swears/increment` | Increment swears         |
-| POST   | `/api/counters/swears/decrement` | Decrement swears         |
-| POST   | `/api/counters/reset`            | Reset all counters       |
-| GET    | `/api/counters/export`           | Export counter data      |
+| Method | Endpoint                         | Description                                    |
+| ------ | -------------------------------- | ---------------------------------------------- |
+| GET    | `/api/counters`                  | Get user's counter state                       |
+| POST   | `/api/counters/{type}/increment` | Increment counter (deaths/swears/screams/bits) |
+| POST   | `/api/counters/{type}/decrement` | Decrement counter                              |
+| POST   | `/api/counters/reset`            | Reset all counters                             |
 
-### Series Save States (All require authentication)
+### Custom Counters
 
-| Method | Endpoint                         | Description                |
-| ------ | -------------------------------- | -------------------------- |
-| POST   | `/api/counters/series/save`      | Save current counter state |
-| POST   | `/api/counters/series/load`      | Load a saved counter state |
-| GET    | `/api/counters/series/list`      | List all series saves      |
-| DELETE | `/api/counters/series/:seriesId` | Delete a series save       |
+| Method | Endpoint                              | Description                |
+| ------ | ------------------------------------- | -------------------------- |
+| GET    | `/api/custom-counters`                | Get custom counter config  |
+| PUT    | `/api/custom-counters`                | Save custom counter config |
+| POST   | `/api/custom-counters/{id}/increment` | Increment custom counter   |
+| POST   | `/api/custom-counters/{id}/decrement` | Decrement custom counter   |
 
-> **💾 New Feature!** Save and reload counter states for different stream series. Perfect for episodic content or switching between games. See [SERIES-SAVE-STATES.md](API/SERIES-SAVE-STATES.md) for details.
+### Series Save States
+
+| Method | Endpoint                 | Description                |
+| ------ | ------------------------ | -------------------------- |
+| GET    | `/api/series`            | List all series saves      |
+| POST   | `/api/series/save`       | Save current counter state |
+| POST   | `/api/series/load`       | Load a saved state         |
+| DELETE | `/api/series/{seriesId}` | Delete a series save       |
+
+### Stream Management
+
+| Method | Endpoint               | Description                          |
+| ------ | ---------------------- | ------------------------------------ |
+| GET    | `/api/stream/session`  | Get current stream session           |
+| POST   | `/api/stream/status`   | Update stream status (prep/live/end) |
+| POST   | `/api/stream/start`    | Start stream session                 |
+| POST   | `/api/stream/end`      | End stream session                   |
+| GET    | `/api/stream/settings` | Get stream settings                  |
+| PUT    | `/api/stream/settings` | Update stream settings               |
+
+### Chat Commands
+
+| Method | Endpoint                      | Description              |
+| ------ | ----------------------------- | ------------------------ |
+| GET    | `/api/chat-commands`          | Get chat command config  |
+| GET    | `/api/chat-commands/defaults` | Get default commands     |
+| PUT    | `/api/chat-commands`          | Save chat command config |
+
+### Channel Points
+
+| Method | Endpoint            | Description                |
+| ------ | ------------------- | -------------------------- |
+| GET    | `/api/rewards`      | List channel point rewards |
+| POST   | `/api/rewards`      | Create new reward          |
+| PUT    | `/api/rewards/{id}` | Update reward              |
+| DELETE | `/api/rewards/{id}` | Delete reward              |
+
+### Alerts
+
+| Method | Endpoint                     | Description              |
+| ------ | ---------------------------- | ------------------------ |
+| GET    | `/api/alerts`                | Get alert configurations |
+| POST   | `/api/alerts`                | Create alert             |
+| PUT    | `/api/alerts/{id}`           | Update alert             |
+| DELETE | `/api/alerts/{id}`           | Delete alert             |
+| GET    | `/api/alerts/event-mappings` | Get event→alert mappings |
+| PUT    | `/api/alerts/event-mappings` | Update event mappings    |
+| POST   | `/api/alerts/test/{type}`    | Test an alert            |
+
+### Templates (Discord/Notifications)
+
+| Method | Endpoint                   | Description              |
+| ------ | -------------------------- | ------------------------ |
+| GET    | `/api/templates/available` | List available templates |
+| GET    | `/api/templates/current`   | Get current template     |
+| PUT    | `/api/templates/select`    | Select a template        |
+| PUT    | `/api/templates/custom`    | Save custom template     |
+
+### Moderator Management
+
+| Method | Endpoint                                                | Description                 |
+| ------ | ------------------------------------------------------- | --------------------------- |
+| GET    | `/api/moderator/my-moderators`                          | List your moderators        |
+| POST   | `/api/moderator/grant-access`                           | Grant mod access to user    |
+| POST   | `/api/moderator/revoke-access`                          | Revoke mod access           |
+| GET    | `/api/moderator/streamers`                              | List streamers you moderate |
+| GET    | `/api/moderator/{streamerId}/counters`                  | Get streamer's counters     |
+| POST   | `/api/moderator/{streamerId}/counters/{type}/increment` | Increment as mod            |
+
+### AutoMod
+
+| Method | Endpoint                | Description             |
+| ------ | ----------------------- | ----------------------- |
+| GET    | `/api/automod/settings` | Get AutoMod settings    |
+| PUT    | `/api/automod/settings` | Update AutoMod settings |
 
 ### Admin (Requires admin role)
 
-| Method | Endpoint                            | Description                 |
-| ------ | ----------------------------------- | --------------------------- |
-| GET    | `/api/admin/users`                  | List all registered users   |
-| GET    | `/api/admin/users/:userId`          | Get user details + counters |
-| PUT    | `/api/admin/users/:userId/features` | Update user feature flags   |
-| PUT    | `/api/admin/users/:userId/status`   | Enable/disable user account |
-| GET    | `/api/admin/stats`                  | Get system statistics       |
-| DELETE | `/api/admin/users/:userId`          | Delete user account         |
-| GET    | `/api/admin/features`               | List available features     |
+| Method | Endpoint                             | Description                 |
+| ------ | ------------------------------------ | --------------------------- |
+| GET    | `/api/admin/users`                   | List all registered users   |
+| GET    | `/api/admin/users/{userId}`          | Get user details            |
+| PUT    | `/api/admin/users/{userId}/features` | Update user feature flags   |
+| PUT    | `/api/admin/users/{userId}/status`   | Enable/disable user account |
+| GET    | `/api/admin/stats`                   | Get system statistics       |
+| DELETE | `/api/admin/users/{userId}`          | Delete user account         |
 
-**Admin Access**: Only user with Twitch username `riress` has admin role.
+### System
 
-#### Admin Examples
-
-**List all users:**
-```javascript
-fetch('http://localhost:3000/api/admin/users', {
-  headers: { 'Authorization': `Bearer ${jwtToken}` }
-})
-```
-
-**Update user features:**
-```javascript
-fetch('http://localhost:3000/api/admin/users/12345678/features', {
-  method: 'PUT',
-  headers: {
-    'Authorization': `Bearer ${jwtToken}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    chatCommands: true,
-    channelPoints: false,
-    autoClip: true,
-    customCommands: false,
-    analytics: true,
-    webhooks: false
-  })
-})
-```
-
-**Disable user account:**
-```javascript
-fetch('http://localhost:3000/api/admin/users/12345678/status', {
-  method: 'PUT',
-  headers: {
-    'Authorization': `Bearer ${jwtToken}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ isActive: false })
-})
-```
-
-**Get system statistics:**
-```javascript
-fetch('http://localhost:3000/api/admin/stats', {
-  headers: { 'Authorization': `Bearer ${jwtToken}` }
-})
-// Response:
-// {
-//   "totalUsers": 15,
-//   "activeUsers": 12,
-//   "adminUsers": 1,
-//   "featureUsage": {
-//     "chatCommands": 10,
-//     "channelPoints": 3,
+| Method | Endpoint      | Description            |
+| ------ | ------------- | ---------------------- |
+| GET    | `/api/health` | Health check (no auth) |
 //     "autoClip": 5,
 //     "customCommands": 2,
 //     "analytics": 8,
