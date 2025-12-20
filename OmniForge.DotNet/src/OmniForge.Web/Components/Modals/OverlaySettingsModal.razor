@@ -183,7 +183,6 @@
   private bool isSaving = false;
   private string? errorMessage = null;
   private string? successMessage = null;
-
   protected override async Task OnParametersSetAsync()
   {
     if (Show && !string.IsNullOrEmpty(UserId) && !isLoading)
@@ -202,6 +201,8 @@
       if (user != null)
       {
         settings = user.OverlaySettings ?? new OverlaySettings();
+
+        settings.Counters ??= new OverlayCounters();
 
         // Pull visible core counters from the active game's selection (if any)
         var ctx = await GameContextRepository.GetAsync(UserId);
@@ -230,7 +231,6 @@
         else
         {
           // Fallback: no active game; use user's overlay settings
-          settings.Counters ??= new OverlayCounters();
           coreDeathsEnabled = settings.Counters.Deaths;
           coreSwearsEnabled = settings.Counters.Swears;
           coreScreamsEnabled = settings.Counters.Screams;
@@ -265,7 +265,7 @@
       {
         // Do NOT write per-game core counter selection from this modal.
         // Preserve the existing stored counter selection when saving general overlay settings.
-        settings.Counters = user.OverlaySettings?.Counters ?? settings.Counters;
+        settings.Counters = user.OverlaySettings?.Counters ?? settings.Counters ?? new OverlayCounters();
 
         user.OverlaySettings = settings;
         await UserRepository.SaveUserAsync(user);
