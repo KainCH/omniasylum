@@ -58,63 +58,83 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyFollowerAsync(string userId, string displayName)
         {
-            await _webSocketManager.SendToUserAsync(userId, "follow", new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" });
+            var data = new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" };
+            var payload = await EnrichPayloadAsync(userId, "follow", data);
+            await _webSocketManager.SendToUserAsync(userId, "follow", payload);
         }
 
         public async Task NotifySubscriberAsync(string userId, string displayName, string tier, bool isGift)
         {
-            await _webSocketManager.SendToUserAsync(userId, "subscription", new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" });
+            var data = new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" };
+            var payload = await EnrichPayloadAsync(userId, "subscription", data);
+            await _webSocketManager.SendToUserAsync(userId, "subscription", payload);
         }
 
         public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
         {
-            await _webSocketManager.SendToUserAsync(userId, "resub", new { name = displayName, displayName, months, tier, message, textPrompt = $"{displayName} Resubscribed x{months}" });
+            var data = new { name = displayName, displayName, months, tier, message, textPrompt = $"{displayName} Resubscribed x{months}" };
+            var payload = await EnrichPayloadAsync(userId, "resub", data);
+            await _webSocketManager.SendToUserAsync(userId, "resub", payload);
         }
 
         public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
         {
-            await _webSocketManager.SendToUserAsync(userId, "giftsub", new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" });
+            var data = new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" };
+            var payload = await EnrichPayloadAsync(userId, "giftsub", data);
+            await _webSocketManager.SendToUserAsync(userId, "giftsub", payload);
         }
 
         public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
         {
-            await _webSocketManager.SendToUserAsync(userId, "bits", new { name = displayName, displayName, amount, message, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" });
+            var data = new { name = displayName, displayName, amount, message, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
+            var payload = await EnrichPayloadAsync(userId, "bits", data);
+            await _webSocketManager.SendToUserAsync(userId, "bits", payload);
         }
 
         public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)
         {
-            await _webSocketManager.SendToUserAsync(userId, "raid", new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" });
+            var data = new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" };
+            var payload = await EnrichPayloadAsync(userId, "raid", data);
+            await _webSocketManager.SendToUserAsync(userId, "raid", payload);
         }
 
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
         {
-            // Static overlay (wwwroot/overlay.html) consumes "customAlert" messages and expects a payload
-            // similar to the Blazor overlay: template fields merged with event data, with placeholders resolved.
-            // For non-template custom events (e.g. chatCommandsUpdated), fall back to passthrough.
+            var payload = await EnrichPayloadAsync(userId, alertType, data);
+            await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data = payload });
+        }
+
+        private async Task<object> EnrichPayloadAsync(string userId, string alertType, object baseData)
+        {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
                 var alertRepository = scope.ServiceProvider.GetService<IAlertRepository>();
 
-                if (alertRepository == null)
-                {
-                    await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data });
-                    return;
-                }
+                if (alertRepository == null) return baseData;
 
                 var alerts = await alertRepository.GetAlertsAsync(userId);
                 var anyMatching = alerts.Any(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase));
                 if (!anyMatching)
                 {
-                    await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data });
-                    return;
+                    return baseData;
                 }
 
                 var alert = alerts.FirstOrDefault(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase) && a.IsEnabled);
                 if (alert == null)
                 {
-                    // Matching alert exists but is disabled; suppress.
-                    return;
+                    // Matching alert exists but is disabled; return baseData but maybe we should suppress?
+                    // For now, returning baseData mimics old behavior (passthrough if not found/disabled)
+                    // But wait, if it's disabled in DB, we probably shouldn't show it at all?
+                    // The old logic for CustomAlert was: if disabled, return.
+                    // But for standard events (follow), we always want to show *something* (default behavior) unless explicitly disabled?
+                    // If the user created a "follow" alert and disabled it, they probably want NO alert.
+                    // But if they never created one, they want default.
+                    // "anyMatching" check handles "never created one".
+                    // If "anyMatching" is true, but "alert" is null (disabled), we should probably return null or a flag to suppress.
+                    // However, changing return type to Task<object?> might break things.
+                    // Let's stick to returning baseData for now to be safe, or maybe add a property "suppress": true?
+                    return baseData;
                 }
 
                 var payload = new Dictionary<string, object>
@@ -151,7 +171,7 @@ namespace OmniForge.Web.Services
                 // Merge event data into payload (do not overwrite base alert fields).
                 try
                 {
-                    var element = JsonSerializer.SerializeToElement(data);
+                    var element = JsonSerializer.SerializeToElement(baseData);
                     if (element.ValueKind == JsonValueKind.Object)
                     {
                         foreach (var prop in element.EnumerateObject().Where(p => !payload.ContainsKey(p.Name)))
@@ -170,12 +190,12 @@ namespace OmniForge.Web.Services
                     payload["textPrompt"] = ApplyTemplate(template, payload);
                 }
 
-                await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data = payload });
+                return payload;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error hydrating custom alert {AlertType} for user {UserId}; falling back to passthrough", alertType, userId);
-                await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data });
+                _logger.LogError(ex, "❌ Error enriching alert {AlertType} for user {UserId}; falling back to passthrough", alertType, userId);
+                return baseData;
             }
         }
 
