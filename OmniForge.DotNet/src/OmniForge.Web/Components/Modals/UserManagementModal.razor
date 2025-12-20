@@ -1,6 +1,9 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IUserRepository UserRepository
+@inject ITwitchApiService TwitchApiService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @if (Show)
 {
@@ -25,6 +28,13 @@
                     }
                     else
                     {
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger mb-3">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i> @errorMessage
+                            </div>
+                        }
+
                         <EditForm Model="@user" OnValidSubmit="SaveUser">
                             <DataAnnotationsValidator />
 
@@ -132,12 +142,14 @@
     private User user = new();
     private bool isLoading = false;
     private bool isSaving = false;
+    private string? errorMessage;
     private bool IsNewUser => string.IsNullOrEmpty(UserId);
 
     protected override async Task OnParametersSetAsync()
     {
         if (Show && !isLoading)
         {
+            errorMessage = null;
             await LoadUser();
         }
     }
@@ -145,6 +157,7 @@
     private async Task LoadUser()
     {
         isLoading = true;
+        errorMessage = null;
         try
         {
             if (!string.IsNullOrEmpty(UserId))
@@ -163,6 +176,7 @@
         }
         catch (Exception ex)
         {
+            errorMessage = $"Error loading user: {ex.Message}";
             Console.WriteLine($"Error loading user: {ex.Message}");
         }
         finally
@@ -174,14 +188,56 @@
     private async Task SaveUser()
     {
         isSaving = true;
+        errorMessage = null;
         try
         {
+            if (IsNewUser)
+            {
+                if (string.IsNullOrWhiteSpace(user.Username))
+                {
+                    errorMessage = "Username is required.";
+                    return;
+                }
+
+                var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+                var adminId = authState.User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(adminId))
+                {
+                    errorMessage = "You must be logged in to create users.";
+                    return;
+                }
+
+                try
+                {
+                    var twitchUser = await TwitchApiService.GetUserByLoginAsync(user.Username, adminId);
+                    if (twitchUser == null)
+                    {
+                        errorMessage = $"Twitch user '{user.Username}' not found.";
+                        return;
+                    }
+
+                    user.TwitchUserId = twitchUser.Id;
+                    user.DisplayName = twitchUser.DisplayName;
+                    user.ProfileImageUrl = twitchUser.ProfileImageUrl;
+                    user.Email = twitchUser.Email ?? "";
+                    user.CreatedAt = DateTimeOffset.UtcNow;
+                    user.LastLogin = DateTimeOffset.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    errorMessage = $"Failed to lookup Twitch user: {ex.Message}";
+                    return;
+                }
+            }
+
             await UserRepository.SaveUserAsync(user);
             await OnSaved.InvokeAsync();
             await Close();
         }
         catch (Exception ex)
         {
+            errorMessage = $"Error saving user: {ex.Message}";
             Console.WriteLine($"Error saving user: {ex.Message}");
         }
         finally

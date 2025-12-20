@@ -19,6 +19,18 @@ namespace OmniForge.Core.Interfaces
 
         // Chat
         Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null);
+
+        // User Lookup
+        Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId);
+    }
+
+    public class TwitchUserDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Login { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string ProfileImageUrl { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
     }
 
     public class StreamInfo

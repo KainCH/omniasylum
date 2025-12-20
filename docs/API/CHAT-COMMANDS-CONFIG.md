@@ -66,4 +66,4 @@ The system comes with several default commands, including aliases for common act
 - **Swears**: `!swears`, `!swear+`, `!swear-`, `!sw+`, `!sw-`
 - **Screams**: `!screams`, `!scream+`, `!scream-`, `!sc+`, `!sc-`
 - **Stats**: `!stats`
-- **Reset**: `!resetcounters`
+- **Reset**: `!resetcounters` (Broadcaster only)

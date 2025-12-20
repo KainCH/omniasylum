@@ -497,6 +497,29 @@ namespace OmniForge.Infrastructure.Services
             };
         }
 
+        public async Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId)
+        {
+            return await ExecuteWithRetryAsync(actingUserId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var response = await _helixWrapper.GetUsersAsync(clientId, accessToken, logins: new List<string> { login });
+
+                if (response.Users.Length == 0) return null;
+
+                var user = response.Users[0];
+                return new TwitchUserDto
+                {
+                    Id = user.Id,
+                    Login = user.Login,
+                    DisplayName = user.DisplayName,
+                    ProfileImageUrl = user.ProfileImageUrl,
+                    Email = user.Email
+                };
+            });
+        }
+
         private static void ValidateAutomodValue(string name, int value)
         {
             if (value < 0 || value > 4)

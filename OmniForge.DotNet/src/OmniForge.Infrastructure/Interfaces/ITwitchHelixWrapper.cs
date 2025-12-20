@@ -16,6 +16,7 @@ namespace OmniForge.Infrastructure.Interfaces
         Task<GetStreamsResponse> GetStreamsAsync(string clientId, string accessToken, List<string> userIds);
         Task<TwitchLib.Api.Helix.Models.Channels.GetChannelInformation.GetChannelInformationResponse> GetChannelInformationAsync(string clientId, string accessToken, string broadcasterId);
         Task<TwitchLib.Api.Helix.Models.Clips.CreateClip.CreatedClipResponse> CreateClipAsync(string clientId, string accessToken, string broadcasterId);
+        Task<TwitchLib.Api.Helix.Models.Users.GetUsers.GetUsersResponse> GetUsersAsync(string clientId, string accessToken, List<string>? ids = null, List<string>? logins = null);
 
         // AutoMod settings
         Task<TwitchLib.Api.Helix.Models.Moderation.AutomodSettings.GetAutomodSettingsResponse> GetAutomodSettingsAsync(string clientId, string accessToken, string broadcasterId, string moderatorId);
