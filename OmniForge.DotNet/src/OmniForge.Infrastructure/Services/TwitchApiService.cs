@@ -1190,6 +1190,7 @@ namespace OmniForge.Infrastructure.Services
                     Email = user.Email
                 };
             }
+            }
 
             var appToken = await _authService.GetAppAccessTokenAsync();
             if (!string.IsNullOrEmpty(appToken))

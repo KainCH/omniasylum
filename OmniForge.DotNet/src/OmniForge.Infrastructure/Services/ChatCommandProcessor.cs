@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
@@ -67,7 +68,6 @@ namespace OmniForge.Infrastructure.Services
         // Counter library cache expiration.
         // Kept the same as the trigger cache for simplicity.
         private static readonly TimeSpan CounterLibraryCacheTtl = TimeSpan.FromMinutes(5);
-
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
             { "!deaths", new ChatCommandDefinition { Response = "Current death count: {{deaths}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
@@ -235,10 +235,8 @@ namespace OmniForge.Infrastructure.Services
                                 if (match.Success) cooldownKey = match.Groups[1].Value;
                             }
 
-                            if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
-                            {
-                                onCooldown = true;
-                            }
+                            var onCooldown = userCooldowns.TryGetValue(cooldownKey, out var lastUsed)
+                                && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown;
 
                             if (!onCooldown)
                             {
