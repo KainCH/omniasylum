@@ -107,6 +107,20 @@
       color: white;
     }
 
+    .alert-image {
+      max-width: 100%;
+      max-height: 200px;
+      margin-bottom: 15px;
+      display: none;
+      /* Hidden by default */
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+    }
+
+    .alert-image.show {
+      display: block;
+    }
+
     /* Celebration Containers */
     .bits-celebration,
     .sub-celebration {
@@ -163,7 +177,8 @@
 
   <div class="interaction-banner hide" id="interaction-banner"></div>
 
-  <div class="counter-alert" id="alert-popup">
+  <div class="counter-alert alert-container" id="alert-popup">
+    <img id="alert-image" class="alert-image" src="" alt="Alert Visual" />
     <div class="alert-title" id="alert-title">ALERT</div>
     <div class="alert-message" id="alert-message">Message</div>
   </div>
@@ -381,8 +396,12 @@
         const container = document.getElementById('overlay-container');
         const interactionBanner = document.getElementById('interaction-banner');
 
-        const scale = (settings && settings.scale != null) ? Number(settings.scale) : 1;
-        const position = (settings && settings.position) ? String(settings.position) : 'top-right';
+        // Handle both camelCase (standard) and PascalCase (fallback) properties
+        const rawScale = settings ? (settings.scale ?? settings.Scale) : 1;
+        const rawPosition = settings ? (settings.position || settings.Position) : 'top-right';
+
+        const scale = (rawScale != null) ? Number(rawScale) : 1;
+        const position = rawPosition ? String(rawPosition) : 'top-right';
 
         // Reset position styles
         container.style.top = '';
@@ -476,11 +495,12 @@
         container.innerHTML = ''; // Clear current
 
         // Get counter visibility settings (default to true if not specified)
-        const countersConfig = currentSettings?.counters || {};
-        const showDeaths = countersConfig.deaths !== false; // Default true
-        const showSwears = countersConfig.swears !== false; // Default true
-        const showScreams = countersConfig.screams !== false; // Default true
-        const showBits = countersConfig.bits === true; // Default false for bits
+        // Handle both camelCase and PascalCase
+        const countersConfig = (currentSettings?.counters) || (currentSettings?.Counters) || {};
+        const showDeaths = (countersConfig.deaths !== undefined ? countersConfig.deaths : countersConfig.Deaths) !== false; // Default true
+        const showSwears = (countersConfig.swears !== undefined ? countersConfig.swears : countersConfig.Swears) !== false; // Default true
+        const showScreams = (countersConfig.screams !== undefined ? countersConfig.screams : countersConfig.Screams) !== false; // Default true
+        const showBits = (countersConfig.bits === true || countersConfig.Bits === true); // Default false for bits
 
         console.log("📋 Counter visibility - Deaths:", showDeaths, "Swears:", showSwears, "Screams:", showScreams, "Bits:", showBits);
 

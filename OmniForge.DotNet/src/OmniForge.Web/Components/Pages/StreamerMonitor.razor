@@ -1,0 +1,435 @@
+@page "/monitor/{StreamerId}"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using OmniForge.Core.Interfaces
+@using OmniForge.Core.Entities
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IUserRepository UserRepository
+@inject IStreamMonitorService StreamMonitorService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ILogger<StreamerMonitor> Logger
+@using System.Threading
+@implements IAsyncDisposable
+
+<PageTitle>Stream Monitor - @(streamer?.DisplayName ?? "Loading...")</PageTitle>
+
+<div class="container-fluid">
+    @if (!hasAccess)
+    {
+        <div class="alert alert-danger">
+            <i class="bi bi-shield-x me-2"></i>
+            <strong>Access Denied:</strong> You do not have permission to monitor this streamer.
+        </div>
+        <a href="/portal" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Portal
+        </a>
+    }
+    else if (streamer == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading streamer information...</p>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-1">
+                        <li class="breadcrumb-item"><a href="/portal">Portal</a></li>
+                        <li class="breadcrumb-item active">Stream Monitor</li>
+                    </ol>
+                </nav>
+                <h1>
+                    <i class="bi bi-broadcast-pin me-2 text-success"></i>
+                    Monitoring @streamer.DisplayName
+                </h1>
+                <p class="text-muted">Real-time stream event monitoring for @streamer.DisplayName's channel</p>
+            </div>
+            <div class="d-flex align-items-center">
+                @if (!string.IsNullOrEmpty(streamer.ProfileImageUrl))
+                {
+                    <img src="@streamer.ProfileImageUrl" alt="@streamer.DisplayName" class="rounded-circle me-3" width="48" height="48" />
+                }
+                <div>
+                    <div class="fw-bold">@streamer.DisplayName</div>
+                    <small class="text-muted">@streamer.Username</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Status Card -->
+            <div class="col-lg-8">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-activity me-2"></i>Connection Status</span>
+                        <span class="badge @GetStatusBadgeClass()">
+                            @GetStatusText()
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        @if (status != null)
+                        {
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled mb-0">
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-plug me-2"></i>Connected:</strong>
+                                            <span class="@(status.Connected ? "text-success" : "text-danger")">
+                                                @(status.Connected ? "Yes" : "No")
+                                            </span>
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-bell me-2"></i>Subscribed:</strong>
+                                            <span class="@(status.IsSubscribed ? "text-success" : "text-warning")">
+                                                @(status.IsSubscribed ? "Yes" : "No")
+                                            </span>
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-key me-2"></i>Session ID:</strong>
+                                            <code class="small">@(status.EventSubSessionId ?? "-")</code>
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-stopwatch me-2"></i>Keepalive Age:</strong>
+                                            @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled mb-0">
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-clock-history me-2"></i>Last Connected:</strong>
+                                            <span>@(status.LastConnected?.ToLocalTime().ToString("g") ?? "-")</span>
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-lightning me-2"></i>Last Event:</strong>
+                                            <span>@(status.LastEventType ?? "-")</span>
+                                            @if (status.LastEventAt.HasValue)
+                                            {
+                                                <small class="text-muted">(@status.LastEventAt.Value.ToLocalTime().ToString("g"))</small>
+                                            }
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-chat-text me-2"></i>Event Summary:</strong>
+                                            <span class="small">@(status.LastEventSummary ?? "-")</span>
+                                        </li>
+                                        @if (!string.IsNullOrEmpty(status.LastError))
+                                        {
+                                            <li class="mb-2 text-danger">
+                                                <strong><i class="bi bi-exclamation-triangle me-2"></i>Last Error:</strong>
+                                                <span>@status.LastError</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            </div>
+
+                            @if (status.Subscriptions?.Any() == true)
+                            {
+                                <hr />
+                                <div>
+                                    <strong><i class="bi bi-list-check me-2"></i>Active Subscriptions:</strong>
+                                    <div class="mt-2">
+                                        @foreach (var sub in status.Subscriptions)
+                                        {
+                                            <span class="badge bg-info me-1 mb-1">@sub</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">
+                                <i class="bi bi-info-circle me-2"></i>No status available. Start monitoring to begin receiving events.
+                            </p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls Card -->
+            <div class="col-lg-4">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-sliders me-2"></i>Controls
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success" @onclick="StartMonitoring" disabled="@isWorking">
+                                @if (isWorking)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                }
+                                <i class="bi bi-broadcast-pin me-2"></i>Start Monitoring
+                            </button>
+                            <button class="btn btn-outline-danger" @onclick="StopMonitoring" disabled="@isWorking">
+                                <i class="bi bi-stop-circle me-2"></i>Stop Monitoring
+                            </button>
+                            <button class="btn btn-outline-secondary" @onclick="RefreshStatus" disabled="@isWorking">
+                                <i class="bi bi-arrow-clockwise me-2"></i>Refresh Status
+                            </button>
+                            <button class="btn btn-outline-warning" @onclick="ForceReconnect" disabled="@isWorking">
+                                <i class="bi bi-arrow-repeat me-2"></i>Force Reconnect
+                            </button>
+                        </div>
+
+                        <hr />
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Auto-refresh:</span>
+                            <span class="badge @(autoRefreshEnabled ? "bg-success" : "bg-secondary")">
+                                @(autoRefreshEnabled ? "On (5s)" : "Off")
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Card -->
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <i class="bi bi-info-circle me-2"></i>Information
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-2">
+                            <strong>Note:</strong> Monitoring uses the streamer's own Twitch credentials to subscribe to events.
+                            Make sure they have authorized the application with the required permissions.
+                        </p>
+                        <p class="small text-muted mb-0">
+                            <strong>Events:</strong> Stream online/offline, follows, subscriptions, bits, and more.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(actionMessage))
+        {
+            <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+                <i class="bi @(isError ? "bi-exclamation-triangle" : "bi-check-circle") me-2"></i>
+                @actionMessage
+                <button type="button" class="btn-close" @onclick="() => actionMessage = null"></button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string StreamerId { get; set; } = string.Empty;
+
+    private User? currentUser;
+    private User? streamer;
+    private StreamMonitorStatus? status;
+    private bool hasAccess = false;
+    private bool isWorking = false;
+    private bool autoRefreshEnabled = false;
+    private PeriodicTimer? statusTimer;
+    private CancellationTokenSource? refreshCts;
+    private string? actionMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        await CheckAccessAndLoad();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst("userId")?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            currentUser = await UserRepository.GetUserAsync(userId);
+        }
+    }
+
+    private async Task CheckAccessAndLoad()
+    {
+        if (currentUser == null || string.IsNullOrEmpty(StreamerId))
+        {
+            hasAccess = false;
+            return;
+        }
+
+        // Check if user has moderator access to this streamer
+        hasAccess = currentUser.ManagedStreamers.Contains(StreamerId) ||
+                    currentUser.Role == "admin" ||
+                    currentUser.TwitchUserId == StreamerId;
+
+        if (hasAccess)
+        {
+            streamer = await UserRepository.GetUserAsync(StreamerId);
+            if (streamer == null)
+            {
+                hasAccess = false;
+                return;
+            }
+            await RefreshStatus();
+            StartAutoRefresh();
+        }
+    }
+
+    private async Task RefreshStatus()
+    {
+        if (string.IsNullOrEmpty(StreamerId)) { status = null; return; }
+        status = StreamMonitorService.GetUserConnectionStatus(StreamerId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartMonitoring()
+    {
+        if (string.IsNullOrEmpty(StreamerId) || streamer == null) return;
+        try
+        {
+            isWorking = true;
+            actionMessage = null;
+            StateHasChanged();
+
+            // Start monitoring using the STREAMER's credentials, not the viewing user
+            var result = await StreamMonitorService.SubscribeToUserAsAsync(StreamerId, StreamerId);
+
+            if (result == SubscriptionResult.Success)
+            {
+                actionMessage = $"Monitoring started for {streamer.DisplayName}.";
+                isError = false;
+                await RefreshStatus();
+            }
+            else if (result == SubscriptionResult.RequiresReauth)
+            {
+                actionMessage = $"{streamer.DisplayName}'s Twitch token is missing required permissions. They need to re-authorize the application.";
+                isError = true;
+            }
+            else
+            {
+                actionMessage = "Failed to start monitoring. Please check the streamer's authorization status.";
+                isError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error starting monitoring for streamer {StreamerId}", StreamerId);
+            actionMessage = $"Error: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            isWorking = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopMonitoring()
+    {
+        if (string.IsNullOrEmpty(StreamerId)) return;
+        try
+        {
+            isWorking = true;
+            actionMessage = null;
+            await StreamMonitorService.UnsubscribeFromUserAsync(StreamerId);
+            actionMessage = "Monitoring stopped.";
+            isError = false;
+            await RefreshStatus();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error stopping monitoring for streamer {StreamerId}", StreamerId);
+            actionMessage = $"Error: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            isWorking = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ForceReconnect()
+    {
+        if (string.IsNullOrEmpty(StreamerId)) return;
+        try
+        {
+            isWorking = true;
+            actionMessage = null;
+            await StreamMonitorService.ForceReconnectUserAsync(StreamerId);
+            actionMessage = "Reconnection initiated.";
+            isError = false;
+            await RefreshStatus();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error forcing reconnect for streamer {StreamerId}", StreamerId);
+            actionMessage = $"Error: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            isWorking = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        autoRefreshEnabled = true;
+        refreshCts = new CancellationTokenSource();
+        statusTimer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await statusTimer!.WaitForNextTickAsync(refreshCts.Token))
+                {
+                    await RefreshStatus();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogDebug("Stream monitor auto-refresh cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Stream monitor auto-refresh loop ended unexpectedly");
+            }
+        });
+    }
+
+    private string GetStatusBadgeClass()
+    {
+        if (status == null) return "bg-secondary";
+        if (status.Connected && status.IsSubscribed) return "bg-success";
+        if (status.Connected) return "bg-warning";
+        return "bg-danger";
+    }
+
+    private string GetStatusText()
+    {
+        if (status == null) return "Unknown";
+        if (status.Connected && status.IsSubscribed) return "Active";
+        if (status.Connected) return "Connected";
+        return "Disconnected";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        autoRefreshEnabled = false;
+        if (refreshCts != null)
+        {
+            refreshCts.Cancel();
+            refreshCts.Dispose();
+        }
+        if (statusTimer != null)
+        {
+            statusTimer.Dispose();
+        }
+        await Task.CompletedTask;
+    }
+}

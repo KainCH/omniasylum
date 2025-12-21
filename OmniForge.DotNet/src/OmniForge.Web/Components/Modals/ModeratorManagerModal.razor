@@ -1,0 +1,340 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+@inject ILogger<ModeratorManagerModal> Logger
+
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-people-fill me-2"></i>Manage Your Mod Team</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Add users who can manage your OmniForge settings and counters. They'll be able to switch to your context to help manage your stream.
+                    </div>
+
+                    @if (isLoading)
+                    {
+                        <div class="text-center my-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading moderators...</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Current Moderators -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <i class="bi bi-shield-check me-2"></i>Current Moderators
+                            </div>
+                            <ul class="list-group list-group-flush">
+                                @if (currentModerators != null && currentModerators.Any())
+                                {
+                                    foreach (var mod in currentModerators)
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div class="d-flex align-items-center">
+                                                @if (!string.IsNullOrEmpty(mod.ProfileImageUrl))
+                                                {
+                                                    <img src="@mod.ProfileImageUrl" alt="@mod.DisplayName" class="rounded-circle me-2" width="32" height="32" />
+                                                }
+                                                else
+                                                {
+                                                    <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                                        <i class="bi bi-person-fill text-white"></i>
+                                                    </div>
+                                                }
+                                                <div>
+                                                    <div class="fw-bold">@mod.DisplayName</div>
+                                                    <small class="text-muted">@mod.Username</small>
+                                                </div>
+                                            </div>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RevokeAccess(mod.TwitchUserId)" disabled="@isWorking">
+                                                <i class="bi bi-x-circle me-1"></i>Remove
+                                            </button>
+                                        </li>
+                                    }
+                                }
+                                else
+                                {
+                                    <li class="list-group-item text-muted text-center">
+                                        <i class="bi bi-people me-2"></i>No moderators added yet
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+
+                        <!-- Add New Moderator -->
+                        <div class="card">
+                            <div class="card-header">
+                                <i class="bi bi-person-plus me-2"></i>Add New Moderator
+                            </div>
+                            <div class="card-body">
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control" placeholder="Search by username..."
+                                           @bind="searchQuery" @bind:event="oninput" @onkeyup="OnSearchInput" />
+                                </div>
+
+                                @if (searchResults != null && searchResults.Any())
+                                {
+                                    <div class="list-group">
+                                        @foreach (var user in searchResults)
+                                        {
+                                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                                    @onclick="() => GrantAccess(user.TwitchUserId)" disabled="@isWorking">
+                                                <div class="d-flex align-items-center">
+                                                    @if (!string.IsNullOrEmpty(user.ProfileImageUrl))
+                                                    {
+                                                        <img src="@user.ProfileImageUrl" alt="@user.DisplayName" class="rounded-circle me-2" width="32" height="32" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                                            <i class="bi bi-person-fill text-white"></i>
+                                                        </div>
+                                                    }
+                                                    <div>
+                                                        <div class="fw-bold">@user.DisplayName</div>
+                                                        <small class="text-muted">@user.Username</small>
+                                                    </div>
+                                                </div>
+                                                <span class="badge bg-success"><i class="bi bi-plus-lg"></i> Add</span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(searchQuery) && searchQuery.Length >= 2)
+                                {
+                                    <p class="text-muted text-center">
+                                        <i class="bi bi-emoji-frown me-2"></i>No users found matching "@searchQuery"
+                                    </p>
+                                }
+                                else if (!string.IsNullOrEmpty(searchQuery))
+                                {
+                                    <p class="text-muted text-center small">
+                                        Type at least 2 characters to search
+                                    </p>
+                                }
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger mt-3">
+                                <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(successMessage))
+                        {
+                            <div class="alert alert-success mt-3">
+                                <i class="bi bi-check-circle me-2"></i>@successMessage
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowChanged { get; set; }
+
+    [Parameter]
+    public string? CurrentUserId { get; set; }
+
+    private List<User> currentModerators = new();
+    private List<User> searchResults = new();
+    private string searchQuery = "";
+    private bool isLoading = false;
+    private bool isWorking = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private System.Threading.Timer? searchDebounceTimer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Show && !string.IsNullOrEmpty(CurrentUserId))
+        {
+            await LoadModerators();
+        }
+    }
+
+    private async Task LoadModerators()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var allUsers = await UserRepository.GetAllUsersAsync();
+            currentModerators = allUsers
+                .Where(u => u.ManagedStreamers.Contains(CurrentUserId!))
+                .ToList();
+
+            Logger.LogInformation("📋 Loaded {Count} moderators for user {UserId}", currentModerators.Count, CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Error loading moderators for user {UserId}", CurrentUserId);
+            errorMessage = "Failed to load moderators. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchInput(KeyboardEventArgs e)
+    {
+        searchDebounceTimer?.Dispose();
+        searchDebounceTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await SearchUsers();
+                StateHasChanged();
+            });
+        }, null, 300, System.Threading.Timeout.Infinite);
+    }
+
+    private async Task SearchUsers()
+    {
+        if (string.IsNullOrEmpty(searchQuery) || searchQuery.Length < 2)
+        {
+            searchResults = new();
+            return;
+        }
+
+        try
+        {
+            var allUsers = await UserRepository.GetAllUsersAsync();
+            var moderatorIds = currentModerators.Select(m => m.TwitchUserId).ToHashSet();
+
+            searchResults = allUsers
+                .Where(u =>
+                    u.TwitchUserId != CurrentUserId && // Can't add self
+                    !moderatorIds.Contains(u.TwitchUserId) && // Not already a moderator
+                    (u.Username.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                     u.DisplayName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)))
+                .Take(10)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Error searching users");
+            searchResults = new();
+        }
+    }
+
+    private async Task GrantAccess(string moderatorId)
+    {
+        isWorking = true;
+        errorMessage = null;
+        successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var moderator = await UserRepository.GetUserAsync(moderatorId);
+            if (moderator == null)
+            {
+                errorMessage = "User not found";
+                return;
+            }
+
+            if (!moderator.ManagedStreamers.Contains(CurrentUserId!))
+            {
+                moderator.ManagedStreamers.Add(CurrentUserId!);
+                await UserRepository.SaveUserAsync(moderator);
+                Logger.LogInformation("✅ User {UserId} granted moderator access to {ModeratorId}", CurrentUserId, moderatorId);
+            }
+
+            successMessage = $"{moderator.DisplayName} has been added as a moderator!";
+            searchQuery = "";
+            searchResults = new();
+            await LoadModerators();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Error granting moderator access");
+            errorMessage = "Failed to add moderator. Please try again.";
+        }
+        finally
+        {
+            isWorking = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RevokeAccess(string moderatorId)
+    {
+        isWorking = true;
+        errorMessage = null;
+        successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var moderator = await UserRepository.GetUserAsync(moderatorId);
+            if (moderator == null)
+            {
+                errorMessage = "User not found";
+                return;
+            }
+
+            if (moderator.ManagedStreamers.Contains(CurrentUserId!))
+            {
+                moderator.ManagedStreamers.Remove(CurrentUserId!);
+                await UserRepository.SaveUserAsync(moderator);
+                Logger.LogInformation("🚫 User {UserId} revoked moderator access from {ModeratorId}", CurrentUserId, moderatorId);
+            }
+
+            successMessage = $"{moderator.DisplayName} has been removed as a moderator.";
+            await LoadModerators();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Error revoking moderator access");
+            errorMessage = "Failed to remove moderator. Please try again.";
+        }
+        finally
+        {
+            isWorking = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        searchQuery = "";
+        searchResults = new();
+        errorMessage = null;
+        successMessage = null;
+        await ShowChanged.InvokeAsync(false);
+    }
+
+    public void Dispose()
+    {
+        searchDebounceTimer?.Dispose();
+    }
+}

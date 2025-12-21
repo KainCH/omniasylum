@@ -39,6 +39,20 @@ namespace OmniForge.Web.Controllers
             return Ok(config.Commands); // Node returns the commands object directly
         }
 
+        [HttpGet("settings")]
+        public async Task<IActionResult> GetChatCommandSettings()
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var config = await _userRepository.GetChatCommandsConfigAsync(userId);
+            return Ok(new
+            {
+                maxIncrementAmount = config.MaxIncrementAmount,
+                commands = config.Commands
+            });
+        }
+
         [HttpGet("defaults")]
         public IActionResult GetDefaults()
         {
@@ -51,6 +65,8 @@ namespace OmniForge.Web.Controllers
                 { "!stats", new ChatCommandDefinition { Response = "Deaths: {{deaths}}, Swears: {{swears}}, Screams: {{screams}}, Bits: {{bits}}", Permission = "everyone", Cooldown = 10, Enabled = true } },
                 { "!death+", new ChatCommandDefinition { Action = "increment", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!death-", new ChatCommandDefinition { Action = "decrement", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!d+", new ChatCommandDefinition { Action = "increment", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+                { "!d-", new ChatCommandDefinition { Action = "decrement", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!swear+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!swear-", new ChatCommandDefinition { Action = "decrement", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
                 { "!sw+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
@@ -90,7 +106,22 @@ namespace OmniForge.Web.Controllers
                     return BadRequest(new { error = $"Command {command} has invalid cooldown" });
             }
 
-            var configWrapper = new ChatCommandConfiguration { Commands = commands };
+            var configWrapper = new ChatCommandConfiguration
+            {
+                Commands = commands,
+                MaxIncrementAmount = request.MaxIncrementAmount ?? 1
+            };
+
+            // If MaxIncrementAmount was not provided, try to preserve existing value
+            if (!request.MaxIncrementAmount.HasValue)
+            {
+                var existingConfig = await _userRepository.GetChatCommandsConfigAsync(userId);
+                if (existingConfig != null)
+                {
+                    configWrapper.MaxIncrementAmount = existingConfig.MaxIncrementAmount;
+                }
+            }
+
             await _userRepository.SaveChatCommandsConfigAsync(userId, configWrapper);
 
             // Notify bot (using custom alert for now as a generic message channel, or we need a specific method)
@@ -251,6 +282,7 @@ namespace OmniForge.Web.Controllers
     public class SaveChatCommandsRequest
     {
         public Dictionary<string, ChatCommandDefinition> Commands { get; set; } = new();
+        public int? MaxIncrementAmount { get; set; }
     }
 
     public class AddCommandRequest

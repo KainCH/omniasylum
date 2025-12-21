@@ -12,11 +12,14 @@ namespace OmniForge.Tests.Modals;
 public class OverlaySettingsModalTests : BunitContext
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
+    private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
 
     public OverlaySettingsModalTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
+        _mockOverlayNotifier = new Mock<IOverlayNotifier>();
         Services.AddSingleton(_mockUserRepository.Object);
+        Services.AddSingleton(_mockOverlayNotifier.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

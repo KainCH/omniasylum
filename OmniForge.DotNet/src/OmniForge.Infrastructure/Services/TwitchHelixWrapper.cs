@@ -105,6 +105,14 @@ namespace OmniForge.Infrastructure.Services
             return await api.Helix.Clips.CreateClipAsync(broadcasterId);
         }
 
+        public async Task<TwitchLib.Api.Helix.Models.Users.GetUsers.GetUsersResponse> GetUsersAsync(string clientId, string accessToken, List<string>? ids = null, List<string>? logins = null)
+        {
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientId;
+            api.Settings.AccessToken = accessToken;
+            return await api.Helix.Users.GetUsersAsync(ids, logins);
+        }
+
         public async Task<TwitchLib.Api.Helix.Models.Channels.GetChannelInformation.GetChannelInformationResponse> GetChannelInformationAsync(string clientId, string accessToken, string broadcasterId)
         {
             var api = new TwitchAPI();

@@ -7,30 +7,44 @@
 @rendermode InteractiveServer
 @inject IUserRepository UserRepository
 @inject IStreamMonitorService StreamMonitorService
-@inject AuthenticationStateProvider AuthenticationStateProvider
-@inject IJSRuntime JSRuntime
 @inject ILogger<Monitor> Logger
 @using System.Threading
 @implements IAsyncDisposable
 
-<PageTitle>Admin - Stream Monitoring</PageTitle>
+<PageTitle>Admin - Stream Event Monitor</PageTitle>
 
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Stream Monitoring</h1>
+        <div>
+            <h1><i class="bi bi-broadcast me-2"></i>Stream Event Monitor</h1>
+            <p class="text-muted mb-0">Real-time view of stream events across all users</p>
+        </div>
+        <div class="d-flex align-items-center">
+            <span class="badge @(autoRefreshEnabled ? "bg-success" : "bg-secondary") me-2">
+                <i class="bi bi-arrow-repeat me-1"></i>Auto-refresh: @(autoRefreshEnabled ? "Every 5s" : "Off")
+            </span>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshStatus">
+                <i class="bi bi-arrow-clockwise"></i> Refresh Now
+            </button>
+        </div>
     </div>
 
     @if (users == null)
     {
-        <p><em>Loading users...</em></p>
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading users...</p>
+        </div>
     }
     else
     {
         <div class="row mb-4">
-            <div class="col-md-6">
-                <label for="userSelect" class="form-label">Select streamer</label>
+            <div class="col-md-4">
+                <label for="userSelect" class="form-label">Filter by Streamer</label>
                 <select id="userSelect" class="form-select" @onchange="OnUserChanged">
-                    <option value="">-- Choose a streamer --</option>
+                    <option value="">-- All Streamers --</option>
                     @foreach (var user in users)
                     {
                         <option value="@user.TwitchUserId" selected="@(user.TwitchUserId == selectedUserId)">
@@ -39,47 +53,130 @@
                     }
                 </select>
             </div>
+            <div class="col-md-8">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-success"><i class="bi bi-circle-fill me-1"></i>Connected: @connectedCount</span>
+                    <span class="badge bg-info"><i class="bi bi-bell-fill me-1"></i>Subscribed: @subscribedCount</span>
+                    <span class="badge bg-secondary"><i class="bi bi-circle me-1"></i>Disconnected: @disconnectedCount</span>
+                </div>
+            </div>
         </div>
 
         @if (!string.IsNullOrEmpty(selectedUserId))
         {
-            <div class="card shadow-sm mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Status</h5>
-                    @if (status != null)
-                    {
-                        <ul class="list-unstyled mb-2">
-                            <li><strong>Connected:</strong> @status.Connected</li>
-                            <li><strong>Subscribed:</strong> @(status.IsSubscribed)</li>
-                            <li><strong>Session ID:</strong> @(status.EventSubSessionId ?? "-")</li>
-                            <li><strong>Keepalive Age:</strong> @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s</li>
-                            <li><strong>Subscriptions:</strong> @(status.Subscriptions?.Length > 0 ? string.Join(", ", status.Subscriptions) : "None")</li>
-                            <li><strong>Last Connected:</strong> @(status.LastConnected?.ToLocalTime().ToString("g") ?? "-")</li>
-                            <li><strong>Last Event:</strong> @(status.LastEventType ?? "-") @if (status.LastEventAt.HasValue){<text>@status.LastEventAt.Value.ToLocalTime().ToString("g")</text>}</li>
-                            <li><strong>Last Event Summary:</strong> @(status.LastEventSummary ?? "-")</li>
-                            <li><strong>Last Error:</strong> @(status.LastError ?? "-")</li>
-                            <li><strong>Admin Initiated:</strong> @status.AdminInitiated</li>
-                        </ul>
-                    }
-                    else
-                    {
-                        <p class="text-muted">No status available.</p>
-                    }
-
-                    <button class="btn btn-success" @onclick="StartMonitoring" disabled="@(isWorking)">
-                        <i class="bi bi-broadcast-pin"></i> Start Monitoring
-                    </button>
-                    <button class="btn btn-outline-danger ms-2" @onclick="StopMonitoring" disabled="@(isWorking)">
-                        <i class="bi bi-stop-circle"></i> Stop Monitoring
-                    </button>
-                    <button class="btn btn-outline-secondary ms-2" @onclick="RefreshStatus" disabled="@(isWorking)">
-                        Refresh Status
-                    </button>
-                    <button class="btn btn-outline-warning ms-2" @onclick="ForceReconnect" disabled="@(isWorking)">
-                        Force Reconnect
-                    </button>
-                    <span class="ms-3 text-muted">Auto-refresh: @(autoRefreshEnabled ? "On" : "Off")</span>
+            <!-- Single user view -->
+            @if (status != null)
+            {
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-activity me-2"></i>@GetSelectedUserName() - Connection Status</span>
+                        <span class="badge @GetStatusBadgeClass(status)">@GetStatusText(status)</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <ul class="list-unstyled mb-0">
+                                    <li class="mb-2"><strong><i class="bi bi-plug me-2"></i>Connected:</strong>
+                                        <span class="@(status.Connected ? "text-success" : "text-danger")">@(status.Connected ? "Yes" : "No")</span>
+                                    </li>
+                                    <li class="mb-2"><strong><i class="bi bi-bell me-2"></i>Subscribed:</strong>
+                                        <span class="@(status.IsSubscribed ? "text-success" : "text-warning")">@(status.IsSubscribed ? "Yes" : "No")</span>
+                                    </li>
+                                    <li class="mb-2"><strong><i class="bi bi-key me-2"></i>Session ID:</strong> <code class="small">@(status.EventSubSessionId ?? "-")</code></li>
+                                    <li class="mb-2"><strong><i class="bi bi-stopwatch me-2"></i>Keepalive Age:</strong> @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <ul class="list-unstyled mb-0">
+                                    <li class="mb-2"><strong><i class="bi bi-clock-history me-2"></i>Last Connected:</strong> @(status.LastConnected?.ToLocalTime().ToString("g") ?? "-")</li>
+                                    <li class="mb-2"><strong><i class="bi bi-lightning me-2"></i>Last Event:</strong> @(status.LastEventType ?? "-")
+                                        @if (status.LastEventAt.HasValue){<small class="text-muted">(@status.LastEventAt.Value.ToLocalTime().ToString("g"))</small>}
+                                    </li>
+                                    <li class="mb-2"><strong><i class="bi bi-chat-text me-2"></i>Summary:</strong> <span class="small">@(status.LastEventSummary ?? "-")</span></li>
+                                    @if (!string.IsNullOrEmpty(status.LastError))
+                                    {
+                                        <li class="mb-2 text-danger"><strong><i class="bi bi-exclamation-triangle me-2"></i>Error:</strong> @status.LastError</li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                        @if (status.Subscriptions?.Any() == true)
+                        {
+                            <hr />
+                            <strong><i class="bi bi-list-check me-2"></i>Active Subscriptions:</strong>
+                            <div class="mt-2">
+                                @foreach (var sub in status.Subscriptions)
+                                {
+                                    <span class="badge bg-info me-1 mb-1">@sub</span>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
+            }
+            else
+            {
+                <div class="alert alert-secondary">
+                    <i class="bi bi-info-circle me-2"></i>No monitoring data available for this user.
+                </div>
+            }
+        }
+        else
+        {
+            <!-- All users overview -->
+            <div class="row">
+                @foreach (var user in users)
+                {
+                    var userStatus = allStatuses.GetValueOrDefault(user.TwitchUserId);
+                    <div class="col-lg-4 col-md-6 mb-3">
+                        <div class="card h-100 @(userStatus?.Connected == true ? "border-success" : "border-secondary")">
+                            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                                <div class="d-flex align-items-center">
+                                    @if (!string.IsNullOrEmpty(user.ProfileImageUrl))
+                                    {
+                                        <img src="@user.ProfileImageUrl" alt="@user.DisplayName" class="rounded-circle me-2" width="24" height="24" />
+                                    }
+                                    <span class="fw-bold">@user.DisplayName</span>
+                                </div>
+                                <span class="badge @GetStatusBadgeClass(userStatus)">@GetStatusText(userStatus)</span>
+                            </div>
+                            <div class="card-body py-2">
+                                @if (userStatus != null)
+                                {
+                                    <div class="small">
+                                        <div class="mb-1">
+                                            <i class="bi bi-lightning me-1 text-warning"></i>
+                                            <strong>Last Event:</strong> @(userStatus.LastEventType ?? "None")
+                                        </div>
+                                        @if (userStatus.LastEventAt.HasValue)
+                                        {
+                                            <div class="text-muted" style="font-size: 0.75rem;">
+                                                @userStatus.LastEventAt.Value.ToLocalTime().ToString("g")
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(userStatus.LastEventSummary))
+                                        {
+                                            <div class="text-truncate text-muted" style="font-size: 0.75rem;" title="@userStatus.LastEventSummary">
+                                                @userStatus.LastEventSummary
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(userStatus.LastError))
+                                        {
+                                            <div class="text-danger small mt-1">
+                                                <i class="bi bi-exclamation-triangle me-1"></i>@userStatus.LastError
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-muted small">No monitoring data</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
             </div>
         }
     }
@@ -89,30 +186,20 @@
     private IEnumerable<User>? users;
     private string? selectedUserId;
     private StreamMonitorStatus? status;
-    private User? currentUser;
-    private bool isWorking = false;
+    private Dictionary<string, StreamMonitorStatus> allStatuses = new();
     private bool autoRefreshEnabled = false;
     private PeriodicTimer? statusTimer;
     private CancellationTokenSource? refreshCts;
 
+    private int connectedCount => allStatuses.Values.Count(s => s.Connected);
+    private int subscribedCount => allStatuses.Values.Count(s => s.IsSubscribed);
+    private int disconnectedCount => (users?.Count() ?? 0) - connectedCount;
+
     protected override async Task OnInitializedAsync()
     {
-        await LoadCurrentUser();
         users = await UserRepository.GetAllUsersAsync();
-        // preselect first non-admin user if any
-        selectedUserId = users?.FirstOrDefault(u => u.Role != "admin")?.TwitchUserId;
-        await RefreshStatus();
+        await RefreshAllStatuses();
         StartAutoRefresh();
-    }
-
-    private async Task LoadCurrentUser()
-    {
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var userId = authState.User.FindFirst("userId")?.Value;
-        if (!string.IsNullOrEmpty(userId))
-        {
-            currentUser = await UserRepository.GetUserAsync(userId);
-        }
     }
 
     private async Task OnUserChanged(ChangeEventArgs e)
@@ -123,39 +210,53 @@
 
     private async Task RefreshStatus()
     {
-        if (string.IsNullOrEmpty(selectedUserId)) { status = null; return; }
-        status = StreamMonitorService.GetUserConnectionStatus(selectedUserId);
+        if (string.IsNullOrEmpty(selectedUserId))
+        {
+            status = null;
+            await RefreshAllStatuses();
+        }
+        else
+        {
+            status = StreamMonitorService.GetUserConnectionStatus(selectedUserId);
+        }
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task StopMonitoring()
+    private async Task RefreshAllStatuses()
     {
-        if (string.IsNullOrEmpty(selectedUserId)) return;
-        try
+        if (users == null) return;
+
+        allStatuses.Clear();
+        foreach (var user in users)
         {
-            isWorking = true;
-            await StreamMonitorService.UnsubscribeFromUserAsync(selectedUserId);
-            await RefreshStatus();
+            var userStatus = StreamMonitorService.GetUserConnectionStatus(user.TwitchUserId);
+            if (userStatus != null)
+            {
+                allStatuses[user.TwitchUserId] = userStatus;
+            }
         }
-        finally
-        {
-            isWorking = false;
-        }
+        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ForceReconnect()
+    private string GetSelectedUserName()
     {
-        if (string.IsNullOrEmpty(selectedUserId)) return;
-        try
-        {
-            isWorking = true;
-            await StreamMonitorService.ForceReconnectUserAsync(selectedUserId);
-            await RefreshStatus();
-        }
-        finally
-        {
-            isWorking = false;
-        }
+        return users?.FirstOrDefault(u => u.TwitchUserId == selectedUserId)?.DisplayName ?? "Unknown";
+    }
+
+    private string GetStatusBadgeClass(StreamMonitorStatus? s)
+    {
+        if (s == null) return "bg-secondary";
+        if (s.Connected && s.IsSubscribed) return "bg-success";
+        if (s.Connected) return "bg-warning";
+        return "bg-secondary";
+    }
+
+    private string GetStatusText(StreamMonitorStatus? s)
+    {
+        if (s == null) return "Offline";
+        if (s.Connected && s.IsSubscribed) return "Active";
+        if (s.Connected) return "Connected";
+        return "Offline";
     }
 
     private void StartAutoRefresh()
@@ -196,32 +297,5 @@
             statusTimer.Dispose();
         }
         await Task.CompletedTask;
-    }
-
-    private async Task StartMonitoring()
-    {
-        if (string.IsNullOrEmpty(selectedUserId) || currentUser == null) return;
-        try
-        {
-            isWorking = true;
-            var result = await StreamMonitorService.SubscribeToUserAsAsync(selectedUserId, currentUser.TwitchUserId);
-            if (result == SubscriptionResult.Success)
-            {
-                await JSRuntime.InvokeVoidAsync("alert", $"Monitoring started for {selectedUserId}.");
-                await RefreshStatus();
-            }
-            else if (result == SubscriptionResult.RequiresReauth)
-            {
-                await JSRuntime.InvokeVoidAsync("alert", "Admin token missing required Twitch permissions. Re-auth required.");
-            }
-            else
-            {
-                await JSRuntime.InvokeVoidAsync("alert", "Failed to start monitoring.");
-            }
-        }
-        finally
-        {
-            isWorking = false;
-        }
     }
 }

@@ -33,6 +33,29 @@ namespace OmniForge.Infrastructure.Services
         // Cooldown tracking: UserId -> Command -> LastUsedTime
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
 
+        private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
+        {
+            { "!deaths", new ChatCommandDefinition { Response = "Current death count: {{deaths}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
+            { "!swears", new ChatCommandDefinition { Response = "Current swear count: {{swears}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
+            { "!sw", new ChatCommandDefinition { Response = "Current swear count: {{swears}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
+            { "!screams", new ChatCommandDefinition { Response = "Current scream count: {{screams}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
+            { "!sc", new ChatCommandDefinition { Response = "Current scream count: {{screams}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
+            { "!stats", new ChatCommandDefinition { Response = "Deaths: {{deaths}}, Swears: {{swears}}, Screams: {{screams}}, Bits: {{bits}}", Permission = "everyone", Cooldown = 10, Enabled = true } },
+            { "!death+", new ChatCommandDefinition { Action = "increment", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!death-", new ChatCommandDefinition { Action = "decrement", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!d+", new ChatCommandDefinition { Action = "increment", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!d-", new ChatCommandDefinition { Action = "decrement", Counter = "deaths", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!swear+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!swear-", new ChatCommandDefinition { Action = "decrement", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!sw+", new ChatCommandDefinition { Action = "increment", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!sw-", new ChatCommandDefinition { Action = "decrement", Counter = "swears", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!scream+", new ChatCommandDefinition { Action = "increment", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!scream-", new ChatCommandDefinition { Action = "decrement", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!sc+", new ChatCommandDefinition { Action = "increment", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!sc-", new ChatCommandDefinition { Action = "decrement", Counter = "screams", Permission = "moderator", Cooldown = 1, Enabled = true } },
+            { "!resetcounters", new ChatCommandDefinition { Action = "reset", Permission = "broadcaster", Cooldown = 10, Enabled = true } }
+        };
+
         public ChatCommandProcessor(
             IServiceScopeFactory scopeFactory,
             IOverlayNotifier overlayNotifier,
@@ -50,7 +73,7 @@ namespace OmniForge.Infrastructure.Services
             var parts = context.Message.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return;
 
-            var command = parts[0].ToLowerInvariant();
+            var commandText = parts[0].ToLowerInvariant();
             int? requestedAmount = null;
             if (parts.Length > 1 && int.TryParse(parts[1], out var parsedAmount) && parsedAmount > 0)
             {
@@ -71,155 +94,87 @@ namespace OmniForge.Infrastructure.Services
 
                     var chatCommands = await userRepository.GetChatCommandsConfigAsync(context.UserId) ?? new ChatCommandConfiguration();
                     var maxIncrement = Math.Clamp(chatCommands.MaxIncrementAmount, 1, 10);
-                    var amount = Math.Clamp(requestedAmount ?? 1, 1, maxIncrement);
 
                     var previousDeaths = counters.Deaths;
                     var previousSwears = counters.Swears;
                     var previousScreams = counters.Screams;
 
                     bool changed = false;
-                    bool handled = false;
 
-                    switch (command)
+                    // Resolve command (exact match or attached number like !sw+5)
+                    var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
+
+                    if (cmdConfig != null)
                     {
-                        case "!deaths":
-                            handled = true;
-                            break;
-                        case "!swears":
-                            handled = true;
-                            break;
-                        case "!screams":
-                            if (user != null && user.OverlaySettings.Counters.Screams)
-                            {
-                                // Counter commands are intentionally silent (no chat replies)
-                            }
-                            handled = true;
-                            break;
-                        case "!stats":
-                            handled = true;
-                            break;
+                        if (!cmdConfig.Enabled) return;
 
-                        // Mod-only commands
-                        case "!death+":
-                        case "!d+":
-                            if (isMod)
-                            {
-                                counters.Deaths += amount;
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!death-":
-                        case "!d-":
-                            if (isMod && counters.Deaths > 0)
-                            {
-                                counters.Deaths = Math.Max(0, counters.Deaths - amount);
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!swear+":
-                        case "!sw+":
-                            if (isMod)
-                            {
-                                counters.Swears += amount;
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!swear-":
-                        case "!sw-":
-                            if (isMod && counters.Swears > 0)
-                            {
-                                counters.Swears = Math.Max(0, counters.Swears - amount);
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!scream+":
-                        case "!sc+":
-                            if (isMod && user != null && user.OverlaySettings.Counters.Screams)
-                            {
-                                counters.Screams += amount;
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!scream-":
-                        case "!sc-":
-                            if (isMod && counters.Screams > 0 && user != null && user.OverlaySettings.Counters.Screams)
-                            {
-                                counters.Screams = Math.Max(0, counters.Screams - amount);
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                        case "!resetcounters":
-                            if (isMod)
-                            {
-                                counters.Deaths = 0;
-                                counters.Swears = 0;
-                                counters.Screams = 0;
-                                changed = true;
-                            }
-                            handled = true;
-                            break;
-                    }
+                        // Determine amount: Attached > Requested > Default(1)
+                        var amountToUse = attachedAmount ?? requestedAmount ?? 1;
+                        var amount = Math.Clamp(amountToUse, 1, maxIncrement);
 
-                    // Handle Custom Commands
-                    if (!handled)
-                    {
-                        if (chatCommands.Commands.TryGetValue(command, out var cmdConfig))
+                        // Check Permission
+                        bool hasPermission = false;
+                        switch (cmdConfig.Permission.ToLower())
                         {
-                            if (!cmdConfig.Enabled) return;
+                            case "everyone":
+                                hasPermission = true;
+                                break;
+                            case "subscriber":
+                                hasPermission = isSubscriber || isMod; // Mods/Broadcaster imply sub access usually
+                                break;
+                            case "moderator":
+                                hasPermission = isMod;
+                                break;
+                            case "broadcaster":
+                                hasPermission = context.IsBroadcaster;
+                                break;
+                            default:
+                                hasPermission = true;
+                                break;
+                        }
 
-                            // Check Permission
-                            bool hasPermission = false;
-                            switch (cmdConfig.Permission.ToLower())
+                        if (hasPermission)
+                        {
+                            // Check Cooldown
+                            var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
+                            var now = DateTimeOffset.UtcNow;
+
+                            bool onCooldown = false;
+                            // Use the base command name for cooldown key, not the full text (so !sw+5 shares cooldown with !sw+)
+                            // We don't have the base command name easily here unless we return it from ResolveCommand.
+                            // For now, use commandText which might be !sw+5. Ideally should be !sw+.
+                            // Let's improve ResolveCommand to return the base key.
+
+                            // Re-resolving key for cooldown consistency
+                            var cooldownKey = commandText;
+                            if (attachedAmount.HasValue)
                             {
-                                case "everyone":
-                                    hasPermission = true;
-                                    break;
-                                case "subscriber":
-                                    hasPermission = isSubscriber || isMod; // Mods/Broadcaster imply sub access usually
-                                    break;
-                                case "moderator":
-                                    hasPermission = isMod;
-                                    break;
-                                case "broadcaster":
-                                    hasPermission = context.IsBroadcaster;
-                                    break;
-                                default:
-                                    hasPermission = true;
-                                    break;
+                                // If attached amount, strip digits to get base key
+                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+                                if (match.Success) cooldownKey = match.Groups[1].Value;
                             }
 
-                            if (hasPermission)
+                            if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
                             {
-                                // Check Cooldown
-                                var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
-                                var now = DateTimeOffset.UtcNow;
+                                onCooldown = true;
+                            }
 
-                                bool onCooldown = false;
-                                if (userCooldowns.TryGetValue(command, out var lastUsed) && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
+                            if (!onCooldown)
+                            {
+                                var action = cmdConfig.Action?.ToLowerInvariant();
+                                if (!string.IsNullOrWhiteSpace(action))
                                 {
-                                    onCooldown = true;
+                                    changed = ApplyActionToCounters(user, counters, action, cmdConfig.Counter, amount) || changed;
+                                }
+                                else
+                                {
+                                    // Replace template variables
+                                    var response = cmdConfig.Response;
+                                    response = ReplaceVariables(response, counters);
+                                    await TrySend(sendMessage, context.UserId, response);
                                 }
 
-                                if (!onCooldown)
-                                {
-                                    var action = cmdConfig.Action?.ToLowerInvariant();
-                                    if (!string.IsNullOrWhiteSpace(action))
-                                    {
-                                        changed = ApplyActionToCounters(user, counters, action, cmdConfig.Counter, amount) || changed;
-                                    }
-                                    else
-                                    {
-                                        await TrySend(sendMessage, context.UserId, cmdConfig.Response);
-                                    }
-
-                                    userCooldowns[command] = now;
-                                }
+                                userCooldowns[cooldownKey] = now;
                             }
                         }
                     }
@@ -302,6 +257,30 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
+            string commandText,
+            ChatCommandConfiguration userConfig)
+        {
+            // 1. Try exact match
+            if (userConfig.Commands.TryGetValue(commandText, out var userCmd)) return (userCmd, null);
+            if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
+
+            // 2. Try parsing attached number (e.g. !sw+5)
+            // Regex: ^(.+?)(\d+)$
+            var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+            if (match.Success)
+            {
+                var baseCmd = match.Groups[1].Value;
+                if (int.TryParse(match.Groups[2].Value, out var amount))
+                {
+                    if (userConfig.Commands.TryGetValue(baseCmd, out userCmd)) return (userCmd, amount);
+                    if (_defaultCommands.TryGetValue(baseCmd, out defCmd)) return (defCmd, amount);
+                }
+            }
+
+            return (null, null);
+        }
+
         private static bool ApplyActionToCounters(User? user, Counter counters, string action, string? counterTargets, int amount)
         {
             var targets = (counterTargets ?? string.Empty)
@@ -312,60 +291,101 @@ namespace OmniForge.Infrastructure.Services
                 return false;
             }
 
+            bool anyChanged = false;
+
             if (action == "reset")
             {
                 // If targets specified, reset only those; else reset core counters.
                 if (targets.Length == 0)
                 {
-                    counters.Deaths = 0;
-                    counters.Swears = 0;
-                    counters.Screams = 0;
-                    return true;
+                    if (counters.Deaths != 0 || counters.Swears != 0 || counters.Screams != 0)
+                    {
+                        counters.Deaths = 0;
+                        counters.Swears = 0;
+                        counters.Screams = 0;
+                        return true;
+                    }
+                    return false;
                 }
 
                 foreach (var target in targets)
                 {
-                    ApplyDelta(counters, target.ToLowerInvariant(), 0, isReset: true, user: user);
+                    if (ApplyDelta(counters, target.ToLowerInvariant(), 0, isReset: true, user: user))
+                    {
+                        anyChanged = true;
+                    }
                 }
 
-                return true;
+                return anyChanged;
             }
 
             var delta = action == "decrement" ? -amount : amount;
 
             foreach (var target in targets)
             {
-                ApplyDelta(counters, target.ToLowerInvariant(), delta, isReset: false, user: user);
+                if (ApplyDelta(counters, target.ToLowerInvariant(), delta, isReset: false, user: user))
+                {
+                    anyChanged = true;
+                }
             }
 
-            return true;
+            return anyChanged;
         }
 
-        private static void ApplyDelta(Counter counters, string target, int delta, bool isReset, User? user)
+        private static bool ApplyDelta(Counter counters, string target, int delta, bool isReset, User? user)
         {
+            int oldValue;
+            int newValue;
+
             switch (target)
             {
                 case "deaths":
-                    counters.Deaths = isReset ? 0 : Math.Max(0, counters.Deaths + delta);
-                    break;
+                    oldValue = counters.Deaths;
+                    newValue = isReset ? 0 : Math.Max(0, counters.Deaths + delta);
+                    counters.Deaths = newValue;
+                    return oldValue != newValue;
                 case "swears":
-                    counters.Swears = isReset ? 0 : Math.Max(0, counters.Swears + delta);
-                    break;
+                    oldValue = counters.Swears;
+                    newValue = isReset ? 0 : Math.Max(0, counters.Swears + delta);
+                    counters.Swears = newValue;
+                    return oldValue != newValue;
                 case "screams":
                     if (user != null && user.OverlaySettings.Counters.Screams)
                     {
-                        counters.Screams = isReset ? 0 : Math.Max(0, counters.Screams + delta);
+                        oldValue = counters.Screams;
+                        newValue = isReset ? 0 : Math.Max(0, counters.Screams + delta);
+                        counters.Screams = newValue;
+                        return oldValue != newValue;
                     }
-                    break;
+                    return false;
                 case "bits":
-                    counters.Bits = isReset ? 0 : Math.Max(0, counters.Bits + delta);
-                    break;
+                    oldValue = counters.Bits;
+                    newValue = isReset ? 0 : Math.Max(0, counters.Bits + delta);
+                    counters.Bits = newValue;
+                    return oldValue != newValue;
                 default:
                     counters.CustomCounters ??= new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                    var current = counters.CustomCounters.TryGetValue(target, out var existing) ? existing : 0;
-                    counters.CustomCounters[target] = isReset ? 0 : Math.Max(0, current + delta);
-                    break;
+                    oldValue = counters.CustomCounters.TryGetValue(target, out var existing) ? existing : 0;
+                    newValue = isReset ? 0 : Math.Max(0, oldValue + delta);
+                    counters.CustomCounters[target] = newValue;
+                    return oldValue != newValue;
             }
+        }
+
+        private static string ReplaceVariables(string template, Counter counters)
+        {
+            if (string.IsNullOrEmpty(template)) return string.Empty;
+
+            var result = template
+                .Replace("{{deaths}}", counters.Deaths.ToString())
+                .Replace("{{swears}}", counters.Swears.ToString())
+                .Replace("{{screams}}", counters.Screams.ToString())
+                .Replace("{{bits}}", counters.Bits.ToString());
+
+            // Handle custom counters if needed, though regex is better for dynamic keys
+            // For now, simple replacement is enough for default commands
+
+            return result;
         }
 
         private static async Task TrySend(Func<string, string, Task>? sendMessage, string userId, string message)

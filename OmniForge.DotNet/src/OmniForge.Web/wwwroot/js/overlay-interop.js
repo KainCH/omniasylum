@@ -108,6 +108,9 @@ window.overlayInterop = {
              // Milestone specific logic if any
         }
 
+        // Show the main alert popup with visual cue and text
+        this.showAlertPopup(payload);
+
         // Use AsylumEffects for the main alert popup
         if (window.asylumEffects) {
             window.asylumEffects.triggerEffect({
@@ -120,6 +123,64 @@ window.overlayInterop = {
                 effects: payload.effects || {}
             });
         }
+    },
+
+    showAlertPopup: function(payload) {
+        const popup = document.getElementById('alert-popup');
+        const title = document.getElementById('alert-title');
+        const message = document.getElementById('alert-message');
+        const image = document.getElementById('alert-image');
+
+        if (!popup || !title || !message) return;
+
+        // Update text content
+        title.textContent = payload.name || 'ALERT'; // Or use type?
+        message.textContent = payload.textPrompt || payload.message || '';
+
+        // Update visual cue (image)
+        if (image) {
+            // IMAGES DISABLED TEMPORARILY
+            /*
+            // Validate visualCue is a likely URL/path and not a description
+            const isValidImage = payload.visualCue &&
+                               (payload.visualCue.startsWith('http') ||
+                                payload.visualCue.startsWith('/') ||
+                                /\.(png|jpg|jpeg|gif|webp)$/i.test(payload.visualCue));
+
+            if (isValidImage) {
+                image.src = payload.visualCue;
+                image.classList.add('show');
+            } else {
+                if (payload.visualCue) {
+                    console.warn('Skipping invalid visualCue (looks like text/description):', payload.visualCue);
+                }
+                image.classList.remove('show');
+                image.src = '';
+            }
+            */
+            image.classList.remove('show');
+            image.src = '';
+        }
+
+        // Apply colors if provided
+        if (payload.backgroundColor) popup.style.backgroundColor = payload.backgroundColor;
+        if (payload.borderColor) popup.style.borderColor = payload.borderColor;
+        if (payload.textColor) {
+            title.style.color = payload.textColor;
+            message.style.color = payload.textColor;
+        }
+
+        // Show popup
+        popup.classList.add('show');
+
+        // Hide after duration
+        const duration = payload.duration || 5000;
+
+        if (popup.__hideTimer) clearTimeout(popup.__hideTimer);
+
+        popup.__hideTimer = setTimeout(() => {
+            popup.classList.remove('show');
+        }, duration);
     },
 
     triggerBitsCelebration: function(amount) {

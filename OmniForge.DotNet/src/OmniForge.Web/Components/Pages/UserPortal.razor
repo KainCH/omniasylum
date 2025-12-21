@@ -1,6 +1,13 @@
 @page "/portal"
 @using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Modals
 @attribute [Authorize]
+@rendermode InteractiveServer
+@inject IUserRepository UserRepository
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
 
 <PageTitle>User Portal - OmniForge</PageTitle>
 
@@ -8,8 +15,44 @@
     <AuthorizeView>
         <div class="row mb-4">
             <div class="col">
-                <h1 class="display-4">Welcome, @context.User.Identity?.Name!</h1>
-                <p class="lead text-muted">Select a tool to get started.</p>
+                <!-- Context Switcher -->
+                @if (managedStreamers != null && managedStreamers.Any())
+                {
+                    <div class="alert alert-secondary d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-person-workspace me-2"></i>
+                            <span>Currently viewing as:</span>
+                            <select class="form-select form-select-sm ms-2" style="width: auto;" @onchange="OnContextChanged">
+                                <option value="@currentUserId" selected="@(activeContextId == currentUserId)">
+                                    Myself (@currentUser?.DisplayName)
+                                </option>
+                                @foreach (var streamer in managedStreamers)
+                                {
+                                    <option value="@streamer.TwitchUserId" selected="@(activeContextId == streamer.TwitchUserId)">
+                                        @streamer.DisplayName's Forge
+                                    </option>
+                                }
+                            </select>
+                        </div>
+                        @if (activeContextId != currentUserId)
+                        {
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-eye me-1"></i>Managing @activeContextUser?.DisplayName
+                            </span>
+                        }
+                    </div>
+                }
+
+                @if (activeContextId != currentUserId && activeContextUser != null)
+                {
+                    <h1 class="display-4">Managing @activeContextUser.DisplayName's Forge</h1>
+                    <p class="lead text-muted">You are viewing settings for @activeContextUser.DisplayName.</p>
+                }
+                else
+                {
+                    <h1 class="display-4">Welcome, @context.User.Identity?.Name!</h1>
+                    <p class="lead text-muted">Select a tool to get started.</p>
+                }
 
                 @if (context.User.IsInRole("admin"))
                 {
@@ -57,7 +100,7 @@
                     <p class="card-text text-muted">
                         Manage your death and swear counters in real-time. Syncs across all devices.
                     </p>
-                    <a href="dashboard" class="btn btn-primary btn-lg mt-3 stretched-link">
+                    <a href="@GetContextualLink("dashboard")" class="btn btn-primary btn-lg mt-3 stretched-link">
                         Open Counter
                     </a>
                 </div>
@@ -76,7 +119,7 @@
                         <p class="card-text text-muted">
                             Customize the look and feel of your stream overlay. Change colors, fonts, and more.
                         </p>
-                        <a href="template-designer" class="btn btn-success btn-lg mt-3 stretched-link">
+                        <a href="@GetContextualLink("template-designer")" class="btn btn-success btn-lg mt-3 stretched-link">
                             Open Designer
                         </a>
                     </div>
@@ -95,7 +138,7 @@
                     <p class="card-text text-muted">
                         Configure webhooks, notifications, and community invite links.
                     </p>
-                    <a href="settings/discord" class="btn btn-primary btn-lg mt-3 stretched-link">
+                    <a href="@GetContextualLink("settings/discord")" class="btn btn-primary btn-lg mt-3 stretched-link">
                         Manage Discord
                     </a>
                 </div>
@@ -113,8 +156,44 @@
                     <p class="card-text text-muted">
                         Configure visual and audio effects for your stream alerts.
                     </p>
-                    <a href="settings/alert-effects" class="btn btn-warning text-dark btn-lg mt-3 stretched-link">
+                    <a href="@GetContextualLink("settings/alert-effects")" class="btn btn-warning text-dark btn-lg mt-3 stretched-link">
                         Customize Effects
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Manager Card -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-bell-fill text-danger" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">Alerts Manager</h3>
+                    <p class="card-text text-muted">
+                        Configure stream alerts, notifications, and trigger events.
+                    </p>
+                    <a href="@GetContextualLink("alerts")" class="btn btn-danger btn-lg mt-3 stretched-link">
+                        Manage Alerts
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- AutoMod Settings Card -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm hover-card">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-robot text-secondary" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="card-title">AutoMod Settings</h3>
+                    <p class="card-text text-muted">
+                        Configure automated moderation, filters, and chat rules.
+                    </p>
+                    <a href="@GetContextualLink("automod")" class="btn btn-secondary btn-lg mt-3 stretched-link">
+                        Configure AutoMod
                     </a>
                 </div>
             </div>
@@ -131,12 +210,54 @@
                     <p class="card-text text-muted">
                         Save and load counter states for different games or series.
                     </p>
-                    <a href="settings/series" class="btn btn-info text-white btn-lg mt-3 stretched-link">
+                    <a href="@GetContextualLink("settings/series")" class="btn btn-info text-white btn-lg mt-3 stretched-link">
                         Manage Series
                     </a>
                 </div>
             </div>
         </div>
+
+        <!-- Mod Team Manager Card (Always visible for own context) -->
+        @if (activeContextId == currentUserId)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm hover-card border-primary">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="bi bi-people-fill text-primary" style="font-size: 4rem;"></i>
+                        </div>
+                        <h3 class="card-title text-primary">Mod Team</h3>
+                        <p class="card-text text-muted">
+                            Manage who can help control your OmniForge settings and counters.
+                        </p>
+                        <button class="btn btn-primary btn-lg mt-3" @onclick="() => showModeratorModal = true">
+                            Manage Team
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Stream Monitor Card (for managed streamers context) -->
+        @if (activeContextId != currentUserId && activeContextUser != null)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm hover-card border-success">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="bi bi-broadcast-pin text-success" style="font-size: 4rem;"></i>
+                        </div>
+                        <h3 class="card-title text-success">Stream Monitor</h3>
+                        <p class="card-text text-muted">
+                            Monitor @activeContextUser.DisplayName's stream events and status.
+                        </p>
+                        <a href="monitor/@activeContextId" class="btn btn-success btn-lg mt-3 stretched-link">
+                            Open Monitor
+                        </a>
+                    </div>
+                </div>
+            </div>
+        }
 
         <!-- Admin Tools (Conditional) -->
         <AuthorizeView Roles="admin">
@@ -158,6 +279,9 @@
             </div>
         </AuthorizeView>
     </div>
+
+    <!-- Moderator Manager Modal -->
+    <ModeratorManagerModal @bind-Show="showModeratorModal" CurrentUserId="@currentUserId" />
 </div>
 
 <style>
@@ -172,4 +296,74 @@
 
 @code {
     private bool showDebug = false;
+    private bool showModeratorModal = false;
+    private string? currentUserId;
+    private User? currentUser;
+    private string? activeContextId;
+    private User? activeContextUser;
+    private List<User>? managedStreamers;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        await LoadManagedStreamers();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst("userId")?.Value;
+        if (!string.IsNullOrEmpty(currentUserId))
+        {
+            currentUser = await UserRepository.GetUserAsync(currentUserId);
+            activeContextId = currentUserId; // Default to own context
+            activeContextUser = currentUser;
+        }
+    }
+
+    private async Task LoadManagedStreamers()
+    {
+        if (string.IsNullOrEmpty(currentUserId)) return;
+
+        var user = await UserRepository.GetUserAsync(currentUserId);
+        if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
+        {
+            managedStreamers = new List<User>();
+            foreach (var streamerId in user.ManagedStreamers)
+            {
+                var streamer = await UserRepository.GetUserAsync(streamerId);
+                if (streamer != null)
+                {
+                    managedStreamers.Add(streamer);
+                }
+            }
+        }
+    }
+
+    private async Task OnContextChanged(ChangeEventArgs e)
+    {
+        var newContextId = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(newContextId))
+        {
+            activeContextId = newContextId;
+            if (activeContextId == currentUserId)
+            {
+                activeContextUser = currentUser;
+            }
+            else
+            {
+                activeContextUser = await UserRepository.GetUserAsync(activeContextId);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private string GetContextualLink(string basePath)
+    {
+        if (activeContextId != currentUserId)
+        {
+            return $"manage/{activeContextId}/{basePath}";
+        }
+        return basePath;
+    }
 }
