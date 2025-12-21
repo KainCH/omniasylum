@@ -1,5 +1,6 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OmniForge.Core.Entities;
@@ -14,11 +15,26 @@ namespace OmniForge.Tests.Components.Modals
     public class UserManagementModalTests : BunitContext
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly MockAuthenticationStateProvider _mockAuthenticationStateProvider;
 
         public UserManagementModalTests()
         {
             _mockUserRepository = new Mock<IUserRepository>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
             Services.AddSingleton(_mockUserRepository.Object);
+            Services.AddSingleton(_mockTwitchApiService.Object);
+
+            _mockAuthenticationStateProvider = new MockAuthenticationStateProvider();
+            Services.AddAuthorizationCore();
+            Services.AddScoped<AuthenticationStateProvider>(s => _mockAuthenticationStateProvider);
+
+            var identity = new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "TestAdmin"),
+                new System.Security.Claims.Claim("userId", "admin-123")
+            }, "TestAuthType");
+            _mockAuthenticationStateProvider.SetUser(new System.Security.Claims.ClaimsPrincipal(identity));
         }
 
         [Fact]
@@ -84,6 +100,15 @@ namespace OmniForge.Tests.Components.Modals
             var showChangedCalled = false;
 
             _mockUserRepository.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+            _mockTwitchApiService.Setup(x => x.GetUserByLoginAsync("NewUser", It.IsAny<string>()))
+                .ReturnsAsync(new OmniForge.Core.Interfaces.TwitchUserDto
+                {
+                    Id = "new-user-id",
+                    Login = "NewUser",
+                    DisplayName = "NewUser",
+                    Email = "new@example.com",
+                    ProfileImageUrl = "http://example.com/image.jpg"
+                });
 
             var cut = Render(b =>
             {
@@ -135,6 +160,27 @@ namespace OmniForge.Tests.Components.Modals
 
             // Assert
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.Features.StreamOverlay == true || u.Features.ChatCommands == true || u.Features.DiscordNotifications == true)), Times.Once);
+        }
+    }
+
+    public class MockAuthenticationStateProvider : Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider
+    {
+        private Microsoft.AspNetCore.Components.Authorization.AuthenticationState _authState;
+
+        public MockAuthenticationStateProvider()
+        {
+            _authState = new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()));
+        }
+
+        public void SetUser(System.Security.Claims.ClaimsPrincipal user)
+        {
+            _authState = new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(user);
+            NotifyAuthenticationStateChanged(Task.FromResult(_authState));
+        }
+
+        public override Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState> GetAuthenticationStateAsync()
+        {
+            return Task.FromResult(_authState);
         }
     }
 }
