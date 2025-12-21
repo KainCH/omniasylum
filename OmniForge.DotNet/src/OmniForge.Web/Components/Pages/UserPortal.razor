@@ -325,16 +325,29 @@
     {
         if (string.IsNullOrEmpty(currentUserId)) return;
 
-        var user = await UserRepository.GetUserAsync(currentUserId);
-        if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
+        managedStreamers = new List<User>();
+
+        // Check if user is admin
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var isAdmin = authState.User.IsInRole("admin");
+
+        if (isAdmin)
         {
-            managedStreamers = new List<User>();
-            foreach (var streamerId in user.ManagedStreamers)
+            var allUsers = await UserRepository.GetAllUsersAsync();
+            managedStreamers.AddRange(allUsers.Where(u => u.TwitchUserId != currentUserId));
+        }
+        else
+        {
+            var user = await UserRepository.GetUserAsync(currentUserId);
+            if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
             {
-                var streamer = await UserRepository.GetUserAsync(streamerId);
-                if (streamer != null)
+                foreach (var streamerId in user.ManagedStreamers)
                 {
-                    managedStreamers.Add(streamer);
+                    var streamer = await UserRepository.GetUserAsync(streamerId);
+                    if (streamer != null)
+                    {
+                        managedStreamers.Add(streamer);
+                    }
                 }
             }
         }

@@ -196,5 +196,39 @@ namespace OmniForge.Tests.Components.Pages
             Assert.Contains("Currently viewing as", cut.Markup);
             Assert.Contains("StreamerTwo's Forge", cut.Markup);
         }
+
+        [Fact]
+        public void Admin_SeesAllUsers_InDropdown()
+        {
+            // Arrange
+            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "AdminUser"),
+                new Claim("userId", "admin123"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "TestAuthType")));
+
+            var adminUser = new User { TwitchUserId = "admin123", DisplayName = "AdminUser", ManagedStreamers = new List<string>() };
+            var otherUser = new User { TwitchUserId = "user456", DisplayName = "OtherUser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("admin123")).ReturnsAsync(adminUser);
+            _mockUserRepository.Setup(r => r.GetAllUsersAsync()).ReturnsAsync(new List<User> { adminUser, otherUser });
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<CascadingAuthenticationState>(0);
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<UserPortal>(2);
+                    builder.CloseComponent();
+                }));
+                b.CloseComponent();
+            });
+
+            // Assert
+            cut.WaitForState(() => cut.Markup.Contains("Currently viewing as"));
+            Assert.Contains("OtherUser's Forge", cut.Markup);
+        }
     }
 }
