@@ -1,4 +1,5 @@
 @page "/settings/discord"
+@page "/manage/{ManagedUserId}/settings/discord"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using OmniForge.Web.Components.Settings
@@ -8,43 +9,53 @@
 <PageTitle>Discord Settings - OmniForge</PageTitle>
 
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-discord text-primary"></i> Discord Integration</h2>
-        <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
-    </div>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-discord text-primary"></i> Discord Integration</h2>
+    <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
+  </div>
 
-    @if (isLoading)
-    {
-        <div class="text-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-    }
-    else if (string.IsNullOrWhiteSpace(userId))
-    {
-        <div class="alert alert-danger">User not found. Please try logging in again.</div>
-    }
-    else
-    {
-        <DiscordIntegrationSettings UserId="@userId" ShowCancel="false" CloseOnSave="false" />
-    }
+  @if (isLoading)
+  {
+    <div class="text-center">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  }
+  else if (string.IsNullOrWhiteSpace(userId))
+  {
+    <div class="alert alert-danger">User not found. Please try logging in again.</div>
+  }
+  else
+  {
+    <DiscordIntegrationSettings UserId="@userId" ShowCancel="false" CloseOnSave="false" />
+  }
 </div>
 
 @code {
-    private bool isLoading = true;
-    private string? userId;
+  [Parameter]
+  public string? ManagedUserId { get; set; }
 
-    protected override async Task OnInitializedAsync()
+  private bool isLoading = true;
+  private string? userId;
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
     {
-        try
-        {
-            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-            userId = authState.User.FindFirst("userId")?.Value;
-        }
-        finally
-        {
-            isLoading = false;
-        }
+      if (!string.IsNullOrEmpty(ManagedUserId))
+      {
+        userId = ManagedUserId;
+      }
+      else
+      {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst("userId")?.Value;
+      }
     }
+    finally
+    {
+      isLoading = false;
+    }
+  }
 }

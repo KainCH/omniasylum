@@ -1,4 +1,5 @@
 @page "/alerts"
+@page "/manage/{ManagedUserId}/alerts"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web
@@ -125,6 +126,9 @@
   [CascadingParameter]
   private Task<AuthenticationState>? authenticationStateTask { get; set; }
 
+  [Parameter]
+  public string? ManagedUserId { get; set; }
+
   private string? TwitchUserId;
   private bool isLoading = true;
   private bool streamAlertsEnabled = true;
@@ -160,7 +164,16 @@
       return;
     }
 
-    TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    var currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (!string.IsNullOrEmpty(ManagedUserId))
+    {
+      TwitchUserId = ManagedUserId;
+    }
+    else
+    {
+      TwitchUserId = currentUserId;
+    }
+
     if (string.IsNullOrWhiteSpace(TwitchUserId))
     {
       Logger.LogWarning("⚠️ TwitchUserId claim not found");

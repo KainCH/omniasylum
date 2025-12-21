@@ -1,4 +1,5 @@
 @page "/settings/series"
+@page "/manage/{ManagedUserId}/settings/series"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @inject AuthenticationStateProvider AuthStateProvider
@@ -8,49 +9,59 @@
 <PageTitle>Series Manager - OmniForge</PageTitle>
 
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-collection-play text-info"></i> Series Manager</h2>
-        <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
-    </div>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-collection-play text-info"></i> Series Manager</h2>
+    <a href="portal" class="btn btn-outline-secondary">Back to Portal</a>
+  </div>
 
-    @if (isLoading)
-    {
-        <div class="text-center">
-            <div class="spinner-border text-info" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-    }
-    else if (string.IsNullOrWhiteSpace(userId))
-    {
-        <div class="alert alert-warning" role="alert">
-            Unable to determine user identity. Please re-login.
-        </div>
-    }
-    else
-    {
-        <SeriesSaveManager UserId="@userId" />
-    }
+  @if (isLoading)
+  {
+    <div class="text-center">
+      <div class="spinner-border text-info" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  }
+  else if (string.IsNullOrWhiteSpace(userId))
+  {
+    <div class="alert alert-warning" role="alert">
+      Unable to determine user identity. Please re-login.
+    </div>
+  }
+  else
+  {
+    <SeriesSaveManager UserId="@userId" />
+  }
 </div>
 
 @code {
-    private bool isLoading = true;
-    private string? userId;
+  [Parameter]
+  public string? ManagedUserId { get; set; }
 
-    protected override async Task OnInitializedAsync()
+  private bool isLoading = true;
+  private string? userId;
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
     {
-        try
-        {
-            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-            userId = authState.User.FindFirst("userId")?.Value;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading series user context: {ex.Message}");
-        }
-        finally
-        {
-            isLoading = false;
-        }
+      if (!string.IsNullOrEmpty(ManagedUserId))
+      {
+        userId = ManagedUserId;
+      }
+      else
+      {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst("userId")?.Value;
+      }
     }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error loading series user context: {ex.Message}");
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
 }
