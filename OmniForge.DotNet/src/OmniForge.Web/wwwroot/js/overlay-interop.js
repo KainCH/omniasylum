@@ -139,13 +139,27 @@ window.overlayInterop = {
 
         // Update visual cue (image)
         if (image) {
-            if (payload.visualCue) {
+            // IMAGES DISABLED TEMPORARILY
+            /*
+            // Validate visualCue is a likely URL/path and not a description
+            const isValidImage = payload.visualCue &&
+                               (payload.visualCue.startsWith('http') ||
+                                payload.visualCue.startsWith('/') ||
+                                /\.(png|jpg|jpeg|gif|webp)$/i.test(payload.visualCue));
+
+            if (isValidImage) {
                 image.src = payload.visualCue;
                 image.classList.add('show');
             } else {
+                if (payload.visualCue) {
+                    console.warn('Skipping invalid visualCue (looks like text/description):', payload.visualCue);
+                }
                 image.classList.remove('show');
                 image.src = '';
             }
+            */
+            image.classList.remove('show');
+            image.src = '';
         }
 
         // Apply colors if provided
