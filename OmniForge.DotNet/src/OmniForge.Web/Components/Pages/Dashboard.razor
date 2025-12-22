@@ -78,7 +78,7 @@
 
         <div class="controls-section">
           <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
-            <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop        Monitor" : "Start Monitor")
+            <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop          Monitor" : "Start Monitor")
           </button>
           <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
             @if (resettingCounters)

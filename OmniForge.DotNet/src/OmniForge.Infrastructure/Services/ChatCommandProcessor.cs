@@ -74,11 +74,9 @@ namespace OmniForge.Infrastructure.Services
             if (parts.Length == 0) return;
 
             var commandText = parts[0].ToLowerInvariant();
+            // Space separated amounts (e.g. !sw+ 5) are disabled.
+            // Only attached amounts (e.g. !sw+5 or !sw5+) are supported via ResolveCommand.
             int? requestedAmount = null;
-            if (parts.Length > 1 && int.TryParse(parts[1], out var parsedAmount) && parsedAmount > 0)
-            {
-                requestedAmount = parsedAmount;
-            }
 
             var isMod = context.IsModerator || context.IsBroadcaster;
             var isSubscriber = context.IsSubscriber;
@@ -102,7 +100,7 @@ namespace OmniForge.Infrastructure.Services
                     bool changed = false;
 
                     // Resolve command (exact match or attached number like !sw+5)
-                    var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
+                    var (cmdConfig, attachedAmount, baseCommandKey) = ResolveCommand(commandText, chatCommands);
 
                     if (cmdConfig != null)
                     {
@@ -140,19 +138,9 @@ namespace OmniForge.Infrastructure.Services
                             var now = DateTimeOffset.UtcNow;
 
                             bool onCooldown = false;
-                            // Use the base command name for cooldown key, not the full text (so !sw+5 shares cooldown with !sw+)
-                            // We don't have the base command name easily here unless we return it from ResolveCommand.
-                            // For now, use commandText which might be !sw+5. Ideally should be !sw+.
-                            // Let's improve ResolveCommand to return the base key.
 
-                            // Re-resolving key for cooldown consistency
-                            var cooldownKey = commandText;
-                            if (attachedAmount.HasValue)
-                            {
-                                // If attached amount, strip digits to get base key
-                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
-                                if (match.Success) cooldownKey = match.Groups[1].Value;
-                            }
+                            // Use the resolved base command key for cooldown consistency
+                            var cooldownKey = baseCommandKey ?? commandText;
 
                             if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cmdConfig.Cooldown)
                             {
@@ -257,13 +245,13 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
+        private (ChatCommandDefinition? Config, int? AttachedAmount, string? BaseCommandKey) ResolveCommand(
             string commandText,
             ChatCommandConfiguration userConfig)
         {
             // 1. Try exact match
-            if (userConfig.Commands.TryGetValue(commandText, out var userCmd)) return (userCmd, null);
-            if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
+            if (userConfig.Commands.TryGetValue(commandText, out var userCmd)) return (userCmd, null, commandText);
+            if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null, commandText);
 
             // 2. Try parsing attached number (e.g. !sw+5)
             // Regex: ^(.+?)(\d+)$
@@ -273,12 +261,27 @@ namespace OmniForge.Infrastructure.Services
                 var baseCmd = match.Groups[1].Value;
                 if (int.TryParse(match.Groups[2].Value, out var amount))
                 {
-                    if (userConfig.Commands.TryGetValue(baseCmd, out userCmd)) return (userCmd, amount);
-                    if (_defaultCommands.TryGetValue(baseCmd, out defCmd)) return (defCmd, amount);
+                    if (userConfig.Commands.TryGetValue(baseCmd, out userCmd)) return (userCmd, amount, baseCmd);
+                    if (_defaultCommands.TryGetValue(baseCmd, out defCmd)) return (defCmd, amount, baseCmd);
                 }
             }
 
-            return (null, null);
+            // 3. Try parsing number inside (e.g. !sw5+)
+            // Regex: ^(![a-zA-Z]+)(\d+)([+-])$
+            var matchInside = System.Text.RegularExpressions.Regex.Match(commandText, @"^(![a-zA-Z]+)(\d+)([+-])$");
+            if (matchInside.Success)
+            {
+                var prefix = matchInside.Groups[1].Value;
+                var suffix = matchInside.Groups[3].Value;
+                var baseCmd = prefix + suffix;
+                if (int.TryParse(matchInside.Groups[2].Value, out var amount))
+                {
+                    if (userConfig.Commands.TryGetValue(baseCmd, out userCmd)) return (userCmd, amount, baseCmd);
+                    if (_defaultCommands.TryGetValue(baseCmd, out defCmd)) return (defCmd, amount, baseCmd);
+                }
+            }
+
+            return (null, null, null);
         }
 
         private static bool ApplyActionToCounters(User? user, Counter counters, string action, string? counterTargets, int amount)
