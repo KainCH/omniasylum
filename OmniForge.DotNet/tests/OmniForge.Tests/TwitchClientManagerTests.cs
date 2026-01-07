@@ -2,9 +2,11 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
 using Xunit;
 
@@ -20,6 +22,7 @@ namespace OmniForge.Tests
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<ITwitchAuthService> _mockTwitchAuthService;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly TwitchClientManager _twitchClientManager;
 
         public TwitchClientManagerTests()
@@ -32,6 +35,7 @@ namespace OmniForge.Tests
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockTwitchAuthService = new Mock<ITwitchAuthService>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
 
             // Setup Scope Factory
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
@@ -44,10 +48,24 @@ namespace OmniForge.Tests
                 .Returns(_mockCounterRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchAuthService)))
                 .Returns(_mockTwitchAuthService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IBotCredentialRepository)))
+                .Returns(_mockBotCredentialRepository.Object);
+
+            var twitchSettings = Options.Create(new TwitchSettings
+            {
+                ClientId = "client",
+                ClientSecret = "secret",
+                RedirectUri = "https://example.com/auth/twitch/callback",
+                BotRedirectUri = "https://example.com/auth/twitch/bot/callback",
+                BotUsername = "forge_bot",
+                BotAccessToken = "bot_access",
+                BotRefreshToken = "bot_refresh"
+            });
 
             _twitchClientManager = new TwitchClientManager(
                 _mockScopeFactory.Object,
                 _mockMessageHandler.Object,
+                twitchSettings,
                 _mockLogger.Object);
         }
 
@@ -60,13 +78,22 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = userId,
                 Username = "testuser",
-                AccessToken = "token",
-                RefreshToken = "refresh_token",
-                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) // Valid token
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
             };
 
             _mockUserRepository.Setup(x => x.GetUserAsync(userId))
                 .ReturnsAsync(user);
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
 
             // Act
             await _twitchClientManager.ConnectUserAsync(userId);
@@ -142,20 +169,28 @@ namespace OmniForge.Tests
         {
             // Arrange
             var userId = "12345";
-            var refreshToken = "refresh_token";
             var user = new User
             {
                 TwitchUserId = userId,
                 Username = "testuser",
-                AccessToken = "expired_token",
-                RefreshToken = refreshToken,
-                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired token
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
             };
 
             _mockUserRepository.Setup(x => x.GetUserAsync(userId))
                 .ReturnsAsync(user);
 
-            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync(refreshToken))
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "expired_bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1)
+                });
+
+            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync("bot_refresh"))
                 .ReturnsAsync(new TwitchTokenResponse
                 {
                     AccessToken = "new_token",
@@ -167,7 +202,7 @@ namespace OmniForge.Tests
             await _twitchClientManager.ConnectUserAsync(userId);
 
             // Assert
-            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(refreshToken), Times.Once);
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync("bot_refresh"), Times.Once);
         }
 
         [Fact]
@@ -179,28 +214,37 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = userId,
                 Username = "testuser",
-                AccessToken = "expired_token",
-                RefreshToken = "refresh_token",
-                TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1) // Expired token
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
             };
 
             _mockUserRepository.Setup(x => x.GetUserAsync(userId))
                 .ReturnsAsync(user);
 
-            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync(user.RefreshToken))
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "expired_bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(-1)
+                });
+
+            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync("bot_refresh"))
                 .ReturnsAsync((TwitchTokenResponse?)null);
 
             // Act
             await _twitchClientManager.ConnectUserAsync(userId);
 
             // Assert
-            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(user.RefreshToken), Times.Once);
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync("bot_refresh"), Times.Once);
             // Should log error about failed token refresh
             _mockLogger.Verify(
                 x => x.Log(
                     LogLevel.Error,
                     It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to refresh token")),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to refresh Forge bot token")),
                     It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                 Times.Once);
@@ -215,13 +259,22 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = userId,
                 Username = "testuser",
-                AccessToken = "valid_token",
-                RefreshToken = "refresh_token",
-                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) // Valid token
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
             };
 
             _mockUserRepository.Setup(x => x.GetUserAsync(userId))
                 .ReturnsAsync(user);
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
 
             // Act
             await _twitchClientManager.ConnectUserAsync(userId);

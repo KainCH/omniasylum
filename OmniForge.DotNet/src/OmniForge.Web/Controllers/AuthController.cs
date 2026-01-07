@@ -16,6 +16,7 @@ using System.Security.Claims;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Controllers
 {
@@ -25,6 +26,7 @@ namespace OmniForge.Web.Controllers
     {
         private readonly ITwitchAuthService _twitchAuthService;
         private readonly IUserRepository _userRepository;
+        private readonly IBotCredentialRepository _botCredentialRepository;
         private readonly IJwtService _jwtService;
         private readonly TwitchSettings _twitchSettings;
         private readonly IConfiguration _configuration;
@@ -33,6 +35,7 @@ namespace OmniForge.Web.Controllers
         public AuthController(
             ITwitchAuthService twitchAuthService,
             IUserRepository userRepository,
+            IBotCredentialRepository botCredentialRepository,
             IJwtService jwtService,
             IOptions<TwitchSettings> twitchSettings,
             IConfiguration configuration,
@@ -40,6 +43,7 @@ namespace OmniForge.Web.Controllers
         {
             _twitchAuthService = twitchAuthService;
             _userRepository = userRepository;
+            _botCredentialRepository = botCredentialRepository;
             _jwtService = jwtService;
             _twitchSettings = twitchSettings.Value;
             _configuration = configuration;
@@ -52,6 +56,110 @@ namespace OmniForge.Web.Controllers
             var redirectUri = GetRedirectUri();
             var url = _twitchAuthService.GetAuthorizationUrl(redirectUri);
             return Redirect(url);
+        }
+
+        [HttpGet("twitch/bot")]
+        [Authorize(Roles = "admin", AuthenticationSchemes = "Bearer,Cookies")]
+        public IActionResult BotLogin()
+        {
+            var redirectUri = GetBotRedirectUri();
+
+            // Request the same scopes as a normal OmniForge user login, plus the IRC scopes used by TwitchLib.Client.
+            // This is admin-only and intended for the dedicated Forge bot account.
+            var scopes = new List<string>
+            {
+                "openid",
+                "user:read:email",
+
+                // EventSub/Helix chat
+                "user:read:chat",
+                "user:write:chat",
+                "user:bot",
+
+                // Whispers (optional - for DM functionality)
+                "user:manage:whispers",
+
+                // Channel features
+                "channel:read:subscriptions",
+                "channel:read:redemptions",
+                "channel:manage:polls",
+
+                // Moderation & followers
+                "moderator:read:followers",
+                "moderator:read:automod_settings",
+                "moderator:manage:automod_settings",
+
+                // Moderation actions (requires the bot to be a mod in the target channel)
+                "moderator:manage:banned_users",
+                "moderator:manage:chat_messages",
+
+                // Bits & clips
+                "bits:read",
+                "clips:edit",
+
+                // IRC chat (TwitchLib Client)
+                "chat:read",
+                "chat:edit"
+            };
+
+            var scopeString = string.Join(" ", scopes);
+            var encodedScopes = System.Net.WebUtility.UrlEncode(scopeString);
+            var encodedRedirect = System.Net.WebUtility.UrlEncode(redirectUri);
+
+            var url = $"https://id.twitch.tv/oauth2/authorize?client_id={_twitchSettings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}&force_verify=true";
+            return Redirect(url);
+        }
+
+        [HttpGet("twitch/bot/callback")]
+        [Authorize(Roles = "admin", AuthenticationSchemes = "Bearer,Cookies")]
+        public async Task<IActionResult> BotCallback([FromQuery] string code)
+        {
+            return await HandleBotCallbackAsync(code);
+        }
+
+        private async Task<IActionResult> HandleBotCallbackAsync(string code)
+        {
+            if (string.IsNullOrEmpty(code))
+            {
+                return BadRequest("No authorization code provided");
+            }
+
+            var redirectUri = GetBotRedirectUri();
+            var tokenResponse = await _twitchAuthService.ExchangeCodeForTokenAsync(code, redirectUri);
+
+            if (tokenResponse == null)
+            {
+                return BadRequest("Failed to exchange authorization code");
+            }
+
+            var userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
+            if (userInfo == null)
+            {
+                return BadRequest("Failed to get bot user info from Twitch");
+            }
+
+            // Optional safety check: if BotUsername is configured, enforce it.
+            if (!string.IsNullOrWhiteSpace(_twitchSettings.BotUsername)
+                && !string.Equals(_twitchSettings.BotUsername, userInfo.Login, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "⚠️ Bot OAuth completed for {Login}, but configured BotUsername is {Configured}. Rejecting.",
+                    LogSanitizer.Sanitize(userInfo.Login),
+                    LogSanitizer.Sanitize(_twitchSettings.BotUsername));
+
+                return BadRequest($"Authorized account '{userInfo.Login}' does not match configured bot username.");
+            }
+
+            await _botCredentialRepository.SaveAsync(new BotCredentials
+            {
+                Username = userInfo.Login,
+                AccessToken = tokenResponse.AccessToken,
+                RefreshToken = tokenResponse.RefreshToken,
+                TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn)
+            });
+
+            _logger.LogInformation("✅ Forge bot authorized as {Login}", LogSanitizer.Sanitize(userInfo.Login));
+            return Redirect("/portal");
         }
 
         [HttpGet("twitch/callback")]
@@ -289,7 +397,63 @@ namespace OmniForge.Web.Controllers
                 throw new InvalidOperationException("Twitch:RedirectUri is not configured.");
             }
 
-            return redirectUri;
+            // Allow indirection via Key Vault secret/config key name.
+            // Example: Twitch:RedirectUri = "dev-callback" and Key Vault secret "dev-callback" contains the full URL.
+            if (Uri.TryCreate(redirectUri, UriKind.Absolute, out var parsed)
+                && (string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)))
+            {
+                return redirectUri;
+            }
+
+            var resolved = _configuration[redirectUri];
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                return resolved;
+            }
+
+            _logger.LogCritical(
+                "Twitch:RedirectUri was set to '{RedirectUri}', but it was not a valid URL and could not be resolved from configuration.",
+                LogSanitizer.Sanitize(redirectUri));
+            throw new InvalidOperationException("Twitch:RedirectUri is not configured to a valid URL.");
+        }
+
+        private string GetBotRedirectUri()
+        {
+            // Prefer explicit config.
+            var botRedirect = _configuration["Twitch:BotRedirectUri"];
+            if (!string.IsNullOrEmpty(botRedirect))
+            {
+                // Allow indirection via Key Vault secret name.
+                // Example: Twitch:BotRedirectUri = "Dev-bot-callback" and Key Vault secret "Dev-bot-callback" contains the full URL.
+                if (Uri.TryCreate(botRedirect, UriKind.Absolute, out var botRedirectUri)
+                    && (string.Equals(botRedirectUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(botRedirectUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return botRedirect;
+                }
+
+                var resolved = _configuration[botRedirect];
+                if (!string.IsNullOrEmpty(resolved))
+                {
+                    return resolved;
+                }
+
+                _logger.LogCritical(
+                    "Twitch:BotRedirectUri was set to '{BotRedirect}', but it was not a valid URL and could not be resolved from configuration.",
+                    LogSanitizer.Sanitize(botRedirect));
+                throw new InvalidOperationException("Twitch:BotRedirectUri is not configured to a valid URL.");
+            }
+
+            // Safe fallback: derive from the configured user redirect (not from Request.Host).
+            var redirectUri = GetRedirectUri();
+            if (redirectUri.Contains("/auth/twitch/callback", StringComparison.OrdinalIgnoreCase))
+            {
+                return redirectUri.Replace("/auth/twitch/callback", "/auth/twitch/bot/callback", StringComparison.OrdinalIgnoreCase);
+            }
+
+            _logger.LogCritical("Twitch:BotRedirectUri is not configured and could not be derived.");
+            throw new InvalidOperationException("Twitch:BotRedirectUri is not configured.");
         }
     }
 }

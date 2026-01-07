@@ -57,7 +57,7 @@ namespace OmniForge.Tests
             {
                 new User { TwitchUserId = "1", Username = "user1", IsActive = true, AccessToken = "token" },
                 new User { TwitchUserId = "2", Username = "user2", IsActive = false, AccessToken = "token" }, // Inactive
-                new User { TwitchUserId = "3", Username = "user3", IsActive = true, AccessToken = "" } // No token
+                new User { TwitchUserId = "3", Username = "user3", IsActive = true, AccessToken = "" } // Token not required for global bot
             };
 
             _mockUserRepository.Setup(x => x.GetAllUsersAsync())
@@ -73,8 +73,8 @@ namespace OmniForge.Tests
             // Should NOT connect user2 (inactive)
             _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("2"), Times.Never);
 
-            // Should NOT connect user3 (no token)
-            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("3"), Times.Never);
+            // Should connect user3 (active + username)
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("3"), Times.Once);
         }
 
         [Fact]

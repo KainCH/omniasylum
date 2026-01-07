@@ -63,6 +63,7 @@ namespace OmniForge.Infrastructure
             }
 
             services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IBotCredentialRepository, BotCredentialRepository>();
             services.AddScoped<ICounterRepository, CounterRepository>();
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
