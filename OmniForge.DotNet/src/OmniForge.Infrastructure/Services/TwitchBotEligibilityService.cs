@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -13,15 +14,18 @@ namespace OmniForge.Infrastructure.Services
     {
         private readonly ITwitchApiService _twitchApiService;
         private readonly IOptions<TwitchSettings> _twitchSettings;
+        private readonly IBotEligibilityCache _cache;
         private readonly ILogger<TwitchBotEligibilityService> _logger;
 
         public TwitchBotEligibilityService(
             ITwitchApiService twitchApiService,
             IOptions<TwitchSettings> twitchSettings,
+            IBotEligibilityCache cache,
             ILogger<TwitchBotEligibilityService> logger)
         {
             _twitchApiService = twitchApiService;
             _twitchSettings = twitchSettings;
+            _cache = cache;
             _logger = logger;
         }
 
@@ -43,6 +47,18 @@ namespace OmniForge.Infrastructure.Services
                 return new BotEligibilityResult(false, null, "BotUsername is not configured");
             }
 
+            // Cache to avoid calling Helix Get Moderators on every chat command.
+            // Uses Redis when configured (Entra/MI), else in-memory.
+                var cacheTtl = TimeSpan.FromHours(3);
+            var cached = await _cache.TryGetAsync(broadcasterUserId, botLoginOrId, cancellationToken);
+            if (cached != null)
+            {
+                _logger.LogDebug("🧠 Bot eligibility cache hit. broadcaster_user_id={BroadcasterUserId}, useBot={UseBot}",
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
+                    cached.UseBot);
+                return cached;
+            }
+
             try
             {
                 _logger.LogInformation("🔎 Checking Forge bot moderator eligibility: broadcaster_user_id={BroadcasterUserId}, bot_login_or_id={BotLoginOrId}",
@@ -58,17 +74,23 @@ namespace OmniForge.Infrastructure.Services
 
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    return new BotEligibilityResult(false, null, "Broadcaster token lacks required scope for moderators lookup (moderation:read)");
+                    var result = new BotEligibilityResult(false, null, "Broadcaster token lacks required scope for moderators lookup (moderation:read)");
+                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    return result;
                 }
 
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Unauthorized)
                 {
-                    return new BotEligibilityResult(false, null, "Unauthorized calling Helix Get Moderators (token invalid/mismatched client/user). User must re-login.");
+                    var result = new BotEligibilityResult(false, null, "Unauthorized calling Helix Get Moderators (token invalid/mismatched client/user). User must re-login.");
+                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    return result;
                 }
 
                 if (moderatorsResponse.StatusCode != HttpStatusCode.OK)
                 {
-                    return new BotEligibilityResult(false, null, $"Failed to check moderators ({(int)moderatorsResponse.StatusCode})");
+                    var result = new BotEligibilityResult(false, null, $"Failed to check moderators ({(int)moderatorsResponse.StatusCode})");
+                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    return result;
                 }
 
                 var botModerator = moderatorsResponse.FindModeratorByUserIdOrLogin(botLoginOrId);
@@ -87,18 +109,24 @@ namespace OmniForge.Infrastructure.Services
 
                     _logger.LogInformation("🚫 Forge bot is NOT a moderator for broadcaster_user_id={BroadcasterUserId}",
                         OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
-                    return new BotEligibilityResult(false, null, "Bot is not a moderator in this channel");
+                    var result = new BotEligibilityResult(false, null, "Bot is not a moderator in this channel");
+                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    return result;
                 }
 
                 _logger.LogInformation("✅ Forge bot IS a moderator for broadcaster_user_id={BroadcasterUserId} (bot_user_id={BotUserId})",
                     OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
                     OmniForge.Core.Utilities.LogSanitizer.Sanitize(botModerator.UserId));
-                return new BotEligibilityResult(true, botModerator.UserId, "Bot is a moderator");
+                var ok = new BotEligibilityResult(true, botModerator.UserId, "Bot is a moderator");
+                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, ok, cacheTtl, cancellationToken);
+                return ok;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Failed to determine bot eligibility for broadcaster {BroadcasterUserId}", broadcasterUserId);
-                return new BotEligibilityResult(false, null, "Error checking moderators");
+                var result = new BotEligibilityResult(false, null, "Error checking moderators");
+                await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, TimeSpan.FromSeconds(30), cancellationToken);
+                return result;
             }
         }
     }

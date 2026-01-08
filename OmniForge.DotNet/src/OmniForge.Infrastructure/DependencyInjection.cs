@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OmniForge.Core.Configuration;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Repositories;
 using OmniForge.Infrastructure.Services;
@@ -25,6 +26,7 @@ namespace OmniForge.Infrastructure
             services.Configure<DiscordBotSettings>(configuration.GetSection("DiscordBot"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
+            services.Configure<RedisSettings>(configuration.GetSection("Redis"));
 
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
             services.AddScoped<IJwtService, JwtService>();
@@ -71,6 +73,18 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
+            // Bot eligibility caching: Redis when configured, otherwise in-memory.
+            services.AddSingleton<IBotEligibilityCache>(sp =>
+            {
+                var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisSettings>>().Value;
+                if (!string.IsNullOrWhiteSpace(settings.HostName))
+                {
+                    return ActivatorUtilities.CreateInstance<RedisBotEligibilityCache>(sp);
+                }
+
+                return new MemoryBotEligibilityCache();
+            });
+
             services.AddScoped<ITwitchBotEligibilityService, TwitchBotEligibilityService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
