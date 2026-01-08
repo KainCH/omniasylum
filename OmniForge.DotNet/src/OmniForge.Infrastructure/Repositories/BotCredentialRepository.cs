@@ -30,17 +30,20 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                var response = await _tableClient.GetEntityAsync<BotCredentialsTableEntity>(
+                // NOTE: We intentionally read as TableEntity so we can support both legacy camelCase
+                // (username/accessToken/refreshToken/tokenExpiry) and newer PascalCase properties.
+                var response = await _tableClient.GetEntityAsync<TableEntity>(
                     BotCredentialsTableEntity.Partition,
                     BotCredentialsTableEntity.Row);
 
                 var entity = response.Value;
+
                 return new BotCredentials
                 {
-                    Username = entity.username,
-                    AccessToken = entity.accessToken,
-                    RefreshToken = entity.refreshToken,
-                    TokenExpiry = entity.tokenExpiry
+                    Username = GetString(entity, "Username", "username"),
+                    AccessToken = GetString(entity, "AccessToken", "accessToken"),
+                    RefreshToken = GetString(entity, "RefreshToken", "refreshToken"),
+                    TokenExpiry = GetDateTimeOffset(entity, "TokenExpiry", "tokenExpiry")
                 };
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
@@ -64,13 +67,19 @@ namespace OmniForge.Infrastructure.Repositories
                 }
 
                 var minAzureDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                var safeExpiry = credentials.TokenExpiry < minAzureDate ? minAzureDate : credentials.TokenExpiry;
 
-                var entity = new BotCredentialsTableEntity
+                // Write both naming styles so rolling deployments don't break.
+                var entity = new TableEntity(BotCredentialsTableEntity.Partition, BotCredentialsTableEntity.Row)
                 {
-                    username = credentials.Username,
-                    accessToken = credentials.AccessToken,
-                    refreshToken = credentials.RefreshToken,
-                    tokenExpiry = credentials.TokenExpiry < minAzureDate ? minAzureDate : credentials.TokenExpiry
+                    ["Username"] = credentials.Username,
+                    ["username"] = credentials.Username,
+                    ["AccessToken"] = credentials.AccessToken,
+                    ["accessToken"] = credentials.AccessToken,
+                    ["RefreshToken"] = credentials.RefreshToken,
+                    ["refreshToken"] = credentials.RefreshToken,
+                    ["TokenExpiry"] = safeExpiry,
+                    ["tokenExpiry"] = safeExpiry
                 };
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
@@ -81,6 +90,61 @@ namespace OmniForge.Infrastructure.Repositories
                 _logger.LogError(ex, "❌ Error saving Forge bot credentials");
                 throw;
             }
+        }
+
+        private static string GetString(TableEntity entity, string key1, string key2)
+        {
+            if (entity.TryGetValue(key1, out var value1) && value1 != null)
+            {
+                return value1 as string ?? value1.ToString() ?? string.Empty;
+            }
+
+            if (entity.TryGetValue(key2, out var value2) && value2 != null)
+            {
+                return value2 as string ?? value2.ToString() ?? string.Empty;
+            }
+
+            return string.Empty;
+        }
+
+        private static DateTimeOffset GetDateTimeOffset(TableEntity entity, string key1, string key2)
+        {
+            if (TryGetDateTimeOffset(entity, key1, out var value) || TryGetDateTimeOffset(entity, key2, out value))
+            {
+                return value;
+            }
+
+            return DateTimeOffset.MinValue;
+        }
+
+        private static bool TryGetDateTimeOffset(TableEntity entity, string key, out DateTimeOffset value)
+        {
+            value = default;
+
+            if (!entity.TryGetValue(key, out var raw) || raw == null)
+            {
+                return false;
+            }
+
+            if (raw is DateTimeOffset dto)
+            {
+                value = dto;
+                return true;
+            }
+
+            if (raw is DateTime dt)
+            {
+                value = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+                return true;
+            }
+
+            if (raw is string s && DateTimeOffset.TryParse(s, out var parsed))
+            {
+                value = parsed;
+                return true;
+            }
+
+            return false;
         }
     }
 }
