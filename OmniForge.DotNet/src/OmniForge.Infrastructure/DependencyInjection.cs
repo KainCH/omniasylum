@@ -88,6 +88,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<ITwitchBotEligibilityService, TwitchBotEligibilityService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
+            services.AddHostedService<DiscordBotPresenceHostedService>();
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();

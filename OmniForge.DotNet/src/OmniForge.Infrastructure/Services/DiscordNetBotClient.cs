@@ -22,6 +22,8 @@ namespace OmniForge.Infrastructure.Services
         private string? _gatewayToken;
         private string? _gatewayActivity;
 
+        private Task? _gatewayStartTask;
+
         public DiscordNetBotClient(ILogger<DiscordNetBotClient> logger)
         {
             _logger = logger;
@@ -130,11 +132,19 @@ namespace OmniForge.Infrastructure.Services
         {
             DiscordSocketClient? clientToStart = null;
             bool needsStart = false;
+            Task? startTaskToAwait = null;
 
             await _clientLock.WaitAsync();
             try
             {
                 _gatewayActivity = activityText;
+
+                // If a start is already in progress, just wait for it rather than racing.
+                if (_gatewayStartTask != null && !_gatewayStartTask.IsCompleted)
+                {
+                    startTaskToAwait = _gatewayStartTask;
+                    return;
+                }
 
                 if (_gatewayClient != null && string.Equals(_gatewayToken, botToken, StringComparison.Ordinal))
                 {
@@ -151,72 +161,105 @@ namespace OmniForge.Infrastructure.Services
                     // If it's disconnected, attempt a restart.
                     clientToStart = _gatewayClient;
                     needsStart = true;
-                    return;
+                    // fall through to start outside lock
                 }
-
-                try
-                {
-                    _gatewayClient?.Dispose();
-                }
-                catch
-                {
-                    // Ignore dispose failures
-                }
-
-                var socketClient = new DiscordSocketClient(new DiscordSocketConfig
-                {
-                    GatewayIntents = GatewayIntents.Guilds,
-                    AlwaysDownloadUsers = false
-                });
-
-                socketClient.Log += msg =>
+                else
                 {
                     try
                     {
-                        if (msg.Exception != null)
-                        {
-                            _logger.LogWarning(msg.Exception, "Discord gateway: {Message}", msg.Message);
-                        }
-                        else
-                        {
-                            _logger.LogInformation("Discord gateway: {Message}", msg.Message);
-                        }
+                        _gatewayClient?.Dispose();
                     }
                     catch
                     {
-                        // Ignore logging failures
+                        // Ignore dispose failures
                     }
 
-                    return Task.CompletedTask;
-                };
+                    var socketClient = new DiscordSocketClient(new DiscordSocketConfig
+                    {
+                        GatewayIntents = GatewayIntents.Guilds,
+                        AlwaysDownloadUsers = false
+                    });
 
-                socketClient.Ready += async () =>
+                    socketClient.Log += msg =>
+                    {
+                        try
+                        {
+                            if (msg.Exception != null)
+                            {
+                                _logger.LogWarning(msg.Exception, "Discord gateway: {Message}", msg.Message);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("Discord gateway: {Message}", msg.Message);
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore logging failures
+                        }
+
+                        return Task.CompletedTask;
+                    };
+
+                    socketClient.Ready += async () =>
+                    {
+                        try
+                        {
+                            var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
+                            await socketClient.SetStatusAsync(desiredStatus);
+                            await socketClient.SetGameAsync(activity);
+                            _logger.LogInformation("✅ Discord bot is online with activity: {Activity}", LogSanitizer.Sanitize(activity));
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to set Discord bot presence/activity");
+                        }
+                    };
+
+                    _gatewayClient = socketClient;
+                    _gatewayToken = botToken;
+                    clientToStart = socketClient;
+                    needsStart = true;
+                }
+
+                if (needsStart && clientToStart != null)
                 {
-                    try
-                    {
-                        var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
-                        await socketClient.SetStatusAsync(desiredStatus);
-                        await socketClient.SetGameAsync(activity);
-                        _logger.LogInformation("✅ Discord bot is online with activity: {Activity}", LogSanitizer.Sanitize(activity));
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to set Discord bot presence/activity");
-                    }
-                };
-
-                _gatewayClient = socketClient;
-                _gatewayToken = botToken;
-                clientToStart = socketClient;
-                needsStart = true;
+                    // Single-flight gateway start
+                    startTaskToAwait = StartGatewayAsync(clientToStart, botToken, desiredStatus);
+                    _gatewayStartTask = startTaskToAwait;
+                }
             }
             finally
             {
                 _clientLock.Release();
             }
 
-            if (!needsStart || clientToStart == null) return;
+            if (startTaskToAwait != null)
+            {
+                try
+                {
+                    await startTaskToAwait.ConfigureAwait(false);
+                }
+                finally
+                {
+                    await _clientLock.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        if (_gatewayStartTask != null && _gatewayStartTask.IsCompleted)
+                        {
+                            _gatewayStartTask = null;
+                        }
+                    }
+                    finally
+                    {
+                        _clientLock.Release();
+                    }
+                }
+            }
+        }
 
+        private async Task StartGatewayAsync(DiscordSocketClient clientToStart, string botToken, UserStatus desiredStatus)
+        {
             try
             {
                 if (clientToStart.LoginState != LoginState.LoggedIn)
@@ -261,9 +304,32 @@ namespace OmniForge.Infrastructure.Services
 
         public void Dispose()
         {
+            DiscordRestClient? restClient;
+            DiscordSocketClient? gatewayClient;
+
+            // Snapshot and null shared state under the async lock.
+            _clientLock.Wait();
             try
             {
-                _client?.Dispose();
+                restClient = _client;
+                gatewayClient = _gatewayClient;
+
+                _client = null;
+                _botToken = null;
+
+                _gatewayClient = null;
+                _gatewayToken = null;
+                _gatewayActivity = null;
+                _gatewayStartTask = null;
+            }
+            finally
+            {
+                _clientLock.Release();
+            }
+
+            try
+            {
+                restClient?.Dispose();
             }
             catch
             {
@@ -272,31 +338,24 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                if (_gatewayClient != null)
+                if (gatewayClient != null)
                 {
                     try
                     {
-                        _gatewayClient.StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                        gatewayClient.StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                     }
                     catch
                     {
                         // Ignore stop failures
                     }
 
-                    _gatewayClient.Dispose();
+                    gatewayClient.Dispose();
                 }
             }
             catch
             {
                 // Ignore dispose failures
             }
-
-            _client = null;
-            _botToken = null;
-
-            _gatewayClient = null;
-            _gatewayToken = null;
-            _gatewayActivity = null;
         }
     }
 }

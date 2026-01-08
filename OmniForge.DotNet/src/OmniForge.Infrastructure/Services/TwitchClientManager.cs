@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly ConcurrentDictionary<string, string> _userIdToChannel = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, string> _channelToUserId = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        private readonly object _botLock = new object();
+        private readonly SemaphoreSlim _botConnectLock = new SemaphoreSlim(1, 1);
         private TwitchClient? _botClient;
 
         private readonly IServiceScopeFactory _scopeFactory;
@@ -151,86 +152,87 @@ namespace OmniForge.Infrastructure.Services
                 return existing;
             }
 
-            // Prevent concurrent connect attempts
-            lock (_botLock)
+            // Prevent concurrent connect attempts (including async token refresh and client connect)
+            await _botConnectLock.WaitAsync().ConfigureAwait(false);
+            try
             {
                 existing = _botClient;
                 if (existing != null && existing.IsConnected)
                 {
                     return existing;
                 }
-            }
 
-            var creds = await botCredentialRepository.GetAsync();
-            if (creds == null)
-            {
-                // Seed from configuration if present
-                if (!string.IsNullOrWhiteSpace(_twitchSettings.BotUsername)
-                    && !string.IsNullOrWhiteSpace(_twitchSettings.BotRefreshToken))
+                var creds = await botCredentialRepository.GetAsync().ConfigureAwait(false);
+                if (creds == null)
                 {
-                    creds = new BotCredentials
+                    // Seed from configuration if present
+                    if (!string.IsNullOrWhiteSpace(_twitchSettings.BotUsername)
+                        && !string.IsNullOrWhiteSpace(_twitchSettings.BotRefreshToken))
                     {
-                        Username = _twitchSettings.BotUsername,
-                        AccessToken = _twitchSettings.BotAccessToken,
-                        RefreshToken = _twitchSettings.BotRefreshToken,
-                        TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(-10)
-                    };
+                        creds = new BotCredentials
+                        {
+                            Username = _twitchSettings.BotUsername,
+                            AccessToken = _twitchSettings.BotAccessToken,
+                            RefreshToken = _twitchSettings.BotRefreshToken,
+                            TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(-10)
+                        };
 
-                    await botCredentialRepository.SaveAsync(creds);
-                    _logger.LogInformation("✅ Seeded Forge bot credentials from configuration for {Username}", LogSanitizer.Sanitize(creds.Username));
+                        await botCredentialRepository.SaveAsync(creds).ConfigureAwait(false);
+                        _logger.LogInformation("✅ Seeded Forge bot credentials from configuration for {Username}", LogSanitizer.Sanitize(creds.Username));
+                    }
+                    else
+                    {
+                        _logger.LogWarning("⚠️ Forge bot credentials not found. Configure via /auth/twitch/bot or set Twitch:BotUsername + Twitch:BotRefreshToken");
+                        return null;
+                    }
                 }
-                else
+
+                // Refresh bot token if needed (buffer of 5 minutes)
+                if (creds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
                 {
-                    _logger.LogWarning("⚠️ Forge bot credentials not found. Configure via /auth/twitch/bot or set Twitch:BotUsername + Twitch:BotRefreshToken");
+                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                    var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken).ConfigureAwait(false);
+                    if (refreshed == null)
+                    {
+                        _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                        return null;
+                    }
+
+                    creds.AccessToken = refreshed.AccessToken;
+                    creds.RefreshToken = refreshed.RefreshToken;
+                    creds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                    await botCredentialRepository.SaveAsync(creds).ConfigureAwait(false);
+                    _logger.LogInformation("✅ Forge bot token refreshed; expires at {Expiry}", creds.TokenExpiry);
+                }
+
+                var credentials = new ConnectionCredentials(creds.Username, creds.AccessToken);
+                var clientOptions = new ClientOptions
+                {
+                    MessagesAllowedInPeriod = 750,
+                    ThrottlingPeriod = TimeSpan.FromSeconds(30)
+                };
+                var customClient = new WebSocketClient(clientOptions);
+                var client = new TwitchClient(customClient);
+
+                client.Initialize(credentials);
+
+                client.OnLog += (s, e) => _logger.LogDebug("Forge Bot: {Data}", LogSanitizer.Sanitize(e.Data));
+                client.OnConnected += (s, e) => _logger.LogInformation("✅ Forge bot connected as {Username}", LogSanitizer.Sanitize(creds.Username));
+                client.OnMessageReceived += (s, e) => HandleMessage(e.ChatMessage);
+
+                if (!client.Connect())
+                {
+                    _logger.LogError("❌ Failed to connect Forge bot Twitch client");
                     return null;
                 }
-            }
 
-            // Refresh bot token if needed (buffer of 5 minutes)
-            if (creds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
-            {
-                _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
-                var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken);
-                if (refreshed == null)
-                {
-                    _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
-                    return null;
-                }
-
-                creds.AccessToken = refreshed.AccessToken;
-                creds.RefreshToken = refreshed.RefreshToken;
-                creds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
-                await botCredentialRepository.SaveAsync(creds);
-                _logger.LogInformation("✅ Forge bot token refreshed; expires at {Expiry}", creds.TokenExpiry);
-            }
-
-            var credentials = new ConnectionCredentials(creds.Username, creds.AccessToken);
-            var clientOptions = new ClientOptions
-            {
-                MessagesAllowedInPeriod = 750,
-                ThrottlingPeriod = TimeSpan.FromSeconds(30)
-            };
-            var customClient = new WebSocketClient(clientOptions);
-            var client = new TwitchClient(customClient);
-
-            client.Initialize(credentials);
-
-            client.OnLog += (s, e) => _logger.LogDebug("Forge Bot: {Data}", LogSanitizer.Sanitize(e.Data));
-            client.OnConnected += (s, e) => _logger.LogInformation("✅ Forge bot connected as {Username}", LogSanitizer.Sanitize(creds.Username));
-            client.OnMessageReceived += (s, e) => HandleMessage(e.ChatMessage);
-
-            if (!client.Connect())
-            {
-                _logger.LogError("❌ Failed to connect Forge bot Twitch client");
-                return null;
-            }
-
-            lock (_botLock)
-            {
                 _botClient = client;
+                return client;
             }
-
-            return client;
+            finally
+            {
+                _botConnectLock.Release();
+            }
         }
     }
 }

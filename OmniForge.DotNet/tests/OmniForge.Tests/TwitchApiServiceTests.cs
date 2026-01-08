@@ -73,7 +73,7 @@ namespace OmniForge.Tests
                     Content = new StringContent(json, Encoding.UTF8, "application/json")
                 });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             _mockHttpClientFactory
                 .Setup(f => f.CreateClient(It.IsAny<string>()))
                 .Returns(httpClient);

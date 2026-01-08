@@ -316,10 +316,10 @@ namespace OmniForge.Infrastructure.Services
                     if (!isAdminActing)
                     {
                         // Subscribe to stream events
-                        if (useBotForChannelEvents && botCredentials != null && botCredentialRepository != null)
+                        if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.online", "1", condition);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.offline", "1", condition);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition);
                         }
                         else
                         {
@@ -338,9 +338,9 @@ namespace OmniForge.Infrastructure.Services
                         { "broadcaster_user_id", broadcasterId },
                         { "moderator_user_id", channelEventsUserId }
                     };
-                    if (useBotForChannelEvents && botCredentials != null && botCredentialRepository != null)
+                    if (useBotForChannelEvents)
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.follow", "2", followCondition);
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition);
                     }
                     else
                     {
@@ -360,10 +360,10 @@ namespace OmniForge.Infrastructure.Services
                             LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
-                        if (useBotForChannelEvents && botCredentials != null && botCredentialRepository != null)
+                        if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
                         }
                         else
                         {

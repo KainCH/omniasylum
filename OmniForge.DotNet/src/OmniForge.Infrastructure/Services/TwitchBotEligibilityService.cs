@@ -123,7 +123,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed to determine bot eligibility for broadcaster {BroadcasterUserId}", broadcasterUserId);
+                    _logger.LogError(ex, "❌ Failed to determine bot eligibility for broadcaster {BroadcasterUserId}", OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
                 var result = new BotEligibilityResult(false, null, "Error checking moderators");
                 await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, TimeSpan.FromSeconds(30), cancellationToken);
                 return result;
