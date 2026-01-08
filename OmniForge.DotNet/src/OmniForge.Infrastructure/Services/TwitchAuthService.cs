@@ -55,6 +55,7 @@ namespace OmniForge.Infrastructure.Services
 
                 // Moderation & followers
                 "moderator:read:followers",
+                "moderator:read:moderators",
                 "moderator:read:automod_settings",
                 "moderator:manage:automod_settings",
 

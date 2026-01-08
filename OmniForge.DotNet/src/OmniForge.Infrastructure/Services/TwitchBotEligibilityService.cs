@@ -49,7 +49,7 @@ namespace OmniForge.Infrastructure.Services
 
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    return new BotEligibilityResult(false, null, "Broadcaster token lacks moderation:read (cannot check moderators)");
+                    return new BotEligibilityResult(false, null, "Broadcaster token lacks moderator:read:moderators (cannot check moderators)");
                 }
 
                 if (moderatorsResponse.StatusCode != HttpStatusCode.OK)

@@ -122,6 +122,8 @@ namespace OmniForge.Infrastructure.Services
                 var botCredentialRepository = scope.ServiceProvider.GetService<IBotCredentialRepository>();
                 var botEligibilityService = scope.ServiceProvider.GetService<ITwitchBotEligibilityService>();
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
+                var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
                 var user = await userRepository.GetUserAsync(userId);
                 User? actingUser = null;
                 // isAdminActing computed above
@@ -209,6 +211,15 @@ namespace OmniForge.Infrastructure.Services
                     var broadcasterId = userId; // target streamer
                     _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, token_user_id={UserId} for subscriptions (actingAdmin={Acting})", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
+                    // We must be able to read the broadcaster's moderators list to decide if Forge bot is eligible.
+                    if (!isAdminActing && (tokenScopes?.Contains("moderator:read:moderators") != true))
+                    {
+                        _logger.LogWarning(
+                            "🔒 User {UserId} token is missing required scope: moderator:read:moderators. User must re-login to enable Forge bot moderator eligibility checks.",
+                            LogSanitizer.Sanitize(userId));
+                        return SubscriptionResult.RequiresReauth;
+                    }
+
                     // Decide whether to use Forge bot for channel-level events (follow/chat) based on moderator eligibility.
                     var useBotForChannelEvents = false;
                     string? botUserId = null;
@@ -224,13 +235,32 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 useBotForChannelEvents = true;
                                 botUserId = eligibility.BotUserId;
-                                _logger.LogInformation("✅ Bot eligible for channel events. Using Forge bot user_id={BotUserId}", LogSanitizer.Sanitize(botUserId));
+                                _logger.LogInformation("✅ Forge bot eligible. Monitoring will use Forge bot for subscriptions. broadcaster_user_id={BroadcasterId}, bot_user_id={BotUserId}",
+                                    LogSanitizer.Sanitize(broadcasterId),
+                                    LogSanitizer.Sanitize(botUserId));
+                            }
+                            else
+                            {
+                                _logger.LogWarning("⚠️ Forge bot eligible but bot credentials are missing/invalid. Falling back to broadcaster token. broadcaster_user_id={BroadcasterId}",
+                                    LogSanitizer.Sanitize(broadcasterId));
                             }
                         }
                         else
                         {
                             _logger.LogInformation("ℹ️ Bot not eligible for channel events: {Reason}", LogSanitizer.Sanitize(eligibility.Reason ?? "unknown"));
                         }
+                    }
+
+                    if (isAdminActing)
+                    {
+                        _logger.LogInformation("🧑‍💼 Monitoring start is admin-initiated; Forge bot eligibility is not evaluated. broadcaster_user_id={BroadcasterId}",
+                            LogSanitizer.Sanitize(broadcasterId));
+                    }
+                    else if (!useBotForChannelEvents)
+                    {
+                        _logger.LogInformation("👤 Monitoring will use broadcaster token (Forge bot not active). broadcaster_user_id={BroadcasterId}, token_user_id={TokenUserId}",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            LogSanitizer.Sanitize(tokenUserId));
                     }
 
                     // Check if user has required scopes when we must fall back to streamer token.
@@ -347,6 +377,18 @@ namespace OmniForge.Infrastructure.Services
                         BotUserId: useBotForChannelEvents ? botUserId : null,
                         UpdatedAtUtc: DateTimeOffset.UtcNow));
 
+                    try
+                    {
+                        if (discordBotClient != null && discordBotSettings != null && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken))
+                        {
+                            await discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to bring Discord bot online for monitoring start (user {UserId})", LogSanitizer.Sanitize(userId));
+                    }
+
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
@@ -379,7 +421,18 @@ namespace OmniForge.Infrastructure.Services
             {
                 using var scope = _scopeFactory.CreateScope();
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
+                var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
                 monitoringRegistry?.Remove(userId);
+
+                if (monitoringRegistry != null
+                    && discordBotClient != null
+                    && discordBotSettings != null
+                    && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken)
+                    && monitoringRegistry.GetAllStates().Count == 0)
+                {
+                    await discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                }
             }
             catch (Exception ex)
             {
