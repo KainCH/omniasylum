@@ -16,8 +16,7 @@ namespace OmniForge.Tests
         private readonly Mock<IDiscordInviteSender> _mockDiscordInviteSender = new();
         private readonly Mock<IChatCommandProcessor> _mockChatCommandProcessor = new();
         private readonly Mock<ITwitchApiService> _mockTwitchApiService = new();
-        private readonly Mock<IUserRepository> _mockUserRepository = new();
-        private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService = new();
+        private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry = new();
         private readonly Mock<ILogger<ChatMessageHandler>> _mockLogger = new();
         private readonly ChatMessageHandler _handler;
 
@@ -29,8 +28,7 @@ namespace OmniForge.Tests
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
                 _mockTwitchApiService.Object,
-                _mockUserRepository.Object,
-                _mockBotEligibilityService.Object);
+                _mockMonitoringRegistry.Object);
         }
 
         [Fact]
@@ -141,14 +139,6 @@ namespace OmniForge.Tests
                     await sender(ctx.UserId, "Custom Response");
                 })
                 .Returns(Task.CompletedTask);
-
-            _mockUserRepository
-                .Setup(r => r.GetUserAsync("broadcaster123"))
-                .ReturnsAsync(new OmniForge.Core.Entities.User { TwitchUserId = "broadcaster123", AccessToken = "token" });
-
-            _mockBotEligibilityService
-                .Setup(s => s.GetEligibilityAsync("broadcaster123", "token", default))
-                .ReturnsAsync(new BotEligibilityResult(false, null, "Bot is not a moderator"));
 
             await _handler.HandleAsync(evt);
 

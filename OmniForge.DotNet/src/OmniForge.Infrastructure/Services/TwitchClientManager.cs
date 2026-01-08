@@ -118,7 +118,12 @@ namespace OmniForge.Infrastructure.Services
             };
         }
 
-        private async void HandleMessage(TwitchLib.Client.Models.ChatMessage chatMessage)
+        private void HandleMessage(TwitchLib.Client.Models.ChatMessage chatMessage)
+        {
+            _ = HandleMessageAsync(chatMessage);
+        }
+
+        private async Task HandleMessageAsync(TwitchLib.Client.Models.ChatMessage chatMessage)
         {
             try
             {

@@ -14,9 +14,9 @@ namespace OmniForge.Infrastructure.Entities
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
 
-        public string username { get; set; } = string.Empty;
-        public string accessToken { get; set; } = string.Empty;
-        public string refreshToken { get; set; } = string.Empty;
-        public DateTimeOffset tokenExpiry { get; set; } = DateTimeOffset.MinValue;
+        public string Username { get; set; } = string.Empty;
+        public string AccessToken { get; set; } = string.Empty;
+        public string RefreshToken { get; set; } = string.Empty;
+        public DateTimeOffset TokenExpiry { get; set; } = DateTimeOffset.MinValue;
     }
 }

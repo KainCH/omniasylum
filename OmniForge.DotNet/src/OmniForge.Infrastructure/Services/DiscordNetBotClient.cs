@@ -143,7 +143,7 @@ namespace OmniForge.Infrastructure.Services
                 if (_gatewayStartTask != null && !_gatewayStartTask.IsCompleted)
                 {
                     startTaskToAwait = _gatewayStartTask;
-                    return;
+                    // Wait for the in-flight start outside the lock.
                 }
 
                 if (_gatewayClient != null && string.Equals(_gatewayToken, botToken, StringComparison.Ordinal))
@@ -153,7 +153,20 @@ namespace OmniForge.Infrastructure.Services
                     {
                         if (_gatewayClient.ConnectionState == ConnectionState.Connected)
                         {
-                            _ = UpdatePresenceAsync(_gatewayClient, desiredStatus);
+                            _ = UpdatePresenceAsync(_gatewayClient, desiredStatus).ContinueWith(t =>
+                            {
+                                try
+                                {
+                                    if (t.Exception != null)
+                                    {
+                                        _logger.LogError(t.Exception, "❌ Unhandled exception in UpdatePresenceAsync fire-and-forget call");
+                                    }
+                                }
+                                catch
+                                {
+                                    // Ignore logging failures
+                                }
+                            }, TaskContinuationOptions.OnlyOnFaulted);
                         }
                         return;
                     }

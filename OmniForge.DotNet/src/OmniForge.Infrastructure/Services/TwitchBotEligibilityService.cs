@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,7 +51,7 @@ namespace OmniForge.Infrastructure.Services
 
             // Cache to avoid calling Helix Get Moderators on every chat command.
             // Uses Redis when configured (Entra/MI), else in-memory.
-                var cacheTtl = TimeSpan.FromHours(3);
+            var cacheTtl = TimeSpan.FromHours(3);
             var cached = await _cache.TryGetAsync(broadcasterUserId, botLoginOrId, cancellationToken);
             if (cached != null)
             {
@@ -75,21 +77,21 @@ namespace OmniForge.Infrastructure.Services
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Forbidden)
                 {
                     var result = new BotEligibilityResult(false, null, "Broadcaster token lacks required scope for moderators lookup (moderation:read)");
-                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
                     return result;
                 }
 
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     var result = new BotEligibilityResult(false, null, "Unauthorized calling Helix Get Moderators (token invalid/mismatched client/user). User must re-login.");
-                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
                     return result;
                 }
 
                 if (moderatorsResponse.StatusCode != HttpStatusCode.OK)
                 {
                     var result = new BotEligibilityResult(false, null, $"Failed to check moderators ({(int)moderatorsResponse.StatusCode})");
-                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
                     return result;
                 }
 
@@ -110,7 +112,7 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogInformation("🚫 Forge bot is NOT a moderator for broadcaster_user_id={BroadcasterUserId}",
                         OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
                     var result = new BotEligibilityResult(false, null, "Bot is not a moderator in this channel");
-                        await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
+                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, cacheTtl, cancellationToken);
                     return result;
                 }
 
@@ -118,12 +120,12 @@ namespace OmniForge.Infrastructure.Services
                     OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
                     OmniForge.Core.Utilities.LogSanitizer.Sanitize(botModerator.UserId));
                 var ok = new BotEligibilityResult(true, botModerator.UserId, "Bot is a moderator");
-                    await _cache.SetAsync(broadcasterUserId, botLoginOrId, ok, cacheTtl, cancellationToken);
+                await _cache.SetAsync(broadcasterUserId, botLoginOrId, ok, cacheTtl, cancellationToken);
                 return ok;
             }
             catch (Exception ex)
             {
-                    _logger.LogError(ex, "❌ Failed to determine bot eligibility for broadcaster {BroadcasterUserId}", OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
+                _logger.LogError(ex, "❌ Failed to determine bot eligibility for broadcaster {BroadcasterUserId}", OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
                 var result = new BotEligibilityResult(false, null, "Error checking moderators");
                 await _cache.SetAsync(broadcasterUserId, botLoginOrId, result, TimeSpan.FromSeconds(30), cancellationToken);
                 return result;

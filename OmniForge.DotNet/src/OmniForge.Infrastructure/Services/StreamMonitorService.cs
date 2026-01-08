@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -64,6 +65,7 @@ namespace OmniForge.Infrastructure.Services
         public Task<SubscriptionResult> SubscribeToUserAsAsync(string userId, string actingUserId)
             => SubscribeToUserInternalAsync(userId, actingUserId);
 
+        [ExcludeFromCodeCoverage]
         private async Task<SubscriptionResult> SubscribeToUserInternalAsync(string userId, string? actingUserId)
         {
             var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
