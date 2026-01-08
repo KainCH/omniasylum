@@ -144,8 +144,28 @@ namespace OmniForge.Infrastructure.Services
             {
                 if (_connection.IsValueCreated)
                 {
-                    var mux = _connection.Value.GetAwaiter().GetResult();
-                    mux?.Dispose();
+                    var connectTask = _connection.Value;
+                    if (connectTask.IsCompletedSuccessfully)
+                    {
+                        connectTask.Result?.Dispose();
+                    }
+                    else
+                    {
+                        _ = connectTask.ContinueWith(t =>
+                        {
+                            try
+                            {
+                                if (t.Status == TaskStatus.RanToCompletion)
+                                {
+                                    t.Result?.Dispose();
+                                }
+                            }
+                            catch
+                            {
+                                // Ignore dispose failures
+                            }
+                        }, TaskScheduler.Default);
+                    }
                 }
             }
             catch

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -65,7 +64,26 @@ namespace OmniForge.Infrastructure.Services
         public Task<SubscriptionResult> SubscribeToUserAsAsync(string userId, string actingUserId)
             => SubscribeToUserInternalAsync(userId, actingUserId);
 
-        [ExcludeFromCodeCoverage]
+        protected sealed record TokenValidation(string UserId, string Login, string ClientId, List<string>? Scopes);
+
+        protected virtual async Task<TokenValidation?> ValidateAccessTokenAsync(string accessToken)
+        {
+            _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
+            _twitchApi.Settings.AccessToken = accessToken;
+
+            var validation = await _twitchApi.Auth.ValidateAccessTokenAsync().ConfigureAwait(false);
+            if (validation == null)
+            {
+                return null;
+            }
+
+            return new TokenValidation(
+                validation.UserId,
+                validation.Login,
+                validation.ClientId,
+                validation.Scopes);
+        }
+
         private async Task<SubscriptionResult> SubscribeToUserInternalAsync(string userId, string? actingUserId)
         {
             var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
@@ -190,9 +208,7 @@ namespace OmniForge.Infrastructure.Services
                     List<string>? tokenScopes = null;
                     try
                     {
-                        _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
-                        _twitchApi.Settings.AccessToken = tokenOwner.AccessToken;
-                        var validation = await _twitchApi.Auth.ValidateAccessTokenAsync();
+                        var validation = await ValidateAccessTokenAsync(tokenOwner.AccessToken).ConfigureAwait(false);
                         if (validation == null || string.IsNullOrEmpty(validation.UserId))
                         {
                             _logger.LogError("Token validation returned null or empty User ID for user {UserId}", LogSanitizer.Sanitize(userId));
@@ -318,13 +334,23 @@ namespace OmniForge.Infrastructure.Services
                     if (!isAdminActing)
                     {
                         // Subscribe to stream events
-                        if (useBotForChannelEvents)
+                        if (useBotForChannelEvents
+                            && botCredentialRepository != null
+                            && botCredentials != null
+                            && !string.IsNullOrEmpty(botCredentials.AccessToken))
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.online", "1", condition);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.offline", "1", condition);
                         }
                         else
                         {
+                            if (useBotForChannelEvents)
+                            {
+                                _logger.LogWarning(
+                                    "Bot credentials missing or invalid for user {UserId}; falling back to broadcaster credentials for stream event subscriptions.",
+                                    LogSanitizer.Sanitize(userId));
+                            }
+
                             await SubscribeWithRetryAsync(context, "stream.online", "1", condition);
                             await SubscribeWithRetryAsync(context, "stream.offline", "1", condition);
                         }
@@ -340,9 +366,12 @@ namespace OmniForge.Infrastructure.Services
                         { "broadcaster_user_id", broadcasterId },
                         { "moderator_user_id", channelEventsUserId }
                     };
-                    if (useBotForChannelEvents)
+                    if (useBotForChannelEvents
+                        && botCredentialRepository != null
+                        && botCredentials != null
+                        && !string.IsNullOrEmpty(botCredentials.AccessToken))
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition);
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.follow", "2", followCondition);
                     }
                     else
                     {
@@ -362,10 +391,13 @@ namespace OmniForge.Infrastructure.Services
                             LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
-                        if (useBotForChannelEvents)
+                        if (useBotForChannelEvents
+                            && botCredentialRepository != null
+                            && botCredentials != null
+                            && !string.IsNullOrEmpty(botCredentials.AccessToken))
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
                         }
                         else
                         {

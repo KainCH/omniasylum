@@ -107,7 +107,7 @@ namespace OmniForge.Infrastructure.Services
                         "🔍 Bot moderator check details: broadcaster_user_id={BroadcasterUserId}, bot_login_or_id={BotLoginOrId}, moderators=[{Moderators}]",
                         OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
                         OmniForge.Core.Utilities.LogSanitizer.Sanitize(botLoginOrId),
-                        moderatorsPreview);
+                        OmniForge.Core.Utilities.LogSanitizer.Sanitize(moderatorsPreview));
 
                     _logger.LogInformation("🚫 Forge bot is NOT a moderator for broadcaster_user_id={BroadcasterUserId}",
                         OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));

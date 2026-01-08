@@ -133,6 +133,8 @@ namespace OmniForge.Infrastructure.Services
             DiscordSocketClient? clientToStart = null;
             bool needsStart = false;
             Task? startTaskToAwait = null;
+            DiscordSocketClient? presenceClientToUpdate = null;
+            bool shouldReturnAfterLock = false;
 
             await _clientLock.WaitAsync();
             try
@@ -146,33 +148,23 @@ namespace OmniForge.Infrastructure.Services
                     // Wait for the in-flight start outside the lock.
                 }
 
-                if (_gatewayClient != null && string.Equals(_gatewayToken, botToken, StringComparison.Ordinal))
+                var gatewayClient = _gatewayClient;
+                if (gatewayClient != null && string.Equals(_gatewayToken, botToken, StringComparison.Ordinal))
                 {
                     // If we're already connected or connecting, nothing to do.
-                    if (_gatewayClient.ConnectionState == ConnectionState.Connected || _gatewayClient.ConnectionState == ConnectionState.Connecting)
+                    if (gatewayClient.ConnectionState == ConnectionState.Connected || gatewayClient.ConnectionState == ConnectionState.Connecting)
                     {
-                        if (_gatewayClient.ConnectionState == ConnectionState.Connected)
+                        if (gatewayClient.ConnectionState == ConnectionState.Connected)
                         {
-                            _ = UpdatePresenceAsync(_gatewayClient, desiredStatus).ContinueWith(t =>
-                            {
-                                try
-                                {
-                                    if (t.Exception != null)
-                                    {
-                                        _logger.LogError(t.Exception, "❌ Unhandled exception in UpdatePresenceAsync fire-and-forget call");
-                                    }
-                                }
-                                catch
-                                {
-                                    // Ignore logging failures
-                                }
-                            }, TaskContinuationOptions.OnlyOnFaulted);
+                            // Run presence update outside the lock.
+                            presenceClientToUpdate = gatewayClient;
                         }
-                        return;
+
+                        shouldReturnAfterLock = true;
                     }
 
                     // If it's disconnected, attempt a restart.
-                    clientToStart = _gatewayClient;
+                    clientToStart = gatewayClient;
                     needsStart = true;
                     // fall through to start outside lock
                 }
@@ -245,6 +237,15 @@ namespace OmniForge.Infrastructure.Services
             finally
             {
                 _clientLock.Release();
+            }
+
+            if (shouldReturnAfterLock)
+            {
+                if (presenceClientToUpdate != null)
+                {
+                    await UpdatePresenceAsync(presenceClientToUpdate, desiredStatus).ConfigureAwait(false);
+                }
+                return;
             }
 
             if (startTaskToAwait != null)
@@ -353,16 +354,26 @@ namespace OmniForge.Infrastructure.Services
             {
                 if (gatewayClient != null)
                 {
-                    try
+                    _ = Task.Run(async () =>
                     {
-                        gatewayClient.StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                    }
-                    catch
-                    {
-                        // Ignore stop failures
-                    }
+                        try
+                        {
+                            await gatewayClient.StopAsync().ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // Ignore stop failures
+                        }
 
-                    gatewayClient.Dispose();
+                        try
+                        {
+                            gatewayClient.Dispose();
+                        }
+                        catch
+                        {
+                            // Ignore dispose failures
+                        }
+                    });
                 }
             }
             catch
