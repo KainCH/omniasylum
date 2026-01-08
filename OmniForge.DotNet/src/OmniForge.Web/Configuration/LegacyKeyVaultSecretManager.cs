@@ -14,6 +14,8 @@ namespace OmniForge.Web.Configuration
             {
                 "TWITCH-CLIENT-ID" => "Twitch:ClientId",
                 "TWITCH-CLIENT-SECRET" => "Twitch:ClientSecret",
+                // Bot login name (used for moderator eligibility checks + bot auth safety checks)
+                "TWITCHBOT-UID" => "Twitch:BotUsername",
                 "JWT-SECRET" => "Jwt:Secret",
 
                 // Discord bot token (used for Discord notifications)

@@ -233,13 +233,6 @@ namespace OmniForge.Web.Controllers
 
             if (result == OmniForge.Core.Interfaces.SubscriptionResult.Success)
             {
-                // Start Twitch bot if eligible
-                var user = await _userRepository.GetUserAsync(userId);
-                if (user != null && user.Features.ChatCommands && !string.IsNullOrEmpty(user.AccessToken))
-                {
-                    await _twitchClientManager.ConnectUserAsync(userId);
-                }
-
                 return Ok(new { message = "Successfully subscribed to stream monitoring", userId });
             }
             else if (result == OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth)
@@ -268,7 +261,6 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             await _streamMonitorService.UnsubscribeFromUserAsync(userId);
-            await _twitchClientManager.DisconnectUserAsync(userId);
 
             return Ok(new { message = "Successfully unsubscribed from stream monitoring", userId });
         }

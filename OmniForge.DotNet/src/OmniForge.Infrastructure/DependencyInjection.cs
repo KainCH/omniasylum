@@ -71,6 +71,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
+            services.AddScoped<ITwitchBotEligibilityService, TwitchBotEligibilityService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
             services.AddHttpClient<IDiscordService, DiscordService>();
@@ -78,6 +79,8 @@ namespace OmniForge.Infrastructure
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
             services.AddHostedService<TwitchConnectionService>();
+
+            services.AddSingleton<IMonitoringRegistry, MonitoringRegistry>();
 
             // EventSub Event Handlers (Strategy Pattern)
             services.AddSingleton<IDiscordNotificationTracker, DiscordNotificationTracker>();

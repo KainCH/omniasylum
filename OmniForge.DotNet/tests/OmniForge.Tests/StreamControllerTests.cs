@@ -572,7 +572,7 @@ namespace OmniForge.Tests
             var result = await _controller.SubscribeMonitor();
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync("12345"), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.ConnectUserAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -651,7 +651,7 @@ namespace OmniForge.Tests
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockStreamMonitorService.Verify(x => x.UnsubscribeFromUserAsync("12345"), Times.Once);
-            _mockTwitchClientManager.Verify(x => x.DisconnectUserAsync("12345"), Times.Once);
+            _mockTwitchClientManager.Verify(x => x.DisconnectUserAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]

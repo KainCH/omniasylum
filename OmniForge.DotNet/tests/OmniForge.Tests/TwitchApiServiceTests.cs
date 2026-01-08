@@ -20,6 +20,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ITwitchAuthService> _mockAuthService;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
@@ -30,6 +31,7 @@ namespace OmniForge.Tests
         {
             _mockUserRepository = new Mock<IUserRepository>();
             _mockAuthService = new Mock<ITwitchAuthService>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
             _mockConfiguration = new Mock<IConfiguration>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockHttpClientFactory = new Mock<IHttpClientFactory>();
@@ -40,6 +42,7 @@ namespace OmniForge.Tests
             _service = new TwitchApiService(
                 _mockUserRepository.Object,
                 _mockAuthService.Object,
+                _mockBotCredentialRepository.Object,
                 _mockConfiguration.Object,
                 _mockHelixWrapper.Object,
                 _mockHttpClientFactory.Object,

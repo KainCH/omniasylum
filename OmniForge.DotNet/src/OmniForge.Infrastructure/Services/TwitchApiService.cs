@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,7 @@ namespace OmniForge.Infrastructure.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly ITwitchAuthService _authService;
+        private readonly IBotCredentialRepository _botCredentialRepository;
         private readonly IConfiguration _configuration;
         private readonly ITwitchHelixWrapper _helixWrapper;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -32,6 +34,7 @@ namespace OmniForge.Infrastructure.Services
         public TwitchApiService(
             IUserRepository userRepository,
             ITwitchAuthService authService,
+            IBotCredentialRepository botCredentialRepository,
             IConfiguration configuration,
             ITwitchHelixWrapper helixWrapper,
             IHttpClientFactory httpClientFactory,
@@ -39,6 +42,7 @@ namespace OmniForge.Infrastructure.Services
         {
             _userRepository = userRepository;
             _authService = authService;
+            _botCredentialRepository = botCredentialRepository;
             _configuration = configuration;
             _helixWrapper = helixWrapper;
             _httpClientFactory = httpClientFactory;
@@ -72,6 +76,102 @@ namespace OmniForge.Infrastructure.Services
             }
 
             return (user, refreshed);
+        }
+
+        public async Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+
+                var allModerators = new List<TwitchModeratorDto>();
+                string? cursor = null;
+
+                // Helix max is 100 per page. Keep paging until done or we hit a reasonable limit.
+                for (var page = 0; page < 10; page++)
+                {
+                    var url = $"https://api.twitch.tv/helix/moderation/moderators?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&first=100";
+                    if (!string.IsNullOrEmpty(cursor))
+                    {
+                        url += $"&after={Uri.EscapeDataString(cursor)}";
+                    }
+
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    request.Headers.Add("Client-Id", clientId);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", broadcasterAccessToken);
+
+                    using var response = await client.SendAsync(request, cancellationToken);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return new TwitchModeratorsResponse
+                        {
+                            StatusCode = response.StatusCode,
+                            Moderators = allModerators
+                        };
+                    }
+
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var parsed = JsonSerializer.Deserialize<GetModeratorsHelixResponse>(json, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (parsed?.Data != null)
+                    {
+                        foreach (var mod in parsed.Data)
+                        {
+                            allModerators.Add(new TwitchModeratorDto
+                            {
+                                UserId = mod.UserId ?? string.Empty,
+                                UserLogin = mod.UserLogin ?? string.Empty,
+                                UserName = mod.UserName ?? string.Empty
+                            });
+                        }
+                    }
+
+                    cursor = parsed?.Pagination?.Cursor;
+                    if (string.IsNullOrEmpty(cursor))
+                    {
+                        break;
+                    }
+                }
+
+                return new TwitchModeratorsResponse
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Moderators = allModerators
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error calling Helix Get Moderators for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                return new TwitchModeratorsResponse
+                {
+                    StatusCode = HttpStatusCode.InternalServerError,
+                    Moderators = new List<TwitchModeratorDto>()
+                };
+            }
+        }
+
+        private class GetModeratorsHelixResponse
+        {
+            public List<GetModeratorsHelixData> Data { get; set; } = new();
+            public GetModeratorsHelixPagination? Pagination { get; set; }
+        }
+
+        private class GetModeratorsHelixPagination
+        {
+            public string? Cursor { get; set; }
+        }
+
+        private class GetModeratorsHelixData
+        {
+            public string? UserId { get; set; }
+            public string? UserLogin { get; set; }
+            public string? UserName { get; set; }
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
@@ -215,35 +315,86 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                var client = _httpClientFactory.CreateClient();
-                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
-                var clientId = _configuration["Twitch:ClientId"];
-                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
-
-                request.Headers.Add("Client-Id", clientId);
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", user.AccessToken);
-
-                var payload = new
-                {
-                    broadcaster_id = broadcasterId,
-                    sender_id = senderId ?? user.TwitchUserId,
-                    message,
-                    reply_parent_message_id = replyParentMessageId
-                };
-
-                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                using var response = await client.SendAsync(request);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
-                }
+                await SendChatMessageWithTokenAsync(user.AccessToken, senderId ?? user.TwitchUserId, broadcasterId, message, replyParentMessageId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending chat message for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+            }
+        }
+
+        public async Task SendChatMessageAsBotAsync(string broadcasterId, string botUserId, string message, string? replyParentMessageId = null)
+        {
+            try
+            {
+                var botCreds = await _botCredentialRepository.GetAsync();
+                if (botCreds == null || string.IsNullOrEmpty(botCreds.RefreshToken))
+                {
+                    _logger.LogWarning("⚠️ Cannot send as bot: bot credentials missing. Falling back to broadcaster send.");
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    return;
+                }
+
+                // Refresh if expiring (buffer 5 min)
+                if (botCreds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
+                {
+                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(botCreds.Username));
+                    var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
+                    if (refreshed == null)
+                    {
+                        _logger.LogError("❌ Failed to refresh Forge bot token; falling back to broadcaster send");
+                        await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                        return;
+                    }
+
+                    botCreds.AccessToken = refreshed.AccessToken;
+                    botCreds.RefreshToken = refreshed.RefreshToken;
+                    botCreds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                    await _botCredentialRepository.SaveAsync(botCreds);
+                }
+
+                if (string.IsNullOrEmpty(botCreds.AccessToken))
+                {
+                    _logger.LogWarning("⚠️ Bot access token missing; falling back to broadcaster send");
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    return;
+                }
+
+                await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error sending chat message as bot for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+            }
+        }
+
+        private async Task SendChatMessageWithTokenAsync(string accessToken, string senderId, string broadcasterId, string message, string? replyParentMessageId)
+        {
+            var clientId = _configuration["Twitch:ClientId"];
+            if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+            var client = _httpClientFactory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
+
+            request.Headers.Add("Client-Id", clientId);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var payload = new
+            {
+                broadcaster_id = broadcasterId,
+                sender_id = senderId,
+                message,
+                reply_parent_message_id = replyParentMessageId
+            };
+
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            using var response = await client.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
             }
         }
 

@@ -17,18 +17,24 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly IDiscordInviteSender _discordInviteSender;
         private readonly IChatCommandProcessor _chatCommandProcessor;
         private readonly ITwitchApiService _twitchApiService;
+        private readonly IUserRepository _userRepository;
+        private readonly ITwitchBotEligibilityService _botEligibilityService;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<ChatMessageHandler> logger,
             IDiscordInviteSender discordInviteSender,
             IChatCommandProcessor chatCommandProcessor,
-            ITwitchApiService twitchApiService)
+            ITwitchApiService twitchApiService,
+            IUserRepository userRepository,
+            ITwitchBotEligibilityService botEligibilityService)
             : base(scopeFactory, logger)
         {
             _discordInviteSender = discordInviteSender;
             _chatCommandProcessor = chatCommandProcessor;
             _twitchApiService = twitchApiService;
+            _userRepository = userRepository;
+            _botEligibilityService = botEligibilityService;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -67,7 +73,28 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         IsSubscriber = isSubscriber
                     };
 
-                    Func<string, string, Task> sendMessage = (uid, msg) => _twitchApiService.SendChatMessageAsync(uid, msg, replyParentMessageId: messageId);
+                    Func<string, string, Task> sendMessage = async (uid, msg) =>
+                    {
+                        try
+                        {
+                            var broadcaster = await _userRepository.GetUserAsync(uid);
+                            if (broadcaster != null && !string.IsNullOrEmpty(broadcaster.AccessToken))
+                            {
+                                var eligibility = await _botEligibilityService.GetEligibilityAsync(uid, broadcaster.AccessToken);
+                                if (eligibility.UseBot && !string.IsNullOrEmpty(eligibility.BotUserId))
+                                {
+                                    await _twitchApiService.SendChatMessageAsBotAsync(uid, eligibility.BotUserId!, msg, replyParentMessageId: messageId);
+                                    return;
+                                }
+                            }
+
+                            await _twitchApiService.SendChatMessageAsync(uid, msg, replyParentMessageId: messageId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError(ex, "Error sending chat reply.");
+                        }
+                    };
                     await _chatCommandProcessor.ProcessAsync(context, sendMessage);
                 }
 
