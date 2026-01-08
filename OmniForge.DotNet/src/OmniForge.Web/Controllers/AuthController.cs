@@ -86,7 +86,7 @@ namespace OmniForge.Web.Controllers
 
                 // Moderation & followers
                 "moderator:read:followers",
-                "moderator:read:moderators",
+                "moderation:read",
                 "moderator:read:automod_settings",
                 "moderator:manage:automod_settings",
 

@@ -200,6 +200,18 @@ namespace OmniForge.Infrastructure.Services
                         tokenScopes = validation.Scopes;
                         _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}, Scopes: {Scopes}",
                             LogSanitizer.Sanitize(validation.UserId), LogSanitizer.Sanitize(validation.Login), LogSanitizer.Sanitize(validation.ClientId), LogSanitizer.Sanitize(string.Join(", ", tokenScopes ?? new List<string>())));
+
+                        if (!string.IsNullOrWhiteSpace(validation.ClientId)
+                            && !string.IsNullOrWhiteSpace(_twitchSettings.ClientId)
+                            && !string.Equals(validation.ClientId, _twitchSettings.ClientId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogWarning(
+                                "🔒 Token client_id mismatch for user {UserId}. token_client_id={TokenClientId}, configured_client_id={ConfiguredClientId}. User must re-login using the current Twitch app.",
+                                LogSanitizer.Sanitize(userId),
+                                LogSanitizer.Sanitize(validation.ClientId),
+                                LogSanitizer.Sanitize(_twitchSettings.ClientId));
+                            return SubscriptionResult.RequiresReauth;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -212,10 +224,11 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, token_user_id={UserId} for subscriptions (actingAdmin={Acting})", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                     // We must be able to read the broadcaster's moderators list to decide if Forge bot is eligible.
-                    if (!isAdminActing && (tokenScopes?.Contains("moderator:read:moderators") != true))
+                    // Twitch enforces this as 'moderation:read'.
+                    if (!isAdminActing && (tokenScopes?.Contains("moderation:read") != true))
                     {
                         _logger.LogWarning(
-                            "🔒 User {UserId} token is missing required scope: moderator:read:moderators. User must re-login to enable Forge bot moderator eligibility checks.",
+                            "🔒 User {UserId} token is missing required scope for moderators lookup: moderation:read. User must re-login to enable Forge bot moderator eligibility checks.",
                             LogSanitizer.Sanitize(userId));
                         return SubscriptionResult.RequiresReauth;
                     }

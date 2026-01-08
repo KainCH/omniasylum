@@ -45,11 +45,25 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
+                _logger.LogInformation("🔎 Checking Forge bot moderator eligibility: broadcaster_user_id={BroadcasterUserId}, bot_login_or_id={BotLoginOrId}",
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(botLoginOrId));
+
                 var moderatorsResponse = await _twitchApiService.GetModeratorsAsync(broadcasterUserId, broadcasterAccessToken, cancellationToken);
+
+                _logger.LogInformation("📋 Helix Get Moderators result: broadcaster_user_id={BroadcasterUserId}, status={Status}, moderators_count={Count}",
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
+                    (int)moderatorsResponse.StatusCode,
+                    moderatorsResponse.Moderators?.Count ?? 0);
 
                 if (moderatorsResponse.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    return new BotEligibilityResult(false, null, "Broadcaster token lacks moderator:read:moderators (cannot check moderators)");
+                    return new BotEligibilityResult(false, null, "Broadcaster token lacks required scope for moderators lookup (moderation:read)");
+                }
+
+                if (moderatorsResponse.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    return new BotEligibilityResult(false, null, "Unauthorized calling Helix Get Moderators (token invalid/mismatched client/user). User must re-login.");
                 }
 
                 if (moderatorsResponse.StatusCode != HttpStatusCode.OK)
@@ -60,9 +74,25 @@ namespace OmniForge.Infrastructure.Services
                 var botModerator = moderatorsResponse.FindModeratorByUserIdOrLogin(botLoginOrId);
                 if (botModerator is null)
                 {
+                    var moderatorsPreview = string.Join(", ",
+                        (moderatorsResponse.Moderators ?? new List<TwitchModeratorDto>())
+                            .Take(20)
+                            .Select(m => $"{OmniForge.Core.Utilities.LogSanitizer.Sanitize(m.UserLogin)}({OmniForge.Core.Utilities.LogSanitizer.Sanitize(m.UserId)})"));
+
+                    _logger.LogInformation(
+                        "🔍 Bot moderator check details: broadcaster_user_id={BroadcasterUserId}, bot_login_or_id={BotLoginOrId}, moderators=[{Moderators}]",
+                        OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
+                        OmniForge.Core.Utilities.LogSanitizer.Sanitize(botLoginOrId),
+                        moderatorsPreview);
+
+                    _logger.LogInformation("🚫 Forge bot is NOT a moderator for broadcaster_user_id={BroadcasterUserId}",
+                        OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId));
                     return new BotEligibilityResult(false, null, "Bot is not a moderator in this channel");
                 }
 
+                _logger.LogInformation("✅ Forge bot IS a moderator for broadcaster_user_id={BroadcasterUserId} (bot_user_id={BotUserId})",
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(broadcasterUserId),
+                    OmniForge.Core.Utilities.LogSanitizer.Sanitize(botModerator.UserId));
                 return new BotEligibilityResult(true, botModerator.UserId, "Bot is a moderator");
             }
             catch (Exception ex)

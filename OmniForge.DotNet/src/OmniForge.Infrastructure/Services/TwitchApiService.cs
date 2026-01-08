@@ -9,10 +9,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
@@ -27,6 +29,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchAuthService _authService;
         private readonly IBotCredentialRepository _botCredentialRepository;
         private readonly IConfiguration _configuration;
+        private readonly TwitchSettings _twitchSettings;
         private readonly ITwitchHelixWrapper _helixWrapper;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<TwitchApiService> _logger;
@@ -36,6 +39,7 @@ namespace OmniForge.Infrastructure.Services
             ITwitchAuthService authService,
             IBotCredentialRepository botCredentialRepository,
             IConfiguration configuration,
+            IOptions<TwitchSettings> twitchSettings,
             ITwitchHelixWrapper helixWrapper,
             IHttpClientFactory httpClientFactory,
             ILogger<TwitchApiService> logger)
@@ -44,6 +48,7 @@ namespace OmniForge.Infrastructure.Services
             _authService = authService;
             _botCredentialRepository = botCredentialRepository;
             _configuration = configuration;
+            _twitchSettings = twitchSettings.Value;
             _helixWrapper = helixWrapper;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -82,8 +87,12 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
-                var clientId = _configuration["Twitch:ClientId"];
+                _logger.LogInformation("🔎 Looking up channel moderators via Helix: broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+
+                var clientId = _twitchSettings.ClientId;
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                _logger.LogInformation("🪪 Helix Get Moderators using client_id={ClientId}", LogSanitizer.Sanitize(clientId));
 
                 var client = _httpClientFactory.CreateClient();
 
@@ -106,6 +115,19 @@ namespace OmniForge.Infrastructure.Services
                     using var response = await client.SendAsync(request, cancellationToken);
                     if (!response.IsSuccessStatusCode)
                     {
+                        var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                        var helixError = TryParseHelixError(errorBody);
+
+                        _logger.LogWarning("❌ Helix Get Moderators returned non-success: broadcaster_id={BroadcasterId}, status={Status}, moderators_collected_so_far={Count}",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            (int)response.StatusCode,
+                            allModerators.Count);
+
+                        if (!string.IsNullOrWhiteSpace(helixError?.Message))
+                        {
+                            _logger.LogWarning("🧾 Helix Get Moderators error message: {Message}", LogSanitizer.Sanitize(helixError.Message));
+                        }
+
                         return new TwitchModeratorsResponse
                         {
                             StatusCode = response.StatusCode,
@@ -139,6 +161,10 @@ namespace OmniForge.Infrastructure.Services
                     }
                 }
 
+                _logger.LogInformation("📋 Helix Get Moderators completed: broadcaster_id={BroadcasterId}, moderators_count={Count}",
+                    LogSanitizer.Sanitize(broadcasterId),
+                    allModerators.Count);
+
                 return new TwitchModeratorsResponse
                 {
                     StatusCode = HttpStatusCode.OK,
@@ -154,6 +180,33 @@ namespace OmniForge.Infrastructure.Services
                     Moderators = new List<TwitchModeratorDto>()
                 };
             }
+        }
+
+        private static HelixErrorResponse? TryParseHelixError(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<HelixErrorResponse>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private class HelixErrorResponse
+        {
+            public string? Error { get; set; }
+            public int Status { get; set; }
+            public string? Message { get; set; }
         }
 
         private class GetModeratorsHelixResponse

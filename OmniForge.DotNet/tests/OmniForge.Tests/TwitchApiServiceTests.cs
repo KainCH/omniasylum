@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Exceptions;
+using OmniForge.Infrastructure.Configuration;
 using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
@@ -25,6 +27,7 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly Mock<ILogger<TwitchApiService>> _mockLogger;
+        private readonly IOptions<TwitchSettings> _twitchSettings;
         private readonly TwitchApiService _service;
 
         public TwitchApiServiceTests()
@@ -37,6 +40,11 @@ namespace OmniForge.Tests
             _mockHttpClientFactory = new Mock<IHttpClientFactory>();
             _mockLogger = new Mock<ILogger<TwitchApiService>>();
 
+            _twitchSettings = Options.Create(new TwitchSettings
+            {
+                ClientId = "test_client_id"
+            });
+
             _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
 
             _service = new TwitchApiService(
@@ -44,6 +52,7 @@ namespace OmniForge.Tests
                 _mockAuthService.Object,
                 _mockBotCredentialRepository.Object,
                 _mockConfiguration.Object,
+                _twitchSettings,
                 _mockHelixWrapper.Object,
                 _mockHttpClientFactory.Object,
                 _mockLogger.Object);
