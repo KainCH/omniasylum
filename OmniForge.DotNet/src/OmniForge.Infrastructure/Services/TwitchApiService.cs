@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -222,8 +223,13 @@ namespace OmniForge.Infrastructure.Services
 
         private class GetModeratorsHelixData
         {
+            [JsonPropertyName("user_id")]
             public string? UserId { get; set; }
+
+            [JsonPropertyName("user_login")]
             public string? UserLogin { get; set; }
+
+            [JsonPropertyName("user_name")]
             public string? UserName { get; set; }
         }
 

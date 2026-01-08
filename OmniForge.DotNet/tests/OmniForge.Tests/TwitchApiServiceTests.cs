@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -56,6 +60,45 @@ namespace OmniForge.Tests
                 _mockHelixWrapper.Object,
                 _mockHttpClientFactory.Object,
                 _mockLogger.Object);
+        }
+
+        [Fact]
+        public async Task GetModeratorsAsync_ShouldParseUserLogin_FromHelixResponse()
+        {
+            var json = "{\"data\":[{\"user_id\":\"424596340\",\"user_login\":\"omniforge_bot\",\"user_name\":\"OmniForge_Bot\"}],\"pagination\":{}}";
+
+            var handler = new StubHttpMessageHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                });
+
+            var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            var response = await _service.GetModeratorsAsync("125828897", "token", CancellationToken.None);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Single(response.Moderators);
+            Assert.Equal("omniforge_bot", response.Moderators[0].UserLogin);
+            Assert.NotNull(response.FindModeratorByUserIdOrLogin("omniforge_bot"));
+        }
+
+        private sealed class StubHttpMessageHandler : HttpMessageHandler
+        {
+            private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+            public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+            {
+                _handler = handler;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(_handler(request));
+            }
         }
 
         [Fact]
