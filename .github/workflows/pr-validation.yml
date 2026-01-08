@@ -69,7 +69,12 @@ jobs:
 
       - name: Check coverage threshold
         run: |
-          COVERAGE_FILE=$(find coverage -name "coverage.cobertura.xml" | head -1)
+          # Prefer ReportGenerator's merged Cobertura file to avoid non-determinism
+          # when multiple test projects emit separate coverage reports.
+          COVERAGE_FILE="coveragereport/Cobertura.xml"
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            COVERAGE_FILE=$(find coverage -name "coverage.cobertura.xml" | head -1)
+          fi
           if [ -f "$COVERAGE_FILE" ]; then
             LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$COVERAGE_FILE" | head -1)
             COVERAGE_PERCENT=$(echo "$LINE_RATE * 100" | bc)
