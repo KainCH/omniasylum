@@ -649,6 +649,55 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
+                // Pre-validate the bot token so we can detect clientId mismatches and expired/invalid tokens
+                // with clear diagnostics (TwitchLib BadRequestException messages can be generic).
+                try
+                {
+                    var validation = await authService.ValidateTokenAsync(botCredentials.AccessToken).ConfigureAwait(false);
+                    if (validation == null)
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Bot access token validation failed before subscribing to {SubscriptionType}.",
+                            LogSanitizer.Sanitize(subscriptionType));
+
+                        if (retryOnBadToken)
+                        {
+                            _logger.LogInformation("🔄 Attempting bot token refresh after failed validation...");
+                            var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken).ConfigureAwait(false);
+                            if (refreshed != null)
+                            {
+                                botCredentials.AccessToken = refreshed.AccessToken;
+                                botCredentials.RefreshToken = refreshed.RefreshToken;
+                                botCredentials.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                                await botCredentialRepository.SaveAsync(botCredentials).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "🔎 Bot token validated. TokenClientId={TokenClientId} TokenUserId={TokenUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                            LogSanitizer.Sanitize(validation.ClientId),
+                            LogSanitizer.Sanitize(validation.UserId),
+                            validation.Scopes?.Count ?? 0,
+                            validation.ExpiresIn);
+
+                        if (!string.IsNullOrWhiteSpace(_twitchSettings.ClientId)
+                            && !string.Equals(validation.ClientId, _twitchSettings.ClientId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogError(
+                                "❌ Bot token clientId mismatch; cannot create EventSub subscriptions with Forge bot. ExpectedClientId={ExpectedClientId} TokenClientId={TokenClientId}. Re-auth the bot with the current Twitch app.",
+                                LogSanitizer.Sanitize(_twitchSettings.ClientId),
+                                LogSanitizer.Sanitize(validation.ClientId));
+                            return false;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Bot token validation threw before subscribing to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                }
+
                 await helixWrapper.CreateEventSubSubscriptionAsync(
                     _twitchSettings.ClientId,
                     botCredentials.AccessToken,
@@ -659,6 +708,11 @@ namespace OmniForge.Infrastructure.Services
                     sessionId).ConfigureAwait(false);
                 _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} (Forge bot)", LogSanitizer.Sanitize(subscriptionType));
                 return true;
+            }
+            catch (TwitchLib.Api.Core.Exceptions.BadRequestException brEx)
+            {
+                _logger.LogError(brEx, "❌ BadRequest subscribing to {SubscriptionType} (Forge bot). This commonly indicates ClientId/token mismatch or invalid refresh token.", LogSanitizer.Sanitize(subscriptionType));
+                return false;
             }
             catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
             {
