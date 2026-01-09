@@ -121,20 +121,43 @@ namespace OmniForge.Infrastructure.Services
                     // Connect if not already connected
                     await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
+                    if (token.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("🛑 Subscription cancelled after connect: user {UserId}", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
+                        return SubscriptionResult.Failed;
+                    }
+
                     if (!UserStillWantsMonitoring(userId))
                     {
                         _logger.LogInformation("🛑 Subscription aborted after connect: user {UserId} no longer wants monitoring", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
                         return SubscriptionResult.Failed;
                     }
 
                     // Wait for the welcome message with a timeout
-                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
+                    Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(10), token);
+                    Task completedTask;
+                    try
+                    {
+                        completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogInformation("🛑 Subscription cancelled while waiting for EventSub welcome: user {UserId}", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
+                        return SubscriptionResult.Failed;
+                    }
 
                     _eventSubService.OnSessionWelcome -= welcomeHandler;
 
                     if (completedTask == timeoutTask)
                     {
+                        if (token.IsCancellationRequested)
+                        {
+                            _logger.LogInformation("🛑 Subscription cancelled (welcome wait): user {UserId}", LogSanitizer.Sanitize(userId));
+                            return SubscriptionResult.Failed;
+                        }
                         _logger.LogError("Timed out waiting for EventSub Session Welcome message.");
                         return SubscriptionResult.Failed;
                     }
@@ -565,10 +588,10 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", LogSanitizer.Sanitize(userId));
 
             // Cancel any in-flight subscribe/reconnect work immediately.
+            // IMPORTANT: do not dispose CTS here (can race with in-flight code registering callbacks on the token).
             if (_monitoringCancellation.TryRemove(userId, out var cts))
             {
                 try { cts.Cancel(); } catch { /* ignore */ }
-                cts.Dispose();
             }
 
             try
