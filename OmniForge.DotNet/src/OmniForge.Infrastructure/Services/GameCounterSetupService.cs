@@ -175,6 +175,112 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("✅ Added library counter {CounterId} to game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
         }
 
+        public async Task RemoveLibraryCounterFromGameAsync(string userId, string gameId, string counterId)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(gameId) || string.IsNullOrWhiteSpace(counterId))
+            {
+                return;
+            }
+
+            var normalizedCounterId = counterId.Trim();
+            var libraryItem = await _counterLibraryRepository.GetAsync(normalizedCounterId);
+
+            // Remove from per-game custom counter definitions
+            var gameCustomConfig = await _gameCustomCountersConfigRepository.GetAsync(userId, gameId) ?? new CustomCounterConfiguration();
+            gameCustomConfig.Counters ??= new Dictionary<string, CustomCounterDefinition>();
+
+            var hadCustomCounter = gameCustomConfig.Counters.Remove(normalizedCounterId);
+            if (hadCustomCounter)
+            {
+                await _gameCustomCountersConfigRepository.SaveAsync(userId, gameId, gameCustomConfig);
+            }
+
+            // Remove from per-game chat commands
+            var gameChatConfig = await _gameChatCommandsRepository.GetAsync(userId, gameId) ?? new ChatCommandConfiguration();
+            gameChatConfig.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
+
+            // Prefer removal based on the library's configured commands if available.
+            if (libraryItem != null)
+            {
+                var defaultBase = $"!{libraryItem.CounterId}";
+                var primaryBaseCommand = NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
+                var aliasBaseCommand = NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
+                if (!string.IsNullOrWhiteSpace(aliasBaseCommand)
+                    && string.Equals(aliasBaseCommand, primaryBaseCommand, StringComparison.OrdinalIgnoreCase))
+                {
+                    aliasBaseCommand = string.Empty;
+                }
+
+                var baseCommands = new List<string> { primaryBaseCommand };
+                if (!string.IsNullOrWhiteSpace(aliasBaseCommand))
+                {
+                    baseCommands.Add(aliasBaseCommand);
+                }
+
+                foreach (var baseCommand in baseCommands)
+                {
+                    var incCommand = $"{baseCommand}+";
+                    var decCommand = $"{baseCommand}-";
+
+                    gameChatConfig.Commands.Remove(baseCommand);
+                    gameChatConfig.Commands.Remove(incCommand);
+                    gameChatConfig.Commands.Remove(decCommand);
+                }
+            }
+
+            // Also remove any increment/decrement commands that target this counterId (covers renamed keys).
+            var keysToRemove = gameChatConfig.Commands
+                .Where(kvp =>
+                    (string.Equals(kvp.Value.Action, "increment", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(kvp.Value.Action, "decrement", StringComparison.OrdinalIgnoreCase))
+                    && string.Equals(kvp.Value.Counter, normalizedCounterId, StringComparison.OrdinalIgnoreCase))
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var key in keysToRemove)
+            {
+                gameChatConfig.Commands.Remove(key);
+            }
+
+            await _gameChatCommandsRepository.SaveAsync(userId, gameId, gameChatConfig);
+
+            // Remove counter value key from per-game counters
+            try
+            {
+                var counters = await _gameCountersRepository.GetAsync(userId, gameId);
+                if (counters?.CustomCounters != null && counters.CustomCounters.Remove(normalizedCounterId))
+                {
+                    counters.LastUpdated = DateTimeOffset.UtcNow;
+                    await _gameCountersRepository.SaveAsync(userId, gameId, counters);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed removing per-game counter value for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+
+            // If this game is active, also update active configs so bot/overlay pick it up immediately
+            try
+            {
+                var ctx = await _gameContextRepository.GetAsync(userId);
+                var isActive = ctx != null && string.Equals(ctx.ActiveGameId, gameId, StringComparison.OrdinalIgnoreCase);
+                if (isActive)
+                {
+                    await _counterRepository.SaveCustomCountersConfigAsync(userId, gameCustomConfig);
+                    await _userRepository.SaveChatCommandsConfigAsync(userId, gameChatConfig);
+
+                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCountersUpdated", new { counters = gameCustomConfig.Counters });
+                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "chatCommandsUpdated", new { commands = gameChatConfig.Commands });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed updating active config after removing counter for user {UserId}", LogSanitizer.Sanitize(userId));
+            }
+
+            _logger.LogInformation("✅ Removed library counter {CounterId} from game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
+        }
+
         private static string NormalizeBaseCommandOrDefault(string? command, string fallback)
         {
             var normalized = NormalizeBaseCommandOrEmpty(command);

@@ -27,6 +27,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IDiscordService> _mockDiscordService;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly StreamOnlineHandler _handler;
 
         public StreamOnlineHandlerTests()
@@ -42,6 +43,7 @@ namespace OmniForge.Tests.EventHandlers
             _mockDiscordService = new Mock<IDiscordService>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockAuthService = new Mock<ITwitchAuthService>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
             {
@@ -55,7 +57,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockSettings.Object,
-                _mockDiscordTracker.Object);
+                _mockDiscordTracker.Object,
+                _mockAuthService.Object);
         }
 
         private void SetupDependencyInjection()
@@ -297,7 +300,7 @@ namespace OmniForge.Tests.EventHandlers
         }
 
         [Fact]
-        public async Task HandleAsync_WhenNoAccessToken_ShouldSkipStreamInfoFetch()
+        public async Task HandleAsync_WhenNoAccessToken_AndNoAppToken_ShouldSkipStreamInfoFetch()
         {
             // Arrange
             var eventData = JsonDocument.Parse(@"{
@@ -310,6 +313,9 @@ namespace OmniForge.Tests.EventHandlers
 
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
             _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync((string?)null);
 
             // Act
             await _handler.HandleAsync(eventData);

@@ -454,11 +454,11 @@ namespace OmniForge.Infrastructure.Services
 
                         if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.update", "2", channelUpdateCondition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.update", "2", channelUpdateCondition, token, retryOnBadToken: true).ConfigureAwait(false);
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "channel.update", "2", channelUpdateCondition).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "channel.update", "2", channelUpdateCondition, token, retryOnBadToken: true).ConfigureAwait(false);
                         }
 
                         _logger.LogInformation("✅ Subscribed to channel.update for broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));

@@ -267,6 +267,24 @@ namespace OmniForge.Infrastructure.Services
             public string? GameName { get; set; }
         }
 
+        private class ModifyChannelInformationRequest
+        {
+            [JsonPropertyName("game_id")]
+            public string? GameId { get; set; }
+
+            [JsonPropertyName("content_classification_labels")]
+            public List<ContentClassificationLabel>? ContentClassificationLabels { get; set; }
+        }
+
+        private class ContentClassificationLabel
+        {
+            [JsonPropertyName("id")]
+            public string Id { get; set; } = string.Empty;
+
+            [JsonPropertyName("is_enabled")]
+            public bool IsEnabled { get; set; }
+        }
+
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
         {
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
@@ -411,7 +429,7 @@ namespace OmniForge.Infrastructure.Services
 
             var requestedFirst = Math.Clamp(first, 1, 100);
 
-            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            async Task<IReadOnlyList<TwitchCategoryDto>> ExecuteAsync(string accessToken)
             {
                 var clientId = _configuration["Twitch:ClientId"];
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -451,12 +469,27 @@ namespace OmniForge.Infrastructure.Services
                         BoxArtUrl = d.BoxArtUrl ?? string.Empty
                     })
                     .ToList();
-            });
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ SearchCategories with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(userId, ExecuteAsync);
         }
 
         public async Task<TwitchChannelCategoryDto?> GetChannelCategoryAsync(string userId)
         {
-            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            async Task<TwitchChannelCategoryDto?> ExecuteAsync(string accessToken)
             {
                 var clientId = _configuration["Twitch:ClientId"];
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -499,6 +532,106 @@ namespace OmniForge.Infrastructure.Services
                     GameId = data.GameId ?? string.Empty,
                     GameName = data.GameName ?? string.Empty
                 };
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ GetChannelCategory with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(userId, ExecuteAsync);
+        }
+
+        public async Task UpdateChannelInformationAsync(string userId, string gameId, IReadOnlyCollection<string> enabledContentClassificationLabels)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(gameId))
+            {
+                return;
+            }
+
+            await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var scopes = await _authService.GetTokenScopesAsync(accessToken);
+                await EnsureScopesAsync(scopes, new[] { "channel:manage:broadcast" });
+
+                var enabled = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var knownLabelIds = new[]
+                {
+                    "DebatedSocialIssuesAndPolitics",
+                    "DrugsIntoxication",
+                    "SexualThemes",
+                    "ViolentGraphic",
+                    "Gambling",
+                    "ProfanityVulgarity",
+                    "MatureGame"
+                };
+
+                List<ContentClassificationLabel>? labels;
+                if (enabled.Count == 0)
+                {
+                    // Per Helix docs: empty array clears all labels.
+                    labels = new List<ContentClassificationLabel>();
+                }
+                else
+                {
+                    labels = knownLabelIds
+                        .Select(id => new ContentClassificationLabel { Id = id, IsEnabled = enabled.Contains(id) })
+                        .ToList();
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/channels?broadcaster_id={Uri.EscapeDataString(userId)}";
+
+                var payload = new ModifyChannelInformationRequest
+                {
+                    GameId = gameId,
+                    ContentClassificationLabels = labels
+                };
+
+                var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+                {
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                });
+
+                using var request = new HttpRequestMessage(HttpMethod.Patch, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Modify Channel Information failed. user_id={UserId} status={StatusCode} error={Error} message={Message}",
+                        LogSanitizer.Sanitize(userId),
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+
+                    throw new Exception($"Twitch Modify Channel Information failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                _logger.LogInformation(
+                    "✅ Updated channel information for user {UserId}: game_id={GameId}, enabled_ccls={CclCount}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(gameId),
+                    enabled.Count);
             });
         }
 
@@ -553,7 +686,48 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
-                await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
+                var botScopes = (await _authService.GetTokenScopesAsync(botCreds.AccessToken)) ?? Array.Empty<string>();
+
+                // Prefer app access token for Send Chat Message (per Twitch docs).
+                // Twitch enforces additional requirements when using app tokens (e.g., bot authorized with user:bot, and bot is mod).
+                var appChatToken = await _authService.GetAppAccessTokenAsync(new[] { "user:write:chat" });
+                if (!string.IsNullOrEmpty(appChatToken))
+                {
+                    if (botScopes.Count > 0 && !botScopes.Contains("user:bot", StringComparer.OrdinalIgnoreCase))
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Bot token appears to be missing user:bot. App-token chat send may fail. bot_scopes={Scopes}",
+                            string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    var appSendOk = await SendChatMessageWithTokenAsync(appChatToken, botUserId, broadcasterId, message, replyParentMessageId);
+                    if (appSendOk)
+                    {
+                        return;
+                    }
+
+                    _logger.LogWarning("⚠️ App-token chat send failed; attempting bot user token send");
+                }
+
+                // Bot user token fallback path (requires user token chat scopes)
+                var requiredBotChatScopes = new[] { "user:write:chat", "user:bot", "channel:bot" };
+                var missingBotChatScopes = requiredBotChatScopes.Where(rs => !botScopes.Contains(rs, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (botScopes.Count > 0 && missingBotChatScopes.Any())
+                {
+                    _logger.LogWarning(
+                        "⚠️ Bot token missing required chat scopes. missing={Missing} scopes={Scopes}. Falling back to broadcaster send.",
+                        string.Join(", ", missingBotChatScopes.Select(LogSanitizer.Sanitize)),
+                        string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    return;
+                }
+
+                var botSendOk = await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
+                if (!botSendOk)
+                {
+                    _logger.LogWarning("⚠️ Bot-token chat send failed; falling back to broadcaster send");
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                }
             }
             catch (Exception ex)
             {
@@ -562,7 +736,7 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task SendChatMessageWithTokenAsync(string accessToken, string senderId, string broadcasterId, string message, string? replyParentMessageId)
+        private async Task<bool> SendChatMessageWithTokenAsync(string accessToken, string senderId, string broadcasterId, string message, string? replyParentMessageId)
         {
             var clientId = _configuration["Twitch:ClientId"];
             if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -588,7 +762,10 @@ namespace OmniForge.Infrastructure.Services
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
                 _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+                return false;
             }
+
+            return true;
         }
 
         public async Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId)
@@ -843,7 +1020,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId)
         {
-            return await ExecuteWithRetryAsync(actingUserId, async (accessToken) =>
+            async Task<TwitchUserDto?> ExecuteAsync(string accessToken)
             {
                 var clientId = _configuration["Twitch:ClientId"];
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -861,7 +1038,22 @@ namespace OmniForge.Infrastructure.Services
                     ProfileImageUrl = user.ProfileImageUrl,
                     Email = user.Email
                 };
-            });
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ GetUserByLogin with app token failed; falling back to user token. acting_user_id={UserId}", LogSanitizer.Sanitize(actingUserId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(actingUserId, ExecuteAsync);
         }
 
         private static void ValidateAutomodValue(string name, int value)

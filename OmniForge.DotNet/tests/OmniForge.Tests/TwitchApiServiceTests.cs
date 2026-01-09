@@ -20,6 +20,7 @@ using OmniForge.Infrastructure.Services;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 using Xunit;
 using System.Text.Json;
+using System.Reflection;
 
 namespace OmniForge.Tests
 {
@@ -169,6 +170,10 @@ namespace OmniForge.Tests
                     TokenType = "bearer"
                 });
 
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.Is<IReadOnlyCollection<string>?>(s => s != null && s.Contains("user:write:chat"))))
+                .ReturnsAsync("app_access_chat");
+
             BotCredentials? savedCreds = null;
             _mockBotCredentialRepository
                 .Setup(x => x.SaveAsync(It.IsAny<BotCredentials>()))
@@ -192,11 +197,164 @@ namespace OmniForge.Tests
 
             await _service.SendChatMessageAsBotAsync("broadcaster1", "bot-user-id", "hello");
 
-            Assert.Equal("new_access", capturedBearer);
+            Assert.Equal("app_access_chat", capturedBearer);
             Assert.NotNull(savedCreds);
             Assert.Equal("new_access", savedCreds!.AccessToken);
             Assert.Equal("new_refresh", savedCreds.RefreshToken);
             Assert.True(savedCreds.TokenExpiry > DateTimeOffset.UtcNow.AddMinutes(30));
+        }
+
+        [Fact]
+        public async Task SearchCategoriesAsync_WhenAppTokenAvailable_ShouldUseAppTokenWithoutUserLookup()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync("app_access");
+
+            string? capturedBearer = null;
+            var json = "{\"data\":[{\"id\":\"1\",\"name\":\"Test Game\",\"box_art_url\":\"http://example/{width}x{height}.jpg\"}],\"pagination\":{}}";
+
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedBearer = req.Headers.Authorization?.Parameter;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            var results = await _service.SearchCategoriesAsync("user1", "test", first: 5);
+
+            Assert.Single(results);
+            Assert.Equal("app_access", capturedBearer);
+            _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetChannelCategoryAsync_WhenAppTokenAvailable_ShouldUseAppTokenWithoutUserLookup()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync("app_access");
+
+            string? capturedBearer = null;
+            var json = "{\"data\":[{\"broadcaster_id\":\"user1\",\"game_id\":\"123\",\"game_name\":\"Test Game\"}] }";
+
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedBearer = req.Headers.Authorization?.Parameter;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            var result = await _service.GetChannelCategoryAsync("user1");
+
+            Assert.NotNull(result);
+            Assert.Equal("app_access", capturedBearer);
+            Assert.Equal("123", result!.GameId);
+            Assert.Equal("Test Game", result.GameName);
+            _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetUserByLoginAsync_WhenAppTokenAvailable_ShouldUseAppTokenWithoutUserLookup()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync("app_access");
+
+            string? capturedToken = null;
+            _mockHelixWrapper
+                .Setup(x => x.GetUsersAsync(
+                    "test_client_id",
+                    It.IsAny<string>(),
+                    It.IsAny<List<string>?>(),
+                    It.IsAny<List<string>?>()))
+                .Callback<string, string, List<string>?, List<string>?>((_, token, _, _) => capturedToken = token)
+                .ReturnsAsync(CreateGetUsersResponse(new (string Property, object? Value)[]
+                {
+                    ("Users", new[]
+                    {
+                        CreateUser(new (string Property, object? Value)[]
+                        {
+                            ("Id", "u1"),
+                            ("Login", "some_login"),
+                            ("DisplayName", "Some Login"),
+                            ("ProfileImageUrl", "http://img"),
+                            ("Email", "")
+                        })
+                    })
+                }));
+
+            var user = await _service.GetUserByLoginAsync("some_login", "acting_user");
+
+            Assert.NotNull(user);
+            Assert.Equal("app_access", capturedToken);
+            Assert.Equal("u1", user!.Id);
+            _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        private static TwitchLib.Api.Helix.Models.Users.GetUsers.GetUsersResponse CreateGetUsersResponse(
+            IReadOnlyCollection<(string Property, object? Value)> values)
+        {
+            var response = (TwitchLib.Api.Helix.Models.Users.GetUsers.GetUsersResponse)
+                Activator.CreateInstance(typeof(TwitchLib.Api.Helix.Models.Users.GetUsers.GetUsersResponse), nonPublic: true)!;
+
+            foreach (var (property, value) in values)
+            {
+                SetNonPublicProperty(response, property, value);
+            }
+
+            return response;
+        }
+
+        private static TwitchLib.Api.Helix.Models.Users.GetUsers.User CreateUser(
+            IReadOnlyCollection<(string Property, object? Value)> values)
+        {
+            var user = (TwitchLib.Api.Helix.Models.Users.GetUsers.User)
+                Activator.CreateInstance(typeof(TwitchLib.Api.Helix.Models.Users.GetUsers.User), nonPublic: true)!;
+
+            foreach (var (property, value) in values)
+            {
+                SetNonPublicProperty(user, property, value);
+            }
+
+            return user;
+        }
+
+        private static void SetNonPublicProperty(object target, string propertyName, object? value)
+        {
+            var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null)
+            {
+                throw new InvalidOperationException($"Property '{propertyName}' not found on type '{target.GetType().FullName}'.");
+            }
+
+            var setMethod = property.GetSetMethod(nonPublic: true);
+            if (setMethod == null)
+            {
+                throw new InvalidOperationException($"Property '{propertyName}' on type '{target.GetType().FullName}' has no setter.");
+            }
+
+            setMethod.Invoke(target, new[] { value });
         }
 
         private sealed class StubHttpMessageHandler : HttpMessageHandler

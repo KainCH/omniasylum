@@ -19,6 +19,9 @@ namespace OmniForge.Core.Interfaces
         Task<IReadOnlyList<TwitchCategoryDto>> SearchCategoriesAsync(string userId, string query, int first = 20);
         Task<TwitchChannelCategoryDto?> GetChannelCategoryAsync(string userId);
 
+        // Channel updates
+        Task UpdateChannelInformationAsync(string userId, string gameId, IReadOnlyCollection<string> enabledContentClassificationLabels);
+
         // Moderation
         Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default);
 

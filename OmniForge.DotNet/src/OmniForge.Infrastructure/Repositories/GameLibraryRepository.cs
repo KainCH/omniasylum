@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Data.Tables;
@@ -37,7 +38,8 @@ namespace OmniForge.Infrastructure.Repositories
                 ["gameName"] = item.GameName ?? string.Empty,
                 ["boxArtUrl"] = item.BoxArtUrl ?? string.Empty,
                 ["createdAt"] = item.CreatedAt,
-                ["lastSeenAt"] = item.LastSeenAt
+                ["lastSeenAt"] = item.LastSeenAt,
+                ["enabledCcls"] = JsonSerializer.Serialize(item.EnabledContentClassificationLabels ?? new List<string>())
             };
 
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Merge);
@@ -74,6 +76,23 @@ namespace OmniForge.Infrastructure.Repositories
 
         private static GameLibraryItem Map(TableEntity entity)
         {
+            var enabledCcls = new List<string>();
+            try
+            {
+                var json = entity.GetString("enabledCcls");
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    enabledCcls = JsonSerializer.Deserialize<List<string>>(json, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    }) ?? new List<string>();
+                }
+            }
+            catch
+            {
+                enabledCcls = new List<string>();
+            }
+
             return new GameLibraryItem
             {
                 UserId = entity.PartitionKey,
@@ -81,7 +100,8 @@ namespace OmniForge.Infrastructure.Repositories
                 GameName = entity.GetString("gameName") ?? string.Empty,
                 BoxArtUrl = entity.GetString("boxArtUrl") ?? string.Empty,
                 CreatedAt = GetDateTimeOffsetSafe(entity, "createdAt") ?? DateTimeOffset.UtcNow,
-                LastSeenAt = GetDateTimeOffsetSafe(entity, "lastSeenAt") ?? DateTimeOffset.UtcNow
+                LastSeenAt = GetDateTimeOffsetSafe(entity, "lastSeenAt") ?? DateTimeOffset.UtcNow,
+                EnabledContentClassificationLabels = enabledCcls
             };
         }
 

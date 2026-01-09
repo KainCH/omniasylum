@@ -18,6 +18,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly IGameCoreCountersConfigRepository _gameCoreCountersConfigRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IUserRepository _userRepository;
+        private readonly ITwitchApiService _twitchApiService;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<GameSwitchService> _logger;
 
@@ -30,6 +31,7 @@ namespace OmniForge.Infrastructure.Services
             IGameCoreCountersConfigRepository gameCoreCountersConfigRepository,
             ICounterRepository counterRepository,
             IUserRepository userRepository,
+            ITwitchApiService twitchApiService,
             IOverlayNotifier overlayNotifier,
             ILogger<GameSwitchService> logger)
         {
@@ -41,6 +43,7 @@ namespace OmniForge.Infrastructure.Services
             _gameCoreCountersConfigRepository = gameCoreCountersConfigRepository;
             _counterRepository = counterRepository;
             _userRepository = userRepository;
+            _twitchApiService = twitchApiService;
             _overlayNotifier = overlayNotifier;
             _logger = logger;
         }
@@ -148,17 +151,31 @@ namespace OmniForge.Infrastructure.Services
             }
 
             // Ensure game exists in library
+            GameLibraryItem? existingLibraryItem = null;
             try
             {
-                await _gameLibraryRepository.UpsertAsync(new GameLibraryItem
+                existingLibraryItem = await _gameLibraryRepository.GetAsync(userId, gameId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed reading existing game library item for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+
+            GameLibraryItem? upsertedLibraryItem = null;
+            try
+            {
+                upsertedLibraryItem = new GameLibraryItem
                 {
                     UserId = userId,
                     GameId = gameId,
                     GameName = gameName ?? string.Empty,
                     BoxArtUrl = boxArtUrl ?? string.Empty,
-                    CreatedAt = now,
-                    LastSeenAt = now
-                });
+                    CreatedAt = existingLibraryItem?.CreatedAt ?? now,
+                    LastSeenAt = now,
+                    EnabledContentClassificationLabels = existingLibraryItem?.EnabledContentClassificationLabels ?? new List<string>()
+                };
+
+                await _gameLibraryRepository.UpsertAsync(upsertedLibraryItem);
             }
             catch (Exception ex)
             {
@@ -293,6 +310,17 @@ namespace OmniForge.Infrastructure.Services
                 ActiveGameName = gameName,
                 UpdatedAt = now
             });
+
+            // Apply per-game Content Classification Labels to the channel when a new game is detected.
+            try
+            {
+                var enabledCcls = upsertedLibraryItem?.EnabledContentClassificationLabels ?? new List<string>();
+                await _twitchApiService.UpdateChannelInformationAsync(userId, gameId, enabledCcls);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed updating Twitch channel info (CCLs) for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
 
             await _overlayNotifier.NotifyCounterUpdateAsync(userId, newCounters);
             _logger.LogInformation("🔄 Active game switched for user {UserId}: {GameId} ({GameName})", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(gameName));

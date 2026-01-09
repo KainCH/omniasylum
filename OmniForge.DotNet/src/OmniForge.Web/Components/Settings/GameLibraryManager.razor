@@ -180,24 +180,63 @@ else
               <div class="col-12">
                 <label class="form-label">Enabled Counters</label>
                 <div class="d-flex flex-wrap gap-3">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="coreDeaths" @bind="coreDeathsEnabled" />
-                    <label class="form-check-label" for="coreDeaths">Deaths</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="coreSwears" @bind="coreSwearsEnabled" />
-                    <label class="form-check-label" for="coreSwears">Swears</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="coreScreams" @bind="coreScreamsEnabled" />
-                    <label class="form-check-label" for="coreScreams">Screams</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="coreBits" @bind="coreBitsEnabled" />
-                    <label class="form-check-label" for="coreBits">Bits</label>
-                  </div>
+                  @if (counterLibrary.Count == 0)
+                  {
+                    <div class="text-muted small">No counters found in the counter library.</div>
+                  }
+                  else
+                  {
+                    @foreach (var item in counterLibrary.OrderBy(c => c.Name))
+                    {
+                      var id = GetCounterCheckboxId(item.CounterId);
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="@id"
+                          checked="@IsLibraryCounterEnabled(item.CounterId)"
+                          @onchange="e => OnLibraryCounterEnabledChanged(item.CounterId, e)" disabled="@isBusy" />
+                        <label class="form-check-label" for="@id">@item.Name</label>
+                      </div>
+                    }
+                  }
                 </div>
                 <div class="small text-muted mt-1">These control overlay visibility and default chat commands per game.
+                </div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Content Classification Labels (CCLs)</label>
+                <div class="d-flex flex-wrap gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclProfanity" @bind="cclProfanityVulgarity" />
+                    <label class="form-check-label" for="cclProfanity">Profanity/Vulgarity</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclGambling" @bind="cclGambling" />
+                    <label class="form-check-label" for="cclGambling">Gambling</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclViolence" @bind="cclViolentGraphic" />
+                    <label class="form-check-label" for="cclViolence">Violent/Graphic</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclSexual" @bind="cclSexualThemes" />
+                    <label class="form-check-label" for="cclSexual">Sexual Themes</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclDrugs" @bind="cclDrugsIntoxication" />
+                    <label class="form-check-label" for="cclDrugs">Drugs/Intoxication</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclPolitics"
+                      @bind="cclDebatedSocialIssuesAndPolitics" />
+                    <label class="form-check-label" for="cclPolitics">Politics/Debated Issues</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cclMature" @bind="cclMatureGame" />
+                    <label class="form-check-label" for="cclMature">Mature Game</label>
+                  </div>
+                </div>
+                <div class="small text-muted mt-1">These will be applied to your Twitch channel when this game is
+                  detected/activated.
                 </div>
               </div>
 
@@ -330,6 +369,14 @@ else
   private bool coreSwearsEnabled = true;
   private bool coreScreamsEnabled = true;
   private bool coreBitsEnabled = false;
+
+  private bool cclProfanityVulgarity = false;
+  private bool cclGambling = false;
+  private bool cclViolentGraphic = false;
+  private bool cclSexualThemes = false;
+  private bool cclDrugsIntoxication = false;
+  private bool cclDebatedSocialIssuesAndPolitics = false;
+  private bool cclMatureGame = false;
 
   private List<CounterLibraryItem> counterLibrary = new();
   private string counterRequestName = string.Empty;
@@ -464,7 +511,8 @@ else
         GameName = category.Name.Trim(),
         BoxArtUrl = category.BoxArtUrl?.Trim() ?? string.Empty,
         CreatedAt = now,
-        LastSeenAt = now
+        LastSeenAt = now,
+        EnabledContentClassificationLabels = new List<string>()
       });
 
       await LoadAsync();
@@ -530,6 +578,16 @@ else
       coreSwearsEnabled = selection.SwearsEnabled;
       coreScreamsEnabled = selection.ScreamsEnabled;
       coreBitsEnabled = selection.BitsEnabled;
+
+      var enabledCcls = (selectedGame?.EnabledContentClassificationLabels ?? new
+      List<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+      cclProfanityVulgarity = enabledCcls.Contains("ProfanityVulgarity");
+      cclGambling = enabledCcls.Contains("Gambling");
+      cclViolentGraphic = enabledCcls.Contains("ViolentGraphic");
+      cclSexualThemes = enabledCcls.Contains("SexualThemes");
+      cclDrugsIntoxication = enabledCcls.Contains("DrugsIntoxication");
+      cclDebatedSocialIssuesAndPolitics = enabledCcls.Contains("DebatedSocialIssuesAndPolitics");
+      cclMatureGame = enabledCcls.Contains("MatureGame");
     }
     catch (Exception ex)
     {
@@ -653,6 +711,19 @@ else
       BitsEnabled: coreBitsEnabled,
       UpdatedAt: DateTimeOffset.UtcNow));
 
+      // Save per-game CCL selections to the game library.
+      selectedGame.EnabledContentClassificationLabels = new List<string>();
+      if (cclDebatedSocialIssuesAndPolitics)
+        selectedGame.EnabledContentClassificationLabels.Add("DebatedSocialIssuesAndPolitics");
+      if (cclDrugsIntoxication) selectedGame.EnabledContentClassificationLabels.Add("DrugsIntoxication");
+      if (cclSexualThemes) selectedGame.EnabledContentClassificationLabels.Add("SexualThemes");
+      if (cclViolentGraphic) selectedGame.EnabledContentClassificationLabels.Add("ViolentGraphic");
+      if (cclGambling) selectedGame.EnabledContentClassificationLabels.Add("Gambling");
+      if (cclProfanityVulgarity) selectedGame.EnabledContentClassificationLabels.Add("ProfanityVulgarity");
+      if (cclMatureGame) selectedGame.EnabledContentClassificationLabels.Add("MatureGame");
+
+      await GameLibraryRepository.UpsertAsync(selectedGame);
+
       await GameSwitchService.ApplyActiveCoreCountersSelectionAsync(UserId, selectedGame.GameId);
 
       successMessage = "Saved game counters.";
@@ -706,5 +777,102 @@ else
     || string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)
     || string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)
     || string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static string GetCounterCheckboxId(string counterId)
+  {
+    var safe = new string((counterId ?? string.Empty)
+    .Select(c => char.IsLetterOrDigit(c) ? c : '_')
+    .ToArray());
+
+    if (string.IsNullOrWhiteSpace(safe))
+    {
+      safe = Guid.NewGuid().ToString("N");
+    }
+
+    return $"counterEnabled_{safe}";
+  }
+
+  private bool IsLibraryCounterEnabled(string counterId)
+  {
+    if (IsCoreCounterId(counterId))
+    {
+      if (string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)) return coreDeathsEnabled;
+      if (string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)) return coreSwearsEnabled;
+      if (string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)) return coreScreamsEnabled;
+      if (string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase)) return coreBitsEnabled;
+      return false;
+    }
+
+    return editCounters.CustomCounters != null && editCounters.CustomCounters.ContainsKey(counterId);
+  }
+
+  private async Task OnLibraryCounterEnabledChanged(string counterId, ChangeEventArgs e)
+  {
+    if (isBusy || selectedGame == null) return;
+
+    var enabled = e.Value switch
+    {
+      bool b => b,
+      string s when bool.TryParse(s, out var b) => b,
+      _ => false
+    };
+
+    if (IsCoreCounterId(counterId))
+    {
+      if (string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)) coreDeathsEnabled = enabled;
+      else if (string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)) coreSwearsEnabled = enabled;
+      else if (string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)) coreScreamsEnabled = enabled;
+      else if (string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase)) coreBitsEnabled = enabled;
+
+      return;
+    }
+
+    var currentlyEnabled = editCounters.CustomCounters != null && editCounters.CustomCounters.ContainsKey(counterId);
+    if (enabled && !currentlyEnabled)
+    {
+      await AddLibraryCounterToSelectedGame(counterId);
+    }
+    else if (!enabled && currentlyEnabled)
+    {
+      await RemoveLibraryCounterFromSelectedGame(counterId);
+    }
+  }
+
+  private async Task RemoveLibraryCounterFromSelectedGame(string counterId)
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      await GameCounterSetupService.RemoveLibraryCounterFromGameAsync(UserId, selectedGame.GameId, counterId);
+
+      var counters = await GameCountersRepository.GetAsync(UserId, selectedGame.GameId);
+      editCounters = counters ?? new Counter
+      {
+        TwitchUserId = UserId,
+        Deaths = 0,
+        Swears = 0,
+        Screams = 0,
+        Bits = 0,
+        LastUpdated = DateTimeOffset.UtcNow
+      };
+
+      editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+      int>(StringComparer.OrdinalIgnoreCase);
+      successMessage = "Counter removed from game.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to remove counter: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
   }
 }

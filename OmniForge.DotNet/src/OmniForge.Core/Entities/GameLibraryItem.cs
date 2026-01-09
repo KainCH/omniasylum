@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace OmniForge.Core.Entities
 {
@@ -10,5 +11,9 @@ namespace OmniForge.Core.Entities
         public string BoxArtUrl { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
+
+        // Twitch Content Classification Labels (CCLs) enabled for this game.
+        // Stored as a list of label ids (e.g., "ProfanityVulgarity").
+        public List<string> EnabledContentClassificationLabels { get; set; } = new();
     }
 }

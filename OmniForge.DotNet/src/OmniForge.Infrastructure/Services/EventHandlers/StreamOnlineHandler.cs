@@ -18,16 +18,19 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
     {
         private readonly TwitchSettings _twitchSettings;
         private readonly IDiscordNotificationTracker _discordTracker;
+        private readonly ITwitchAuthService _twitchAuthService;
 
         public StreamOnlineHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<StreamOnlineHandler> logger,
             IOptions<TwitchSettings> twitchSettings,
-            IDiscordNotificationTracker discordTracker)
+            IDiscordNotificationTracker discordTracker,
+            ITwitchAuthService twitchAuthService)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
             _discordTracker = discordTracker;
+            _twitchAuthService = twitchAuthService;
         }
 
         public override string SubscriptionType => "stream.online";
@@ -94,11 +97,20 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         {
             try
             {
-                if (!string.IsNullOrEmpty(user.AccessToken) && !string.IsNullOrEmpty(_twitchSettings.ClientId))
+                if (!string.IsNullOrEmpty(_twitchSettings.ClientId))
                 {
+                    var accessToken = !string.IsNullOrEmpty(user.AccessToken)
+                        ? user.AccessToken
+                        : await _twitchAuthService.GetAppAccessTokenAsync();
+
+                    if (string.IsNullOrEmpty(accessToken))
+                    {
+                        return new { };
+                    }
+
                     var streams = await helixWrapper.GetStreamsAsync(
                         _twitchSettings.ClientId,
-                        user.AccessToken,
+                        accessToken,
                         new List<string> { userId });
 
                     if (streams.Streams != null && streams.Streams.Length > 0)
@@ -119,7 +131,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     // Fallback to channel info if stream not available yet
                     var channelInfo = await helixWrapper.GetChannelInformationAsync(
                         _twitchSettings.ClientId,
-                        user.AccessToken,
+                        accessToken,
                         userId);
 
                     if (channelInfo.Data != null && channelInfo.Data.Length > 0)
