@@ -8,6 +8,7 @@
 @inject ICounterLibraryRepository CounterLibraryRepository
 @inject ICounterRequestRepository CounterRequestRepository
 @inject IGameCounterSetupService GameCounterSetupService
+@inject IGameCoreCountersConfigRepository GameCoreCountersConfigRepository
 
 @if (isLoading)
 {
@@ -176,21 +177,45 @@ else
             </div>
 
             <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label">Enabled Counters</label>
+                <div class="d-flex flex-wrap gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="coreDeaths" @bind="coreDeathsEnabled" />
+                    <label class="form-check-label" for="coreDeaths">Deaths</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="coreSwears" @bind="coreSwearsEnabled" />
+                    <label class="form-check-label" for="coreSwears">Swears</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="coreScreams" @bind="coreScreamsEnabled" />
+                    <label class="form-check-label" for="coreScreams">Screams</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="coreBits" @bind="coreBitsEnabled" />
+                    <label class="form-check-label" for="coreBits">Bits</label>
+                  </div>
+                </div>
+                <div class="small text-muted mt-1">These control overlay visibility and default chat commands per game.
+                </div>
+              </div>
+
               <div class="col-6">
                 <label class="form-label">Deaths</label>
-                <input class="form-control" type="number" @bind="editCounters.Deaths" />
+                <input class="form-control" type="number" @bind="editCounters.Deaths" disabled="@(!coreDeathsEnabled)" />
               </div>
               <div class="col-6">
                 <label class="form-label">Swears</label>
-                <input class="form-control" type="number" @bind="editCounters.Swears" />
+                <input class="form-control" type="number" @bind="editCounters.Swears" disabled="@(!coreSwearsEnabled)" />
               </div>
               <div class="col-6">
                 <label class="form-label">Screams</label>
-                <input class="form-control" type="number" @bind="editCounters.Screams" />
+                <input class="form-control" type="number" @bind="editCounters.Screams" disabled="@(!coreScreamsEnabled)" />
               </div>
               <div class="col-6">
                 <label class="form-label">Bits</label>
-                <input class="form-control" type="number" @bind="editCounters.Bits" />
+                <input class="form-control" type="number" @bind="editCounters.Bits" disabled="@(!coreBitsEnabled)" />
               </div>
             </div>
 
@@ -228,14 +253,22 @@ else
                 {
                   var alreadyAdded = editCounters.CustomCounters != null &&
                   editCounters.CustomCounters.ContainsKey(item.CounterId);
+                  var isCore = IsCoreCounterId(item.CounterId);
                   <div class="list-group-item d-flex align-items-center justify-content-between">
                     <div>
-                      <div class="fw-semibold">@item.Name</div>
+                      <div class="fw-semibold">
+                        @item.Name
+                        @if (isCore)
+                        {
+                          <span class="badge bg-secondary ms-2">Core</span>
+                        }
+                      </div>
                       <div class="small text-muted">Key: @item.CounterId</div>
                     </div>
                     <button class="btn btn-sm btn-outline-success"
-                      @onclick="() => AddLibraryCounterToSelectedGame(item.CounterId)" disabled="@(isBusy || alreadyAdded)">
-                      <i class="bi bi-plus-circle me-1"></i>@(alreadyAdded ? "Added" : "Add")
+                      @onclick="() => AddLibraryCounterToSelectedGame(item.CounterId)"
+                      disabled="@(isBusy || alreadyAdded || isCore)">
+                      <i class="bi bi-plus-circle me-1"></i>@(isCore ? "Core" : (alreadyAdded ? "Added" : "Add"))
                     </button>
                   </div>
                 }
@@ -292,6 +325,11 @@ else
   private string? selectedGameId;
   private GameLibraryItem? selectedGame;
   private Counter editCounters = new();
+
+  private bool coreDeathsEnabled = true;
+  private bool coreSwearsEnabled = true;
+  private bool coreScreamsEnabled = true;
+  private bool coreBitsEnabled = false;
 
   private List<CounterLibraryItem> counterLibrary = new();
   private string counterRequestName = string.Empty;
@@ -471,6 +509,27 @@ else
       {
         editCounters.LastUpdated = DateTimeOffset.UtcNow;
       }
+
+      // Load core counter selection for this game (seed defaults if missing)
+      var selection = await GameCoreCountersConfigRepository.GetAsync(UserId, game.GameId);
+      if (selection == null)
+      {
+        selection = new GameCoreCountersConfig(
+        UserId: UserId,
+        GameId: game.GameId,
+        DeathsEnabled: true,
+        SwearsEnabled: true,
+        ScreamsEnabled: true,
+        BitsEnabled: false,
+        UpdatedAt: DateTimeOffset.UtcNow);
+
+        await GameCoreCountersConfigRepository.SaveAsync(UserId, game.GameId, selection);
+      }
+
+      coreDeathsEnabled = selection.DeathsEnabled;
+      coreSwearsEnabled = selection.SwearsEnabled;
+      coreScreamsEnabled = selection.ScreamsEnabled;
+      coreBitsEnabled = selection.BitsEnabled;
     }
     catch (Exception ex)
     {
@@ -581,6 +640,21 @@ else
       editCounters.TwitchUserId = UserId;
       editCounters.LastUpdated = DateTimeOffset.UtcNow;
       await GameCountersRepository.SaveAsync(UserId, selectedGame.GameId, editCounters);
+
+      await GameCoreCountersConfigRepository.SaveAsync(
+      UserId,
+      selectedGame.GameId,
+      new GameCoreCountersConfig(
+      UserId: UserId,
+      GameId: selectedGame.GameId,
+      DeathsEnabled: coreDeathsEnabled,
+      SwearsEnabled: coreSwearsEnabled,
+      ScreamsEnabled: coreScreamsEnabled,
+      BitsEnabled: coreBitsEnabled,
+      UpdatedAt: DateTimeOffset.UtcNow));
+
+      await GameSwitchService.ApplyActiveCoreCountersSelectionAsync(UserId, selectedGame.GameId);
+
       successMessage = "Saved game counters.";
     }
     catch (Exception ex)
@@ -623,5 +697,14 @@ else
   {
     if (string.IsNullOrWhiteSpace(url)) return string.Empty;
     return url.Replace("{width}", "52").Replace("{height}", "72");
+  }
+
+  private static bool IsCoreCounterId(string counterId)
+  {
+    if (string.IsNullOrWhiteSpace(counterId)) return false;
+    return string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase);
   }
 }

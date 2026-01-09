@@ -76,12 +76,14 @@ namespace OmniForge.Infrastructure
             services.AddScoped<ICounterRequestRepository, CounterRequestRepository>();
             services.AddScoped<IGameChatCommandsRepository, GameChatCommandsRepository>();
             services.AddScoped<IGameCustomCountersConfigRepository, GameCustomCountersConfigRepository>();
+            services.AddScoped<IGameCoreCountersConfigRepository, GameCoreCountersConfigRepository>();
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
 
             services.AddScoped<IGameSwitchService, GameSwitchService>();
             services.AddScoped<IGameCounterSetupService, GameCounterSetupService>();
+            services.AddScoped<CoreCounterLibrarySeeder>();
             // Bot eligibility caching: Redis when configured, otherwise in-memory.
             services.AddSingleton<IBotEligibilityCache>(sp =>
             {

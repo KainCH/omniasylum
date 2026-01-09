@@ -1,0 +1,220 @@
+@page "/admin/counter-library"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@inject ICounterLibraryRepository CounterLibraryRepository
+
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Counter Library</h1>
+    <button class="btn btn-outline-secondary" @onclick="Reload" disabled="@isBusy">
+      <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+  </div>
+
+  @if (!string.IsNullOrWhiteSpace(successMessage))
+  {
+    <div class="alert alert-success alert-dismissible fade show">
+      <i class="bi bi-check-circle me-2"></i>@successMessage
+      <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+    </div>
+  }
+
+  @if (!string.IsNullOrWhiteSpace(errorMessage))
+  {
+    <div class="alert alert-danger alert-dismissible fade show">
+      <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+      <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+  }
+
+  @if (isLoading)
+  {
+    <div class="text-center p-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  }
+  else if (items.Count == 0)
+  {
+    <div class="text-center text-muted p-5">
+      <i class="bi bi-collection fs-1 d-block mb-2"></i>
+      No counters in the library.
+    </div>
+  }
+  else
+  {
+    <div class="list-group">
+      @foreach (var item in items)
+      {
+        <div class="list-group-item">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1">Key</label>
+              <input class="form-control" value="@item.CounterId" disabled />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1">Name</label>
+              <input class="form-control" @bind="item.Name" maxlength="60" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label mb-1">Icon</label>
+              <input class="form-control" @bind="item.Icon" maxlength="60" placeholder="bi-star" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label mb-1">Long Command</label>
+              <input class="form-control" @bind="item.LongCommand" maxlength="32" placeholder="!deaths" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label mb-1">Alias</label>
+              <input class="form-control" @bind="item.AliasCommand" maxlength="32" placeholder="!d" />
+            </div>
+
+            <div class="col-6 col-md-2">
+              <label class="form-label mb-1">Inc</label>
+              <input class="form-control" type="number" @bind="item.IncrementBy" min="1" max="10" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label mb-1">Dec</label>
+              <input class="form-control" type="number" @bind="item.DecrementBy" min="1" max="10" />
+            </div>
+
+            <div class="col-12 col-md-8">
+              <label class="form-label mb-1">Milestones (comma separated)</label>
+              <input class="form-control" value="@GetMilestonesCsv(item)"
+                @onchange="e => SetMilestonesFromCsv(item, e.Value?.ToString())" placeholder="10,25,50" />
+            </div>
+
+            <div class="col-12 col-md-2 d-grid">
+              <button class="btn btn-primary" @onclick="() => Save(item)" disabled="@isBusy">
+                <i class="bi bi-save me-1"></i>Save
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="small text-muted mt-3">
+      Tip: Commands are optional. If blank, the system uses <code>!{counterId}</code> and no alias.
+    </div>
+  }
+</div>
+
+@code {
+  private bool isLoading = true;
+  private bool isBusy = false;
+  private string? errorMessage;
+  private string? successMessage;
+
+  private List<CounterLibraryItem> items = new();
+
+  protected override async Task OnInitializedAsync()
+  {
+    await LoadAsync();
+  }
+
+  private async Task Reload()
+  {
+    if (isBusy) return;
+    await LoadAsync();
+  }
+
+  private async Task LoadAsync()
+  {
+    isLoading = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      items = (await CounterLibraryRepository.ListAsync()).ToList();
+      foreach (var item in items)
+      {
+        item.LongCommand = NormalizeCommand(item.LongCommand);
+        item.AliasCommand = NormalizeCommand(item.AliasCommand);
+      }
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to load counter library: {ex.Message}";
+      items = new List<CounterLibraryItem>();
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
+
+  private async Task Save(CounterLibraryItem item)
+  {
+    if (isBusy) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      item.LongCommand = NormalizeCommand(item.LongCommand);
+      item.AliasCommand = NormalizeCommand(item.AliasCommand);
+      item.LastUpdated = DateTimeOffset.UtcNow;
+
+      await CounterLibraryRepository.UpsertAsync(item);
+      successMessage = $"Saved: {item.Name} ({item.CounterId})";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save counter: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private static string? NormalizeCommand(string? command)
+  {
+    var c = (command ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(c)) return string.Empty;
+
+    if (!c.StartsWith("!", StringComparison.Ordinal))
+    {
+      c = "!" + c;
+    }
+
+    return c.ToLowerInvariant();
+  }
+
+  private static string GetMilestonesCsv(CounterLibraryItem item)
+  {
+    if (item.Milestones == null || item.Milestones.Length == 0) return string.Empty;
+    return string.Join(",", item.Milestones);
+  }
+
+  private static void SetMilestonesFromCsv(CounterLibraryItem item, string? csv)
+  {
+    var raw = (csv ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+      item.Milestones = Array.Empty<int>();
+      return;
+    }
+
+    var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var values = new List<int>();
+    foreach (var part in parts)
+    {
+      if (int.TryParse(part, out var v) && v > 0)
+      {
+        values.Add(v);
+      }
+    }
+
+    item.Milestones = values.Distinct().OrderBy(v => v).ToArray();
+  }
+}

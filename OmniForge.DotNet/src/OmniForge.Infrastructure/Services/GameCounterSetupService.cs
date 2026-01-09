@@ -78,43 +78,60 @@ namespace OmniForge.Infrastructure.Services
             var gameChatConfig = await _gameChatCommandsRepository.GetAsync(userId, gameId) ?? new ChatCommandConfiguration();
             gameChatConfig.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
 
-            var baseCommand = $"!{libraryItem.CounterId}";
-            var incCommand = $"!{libraryItem.CounterId}+";
-            var decCommand = $"!{libraryItem.CounterId}-";
-
-            if (!gameChatConfig.Commands.ContainsKey(baseCommand))
+            var defaultBase = $"!{libraryItem.CounterId}";
+            var primaryBaseCommand = NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
+            var aliasBaseCommand = NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
+            if (!string.IsNullOrWhiteSpace(aliasBaseCommand)
+                && string.Equals(aliasBaseCommand, primaryBaseCommand, StringComparison.OrdinalIgnoreCase))
             {
-                gameChatConfig.Commands[baseCommand] = new ChatCommandDefinition
-                {
-                    Response = $"{libraryItem.Name}: {{{{{libraryItem.CounterId}}}}}",
-                    Permission = "everyone",
-                    Cooldown = 5,
-                    Enabled = true
-                };
+                aliasBaseCommand = string.Empty;
             }
 
-            if (!gameChatConfig.Commands.ContainsKey(incCommand))
+            var baseCommands = new List<string> { primaryBaseCommand };
+            if (!string.IsNullOrWhiteSpace(aliasBaseCommand))
             {
-                gameChatConfig.Commands[incCommand] = new ChatCommandDefinition
-                {
-                    Action = "increment",
-                    Counter = libraryItem.CounterId,
-                    Permission = "moderator",
-                    Cooldown = 1,
-                    Enabled = true
-                };
+                baseCommands.Add(aliasBaseCommand);
             }
 
-            if (!gameChatConfig.Commands.ContainsKey(decCommand))
+            foreach (var baseCommand in baseCommands)
             {
-                gameChatConfig.Commands[decCommand] = new ChatCommandDefinition
+                var incCommand = $"{baseCommand}+";
+                var decCommand = $"{baseCommand}-";
+
+                if (!gameChatConfig.Commands.ContainsKey(baseCommand))
                 {
-                    Action = "decrement",
-                    Counter = libraryItem.CounterId,
-                    Permission = "moderator",
-                    Cooldown = 1,
-                    Enabled = true
-                };
+                    gameChatConfig.Commands[baseCommand] = new ChatCommandDefinition
+                    {
+                        Response = $"{libraryItem.Name}: {{{{{libraryItem.CounterId}}}}}",
+                        Permission = "everyone",
+                        Cooldown = 5,
+                        Enabled = true
+                    };
+                }
+
+                if (!gameChatConfig.Commands.ContainsKey(incCommand))
+                {
+                    gameChatConfig.Commands[incCommand] = new ChatCommandDefinition
+                    {
+                        Action = "increment",
+                        Counter = libraryItem.CounterId,
+                        Permission = "moderator",
+                        Cooldown = 1,
+                        Enabled = true
+                    };
+                }
+
+                if (!gameChatConfig.Commands.ContainsKey(decCommand))
+                {
+                    gameChatConfig.Commands[decCommand] = new ChatCommandDefinition
+                    {
+                        Action = "decrement",
+                        Counter = libraryItem.CounterId,
+                        Permission = "moderator",
+                        Cooldown = 1,
+                        Enabled = true
+                    };
+                }
             }
 
             await _gameChatCommandsRepository.SaveAsync(userId, gameId, gameChatConfig);
@@ -156,6 +173,31 @@ namespace OmniForge.Infrastructure.Services
             }
 
             _logger.LogInformation("✅ Added library counter {CounterId} to game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
+        }
+
+        private static string NormalizeBaseCommandOrDefault(string? command, string fallback)
+        {
+            var normalized = NormalizeBaseCommandOrEmpty(command);
+            if (string.IsNullOrWhiteSpace(normalized) || string.Equals(normalized, "!", StringComparison.Ordinal))
+            {
+                normalized = NormalizeBaseCommandOrEmpty(fallback);
+            }
+
+            return normalized;
+        }
+
+        private static string NormalizeBaseCommandOrEmpty(string? command)
+        {
+            var c = (command ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(c)) return string.Empty;
+
+            if (!c.StartsWith("!", StringComparison.Ordinal))
+            {
+                c = "!" + c;
+            }
+
+            c = c.TrimEnd('+', '-');
+            return c.ToLowerInvariant();
         }
     }
 }

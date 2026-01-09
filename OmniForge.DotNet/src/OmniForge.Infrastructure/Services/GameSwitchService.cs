@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
@@ -14,6 +15,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly IGameLibraryRepository _gameLibraryRepository;
         private readonly IGameChatCommandsRepository _gameChatCommandsRepository;
         private readonly IGameCustomCountersConfigRepository _gameCustomCountersConfigRepository;
+        private readonly IGameCoreCountersConfigRepository _gameCoreCountersConfigRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IUserRepository _userRepository;
         private readonly IOverlayNotifier _overlayNotifier;
@@ -25,6 +27,7 @@ namespace OmniForge.Infrastructure.Services
             IGameLibraryRepository gameLibraryRepository,
             IGameChatCommandsRepository gameChatCommandsRepository,
             IGameCustomCountersConfigRepository gameCustomCountersConfigRepository,
+            IGameCoreCountersConfigRepository gameCoreCountersConfigRepository,
             ICounterRepository counterRepository,
             IUserRepository userRepository,
             IOverlayNotifier overlayNotifier,
@@ -35,6 +38,7 @@ namespace OmniForge.Infrastructure.Services
             _gameLibraryRepository = gameLibraryRepository;
             _gameChatCommandsRepository = gameChatCommandsRepository;
             _gameCustomCountersConfigRepository = gameCustomCountersConfigRepository;
+            _gameCoreCountersConfigRepository = gameCoreCountersConfigRepository;
             _counterRepository = counterRepository;
             _userRepository = userRepository;
             _overlayNotifier = overlayNotifier;
@@ -55,6 +59,16 @@ namespace OmniForge.Infrastructure.Services
             }
 
             var now = DateTimeOffset.UtcNow;
+
+            User? user = null;
+            try
+            {
+                user = await _userRepository.GetUserAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed reading user for {UserId}", LogSanitizer.Sanitize(userId));
+            }
 
             // Capture current active configs (these are what the bot/overlay are using right now)
             ChatCommandConfiguration? activeChatCommands = null;
@@ -101,6 +115,23 @@ namespace OmniForge.Infrastructure.Services
                         if (activeCustomCounters != null)
                         {
                             await _gameCustomCountersConfigRepository.SaveAsync(userId, current.ActiveGameId!, activeCustomCounters);
+                        }
+
+                        // Persist core counter selection (overlay visibility) per game
+                        if (user?.OverlaySettings?.Counters != null)
+                        {
+                            var counters = user.OverlaySettings.Counters;
+                            await _gameCoreCountersConfigRepository.SaveAsync(
+                                userId,
+                                current.ActiveGameId!,
+                                new GameCoreCountersConfig(
+                                    UserId: userId,
+                                    GameId: current.ActiveGameId!,
+                                    DeathsEnabled: counters.Deaths,
+                                    SwearsEnabled: counters.Swears,
+                                    ScreamsEnabled: counters.Screams,
+                                    BitsEnabled: counters.Bits,
+                                    UpdatedAt: now));
                         }
 
                         _logger.LogInformation("💾 Saved per-game configs for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(current.ActiveGameId!));
@@ -191,6 +222,54 @@ namespace OmniForge.Infrastructure.Services
             newCounters.TwitchUserId = userId;
             newCounters.LastUpdated = now;
 
+            // Load per-game core counter selection (seed from current user's overlay settings if missing)
+            GameCoreCountersConfig? coreSelection = null;
+            try
+            {
+                coreSelection = await _gameCoreCountersConfigRepository.GetAsync(userId, gameId);
+                if (coreSelection == null)
+                {
+                    var overlayCounters = user?.OverlaySettings?.Counters;
+                    coreSelection = new GameCoreCountersConfig(
+                        UserId: userId,
+                        GameId: gameId,
+                        DeathsEnabled: overlayCounters?.Deaths ?? true,
+                        SwearsEnabled: overlayCounters?.Swears ?? true,
+                        ScreamsEnabled: overlayCounters?.Screams ?? true,
+                        BitsEnabled: overlayCounters?.Bits ?? false,
+                        UpdatedAt: now);
+
+                    await _gameCoreCountersConfigRepository.SaveAsync(userId, gameId, coreSelection);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed loading core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+
+            // Apply core selection to overlay visibility and (by override) to default chat commands
+            try
+            {
+                if (user != null && coreSelection != null)
+                {
+                    user.OverlaySettings ??= new OverlaySettings();
+                    user.OverlaySettings.Counters ??= new OverlayCounters();
+                    user.OverlaySettings.Counters.Deaths = coreSelection.DeathsEnabled;
+                    user.OverlaySettings.Counters.Swears = coreSelection.SwearsEnabled;
+                    user.OverlaySettings.Counters.Screams = coreSelection.ScreamsEnabled;
+                    user.OverlaySettings.Counters.Bits = coreSelection.BitsEnabled;
+
+                    await _userRepository.SaveUserAsync(user);
+                    await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
+                }
+
+                ApplyCoreSelectionToChatCommands(newChatCommands, coreSelection);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed applying core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+
             // Swap the active counters (existing system uses the primary counters row)
             await _counterRepository.SaveCountersAsync(newCounters);
 
@@ -217,6 +296,123 @@ namespace OmniForge.Infrastructure.Services
 
             await _overlayNotifier.NotifyCounterUpdateAsync(userId, newCounters);
             _logger.LogInformation("🔄 Active game switched for user {UserId}: {GameId} ({GameName})", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(gameName));
+        }
+
+        public async Task ApplyActiveCoreCountersSelectionAsync(string userId, string gameId)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(gameId))
+            {
+                return;
+            }
+
+            try
+            {
+                var ctx = await _gameContextRepository.GetAsync(userId);
+                if (ctx == null || !string.Equals(ctx.ActiveGameId, gameId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var selection = await _gameCoreCountersConfigRepository.GetAsync(userId, gameId);
+                if (selection == null)
+                {
+                    return;
+                }
+
+                User? user = null;
+                try
+                {
+                    user = await _userRepository.GetUserAsync(userId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed reading user for {UserId}", LogSanitizer.Sanitize(userId));
+                }
+
+                if (user != null)
+                {
+                    user.OverlaySettings ??= new OverlaySettings();
+                    user.OverlaySettings.Counters ??= new OverlayCounters();
+                    user.OverlaySettings.Counters.Deaths = selection.DeathsEnabled;
+                    user.OverlaySettings.Counters.Swears = selection.SwearsEnabled;
+                    user.OverlaySettings.Counters.Screams = selection.ScreamsEnabled;
+                    user.OverlaySettings.Counters.Bits = selection.BitsEnabled;
+
+                    await _userRepository.SaveUserAsync(user);
+                    await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
+                }
+
+                ChatCommandConfiguration activeChat;
+                try
+                {
+                    activeChat = await _userRepository.GetChatCommandsConfigAsync(userId) ?? new ChatCommandConfiguration();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed reading active chat commands for user {UserId}", LogSanitizer.Sanitize(userId));
+                    activeChat = new ChatCommandConfiguration();
+                }
+
+                ApplyCoreSelectionToChatCommands(activeChat, selection);
+                await _userRepository.SaveChatCommandsConfigAsync(userId, activeChat);
+                await _overlayNotifier.NotifyCustomAlertAsync(userId, "chatCommandsUpdated", new { commands = activeChat.Commands });
+
+                _logger.LogInformation("✅ Applied active core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed applying active core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+            }
+        }
+
+        private static void ApplyCoreSelectionToChatCommands(ChatCommandConfiguration chatCommands, GameCoreCountersConfig? selection)
+        {
+            if (chatCommands == null || selection == null) return;
+
+            chatCommands.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
+
+            SetCoreCommandEnabled(chatCommands, "!deaths", selection.DeathsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!death+", selection.DeathsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!death-", selection.DeathsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!d+", selection.DeathsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!d-", selection.DeathsEnabled);
+
+            SetCoreCommandEnabled(chatCommands, "!swears", selection.SwearsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sw", selection.SwearsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!swear+", selection.SwearsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!swear-", selection.SwearsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sw+", selection.SwearsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sw-", selection.SwearsEnabled);
+
+            SetCoreCommandEnabled(chatCommands, "!screams", selection.ScreamsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sc", selection.ScreamsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!scream+", selection.ScreamsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!scream-", selection.ScreamsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sc+", selection.ScreamsEnabled);
+            SetCoreCommandEnabled(chatCommands, "!sc-", selection.ScreamsEnabled);
+        }
+
+        private static void SetCoreCommandEnabled(ChatCommandConfiguration config, string command, bool enabled)
+        {
+            if (enabled)
+            {
+                // Remove override so defaults can run.
+                if (config.Commands.ContainsKey(command))
+                {
+                    config.Commands.Remove(command);
+                }
+
+                return;
+            }
+
+            // Add an override that disables the command (overrides defaults in ChatCommandProcessor).
+            config.Commands[command] = new ChatCommandDefinition
+            {
+                Enabled = false,
+                Cooldown = 0,
+                Permission = "everyone",
+                Response = string.Empty
+            };
         }
     }
 }

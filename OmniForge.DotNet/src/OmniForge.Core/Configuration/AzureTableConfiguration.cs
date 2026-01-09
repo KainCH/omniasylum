@@ -25,5 +25,8 @@ namespace OmniForge.Core.Configuration
         // Per-game configs
         public string GameChatCommandsTable { get; set; } = "gamechatcommands";
         public string GameCustomCountersConfigTable { get; set; } = "gamecustomcounters";
+
+        // Per-game core counter selection
+        public string GameCoreCountersConfigTable { get; set; } = "gamecorecounters";
     }
 }

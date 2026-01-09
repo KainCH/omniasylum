@@ -136,6 +136,8 @@
         CounterId = counterId,
         Name = req.Name,
         Icon = req.Icon,
+        LongCommand = $"!{counterId}",
+        AliasCommand = string.Empty,
         IncrementBy = 1,
         DecrementBy = 1,
         Milestones = Array.Empty<int>(),

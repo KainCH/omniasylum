@@ -20,6 +20,7 @@ using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using OmniForge.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -153,6 +154,8 @@ using (var scope = app.Services.CreateScope())
     var counterRequestRepository = scope.ServiceProvider.GetRequiredService<ICounterRequestRepository>();
     var gameChatCommandsRepository = scope.ServiceProvider.GetRequiredService<IGameChatCommandsRepository>();
     var gameCustomCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCustomCountersConfigRepository>();
+    var gameCoreCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCoreCountersConfigRepository>();
+    var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<CoreCounterLibrarySeeder>();
 
     try
     {
@@ -168,6 +171,9 @@ using (var scope = app.Services.CreateScope())
         await counterRequestRepository.InitializeAsync();
         await gameChatCommandsRepository.InitializeAsync();
         await gameCustomCountersConfigRepository.InitializeAsync();
+        await gameCoreCountersConfigRepository.InitializeAsync();
+
+        await coreCounterLibrarySeeder.SeedAsync();
     }
     catch (Exception ex)
     {

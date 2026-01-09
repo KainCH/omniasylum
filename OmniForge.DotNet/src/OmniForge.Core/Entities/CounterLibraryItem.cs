@@ -8,6 +8,11 @@ namespace OmniForge.Core.Entities
         public string Name { get; set; } = string.Empty;
         public string Icon { get; set; } = string.Empty;
 
+        // Optional chat commands to use for this counter.
+        // If unset, defaults to "!{CounterId}" and no alias.
+        public string? LongCommand { get; set; }
+        public string? AliasCommand { get; set; }
+
         public int IncrementBy { get; set; } = 1;
         public int DecrementBy { get; set; } = 1;
 

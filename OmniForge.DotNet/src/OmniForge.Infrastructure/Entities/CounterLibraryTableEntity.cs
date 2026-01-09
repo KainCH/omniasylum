@@ -14,6 +14,8 @@ namespace OmniForge.Infrastructure.Entities
 
         public string Name { get; set; } = string.Empty;
         public string Icon { get; set; } = string.Empty;
+        public string? LongCommand { get; set; }
+        public string? AliasCommand { get; set; }
         public int IncrementBy { get; set; } = 1;
         public int DecrementBy { get; set; } = 1;
         public string MilestonesJson { get; set; } = "[]";
@@ -27,6 +29,8 @@ namespace OmniForge.Infrastructure.Entities
                 CounterId = RowKey,
                 Name = Name,
                 Icon = Icon,
+                LongCommand = LongCommand,
+                AliasCommand = AliasCommand,
                 IncrementBy = IncrementBy,
                 DecrementBy = DecrementBy,
                 Milestones = milestones,
@@ -43,6 +47,8 @@ namespace OmniForge.Infrastructure.Entities
                 RowKey = item.CounterId,
                 Name = item.Name,
                 Icon = item.Icon,
+                LongCommand = item.LongCommand,
+                AliasCommand = item.AliasCommand,
                 IncrementBy = item.IncrementBy,
                 DecrementBy = item.DecrementBy,
                 MilestonesJson = milestonesJson,
