@@ -205,6 +205,70 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task UnsubscribeFromUserAsync_DuringInFlightSubscribe_DoesNotReAddUser()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(false, null, "Bot is not a moderator"));
+
+            var firstCallEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var unblockFirstCall = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            Task DelayedFirstSubscription()
+            {
+                firstCallEntered.TrySetResult(true);
+                return unblockFirstCall.Task;
+            }
+
+            // SubscribeToUserAsync makes multiple CreateEventSubSubscriptionAsync calls.
+            _mockHelixWrapper
+                .SetupSequence(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    "broadcaster_access",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .Returns(DelayedFirstSubscription)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var subscribeTask = _service.SubscribeToUserAsync("123");
+
+            var entered = await Task.WhenAny(firstCallEntered.Task, Task.Delay(1000));
+            Assert.Same(firstCallEntered.Task, entered);
+
+            var unsubscribeTask = _service.UnsubscribeFromUserAsync("123");
+            var unsubscribeCompleted = await Task.WhenAny(unsubscribeTask, Task.Delay(500));
+            Assert.Same(unsubscribeTask, unsubscribeCompleted);
+
+            unblockFirstCall.TrySetResult(true);
+
+            var subscribeResult = await subscribeTask;
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Failed, subscribeResult);
+            Assert.False(_service.IsUserSubscribed("123"));
+            _mockMonitoringRegistry.Verify(x => x.SetState(It.IsAny<string>(), It.IsAny<MonitoringState>()), Times.Never);
+        }
+
+        [Fact]
         public async Task SubscribeToUserAsync_WhenBotNotEligible_UsesBroadcasterTokenForSubscriptions_AndSetsMonitoringRegistryToNotUseBot()
         {
             // Arrange
