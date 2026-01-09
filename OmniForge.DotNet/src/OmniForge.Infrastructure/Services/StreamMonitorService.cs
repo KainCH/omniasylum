@@ -172,7 +172,7 @@ namespace OmniForge.Infrastructure.Services
 
                     if (!string.IsNullOrEmpty(tokenOwner.RefreshToken))
                     {
-                        var newToken = await authService.RefreshTokenAsync(tokenOwner.RefreshToken);
+                        var newToken = await authService.RefreshTokenAsync(tokenOwner.RefreshToken).ConfigureAwait(false);
                         if (newToken != null)
                         {
                             tokenOwner.AccessToken = newToken.AccessToken;
@@ -334,22 +334,13 @@ namespace OmniForge.Infrastructure.Services
                     if (!isAdminActing)
                     {
                         // Subscribe to stream events
-                        if (useBotForChannelEvents
-                            && botCredentialRepository != null
-                            && botCredentials != null)
+                        if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.online", "1", condition).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.offline", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition).ConfigureAwait(false);
                         }
                         else
                         {
-                            if (useBotForChannelEvents)
-                            {
-                                _logger.LogWarning(
-                                    "Bot credentials missing or invalid for user {UserId}; falling back to broadcaster credentials for stream event subscriptions.",
-                                    LogSanitizer.Sanitize(userId));
-                            }
-
                             await SubscribeWithRetryAsync(context, "stream.online", "1", condition).ConfigureAwait(false);
                             await SubscribeWithRetryAsync(context, "stream.offline", "1", condition).ConfigureAwait(false);
                         }
@@ -365,11 +356,9 @@ namespace OmniForge.Infrastructure.Services
                         { "broadcaster_user_id", broadcasterId },
                         { "moderator_user_id", channelEventsUserId }
                     };
-                    if (useBotForChannelEvents
-                        && botCredentialRepository != null
-                        && botCredentials != null)
+                    if (useBotForChannelEvents)
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.follow", "2", followCondition).ConfigureAwait(false);
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition).ConfigureAwait(false);
                     }
                     else
                     {
@@ -389,12 +378,10 @@ namespace OmniForge.Infrastructure.Services
                             LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
-                        if (useBotForChannelEvents
-                            && botCredentialRepository != null
-                            && botCredentials != null)
+                        if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
                         }
                         else
                         {
@@ -610,7 +597,7 @@ namespace OmniForge.Infrastructure.Services
                     version,
                     condition,
                     EventSubTransportMethod.Websocket,
-                    sessionId);
+                    sessionId).ConfigureAwait(false);
                 _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} (Forge bot)", LogSanitizer.Sanitize(subscriptionType));
                 return true;
             }
@@ -623,7 +610,7 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} (Forge bot) - forcing bot token refresh...", LogSanitizer.Sanitize(subscriptionType));
-                var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken);
+                var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken).ConfigureAwait(false);
                 if (refreshed == null)
                 {
                     _logger.LogError("❌ Failed to refresh Forge bot token during subscription retry");
@@ -633,7 +620,7 @@ namespace OmniForge.Infrastructure.Services
                 botCredentials.AccessToken = refreshed.AccessToken;
                 botCredentials.RefreshToken = refreshed.RefreshToken;
                 botCredentials.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
-                await botCredentialRepository.SaveAsync(botCredentials);
+                await botCredentialRepository.SaveAsync(botCredentials).ConfigureAwait(false);
 
                 try
                 {
@@ -644,7 +631,7 @@ namespace OmniForge.Infrastructure.Services
                         version,
                         condition,
                         EventSubTransportMethod.Websocket,
-                        sessionId);
+                        sessionId).ConfigureAwait(false);
                     _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after bot token refresh", LogSanitizer.Sanitize(subscriptionType));
                     return true;
                 }
@@ -699,7 +686,7 @@ namespace OmniForge.Infrastructure.Services
                     version,
                     condition,
                     EventSubTransportMethod.Websocket,
-                    context.SessionId);
+                    context.SessionId).ConfigureAwait(false);
                 _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 return true;
             }
@@ -712,7 +699,7 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - forcing token refresh...", LogSanitizer.Sanitize(subscriptionType));
-                var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository);
+                var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository).ConfigureAwait(false);
                 if (refreshedUser != null)
                 {
                     context.User = refreshedUser;
@@ -726,7 +713,7 @@ namespace OmniForge.Infrastructure.Services
                             version,
                             condition,
                             EventSubTransportMethod.Websocket,
-                            context.SessionId);
+                            context.SessionId).ConfigureAwait(false);
                         _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after token refresh", LogSanitizer.Sanitize(subscriptionType));
                         return true;
                     }
@@ -749,10 +736,10 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("🔄 Force reconnect requested for user {UserId}", LogSanitizer.Sanitize(userId));
             if (_eventSubService.IsConnected)
             {
-                try { await _eventSubService.DisconnectAsync(); } catch (Exception ex) { _logger.LogWarning(ex, "Force reconnect: disconnect failed but continuing"); }
+                try { await _eventSubService.DisconnectAsync().ConfigureAwait(false); } catch (Exception ex) { _logger.LogWarning(ex, "Force reconnect: disconnect failed but continuing"); }
             }
-            try { await _eventSubService.ConnectAsync(); } catch (Exception ex) { _logger.LogError(ex, "Force reconnect: connect failed"); }
-            var result = await SubscribeToUserAsync(userId);
+            try { await _eventSubService.ConnectAsync().ConfigureAwait(false); } catch (Exception ex) { _logger.LogError(ex, "Force reconnect: connect failed"); }
+            var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
             _logger.LogInformation("🔄 Force reconnect result for {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
             return result;
         }
@@ -819,7 +806,7 @@ namespace OmniForge.Infrastructure.Services
             _connectionWatchdog?.Dispose();
             try
             {
-                await _eventSubService.DisconnectAsync();
+                await _eventSubService.DisconnectAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -863,10 +850,10 @@ namespace OmniForge.Infrastructure.Services
                     _usersWantingMonitoring.Count);
                 try
                 {
-                    await _eventSubService.ConnectAsync();
+                    await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                     // Wait for session welcome before re-subscribing
-                    await Task.Delay(2000); // Give time for welcome message
+                    await Task.Delay(2000).ConfigureAwait(false); // Give time for welcome message
 
                     if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                     {
@@ -874,7 +861,7 @@ namespace OmniForge.Infrastructure.Services
                         foreach (var userId in _usersWantingMonitoring.Keys)
                         {
                             _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
-                            var result = await SubscribeToUserAsync(userId);
+                            var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                             _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                         }
                     }
@@ -897,18 +884,18 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogWarning("⏱️ No keepalive received for {Seconds:F1}s. Triggering reconnect...", timeSinceLastKeepalive.TotalSeconds);
                     try
                     {
-                        await _eventSubService.DisconnectAsync();
-                        await _eventSubService.ConnectAsync();
+                        await _eventSubService.DisconnectAsync().ConfigureAwait(false);
+                        await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                         // Wait for session welcome before re-subscribing
-                        await Task.Delay(2000);
+                        await Task.Delay(2000).ConfigureAwait(false);
 
                         if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                         {
                             _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                             foreach (var userId in _usersWantingMonitoring.Keys)
                             {
-                                var result = await SubscribeToUserAsync(userId);
+                                var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                                 _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                             }
                         }
@@ -956,7 +943,7 @@ namespace OmniForge.Infrastructure.Services
                         diag.LastEventAt = DateTimeOffset.UtcNow;
                         diag.LastEventSummary = TrySummarizeEvent(eventData);
                     }
-                    await handler.HandleAsync(eventData);
+                    await handler.HandleAsync(eventData).ConfigureAwait(false);
                 }
                 else
                 {
