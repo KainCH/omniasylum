@@ -142,6 +142,8 @@ namespace OmniForge.Infrastructure.Services
                 var botCredentialRepository = scope.ServiceProvider.GetService<IBotCredentialRepository>();
                 var botEligibilityService = scope.ServiceProvider.GetService<ITwitchBotEligibilityService>();
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var twitchApiService = scope.ServiceProvider.GetService<ITwitchApiService>();
+                var gameSwitchService = scope.ServiceProvider.GetService<IGameSwitchService>();
                 var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
                 var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
                 var user = await userRepository.GetUserAsync(userId).ConfigureAwait(false);
@@ -394,6 +396,31 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogInformation("⏭️ Skipping chat EventSub subscriptions (channel.chat.message, channel.chat.notification) - missing 'user:read:chat' scope. Basic stream monitoring will still work.");
                     }
 
+                    // Best-effort: subscribe to channel.update so we can detect game/category changes.
+                    // Do not fail monitoring if Twitch rejects this subscription due to missing scopes.
+                    try
+                    {
+                        var channelUpdateCondition = new Dictionary<string, string>
+                        {
+                            { "broadcaster_user_id", broadcasterId }
+                        };
+
+                        if (useBotForChannelEvents)
+                        {
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.update", "2", channelUpdateCondition).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await SubscribeWithRetryAsync(context, "channel.update", "2", channelUpdateCondition).ConfigureAwait(false);
+                        }
+
+                        _logger.LogInformation("✅ Subscribed to channel.update for broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Failed to subscribe to channel.update for user {UserId}. Game auto-switch will be disabled.", LogSanitizer.Sanitize(userId));
+                    }
+
                     _subscribedUsers.TryAdd(userId, true);
                     _usersWantingMonitoring.TryAdd(userId, true);
                     var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
@@ -418,6 +445,38 @@ namespace OmniForge.Infrastructure.Services
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to bring Discord bot online for monitoring start (user {UserId})", LogSanitizer.Sanitize(userId));
+                    }
+
+                    // Best-effort: seed the current channel game/category immediately on monitor start.
+                    // This allows the overlay/counters to switch before the next channel.update event arrives.
+                    if (!isAdminActing && twitchApiService != null && gameSwitchService != null)
+                    {
+                        try
+                        {
+                            var category = await twitchApiService.GetChannelCategoryAsync(userId).ConfigureAwait(false);
+                            if (category != null && !string.IsNullOrWhiteSpace(category.GameId))
+                            {
+                                _logger.LogInformation(
+                                    "🎮 Seeding active game on monitor start for user {UserId}: {GameName} ({GameId})",
+                                    LogSanitizer.Sanitize(userId),
+                                    LogSanitizer.Sanitize(category.GameName),
+                                    LogSanitizer.Sanitize(category.GameId));
+
+                                await gameSwitchService
+                                    .HandleGameDetectedAsync(userId, category.GameId, category.GameName)
+                                    .ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                _logger.LogInformation(
+                                    "🎮 No active game/category returned for seed on monitor start (user {UserId})",
+                                    LogSanitizer.Sanitize(userId));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "⚠️ Failed to seed active game on monitor start for user {UserId}", LogSanitizer.Sanitize(userId));
+                        }
                     }
 
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));

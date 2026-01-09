@@ -233,6 +233,40 @@ namespace OmniForge.Infrastructure.Services
             public string? UserName { get; set; }
         }
 
+        private class SearchCategoriesHelixResponse
+        {
+            public List<SearchCategoriesHelixData> Data { get; set; } = new();
+        }
+
+        private class SearchCategoriesHelixData
+        {
+            [JsonPropertyName("id")]
+            public string? Id { get; set; }
+
+            [JsonPropertyName("name")]
+            public string? Name { get; set; }
+
+            [JsonPropertyName("box_art_url")]
+            public string? BoxArtUrl { get; set; }
+        }
+
+        private class GetChannelsHelixResponse
+        {
+            public List<GetChannelsHelixData> Data { get; set; } = new();
+        }
+
+        private class GetChannelsHelixData
+        {
+            [JsonPropertyName("broadcaster_id")]
+            public string? BroadcasterId { get; set; }
+
+            [JsonPropertyName("game_id")]
+            public string? GameId { get; set; }
+
+            [JsonPropertyName("game_name")]
+            public string? GameName { get; set; }
+        }
+
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
         {
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
@@ -366,6 +400,106 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(ex, "Error creating clip for user {UserId}", LogSanitizer.Sanitize(userId));
                 return null;
             }
+        }
+
+        public async Task<IReadOnlyList<TwitchCategoryDto>> SearchCategoriesAsync(string userId, string query, int first = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Array.Empty<TwitchCategoryDto>();
+            }
+
+            var requestedFirst = Math.Clamp(first, 1, 100);
+
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/search/categories?query={Uri.EscapeDataString(query)}&first={requestedFirst}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Search Categories failed. Status={StatusCode} Error={Error} Message={Message}",
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    throw new Exception($"Twitch Search Categories failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                var parsed = JsonSerializer.Deserialize<SearchCategoriesHelixResponse>(body, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return (IReadOnlyList<TwitchCategoryDto>)(parsed?.Data ?? new List<SearchCategoriesHelixData>())
+                    .Where(d => !string.IsNullOrWhiteSpace(d.Id) && !string.IsNullOrWhiteSpace(d.Name))
+                    .Select(d => new TwitchCategoryDto
+                    {
+                        Id = d.Id ?? string.Empty,
+                        Name = d.Name ?? string.Empty,
+                        BoxArtUrl = d.BoxArtUrl ?? string.Empty
+                    })
+                    .ToList();
+            });
+        }
+
+        public async Task<TwitchChannelCategoryDto?> GetChannelCategoryAsync(string userId)
+        {
+            return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/channels?broadcaster_id={Uri.EscapeDataString(userId)}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Get Channel Category failed. Status={StatusCode} Error={Error} Message={Message}",
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    throw new Exception($"Twitch Get Channel Category failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                var parsed = JsonSerializer.Deserialize<GetChannelsHelixResponse>(body, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                var data = parsed?.Data?.FirstOrDefault();
+                if (data == null)
+                {
+                    return null;
+                }
+
+                return new TwitchChannelCategoryDto
+                {
+                    BroadcasterId = data.BroadcasterId ?? userId,
+                    GameId = data.GameId ?? string.Empty,
+                    GameName = data.GameName ?? string.Empty
+                };
+            });
         }
 
         public async Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null)

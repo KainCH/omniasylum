@@ -376,16 +376,22 @@ namespace OmniForge.Infrastructure.Services
         {
             if (string.IsNullOrEmpty(template)) return string.Empty;
 
-            var result = template
-                .Replace("{{deaths}}", counters.Deaths.ToString())
-                .Replace("{{swears}}", counters.Swears.ToString())
-                .Replace("{{screams}}", counters.Screams.ToString())
-                .Replace("{{bits}}", counters.Bits.ToString());
+            return System.Text.RegularExpressions.Regex.Replace(template, @"\{\{(\w+)\}\}", match =>
+            {
+                var key = match.Groups[1].Value.ToLowerInvariant();
 
-            // Handle custom counters if needed, though regex is better for dynamic keys
-            // For now, simple replacement is enough for default commands
+                if (key == "deaths") return counters.Deaths.ToString();
+                if (key == "swears") return counters.Swears.ToString();
+                if (key == "screams") return counters.Screams.ToString();
+                if (key == "bits") return counters.Bits.ToString();
 
-            return result;
+                if (counters.CustomCounters != null && counters.CustomCounters.TryGetValue(key, out var customValue))
+                {
+                    return customValue.ToString();
+                }
+
+                return match.Value;
+            });
         }
 
         private static async Task TrySend(Func<string, string, Task>? sendMessage, string userId, string message)
