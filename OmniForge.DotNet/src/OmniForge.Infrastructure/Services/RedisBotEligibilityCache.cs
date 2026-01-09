@@ -19,18 +19,22 @@ namespace OmniForge.Infrastructure.Services
 
         private readonly RedisSettings _settings;
         private readonly ILogger<RedisBotEligibilityCache> _logger;
-        private readonly Lazy<Task<ConnectionMultiplexer?>> _connection;
+        private readonly Lazy<Task<IConnectionMultiplexer?>> _connection;
+        private readonly Func<Task<IDatabase?>>? _databaseFactory;
 
         private sealed record CacheEntry(bool UseBot, string? BotUserId, string? Reason);
 
         public RedisBotEligibilityCache(
             IOptions<RedisSettings> settings,
-            ILogger<RedisBotEligibilityCache> logger)
+            ILogger<RedisBotEligibilityCache> logger,
+            Func<Task<IConnectionMultiplexer?>>? connectionFactory = null,
+            Func<Task<IDatabase?>>? databaseFactory = null)
         {
             _settings = settings.Value;
             _logger = logger;
+            _databaseFactory = databaseFactory;
 
-            _connection = new Lazy<Task<ConnectionMultiplexer?>>(ConnectAsync);
+            _connection = new Lazy<Task<IConnectionMultiplexer?>>(() => (connectionFactory ?? ConnectAsync)());
         }
 
         public async Task<BotEligibilityResult?> TryGetAsync(string broadcasterUserId, string botLoginOrId, CancellationToken cancellationToken = default)
@@ -79,7 +83,7 @@ namespace OmniForge.Infrastructure.Services
                 var entry = new CacheEntry(result.UseBot, result.BotUserId, result.Reason);
                 var json = JsonSerializer.Serialize(entry);
 
-                await db.StringSetAsync(key, json, ttl).ConfigureAwait(false);
+                await db.StringSetAsync(key, (RedisValue)json, ttl).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -100,6 +104,11 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task<IDatabase?> GetDbAsync()
         {
+            if (_databaseFactory != null)
+            {
+                return await _databaseFactory().ConfigureAwait(false);
+            }
+
             if (string.IsNullOrWhiteSpace(_settings.HostName))
             {
                 return null;
@@ -109,7 +118,7 @@ namespace OmniForge.Infrastructure.Services
             return mux?.GetDatabase();
         }
 
-        private async Task<ConnectionMultiplexer?> ConnectAsync()
+        private async Task<IConnectionMultiplexer?> ConnectAsync()
         {
             if (string.IsNullOrWhiteSpace(_settings.HostName))
             {
