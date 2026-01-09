@@ -53,7 +53,7 @@ namespace OmniForge.Infrastructure.Services
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
                 var botCredentialRepository = scope.ServiceProvider.GetRequiredService<IBotCredentialRepository>();
-                var user = await userRepository.GetUserAsync(userId);
+                var user = await userRepository.GetUserAsync(userId).ConfigureAwait(false);
 
                 if (user == null)
                 {
@@ -68,7 +68,7 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
-                var botClient = await EnsureBotConnectedAsync(botCredentialRepository, authService);
+                var botClient = await EnsureBotConnectedAsync(botCredentialRepository, authService).ConfigureAwait(false);
                 if (botClient == null)
                 {
                     _logger.LogError("❌ Forge bot is not configured/connected. Cannot join channel for user {UserId}", LogSanitizer.Sanitize(userId));
@@ -120,7 +120,7 @@ namespace OmniForge.Infrastructure.Services
 
         private void HandleMessage(TwitchLib.Client.Models.ChatMessage chatMessage)
         {
-            _ = HandleMessageAsync(chatMessage);
+            FireAndForget(HandleMessageAsync(chatMessage), "HandleMessageAsync");
         }
 
         private async Task HandleMessageAsync(TwitchLib.Client.Models.ChatMessage chatMessage)
@@ -138,12 +138,26 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
-                await _messageHandler.HandleMessageAsync(userId, chatMessage, SendMessageAsync);
+                await _messageHandler.HandleMessageAsync(userId, chatMessage, SendMessageAsync).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error handling Twitch chat message");
             }
+        }
+
+        private void FireAndForget(Task task, string operation)
+        {
+            if (task.IsCompleted)
+            {
+                return;
+            }
+
+            _ = task.ContinueWith(
+                t => _logger.LogError(t.Exception, "❌ Fire-and-forget operation failed: {Operation}", operation),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
         }
 
         private async Task<TwitchClient?> EnsureBotConnectedAsync(

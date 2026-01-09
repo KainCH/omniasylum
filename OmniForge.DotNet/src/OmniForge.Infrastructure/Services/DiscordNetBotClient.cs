@@ -54,10 +54,10 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 // Best effort: keep the bot "online" when configured.
-                _ = EnsureGatewayConnectedAsync(botToken, "shaping commands in the forge", UserStatus.Online);
+                FireAndForget(EnsureGatewayConnectedAsync(botToken, "shaping commands in the forge", UserStatus.Online), "EnsureGatewayConnectedAsync(ValidateChannelAsync)");
 
-                var client = await GetClientAsync(botToken);
-                var channel = await client.GetChannelAsync(channelSnowflake);
+                var client = await GetClientAsync(botToken).ConfigureAwait(false);
+                var channel = await client.GetChannelAsync(channelSnowflake).ConfigureAwait(false);
                 return channel != null;
             }
             catch (Exception ex)
@@ -74,11 +74,11 @@ namespace OmniForge.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(botToken)) throw new ArgumentException("Bot token is required", nameof(botToken));
 
             // Best effort: keep the bot "online" when configured.
-            _ = EnsureGatewayConnectedAsync(botToken, "shaping commands in the forge", UserStatus.Online);
+            FireAndForget(EnsureGatewayConnectedAsync(botToken, "shaping commands in the forge", UserStatus.Online), "EnsureGatewayConnectedAsync(SendMessageAsync)");
 
-            var client = await GetClientAsync(botToken);
+            var client = await GetClientAsync(botToken).ConfigureAwait(false);
 
-            var channel = await client.GetChannelAsync(channelSnowflake);
+            var channel = await client.GetChannelAsync(channelSnowflake).ConfigureAwait(false);
             if (channel is not IMessageChannel messageChannel)
             {
                 throw new InvalidOperationException("Discord channel is not a message channel or was not found");
@@ -97,7 +97,7 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task<DiscordRestClient> GetClientAsync(string botToken)
         {
-            await _clientLock.WaitAsync();
+            await _clientLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (_client != null && string.Equals(_botToken, botToken, StringComparison.Ordinal))
@@ -115,7 +115,7 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 var client = new DiscordRestClient();
-                await client.LoginAsync(TokenType.Bot, botToken);
+                await client.LoginAsync(TokenType.Bot, botToken).ConfigureAwait(false);
 
                 _client = client;
                 _botToken = botToken;
@@ -136,7 +136,7 @@ namespace OmniForge.Infrastructure.Services
             DiscordSocketClient? presenceClientToUpdate = null;
             bool shouldReturnAfterLock = false;
 
-            await _clientLock.WaitAsync();
+            await _clientLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 _gatewayActivity = activityText;
@@ -278,17 +278,17 @@ namespace OmniForge.Infrastructure.Services
             {
                 if (clientToStart.LoginState != LoginState.LoggedIn)
                 {
-                    await clientToStart.LoginAsync(TokenType.Bot, botToken);
+                    await clientToStart.LoginAsync(TokenType.Bot, botToken).ConfigureAwait(false);
                 }
 
                 if (clientToStart.ConnectionState != ConnectionState.Connected && clientToStart.ConnectionState != ConnectionState.Connecting)
                 {
-                    await clientToStart.StartAsync();
+                    await clientToStart.StartAsync().ConfigureAwait(false);
                 }
 
                 if (clientToStart.ConnectionState == ConnectionState.Connected)
                 {
-                    await UpdatePresenceAsync(clientToStart, desiredStatus);
+                    await UpdatePresenceAsync(clientToStart, desiredStatus).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -302,8 +302,8 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
-                await socketClient.SetStatusAsync(desiredStatus);
-                await socketClient.SetGameAsync(activity);
+                await socketClient.SetStatusAsync(desiredStatus).ConfigureAwait(false);
+                await socketClient.SetGameAsync(activity).ConfigureAwait(false);
 
                 _logger.LogInformation(
                     "✅ Discord bot presence updated: Status={Status}, Activity={Activity}",
@@ -318,28 +318,13 @@ namespace OmniForge.Infrastructure.Services
 
         public void Dispose()
         {
-            DiscordRestClient? restClient;
-            DiscordSocketClient? gatewayClient;
+            var restClient = Interlocked.Exchange(ref _client, null);
+            Interlocked.Exchange(ref _botToken, null);
 
-            // Snapshot and null shared state under the async lock.
-            _clientLock.Wait();
-            try
-            {
-                restClient = _client;
-                gatewayClient = _gatewayClient;
-
-                _client = null;
-                _botToken = null;
-
-                _gatewayClient = null;
-                _gatewayToken = null;
-                _gatewayActivity = null;
-                _gatewayStartTask = null;
-            }
-            finally
-            {
-                _clientLock.Release();
-            }
+            var gatewayClient = Interlocked.Exchange(ref _gatewayClient, null);
+            Interlocked.Exchange(ref _gatewayToken, null);
+            Interlocked.Exchange(ref _gatewayActivity, null);
+            Interlocked.Exchange(ref _gatewayStartTask, null);
 
             try
             {
@@ -354,32 +339,43 @@ namespace OmniForge.Infrastructure.Services
             {
                 if (gatewayClient != null)
                 {
-                    _ = Task.Run(async () =>
+                    try
                     {
-                        try
-                        {
-                            await gatewayClient.StopAsync().ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            // Ignore stop failures
-                        }
+                        gatewayClient.StopAsync().Wait(TimeSpan.FromSeconds(2));
+                    }
+                    catch
+                    {
+                        // Ignore stop failures
+                    }
 
-                        try
-                        {
-                            gatewayClient.Dispose();
-                        }
-                        catch
-                        {
-                            // Ignore dispose failures
-                        }
-                    });
+                    try
+                    {
+                        gatewayClient.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore dispose failures
+                    }
                 }
             }
             catch
             {
                 // Ignore dispose failures
             }
+        }
+
+        private void FireAndForget(Task task, string operation)
+        {
+            if (task.IsCompleted)
+            {
+                return;
+            }
+
+            _ = task.ContinueWith(
+                t => _logger.LogError(t.Exception, "❌ Fire-and-forget operation failed: {Operation}", operation),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
         }
     }
 }

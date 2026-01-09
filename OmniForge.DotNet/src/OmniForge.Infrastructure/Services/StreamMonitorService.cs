@@ -107,11 +107,11 @@ namespace OmniForge.Infrastructure.Services
                     _eventSubService.OnSessionWelcome += welcomeHandler;
 
                     // Connect if not already connected
-                    await _eventSubService.ConnectAsync();
+                    await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                     // Wait for the welcome message with a timeout
                     var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
 
                     _eventSubService.OnSessionWelcome -= welcomeHandler;
 
@@ -144,12 +144,12 @@ namespace OmniForge.Infrastructure.Services
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
                 var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
                 var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
-                var user = await userRepository.GetUserAsync(userId);
+                var user = await userRepository.GetUserAsync(userId).ConfigureAwait(false);
                 User? actingUser = null;
                 // isAdminActing computed above
                 if (isAdminActing)
                 {
-                    actingUser = await userRepository.GetUserAsync(actingUserId!);
+                    actingUser = await userRepository.GetUserAsync(actingUserId!).ConfigureAwait(false);
                     if (actingUser == null || actingUser.Role != "admin")
                     {
                         _logger.LogWarning("Admin monitoring request denied. Acting user {ActingUserId} is not admin or not found.", LogSanitizer.Sanitize(actingUserId!));
@@ -179,7 +179,7 @@ namespace OmniForge.Infrastructure.Services
                             tokenOwner.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
                             tokenOwner.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
 
-                            await userRepository.SaveUserAsync(tokenOwner);
+                            await userRepository.SaveUserAsync(tokenOwner).ConfigureAwait(false);
                             _logger.LogInformation("Successfully refreshed access token for user {UserId}.", LogSanitizer.Sanitize(tokenOwner.TwitchUserId));
                         }
                         else
@@ -258,10 +258,10 @@ namespace OmniForge.Infrastructure.Services
 
                     if (!isAdminActing && botEligibilityService != null && botCredentialRepository != null)
                     {
-                        var eligibility = await botEligibilityService.GetEligibilityAsync(broadcasterId, tokenOwner.AccessToken, CancellationToken.None);
+                        var eligibility = await botEligibilityService.GetEligibilityAsync(broadcasterId, tokenOwner.AccessToken, CancellationToken.None).ConfigureAwait(false);
                         if (eligibility.UseBot && !string.IsNullOrEmpty(eligibility.BotUserId))
                         {
-                            botCredentials = await EnsureBotTokenValidAsync(botCredentialRepository, authService);
+                            botCredentials = await EnsureBotTokenValidAsync(botCredentialRepository, authService).ConfigureAwait(false);
                             if (botCredentials != null)
                             {
                                 useBotForChannelEvents = true;
@@ -336,11 +336,10 @@ namespace OmniForge.Infrastructure.Services
                         // Subscribe to stream events
                         if (useBotForChannelEvents
                             && botCredentialRepository != null
-                            && botCredentials != null
-                            && !string.IsNullOrEmpty(botCredentials.AccessToken))
+                            && botCredentials != null)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.online", "1", condition);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.offline", "1", condition);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.online", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "stream.offline", "1", condition).ConfigureAwait(false);
                         }
                         else
                         {
@@ -351,8 +350,8 @@ namespace OmniForge.Infrastructure.Services
                                     LogSanitizer.Sanitize(userId));
                             }
 
-                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition);
-                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition);
+                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition).ConfigureAwait(false);
                         }
                     }
                     else
@@ -368,14 +367,13 @@ namespace OmniForge.Infrastructure.Services
                     };
                     if (useBotForChannelEvents
                         && botCredentialRepository != null
-                        && botCredentials != null
-                        && !string.IsNullOrEmpty(botCredentials.AccessToken))
+                        && botCredentials != null)
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.follow", "2", followCondition);
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.follow", "2", followCondition).ConfigureAwait(false);
                     }
                     else
                     {
-                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition);
+                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition).ConfigureAwait(false);
                     }
 
                     // Chat subscriptions require 'user:read:chat' scope
@@ -393,16 +391,15 @@ namespace OmniForge.Infrastructure.Services
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
                         if (useBotForChannelEvents
                             && botCredentialRepository != null
-                            && botCredentials != null
-                            && !string.IsNullOrEmpty(botCredentials.AccessToken))
+                            && botCredentials != null)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository, botCredentials, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
-                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
+                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
                         }
                     }
                     else
@@ -428,7 +425,7 @@ namespace OmniForge.Infrastructure.Services
                     {
                         if (discordBotClient != null && discordBotSettings != null && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken))
                         {
-                            await discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                            await discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
@@ -478,7 +475,7 @@ namespace OmniForge.Infrastructure.Services
                     && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken)
                     && monitoringRegistry.GetAllStates().Count == 0)
                 {
-                    await discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                    await discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -504,7 +501,7 @@ namespace OmniForge.Infrastructure.Services
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
                 // Disconnect if no users are left to save resources and ensure clean state for next connection
-                await _eventSubService.DisconnectAsync();
+                await _eventSubService.DisconnectAsync().ConfigureAwait(false);
                 _logger.LogInformation("✅ EventSub disconnected successfully");
             }
         }
@@ -526,13 +523,13 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                var refreshedToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                var refreshedToken = await authService.RefreshTokenAsync(user.RefreshToken).ConfigureAwait(false);
                 if (refreshedToken != null)
                 {
                     user.AccessToken = refreshedToken.AccessToken;
                     user.RefreshToken = refreshedToken.RefreshToken;
                     user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshedToken.ExpiresIn);
-                    await userRepository.SaveUserAsync(user);
+                    await userRepository.SaveUserAsync(user).ConfigureAwait(false);
                     _logger.LogInformation("✅ Token refreshed successfully for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                     return user;
                 }
@@ -553,7 +550,7 @@ namespace OmniForge.Infrastructure.Services
             IBotCredentialRepository botCredentialRepository,
             ITwitchAuthService authService)
         {
-            var creds = await botCredentialRepository.GetAsync();
+            var creds = await botCredentialRepository.GetAsync().ConfigureAwait(false);
             if (creds == null)
             {
                 _logger.LogWarning("⚠️ Forge bot credentials not found; falling back to streamer token");
@@ -570,7 +567,7 @@ namespace OmniForge.Infrastructure.Services
             if (creds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
             {
                 _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
-                var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken);
+                var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken).ConfigureAwait(false);
                 if (refreshed == null)
                 {
                     _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
@@ -580,7 +577,7 @@ namespace OmniForge.Infrastructure.Services
                 creds.AccessToken = refreshed.AccessToken;
                 creds.RefreshToken = refreshed.RefreshToken;
                 creds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
-                await botCredentialRepository.SaveAsync(creds);
+                await botCredentialRepository.SaveAsync(creds).ConfigureAwait(false);
                 _logger.LogInformation("✅ Forge bot token refreshed; expires at {Expiry}", creds.TokenExpiry);
             }
 

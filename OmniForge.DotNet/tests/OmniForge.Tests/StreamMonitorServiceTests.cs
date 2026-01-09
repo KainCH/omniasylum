@@ -62,14 +62,9 @@ namespace OmniForge.Tests
                 List<string>? validationScopes)
                 : base(eventSubService, twitchApi, httpClientFactory, logger, scopeFactory, twitchSettings, discordTracker)
             {
-                if (validationUserId == null || validationLogin == null || validationClientId == null)
-                {
-                    _validation = null;
-                }
-                else
-                {
-                    _validation = new TokenValidation(validationUserId, validationLogin, validationClientId, validationScopes);
-                }
+                _validation = validationUserId == null || validationLogin == null || validationClientId == null
+                    ? null
+                    : new TokenValidation(validationUserId, validationLogin, validationClientId, validationScopes);
             }
 
             protected override Task<TokenValidation?> ValidateAccessTokenAsync(string accessToken)
