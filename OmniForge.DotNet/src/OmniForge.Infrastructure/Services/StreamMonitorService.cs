@@ -453,6 +453,22 @@ namespace OmniForge.Infrastructure.Services
                             if (completed != onlineTask)
                             {
                                 _logger.LogWarning("⏱️ Discord bot presence update timed out (online) for user {UserId}", LogSanitizer.Sanitize(userId));
+
+                                // Ensure any exception from the still-running task is observed and logged.
+                                _ = onlineTask.ContinueWith(
+                                    t =>
+                                    {
+                                        if (t.Exception != null)
+                                        {
+                                            _logger.LogWarning(t.Exception, "Discord presence update failed after timeout for user {UserId}", LogSanitizer.Sanitize(userId));
+                                        }
+                                    },
+                                    TaskContinuationOptions.OnlyOnFaulted);
+                            }
+                            else
+                            {
+                                // Task completed within the timeout; observe any exceptions here.
+                                await onlineTask.ConfigureAwait(false);
                             }
                         }
                     }
@@ -516,6 +532,25 @@ namespace OmniForge.Infrastructure.Services
                     if (completed != idleTask)
                     {
                         _logger.LogWarning("⏱️ Discord bot presence update timed out (idle) for user {UserId}", LogSanitizer.Sanitize(userId));
+
+                        // Ensure any exceptions from the still-running idleTask are observed.
+                        _ = idleTask.ContinueWith(
+                            t =>
+                            {
+                                if (t.Exception != null)
+                                {
+                                    _logger.LogWarning(
+                                        t.Exception,
+                                        "Discord idle update failed for user {UserId}",
+                                        LogSanitizer.Sanitize(userId));
+                                }
+                            },
+                            TaskContinuationOptions.OnlyOnFaulted);
+                    }
+                    else
+                    {
+                        // Task completed within the timeout; observe any exceptions here.
+                        await idleTask.ConfigureAwait(false);
                     }
                 }
             }
@@ -814,20 +849,38 @@ namespace OmniForge.Infrastructure.Services
 
         private CancellationToken GetOrCreateMonitoringCancellationToken(string userId)
         {
-            // If the user re-starts monitoring after a stop, ensure we have a fresh CTS.
-            var cts = _monitoringCancellation.AddOrUpdate(
-                userId,
-                _ => new CancellationTokenSource(),
-                (_, existing) =>
+            // Avoid disposing an existing CTS here to prevent races with threads that may still be using it.
+            while (true)
+            {
+                if (_monitoringCancellation.TryGetValue(userId, out var existingCts))
                 {
-                    if (existing.IsCancellationRequested)
+                    // If the existing CTS is still active, just reuse it.
+                    if (!existingCts.IsCancellationRequested)
                     {
-                        existing.Dispose();
-                        return new CancellationTokenSource();
+                        return existingCts.Token;
                     }
-                    return existing;
-                });
-            return cts.Token;
+
+                    // Existing CTS is canceled; create a new one and try to replace it atomically.
+                    var newCts = new CancellationTokenSource();
+                    if (_monitoringCancellation.TryUpdate(userId, newCts, existingCts))
+                    {
+                        // Do not dispose existingCts here to avoid race conditions with concurrent readers.
+                        return newCts.Token;
+                    }
+
+                    // Another thread updated the entry concurrently; retry.
+                    continue;
+                }
+
+                // No CTS exists for this user; try to add a new one.
+                var addedCts = new CancellationTokenSource();
+                if (_monitoringCancellation.TryAdd(userId, addedCts))
+                {
+                    return addedCts.Token;
+                }
+
+                // Another thread added one concurrently; retry to fetch it.
+            }
         }
 
         private bool UserStillWantsMonitoring(string userId)
