@@ -34,7 +34,10 @@ namespace OmniForge.Infrastructure.Services
         private Timer? _connectionWatchdog;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subscribedUsers = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _usersWantingMonitoring = new(); // Track users who want monitoring (survives reconnects)
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _monitoringCancellation = new(); // Cancel in-flight subscription/reconnect work per user
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MonitorDiagnostics> _diagnostics = new();
+
+        private static readonly TimeSpan DiscordPresenceTimeout = TimeSpan.FromSeconds(2);
 
         public StreamMonitorService(
             INativeEventSubService eventSubService,
@@ -89,6 +92,15 @@ namespace OmniForge.Infrastructure.Services
             var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
             _logger.LogInformation("📡 Subscribe request: targetUser={TargetUserId}, actingAdmin={ActingAdmin}, isAdminActing={IsAdmin}",
                 LogSanitizer.Sanitize(userId), string.IsNullOrEmpty(actingUserId) ? "self" : LogSanitizer.Sanitize(actingUserId!), isAdminActing);
+
+            // Mark intent up-front so Stop Monitoring can take effect immediately even if we are mid-connect/re-subscribe.
+            _usersWantingMonitoring.TryAdd(userId, true);
+            var token = GetOrCreateMonitoringCancellationToken(userId);
+            if (token.IsCancellationRequested)
+            {
+                return SubscriptionResult.Failed;
+            }
+
             // Ensure connected and we have a valid session ID
             if (!_eventSubService.IsConnected || string.IsNullOrEmpty(_eventSubService.SessionId))
             {
@@ -108,6 +120,12 @@ namespace OmniForge.Infrastructure.Services
 
                     // Connect if not already connected
                     await _eventSubService.ConnectAsync().ConfigureAwait(false);
+
+                    if (!UserStillWantsMonitoring(userId))
+                    {
+                        _logger.LogInformation("🛑 Subscription aborted after connect: user {UserId} no longer wants monitoring", LogSanitizer.Sanitize(userId));
+                        return SubscriptionResult.Failed;
+                    }
 
                     // Wait for the welcome message with a timeout
                     var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
@@ -203,6 +221,12 @@ namespace OmniForge.Infrastructure.Services
 
                 try
                 {
+                    if (!UserStillWantsMonitoring(userId))
+                    {
+                        _logger.LogInformation("🛑 Subscription aborted: user {UserId} no longer wants monitoring", LogSanitizer.Sanitize(userId));
+                        return SubscriptionResult.Failed;
+                    }
+
                     // Validate the token and get the authoritative User ID
                     string tokenUserId;
                     List<string>? tokenScopes = null;
@@ -336,13 +360,13 @@ namespace OmniForge.Infrastructure.Services
                         // Subscribe to stream events
                         if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition, token).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition, token).ConfigureAwait(false);
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition).ConfigureAwait(false);
-                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition, token).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition, token).ConfigureAwait(false);
                         }
                     }
                     else
@@ -358,11 +382,11 @@ namespace OmniForge.Infrastructure.Services
                     };
                     if (useBotForChannelEvents)
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition).ConfigureAwait(false);
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition, token).ConfigureAwait(false);
                     }
                     else
                     {
-                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition).ConfigureAwait(false);
+                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition, token).ConfigureAwait(false);
                     }
 
                     // Chat subscriptions require 'user:read:chat' scope
@@ -380,18 +404,30 @@ namespace OmniForge.Infrastructure.Services
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
                         if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
-                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
                         }
                     }
                     else
                     {
                         _logger.LogInformation("⏭️ Skipping chat EventSub subscriptions (channel.chat.message, channel.chat.notification) - missing 'user:read:chat' scope. Basic stream monitoring will still work.");
+                    }
+
+                    // User may have pressed Stop during reconnect/resubscribe. Don't re-add them.
+                    if (!UserStillWantsMonitoring(userId))
+                    {
+                        _logger.LogInformation("🛑 Subscription finished but user {UserId} no longer wants monitoring. Skipping activation.", LogSanitizer.Sanitize(userId));
+                        var diagCancelled = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
+                        diagCancelled.IsSubscribed = false;
+                        diagCancelled.LastSubscribeAt = DateTimeOffset.UtcNow;
+                        diagCancelled.LastSubscribeResult = SubscriptionResult.Failed;
+                        diagCancelled.LastError = "Cancelled by user";
+                        return SubscriptionResult.Failed;
                     }
 
                     _subscribedUsers.TryAdd(userId, true);
@@ -412,7 +448,12 @@ namespace OmniForge.Infrastructure.Services
                     {
                         if (discordBotClient != null && discordBotSettings != null && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken))
                         {
-                            await discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
+                            var onlineTask = discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                            var completed = await Task.WhenAny(onlineTask, Task.Delay(DiscordPresenceTimeout)).ConfigureAwait(false);
+                            if (completed != onlineTask)
+                            {
+                                _logger.LogWarning("⏱️ Discord bot presence update timed out (online) for user {UserId}", LogSanitizer.Sanitize(userId));
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -448,6 +489,13 @@ namespace OmniForge.Infrastructure.Services
         {
             _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", LogSanitizer.Sanitize(userId));
 
+            // Cancel any in-flight subscribe/reconnect work immediately.
+            if (_monitoringCancellation.TryRemove(userId, out var cts))
+            {
+                try { cts.Cancel(); } catch { /* ignore */ }
+                cts.Dispose();
+            }
+
             try
             {
                 using var scope = _scopeFactory.CreateScope();
@@ -462,7 +510,13 @@ namespace OmniForge.Infrastructure.Services
                     && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken)
                     && monitoringRegistry.GetAllStates().Count == 0)
                 {
-                    await discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
+                    // Don't block Stop Monitoring on Discord API latency.
+                    var idleTask = discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge");
+                    var completed = await Task.WhenAny(idleTask, Task.Delay(DiscordPresenceTimeout)).ConfigureAwait(false);
+                    if (completed != idleTask)
+                    {
+                        _logger.LogWarning("⏱️ Discord bot presence update timed out (idle) for user {UserId}", LogSanitizer.Sanitize(userId));
+                    }
                 }
             }
             catch (Exception ex)
@@ -478,6 +532,7 @@ namespace OmniForge.Infrastructure.Services
             var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
             diag.IsSubscribed = false;
             diag.LastSubscribeResult = null;
+            diag.LastError = null;
 
             _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}",
                 LogSanitizer.Sanitize(userId), wasSubscribed, wasWanting, _subscribedUsers.Count, _usersWantingMonitoring.Count);
@@ -586,10 +641,15 @@ namespace OmniForge.Infrastructure.Services
             string subscriptionType,
             string version,
             Dictionary<string, string> condition,
+            CancellationToken cancellationToken,
             bool retryOnBadToken = true)
         {
             try
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
                 await helixWrapper.CreateEventSubSubscriptionAsync(
                     _twitchSettings.ClientId,
                     botCredentials.AccessToken,
@@ -610,6 +670,10 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} (Forge bot) - forcing bot token refresh...", LogSanitizer.Sanitize(subscriptionType));
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
                 var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken).ConfigureAwait(false);
                 if (refreshed == null)
                 {
@@ -624,6 +688,10 @@ namespace OmniForge.Infrastructure.Services
 
                 try
                 {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return false;
+                    }
                     await helixWrapper.CreateEventSubSubscriptionAsync(
                         _twitchSettings.ClientId,
                         botCredentials.AccessToken,
@@ -675,10 +743,15 @@ namespace OmniForge.Infrastructure.Services
             string subscriptionType,
             string version,
             Dictionary<string, string> condition,
+            CancellationToken cancellationToken,
             bool retryOnBadToken = true)
         {
             try
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
                 await context.HelixWrapper.CreateEventSubSubscriptionAsync(
                     _twitchSettings.ClientId,
                     context.CurrentAccessToken,
@@ -699,6 +772,10 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - forcing token refresh...", LogSanitizer.Sanitize(subscriptionType));
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
                 var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository).ConfigureAwait(false);
                 if (refreshedUser != null)
                 {
@@ -706,6 +783,10 @@ namespace OmniForge.Infrastructure.Services
                     context.CurrentAccessToken = refreshedUser.AccessToken;
                     try
                     {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return false;
+                        }
                         await context.HelixWrapper.CreateEventSubSubscriptionAsync(
                             _twitchSettings.ClientId,
                             context.CurrentAccessToken,
@@ -729,6 +810,39 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(ex, "Failed to subscribe to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 return false;
             }
+        }
+
+        private CancellationToken GetOrCreateMonitoringCancellationToken(string userId)
+        {
+            // If the user re-starts monitoring after a stop, ensure we have a fresh CTS.
+            var cts = _monitoringCancellation.AddOrUpdate(
+                userId,
+                _ => new CancellationTokenSource(),
+                (_, existing) =>
+                {
+                    if (existing.IsCancellationRequested)
+                    {
+                        existing.Dispose();
+                        return new CancellationTokenSource();
+                    }
+                    return existing;
+                });
+            return cts.Token;
+        }
+
+        private bool UserStillWantsMonitoring(string userId)
+        {
+            if (!_usersWantingMonitoring.ContainsKey(userId))
+            {
+                return false;
+            }
+
+            if (_monitoringCancellation.TryGetValue(userId, out var cts) && cts.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            return true;
         }
 
         public async Task<SubscriptionResult> ForceReconnectUserAsync(string userId)
@@ -860,6 +974,10 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                         foreach (var userId in _usersWantingMonitoring.Keys)
                         {
+                            if (!UserStillWantsMonitoring(userId))
+                            {
+                                continue;
+                            }
                             _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
                             var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                             _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
@@ -895,6 +1013,10 @@ namespace OmniForge.Infrastructure.Services
                             _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                             foreach (var userId in _usersWantingMonitoring.Keys)
                             {
+                                if (!UserStillWantsMonitoring(userId))
+                                {
+                                    continue;
+                                }
                                 var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                                 _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                             }
