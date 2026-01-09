@@ -24,6 +24,7 @@ namespace OmniForge.Tests
     {
         private readonly Mock<ITwitchAuthService> _mockTwitchAuthService;
         private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly Mock<IJwtService> _mockJwtService;
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly Mock<IAuthenticationService> _mockAuthService;
@@ -35,6 +36,7 @@ namespace OmniForge.Tests
         {
             _mockTwitchAuthService = new Mock<ITwitchAuthService>();
             _mockUserRepository = new Mock<IUserRepository>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
             _mockJwtService = new Mock<IJwtService>();
             _mockConfiguration = new Mock<IConfiguration>();
             _mockAuthService = new Mock<IAuthenticationService>();
@@ -53,6 +55,7 @@ namespace OmniForge.Tests
             _controller = new AuthController(
                 _mockTwitchAuthService.Object,
                 _mockUserRepository.Object,
+                _mockBotCredentialRepository.Object,
                 _mockJwtService.Object,
                 twitchSettings,
                 _mockConfiguration.Object,

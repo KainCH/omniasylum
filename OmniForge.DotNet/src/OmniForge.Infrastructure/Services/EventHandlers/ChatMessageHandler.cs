@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
-using OmniForge.Infrastructure.Services;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -17,18 +17,21 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly IDiscordInviteSender _discordInviteSender;
         private readonly IChatCommandProcessor _chatCommandProcessor;
         private readonly ITwitchApiService _twitchApiService;
+        private readonly IMonitoringRegistry _monitoringRegistry;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<ChatMessageHandler> logger,
             IDiscordInviteSender discordInviteSender,
             IChatCommandProcessor chatCommandProcessor,
-            ITwitchApiService twitchApiService)
+            ITwitchApiService twitchApiService,
+            IMonitoringRegistry monitoringRegistry)
             : base(scopeFactory, logger)
         {
             _discordInviteSender = discordInviteSender;
             _chatCommandProcessor = chatCommandProcessor;
             _twitchApiService = twitchApiService;
+            _monitoringRegistry = monitoringRegistry;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -67,7 +70,25 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         IsSubscriber = isSubscriber
                     };
 
-                    Func<string, string, Task> sendMessage = (uid, msg) => _twitchApiService.SendChatMessageAsync(uid, msg, replyParentMessageId: messageId);
+                    Func<string, string, Task> sendMessage = async (uid, msg) =>
+                    {
+                        try
+                        {
+                            // We already decided bot ownership when monitoring started.
+                            // Avoid calling Helix Get Moderators from hot chat paths.
+                            if (_monitoringRegistry.TryGetState(uid, out var state) && state.UseBot && !string.IsNullOrEmpty(state.BotUserId))
+                            {
+                                await _twitchApiService.SendChatMessageAsBotAsync(uid, state.BotUserId!, msg, replyParentMessageId: messageId);
+                                return;
+                            }
+
+                            await _twitchApiService.SendChatMessageAsync(uid, msg, replyParentMessageId: messageId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError(ex, "Error sending chat reply.");
+                        }
+                    };
                     await _chatCommandProcessor.ProcessAsync(context, sendMessage);
                 }
 

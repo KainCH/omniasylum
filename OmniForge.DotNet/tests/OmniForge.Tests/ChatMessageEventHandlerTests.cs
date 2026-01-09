@@ -16,6 +16,7 @@ namespace OmniForge.Tests
         private readonly Mock<IDiscordInviteSender> _mockDiscordInviteSender = new();
         private readonly Mock<IChatCommandProcessor> _mockChatCommandProcessor = new();
         private readonly Mock<ITwitchApiService> _mockTwitchApiService = new();
+        private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry = new();
         private readonly Mock<ILogger<ChatMessageHandler>> _mockLogger = new();
         private readonly ChatMessageHandler _handler;
 
@@ -26,7 +27,8 @@ namespace OmniForge.Tests
                 _mockLogger.Object,
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
-                _mockTwitchApiService.Object);
+                _mockTwitchApiService.Object,
+                _mockMonitoringRegistry.Object);
         }
 
         [Fact]

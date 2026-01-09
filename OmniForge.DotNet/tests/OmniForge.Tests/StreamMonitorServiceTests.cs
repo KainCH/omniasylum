@@ -39,7 +39,37 @@ namespace OmniForge.Tests
         private readonly Mock<IDiscordNotificationTracker> _mockDiscordTracker;
         private readonly Mock<IEventSubHandlerRegistry> _mockHandlerRegistry;
         private readonly Mock<ITwitchAuthService> _mockAuthService;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
+        private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService;
+        private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry;
         private readonly StreamMonitorService _service;
+
+        private sealed class TestableStreamMonitorService : StreamMonitorService
+        {
+            private readonly TokenValidation? _validation;
+
+            public TestableStreamMonitorService(
+                INativeEventSubService eventSubService,
+                TwitchAPI twitchApi,
+                IHttpClientFactory httpClientFactory,
+                ILogger<StreamMonitorService> logger,
+                IServiceScopeFactory scopeFactory,
+                IOptions<TwitchSettings> twitchSettings,
+                IDiscordNotificationTracker discordTracker,
+                string? validationUserId,
+                string? validationLogin,
+                string? validationClientId,
+                List<string>? validationScopes)
+                : base(eventSubService, twitchApi, httpClientFactory, logger, scopeFactory, twitchSettings, discordTracker)
+            {
+                _validation = validationUserId == null || validationLogin == null || validationClientId == null
+                    ? null
+                    : new TokenValidation(validationUserId, validationLogin, validationClientId, validationScopes);
+            }
+
+            protected override Task<TokenValidation?> ValidateAccessTokenAsync(string accessToken)
+                => Task.FromResult(_validation);
+        }
 
         public StreamMonitorServiceTests()
         {
@@ -57,6 +87,9 @@ namespace OmniForge.Tests
             _mockDiscordTracker = new Mock<IDiscordNotificationTracker>();
             _mockHandlerRegistry = new Mock<IEventSubHandlerRegistry>();
             _mockAuthService = new Mock<ITwitchAuthService>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
+            _mockBotEligibilityService = new Mock<ITwitchBotEligibilityService>();
+            _mockMonitoringRegistry = new Mock<IMonitoringRegistry>();
 
             // Setup TwitchAPI mock
             _mockTwitchApi = new Mock<TwitchAPI>(MockBehavior.Loose, null!, null!, _mockApiSettings.Object, null!);
@@ -64,6 +97,7 @@ namespace OmniForge.Tests
             // Setup EventSub Service mock
             _mockEventSubService = new Mock<INativeEventSubService>();
             _mockEventSubService.Setup(x => x.SessionId).Returns("test_session_id");
+            _mockEventSubService.Setup(x => x.IsConnected).Returns(true);
 
             // Setup Settings
             _mockTwitchSettings.Setup(x => x.Value).Returns(new TwitchSettings
@@ -87,15 +121,182 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchHelixWrapper))).Returns(_mockHelixWrapper.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchAuthService))).Returns(_mockAuthService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IEventSubHandlerRegistry))).Returns(_mockHandlerRegistry.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IBotCredentialRepository))).Returns(_mockBotCredentialRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchBotEligibilityService))).Returns(_mockBotEligibilityService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IMonitoringRegistry))).Returns(_mockMonitoringRegistry.Object);
 
-            _service = new StreamMonitorService(
+            _service = new TestableStreamMonitorService(
                 _mockEventSubService.Object,
                 _mockTwitchApi.Object,
                 _mockHttpClientFactory.Object,
                 _mockLogger.Object,
                 _mockScopeFactory.Object,
                 _mockTwitchSettings.Object,
-                _mockDiscordTracker.Object);
+                _mockDiscordTracker.Object,
+                "123",
+                "testuser",
+                "test_client",
+                new List<string>
+                {
+                    "moderation:read",
+                    "user:read:chat",
+                    "moderator:read:followers"
+                });
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenBotEligible_UsesBotTokenForSubscriptions_AndSetsMonitoringRegistryToUseBot()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(true, "bot_999", "Bot is a moderator"));
+
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge-bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            _mockHelixWrapper
+                .Setup(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    "bot_access",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Success, result);
+
+            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
+                "test_client",
+                "bot_access",
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, string>>(),
+                EventSubTransportMethod.Websocket,
+                "test_session_id"), Times.AtLeastOnce);
+
+            _mockMonitoringRegistry.Verify(x => x.SetState(
+                "123",
+                It.Is<MonitoringState>(s => s.UseBot && s.BotUserId == "bot_999")), Times.Once);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenBotNotEligible_UsesBroadcasterTokenForSubscriptions_AndSetsMonitoringRegistryToNotUseBot()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(false, null, "Bot is not a moderator"));
+
+            _mockHelixWrapper
+                .Setup(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    "broadcaster_access",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Success, result);
+
+            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
+                "test_client",
+                "broadcaster_access",
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, string>>(),
+                EventSubTransportMethod.Websocket,
+                "test_session_id"), Times.AtLeastOnce);
+
+            _mockMonitoringRegistry.Verify(x => x.SetState(
+                "123",
+                It.Is<MonitoringState>(s => !s.UseBot && s.BotUserId == null)), Times.Once);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenBotEligibleButBotCredentialsMissing_FallsBackToBroadcaster_AndSetsMonitoringRegistryToNotUseBot()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(true, "bot_999", "Bot is a moderator"));
+
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync((BotCredentials?)null);
+
+            _mockHelixWrapper
+                .Setup(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    "broadcaster_access",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Success, result);
+
+            _mockMonitoringRegistry.Verify(x => x.SetState(
+                "123",
+                It.Is<MonitoringState>(s => !s.UseBot && s.BotUserId == null)), Times.Once);
         }
 
         [Fact]

@@ -34,9 +34,13 @@ $ImageName = $config.ImageName
 $ContainerAppName = $config.ContainerAppName
 $FullImageName = "$AcrName.azurecr.io/$ImageName`:$ImageTag"
 
+# Ensure the Container App runtime environment selects the correct appsettings.{Environment}.json
+$AspNetEnvironment = if ($Environment -eq "prod") { "Production" } else { "Development" }
+
 $startTime = Get-Date
 Write-Host "🕒 Deployment started at: $($startTime.ToString('yyyy-MM-dd hh:mm:ss tt'))" -ForegroundColor Cyan
 Write-Host "🎯 Target Environment: $($config.DisplayName) ($Environment)" -ForegroundColor Magenta
+Write-Host "🧩 ASPNETCORE_ENVIRONMENT: $AspNetEnvironment" -ForegroundColor Magenta
 Write-Host "🌐 Target URL: $frontendUrl" -ForegroundColor Magenta
 Write-Host "🐳 Image: $FullImageName" -ForegroundColor Magenta
 if ($FullDeploy) {
@@ -96,6 +100,7 @@ if ($FullDeploy) {
         --name $ContainerAppName `
         --resource-group $ResourceGroup `
         --image $FullImageName `
+        --set-env-vars ASPNETCORE_ENVIRONMENT=$AspNetEnvironment DOTNET_ENVIRONMENT=$AspNetEnvironment `
         --output none
 
     $url = $config.CustomDomain

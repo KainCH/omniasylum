@@ -64,6 +64,26 @@ namespace OmniForge.Infrastructure.Services
         public Task<SubscriptionResult> SubscribeToUserAsAsync(string userId, string actingUserId)
             => SubscribeToUserInternalAsync(userId, actingUserId);
 
+        protected sealed record TokenValidation(string UserId, string Login, string ClientId, List<string>? Scopes);
+
+        protected virtual async Task<TokenValidation?> ValidateAccessTokenAsync(string accessToken)
+        {
+            _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
+            _twitchApi.Settings.AccessToken = accessToken;
+
+            var validation = await _twitchApi.Auth.ValidateAccessTokenAsync().ConfigureAwait(false);
+            if (validation == null)
+            {
+                return null;
+            }
+
+            return new TokenValidation(
+                validation.UserId,
+                validation.Login,
+                validation.ClientId,
+                validation.Scopes);
+        }
+
         private async Task<SubscriptionResult> SubscribeToUserInternalAsync(string userId, string? actingUserId)
         {
             var isAdminActing = !string.IsNullOrEmpty(actingUserId) && actingUserId != userId;
@@ -87,11 +107,11 @@ namespace OmniForge.Infrastructure.Services
                     _eventSubService.OnSessionWelcome += welcomeHandler;
 
                     // Connect if not already connected
-                    await _eventSubService.ConnectAsync();
+                    await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                     // Wait for the welcome message with a timeout
                     var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
 
                     _eventSubService.OnSessionWelcome -= welcomeHandler;
 
@@ -119,12 +139,17 @@ namespace OmniForge.Infrastructure.Services
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
                 var authService = scope.ServiceProvider.GetRequiredService<ITwitchAuthService>();
-                var user = await userRepository.GetUserAsync(userId);
+                var botCredentialRepository = scope.ServiceProvider.GetService<IBotCredentialRepository>();
+                var botEligibilityService = scope.ServiceProvider.GetService<ITwitchBotEligibilityService>();
+                var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
+                var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
+                var user = await userRepository.GetUserAsync(userId).ConfigureAwait(false);
                 User? actingUser = null;
                 // isAdminActing computed above
                 if (isAdminActing)
                 {
-                    actingUser = await userRepository.GetUserAsync(actingUserId!);
+                    actingUser = await userRepository.GetUserAsync(actingUserId!).ConfigureAwait(false);
                     if (actingUser == null || actingUser.Role != "admin")
                     {
                         _logger.LogWarning("Admin monitoring request denied. Acting user {ActingUserId} is not admin or not found.", LogSanitizer.Sanitize(actingUserId!));
@@ -147,14 +172,14 @@ namespace OmniForge.Infrastructure.Services
 
                     if (!string.IsNullOrEmpty(tokenOwner.RefreshToken))
                     {
-                        var newToken = await authService.RefreshTokenAsync(tokenOwner.RefreshToken);
+                        var newToken = await authService.RefreshTokenAsync(tokenOwner.RefreshToken).ConfigureAwait(false);
                         if (newToken != null)
                         {
                             tokenOwner.AccessToken = newToken.AccessToken;
                             tokenOwner.RefreshToken = newToken.RefreshToken; // Refresh token might rotate
                             tokenOwner.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(newToken.ExpiresIn);
 
-                            await userRepository.SaveUserAsync(tokenOwner);
+                            await userRepository.SaveUserAsync(tokenOwner).ConfigureAwait(false);
                             _logger.LogInformation("Successfully refreshed access token for user {UserId}.", LogSanitizer.Sanitize(tokenOwner.TwitchUserId));
                         }
                         else
@@ -183,9 +208,7 @@ namespace OmniForge.Infrastructure.Services
                     List<string>? tokenScopes = null;
                     try
                     {
-                        _twitchApi.Settings.ClientId = _twitchSettings.ClientId;
-                        _twitchApi.Settings.AccessToken = tokenOwner.AccessToken;
-                        var validation = await _twitchApi.Auth.ValidateAccessTokenAsync();
+                        var validation = await ValidateAccessTokenAsync(tokenOwner.AccessToken).ConfigureAwait(false);
                         if (validation == null || string.IsNullOrEmpty(validation.UserId))
                         {
                             _logger.LogError("Token validation returned null or empty User ID for user {UserId}", LogSanitizer.Sanitize(userId));
@@ -195,6 +218,18 @@ namespace OmniForge.Infrastructure.Services
                         tokenScopes = validation.Scopes;
                         _logger.LogInformation("Token validated. User ID: {TokenUserId}, Login: {Login}, Client ID: {ClientId}, Scopes: {Scopes}",
                             LogSanitizer.Sanitize(validation.UserId), LogSanitizer.Sanitize(validation.Login), LogSanitizer.Sanitize(validation.ClientId), LogSanitizer.Sanitize(string.Join(", ", tokenScopes ?? new List<string>())));
+
+                        if (!string.IsNullOrWhiteSpace(validation.ClientId)
+                            && !string.IsNullOrWhiteSpace(_twitchSettings.ClientId)
+                            && !string.Equals(validation.ClientId, _twitchSettings.ClientId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogWarning(
+                                "🔒 Token client_id mismatch for user {UserId}. token_client_id={TokenClientId}, configured_client_id={ConfiguredClientId}. User must re-login using the current Twitch app.",
+                                LogSanitizer.Sanitize(userId),
+                                LogSanitizer.Sanitize(validation.ClientId),
+                                LogSanitizer.Sanitize(_twitchSettings.ClientId));
+                            return SubscriptionResult.RequiresReauth;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -202,18 +237,70 @@ namespace OmniForge.Infrastructure.Services
                         return SubscriptionResult.Unauthorized;
                     }
 
-                    // Check if user has required scopes for full EventSub functionality
-                    // Required scopes for core functionality:
-                    // - user:read:chat - EventSub chat messages
-                    // - user:write:chat - Send chat messages via API
-                    // - user:bot - Required for EventSub chat subscriptions
-                    // - moderator:read:followers - channel.follow events
-                    // - channel:read:subscriptions - subscription events
-                    // - bits:read - cheer events
-                    // - channel:read:redemptions - channel point events
-                    var requiredScopes = new[] { "user:read:chat", "moderator:read:followers" };
-                    var missingScopes = requiredScopes.Where(s => tokenScopes?.Contains(s) != true).ToList();
+                    // Use the token's User ID as the broadcaster ID (they are the same for self-monitoring)
+                    var broadcasterId = userId; // target streamer
+                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, token_user_id={UserId} for subscriptions (actingAdmin={Acting})", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
+                    // We must be able to read the broadcaster's moderators list to decide if Forge bot is eligible.
+                    // Twitch enforces this as 'moderation:read'.
+                    if (!isAdminActing && (tokenScopes?.Contains("moderation:read") != true))
+                    {
+                        _logger.LogWarning(
+                            "🔒 User {UserId} token is missing required scope for moderators lookup: moderation:read. User must re-login to enable Forge bot moderator eligibility checks.",
+                            LogSanitizer.Sanitize(userId));
+                        return SubscriptionResult.RequiresReauth;
+                    }
+
+                    // Decide whether to use Forge bot for channel-level events (follow/chat) based on moderator eligibility.
+                    var useBotForChannelEvents = false;
+                    string? botUserId = null;
+                    BotCredentials? botCredentials = null;
+
+                    if (!isAdminActing && botEligibilityService != null && botCredentialRepository != null)
+                    {
+                        var eligibility = await botEligibilityService.GetEligibilityAsync(broadcasterId, tokenOwner.AccessToken, CancellationToken.None).ConfigureAwait(false);
+                        if (eligibility.UseBot && !string.IsNullOrEmpty(eligibility.BotUserId))
+                        {
+                            botCredentials = await EnsureBotTokenValidAsync(botCredentialRepository, authService).ConfigureAwait(false);
+                            if (botCredentials != null)
+                            {
+                                useBotForChannelEvents = true;
+                                botUserId = eligibility.BotUserId;
+                                _logger.LogInformation("✅ Forge bot eligible. Monitoring will use Forge bot for subscriptions. broadcaster_user_id={BroadcasterId}, bot_user_id={BotUserId}",
+                                    LogSanitizer.Sanitize(broadcasterId),
+                                    LogSanitizer.Sanitize(botUserId));
+                            }
+                            else
+                            {
+                                _logger.LogWarning("⚠️ Forge bot eligible but bot credentials are missing/invalid. Falling back to broadcaster token. broadcaster_user_id={BroadcasterId}",
+                                    LogSanitizer.Sanitize(broadcasterId));
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInformation("ℹ️ Bot not eligible for channel events: {Reason}", LogSanitizer.Sanitize(eligibility.Reason ?? "unknown"));
+                        }
+                    }
+
+                    if (isAdminActing)
+                    {
+                        _logger.LogInformation("🧑‍💼 Monitoring start is admin-initiated; Forge bot eligibility is not evaluated. broadcaster_user_id={BroadcasterId}",
+                            LogSanitizer.Sanitize(broadcasterId));
+                    }
+                    else if (!useBotForChannelEvents)
+                    {
+                        _logger.LogInformation("👤 Monitoring will use broadcaster token (Forge bot not active). broadcaster_user_id={BroadcasterId}, token_user_id={TokenUserId}",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            LogSanitizer.Sanitize(tokenUserId));
+                    }
+
+                    // Check if user has required scopes when we must fall back to streamer token.
+                    // If we can use the Forge bot for channel events, the streamer token is only used for stream.online/offline.
+                    var requiredScopes = useBotForChannelEvents
+                        ? Array.Empty<string>()
+                        : new[] { "user:read:chat", "moderator:read:followers" };
+
+                    var missingScopes = requiredScopes.Where(s => tokenScopes?.Contains(s) != true).ToList();
                     if (missingScopes.Count > 0)
                     {
                         _logger.LogWarning("🔒 User {UserId} token is missing required scopes: [{MissingScopes}]. User must re-login to get updated scopes.",
@@ -221,11 +308,8 @@ namespace OmniForge.Infrastructure.Services
                         return SubscriptionResult.RequiresReauth;
                     }
 
-                    var hasChatScope = tokenScopes?.Contains("user:read:chat") == true;
-
-                    // Use the token's User ID as the broadcaster ID (they are the same for self-monitoring)
-                    var broadcasterId = userId; // target streamer
-                    _logger.LogInformation("Using broadcaster_user_id={BroadcasterId}, token_user_id={UserId} for subscriptions (actingAdmin={Acting})", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
+                    var hasChatScope = useBotForChannelEvents || (tokenScopes?.Contains("user:read:chat") == true);
+                    var channelEventsUserId = useBotForChannelEvents ? botUserId! : tokenUserId;
 
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", broadcasterId } };
                     var sessionId = _eventSubService.SessionId;
@@ -249,9 +333,17 @@ namespace OmniForge.Infrastructure.Services
 
                     if (!isAdminActing)
                     {
-                        // Subscribe to stream events (requires broadcaster auth)
-                        await SubscribeWithRetryAsync(context, "stream.online", "1", condition);
-                        await SubscribeWithRetryAsync(context, "stream.offline", "1", condition);
+                        // Subscribe to stream events
+                        if (useBotForChannelEvents)
+                        {
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition).ConfigureAwait(false);
+                        }
                     }
                     else
                     {
@@ -262,9 +354,16 @@ namespace OmniForge.Infrastructure.Services
                     var followCondition = new Dictionary<string, string>
                     {
                         { "broadcaster_user_id", broadcasterId },
-                        { "moderator_user_id", tokenUserId }
+                        { "moderator_user_id", channelEventsUserId }
                     };
-                    await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition);
+                    if (useBotForChannelEvents)
+                    {
+                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition).ConfigureAwait(false);
+                    }
 
                     // Chat subscriptions require 'user:read:chat' scope
                     if (hasChatScope)
@@ -272,15 +371,23 @@ namespace OmniForge.Infrastructure.Services
                         var chatCondition = new Dictionary<string, string>
                         {
                             { "broadcaster_user_id", broadcasterId },
-                            { "user_id", tokenUserId }
+                            { "user_id", channelEventsUserId }
                         };
 
                         _logger.LogInformation("Subscribing to chat events with broadcaster_user_id={BroadcasterId}, user_id={UserId} (adminMode={AdminMode})",
                             LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(tokenUserId), isAdminActing);
 
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
-                        await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false);
-                        await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false);
+                        if (useBotForChannelEvents)
+                        {
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, retryOnBadToken: false).ConfigureAwait(false);
+                        }
                     }
                     else
                     {
@@ -295,6 +402,24 @@ namespace OmniForge.Infrastructure.Services
                     diag.LastSubscribeAt = DateTimeOffset.UtcNow;
                     diag.LastSubscribeResult = SubscriptionResult.Success;
                     diag.LastError = null;
+
+                    monitoringRegistry?.SetState(userId, new MonitoringState(
+                        UseBot: useBotForChannelEvents,
+                        BotUserId: useBotForChannelEvents ? botUserId : null,
+                        UpdatedAtUtc: DateTimeOffset.UtcNow));
+
+                    try
+                    {
+                        if (discordBotClient != null && discordBotSettings != null && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken))
+                        {
+                            await discordBotClient.EnsureOnlineAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to bring Discord bot online for monitoring start (user {UserId})", LogSanitizer.Sanitize(userId));
+                    }
+
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
@@ -323,6 +448,28 @@ namespace OmniForge.Infrastructure.Services
         {
             _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", LogSanitizer.Sanitize(userId));
 
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
+                var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
+                monitoringRegistry?.Remove(userId);
+
+                if (monitoringRegistry != null
+                    && discordBotClient != null
+                    && discordBotSettings != null
+                    && !string.IsNullOrWhiteSpace(discordBotSettings.BotToken)
+                    && monitoringRegistry.GetAllStates().Count == 0)
+                {
+                    await discordBotClient.SetIdleAsync(discordBotSettings.BotToken, "shaping commands in the forge").ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to update monitoring registry for user {UserId}", LogSanitizer.Sanitize(userId));
+            }
+
             // Note: Helix doesn't easily support "unsubscribe by user" without tracking subscription IDs.
             // For now, we'll just mark as unsubscribed in our local tracking.
             // In a real implementation, we should store subscription IDs returned by CreateEventSubSubscriptionAsync.
@@ -341,7 +488,7 @@ namespace OmniForge.Infrastructure.Services
                 _connectionWatchdog?.Dispose();
                 _connectionWatchdog = null;
                 // Disconnect if no users are left to save resources and ensure clean state for next connection
-                await _eventSubService.DisconnectAsync();
+                await _eventSubService.DisconnectAsync().ConfigureAwait(false);
                 _logger.LogInformation("✅ EventSub disconnected successfully");
             }
         }
@@ -363,13 +510,13 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                var refreshedToken = await authService.RefreshTokenAsync(user.RefreshToken);
+                var refreshedToken = await authService.RefreshTokenAsync(user.RefreshToken).ConfigureAwait(false);
                 if (refreshedToken != null)
                 {
                     user.AccessToken = refreshedToken.AccessToken;
                     user.RefreshToken = refreshedToken.RefreshToken;
                     user.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshedToken.ExpiresIn);
-                    await userRepository.SaveUserAsync(user);
+                    await userRepository.SaveUserAsync(user).ConfigureAwait(false);
                     _logger.LogInformation("✅ Token refreshed successfully for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                     return user;
                 }
@@ -383,6 +530,121 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogError(ex, "❌ Exception during token refresh for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
                 return null;
+            }
+        }
+
+        private async Task<BotCredentials?> EnsureBotTokenValidAsync(
+            IBotCredentialRepository botCredentialRepository,
+            ITwitchAuthService authService)
+        {
+            var creds = await botCredentialRepository.GetAsync().ConfigureAwait(false);
+            if (creds == null)
+            {
+                _logger.LogWarning("⚠️ Forge bot credentials not found; falling back to streamer token");
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(creds.RefreshToken))
+            {
+                _logger.LogWarning("⚠️ Forge bot refresh token missing; falling back to streamer token");
+                return null;
+            }
+
+            // Refresh bot token if needed (buffer of 5 minutes)
+            if (creds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
+            {
+                _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken).ConfigureAwait(false);
+                if (refreshed == null)
+                {
+                    _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                    return null;
+                }
+
+                creds.AccessToken = refreshed.AccessToken;
+                creds.RefreshToken = refreshed.RefreshToken;
+                creds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                await botCredentialRepository.SaveAsync(creds).ConfigureAwait(false);
+                _logger.LogInformation("✅ Forge bot token refreshed; expires at {Expiry}", creds.TokenExpiry);
+            }
+
+            if (string.IsNullOrEmpty(creds.AccessToken))
+            {
+                _logger.LogWarning("⚠️ Forge bot access token missing; falling back to streamer token");
+                return null;
+            }
+
+            return creds;
+        }
+
+        private async Task<bool> SubscribeWithBotRetryAsync(
+            ITwitchHelixWrapper helixWrapper,
+            ITwitchAuthService authService,
+            IBotCredentialRepository botCredentialRepository,
+            BotCredentials botCredentials,
+            string sessionId,
+            string subscriptionType,
+            string version,
+            Dictionary<string, string> condition,
+            bool retryOnBadToken = true)
+        {
+            try
+            {
+                await helixWrapper.CreateEventSubSubscriptionAsync(
+                    _twitchSettings.ClientId,
+                    botCredentials.AccessToken,
+                    subscriptionType,
+                    version,
+                    condition,
+                    EventSubTransportMethod.Websocket,
+                    sessionId).ConfigureAwait(false);
+                _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} (Forge bot)", LogSanitizer.Sanitize(subscriptionType));
+                return true;
+            }
+            catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
+            {
+                if (!retryOnBadToken)
+                {
+                    _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} (Forge bot) - bot may need re-auth", LogSanitizer.Sanitize(subscriptionType));
+                    return false;
+                }
+
+                _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} (Forge bot) - forcing bot token refresh...", LogSanitizer.Sanitize(subscriptionType));
+                var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken).ConfigureAwait(false);
+                if (refreshed == null)
+                {
+                    _logger.LogError("❌ Failed to refresh Forge bot token during subscription retry");
+                    return false;
+                }
+
+                botCredentials.AccessToken = refreshed.AccessToken;
+                botCredentials.RefreshToken = refreshed.RefreshToken;
+                botCredentials.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                await botCredentialRepository.SaveAsync(botCredentials).ConfigureAwait(false);
+
+                try
+                {
+                    await helixWrapper.CreateEventSubSubscriptionAsync(
+                        _twitchSettings.ClientId,
+                        botCredentials.AccessToken,
+                        subscriptionType,
+                        version,
+                        condition,
+                        EventSubTransportMethod.Websocket,
+                        sessionId).ConfigureAwait(false);
+                    _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after bot token refresh", LogSanitizer.Sanitize(subscriptionType));
+                    return true;
+                }
+                catch (Exception retryEx)
+                {
+                    _logger.LogError(retryEx, "❌ Failed to subscribe to {SubscriptionType} even after bot token refresh", LogSanitizer.Sanitize(subscriptionType));
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to subscribe to {SubscriptionType} (Forge bot)", LogSanitizer.Sanitize(subscriptionType));
+                return false;
             }
         }
 
@@ -424,7 +686,7 @@ namespace OmniForge.Infrastructure.Services
                     version,
                     condition,
                     EventSubTransportMethod.Websocket,
-                    context.SessionId);
+                    context.SessionId).ConfigureAwait(false);
                 _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
                 return true;
             }
@@ -437,7 +699,7 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogWarning(btEx, "⚠️ BadTokenException for {SubscriptionType} - forcing token refresh...", LogSanitizer.Sanitize(subscriptionType));
-                var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository);
+                var refreshedUser = await ForceRefreshTokenAsync(context.User, context.AuthService, context.UserRepository).ConfigureAwait(false);
                 if (refreshedUser != null)
                 {
                     context.User = refreshedUser;
@@ -451,7 +713,7 @@ namespace OmniForge.Infrastructure.Services
                             version,
                             condition,
                             EventSubTransportMethod.Websocket,
-                            context.SessionId);
+                            context.SessionId).ConfigureAwait(false);
                         _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} after token refresh", LogSanitizer.Sanitize(subscriptionType));
                         return true;
                     }
@@ -474,10 +736,10 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("🔄 Force reconnect requested for user {UserId}", LogSanitizer.Sanitize(userId));
             if (_eventSubService.IsConnected)
             {
-                try { await _eventSubService.DisconnectAsync(); } catch (Exception ex) { _logger.LogWarning(ex, "Force reconnect: disconnect failed but continuing"); }
+                try { await _eventSubService.DisconnectAsync().ConfigureAwait(false); } catch (Exception ex) { _logger.LogWarning(ex, "Force reconnect: disconnect failed but continuing"); }
             }
-            try { await _eventSubService.ConnectAsync(); } catch (Exception ex) { _logger.LogError(ex, "Force reconnect: connect failed"); }
-            var result = await SubscribeToUserAsync(userId);
+            try { await _eventSubService.ConnectAsync().ConfigureAwait(false); } catch (Exception ex) { _logger.LogError(ex, "Force reconnect: connect failed"); }
+            var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
             _logger.LogInformation("🔄 Force reconnect result for {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
             return result;
         }
@@ -544,7 +806,7 @@ namespace OmniForge.Infrastructure.Services
             _connectionWatchdog?.Dispose();
             try
             {
-                await _eventSubService.DisconnectAsync();
+                await _eventSubService.DisconnectAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -588,10 +850,10 @@ namespace OmniForge.Infrastructure.Services
                     _usersWantingMonitoring.Count);
                 try
                 {
-                    await _eventSubService.ConnectAsync();
+                    await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                     // Wait for session welcome before re-subscribing
-                    await Task.Delay(2000); // Give time for welcome message
+                    await Task.Delay(2000).ConfigureAwait(false); // Give time for welcome message
 
                     if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                     {
@@ -599,7 +861,7 @@ namespace OmniForge.Infrastructure.Services
                         foreach (var userId in _usersWantingMonitoring.Keys)
                         {
                             _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
-                            var result = await SubscribeToUserAsync(userId);
+                            var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                             _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                         }
                     }
@@ -622,18 +884,18 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogWarning("⏱️ No keepalive received for {Seconds:F1}s. Triggering reconnect...", timeSinceLastKeepalive.TotalSeconds);
                     try
                     {
-                        await _eventSubService.DisconnectAsync();
-                        await _eventSubService.ConnectAsync();
+                        await _eventSubService.DisconnectAsync().ConfigureAwait(false);
+                        await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                         // Wait for session welcome before re-subscribing
-                        await Task.Delay(2000);
+                        await Task.Delay(2000).ConfigureAwait(false);
 
                         if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                         {
                             _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                             foreach (var userId in _usersWantingMonitoring.Keys)
                             {
-                                var result = await SubscribeToUserAsync(userId);
+                                var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                                 _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
                             }
                         }
@@ -681,7 +943,7 @@ namespace OmniForge.Infrastructure.Services
                         diag.LastEventAt = DateTimeOffset.UtcNow;
                         diag.LastEventSummary = TrySummarizeEvent(eventData);
                     }
-                    await handler.HandleAsync(eventData);
+                    await handler.HandleAsync(eventData).ConfigureAwait(false);
                 }
                 else
                 {

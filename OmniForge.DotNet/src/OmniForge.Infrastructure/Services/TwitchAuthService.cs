@@ -55,6 +55,7 @@ namespace OmniForge.Infrastructure.Services
 
                 // Moderation & followers
                 "moderator:read:followers",
+                "moderation:read",
                 "moderator:read:automod_settings",
                 "moderator:manage:automod_settings",
 
@@ -66,8 +67,9 @@ namespace OmniForge.Infrastructure.Services
             var scopeString = string.Join(" ", scopes);
             var encodedScopes = System.Net.WebUtility.UrlEncode(scopeString);
             var encodedRedirect = System.Net.WebUtility.UrlEncode(redirectUri);
+            var encodedClientId = System.Net.WebUtility.UrlEncode(_settings.ClientId);
 
-            return $"https://id.twitch.tv/oauth2/authorize?client_id={_settings.ClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}&force_verify=true";
+            return $"https://id.twitch.tv/oauth2/authorize?client_id={encodedClientId}&redirect_uri={encodedRedirect}&response_type=code&scope={encodedScopes}&force_verify=true";
         }
 
         public async Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri)

@@ -47,7 +47,7 @@ namespace OmniForge.Infrastructure.Services
                     {
                         if (cancellationToken.IsCancellationRequested) break;
 
-                        if (user.IsActive && !string.IsNullOrEmpty(user.AccessToken))
+                        if (user.IsActive && !string.IsNullOrEmpty(user.Username))
                         {
                             _logger.LogInformation("Connecting Twitch bot for user: {Username}", LogSanitizer.Sanitize(user.Username));
                             await _twitchClientManager.ConnectUserAsync(user.TwitchUserId);

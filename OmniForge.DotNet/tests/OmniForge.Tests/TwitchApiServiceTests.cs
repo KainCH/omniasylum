@@ -1,18 +1,25 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Exceptions;
+using OmniForge.Infrastructure.Configuration;
 using TwitchLib.Api.Helix.Models.Moderation.AutomodSettings;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 using Xunit;
+using System.Text.Json;
 
 namespace OmniForge.Tests
 {
@@ -20,30 +27,191 @@ namespace OmniForge.Tests
     {
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ITwitchAuthService> _mockAuthService;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly Mock<IConfiguration> _mockConfiguration;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly Mock<ILogger<TwitchApiService>> _mockLogger;
+        private readonly IOptions<TwitchSettings> _twitchSettings;
         private readonly TwitchApiService _service;
 
         public TwitchApiServiceTests()
         {
             _mockUserRepository = new Mock<IUserRepository>();
             _mockAuthService = new Mock<ITwitchAuthService>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
             _mockConfiguration = new Mock<IConfiguration>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockHttpClientFactory = new Mock<IHttpClientFactory>();
             _mockLogger = new Mock<ILogger<TwitchApiService>>();
+
+            _twitchSettings = Options.Create(new TwitchSettings
+            {
+                ClientId = "test_client_id"
+            });
 
             _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
 
             _service = new TwitchApiService(
                 _mockUserRepository.Object,
                 _mockAuthService.Object,
+                _mockBotCredentialRepository.Object,
                 _mockConfiguration.Object,
+                _twitchSettings,
                 _mockHelixWrapper.Object,
                 _mockHttpClientFactory.Object,
                 _mockLogger.Object);
+        }
+
+        [Fact]
+        public async Task GetModeratorsAsync_ShouldParseUserLogin_FromHelixResponse()
+        {
+            var json = "{\"data\":[{\"user_id\":\"424596340\",\"user_login\":\"omniforge_bot\",\"user_name\":\"OmniForge_Bot\"}],\"pagination\":{}}";
+
+            var handler = new StubHttpMessageHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            var response = await _service.GetModeratorsAsync("125828897", "token", CancellationToken.None);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Single(response.Moderators);
+            Assert.Equal("omniforge_bot", response.Moderators[0].UserLogin);
+            Assert.NotNull(response.FindModeratorByUserIdOrLogin("omniforge_bot"));
+        }
+
+        [Fact]
+        public async Task SendChatMessageAsBotAsync_WhenBotTokenValid_ShouldSendWithBotTokenAndSenderId()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "omniforge_bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            _mockAuthService
+                .Setup(x => x.RefreshTokenAsync(It.IsAny<string>()))
+                .Throws(new Exception("Refresh should not be called"));
+
+            string? capturedBearer = null;
+            string? capturedClientId = null;
+            string? capturedJson = null;
+
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedBearer = req.Headers.Authorization?.Parameter;
+                capturedClientId = req.Headers.TryGetValues("Client-Id", out var values) ? values.FirstOrDefault() : null;
+                capturedJson = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                };
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            await _service.SendChatMessageAsBotAsync("broadcaster1", "bot-user-id", "hello", replyParentMessageId: "parent1");
+
+            Assert.Equal("bot_access", capturedBearer);
+            Assert.Equal("test_client_id", capturedClientId);
+            Assert.NotNull(capturedJson);
+
+            using var doc = JsonDocument.Parse(capturedJson!);
+            Assert.Equal("broadcaster1", doc.RootElement.GetProperty("broadcaster_id").GetString());
+            Assert.Equal("bot-user-id", doc.RootElement.GetProperty("sender_id").GetString());
+            Assert.Equal("hello", doc.RootElement.GetProperty("message").GetString());
+            Assert.Equal("parent1", doc.RootElement.GetProperty("reply_parent_message_id").GetString());
+
+            _mockBotCredentialRepository.Verify(x => x.SaveAsync(It.IsAny<BotCredentials>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task SendChatMessageAsBotAsync_WhenBotTokenExpiring_ShouldRefreshAndPersistThenSend()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            var botCreds = new BotCredentials
+            {
+                Username = "omniforge_bot",
+                AccessToken = "stale_access",
+                RefreshToken = "bot_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(1)
+            };
+
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(botCreds);
+
+            _mockAuthService
+                .Setup(x => x.RefreshTokenAsync("bot_refresh"))
+                .ReturnsAsync(new TwitchTokenResponse
+                {
+                    AccessToken = "new_access",
+                    RefreshToken = "new_refresh",
+                    ExpiresIn = 3600,
+                    TokenType = "bearer"
+                });
+
+            BotCredentials? savedCreds = null;
+            _mockBotCredentialRepository
+                .Setup(x => x.SaveAsync(It.IsAny<BotCredentials>()))
+                .Callback<BotCredentials>(c => savedCreds = c)
+                .Returns(Task.CompletedTask);
+
+            string? capturedBearer = null;
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedBearer = req.Headers.Authorization?.Parameter;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                };
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            await _service.SendChatMessageAsBotAsync("broadcaster1", "bot-user-id", "hello");
+
+            Assert.Equal("new_access", capturedBearer);
+            Assert.NotNull(savedCreds);
+            Assert.Equal("new_access", savedCreds!.AccessToken);
+            Assert.Equal("new_refresh", savedCreds.RefreshToken);
+            Assert.True(savedCreds.TokenExpiry > DateTimeOffset.UtcNow.AddMinutes(30));
+        }
+
+        private sealed class StubHttpMessageHandler : HttpMessageHandler
+        {
+            private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+            public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+            {
+                _handler = handler;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(_handler(request));
+            }
         }
 
         [Fact]

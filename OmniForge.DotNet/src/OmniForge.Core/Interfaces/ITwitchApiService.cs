@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using OmniForge.Core.Entities;
 
@@ -13,15 +15,44 @@ namespace OmniForge.Core.Interfaces
         Task<StreamInfo?> GetStreamInfoAsync(string userId);
         Task<ClipInfo?> CreateClipAsync(string userId);
 
+        // Moderation
+        Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default);
+
         // AutoMod settings
         Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId);
         Task<AutomodSettingsDto> UpdateAutomodSettingsAsync(string userId, AutomodSettingsDto settings);
 
         // Chat
         Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null);
+        Task SendChatMessageAsBotAsync(string broadcasterId, string botUserId, string message, string? replyParentMessageId = null);
 
         // User Lookup
         Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId);
+    }
+
+    public class TwitchModeratorsResponse
+    {
+        public HttpStatusCode StatusCode { get; init; }
+        public List<TwitchModeratorDto> Moderators { get; init; } = new();
+
+        public TwitchModeratorDto? FindModeratorByUserIdOrLogin(string userIdOrLogin)
+        {
+            if (string.IsNullOrWhiteSpace(userIdOrLogin))
+            {
+                return null;
+            }
+
+            return Moderators.Find(m =>
+                string.Equals(m.UserId, userIdOrLogin, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.UserLogin, userIdOrLogin, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public class TwitchModeratorDto
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string UserLogin { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
     }
 
     public class TwitchUserDto

@@ -7,6 +7,7 @@
 @rendermode InteractiveServer
 @inject IUserRepository UserRepository
 @inject IStreamMonitorService StreamMonitorService
+@inject IMonitoringRegistry MonitoringRegistry
 @inject ILogger<Monitor> Logger
 @using System.Threading
 @implements IAsyncDisposable
@@ -83,6 +84,13 @@
                                     <li class="mb-2"><strong><i class="bi bi-bell me-2"></i>Subscribed:</strong>
                                         <span class="@(status.IsSubscribed ? "text-success" : "text-warning")">@(status.IsSubscribed ? "Yes" : "No")</span>
                                     </li>
+                                    <li class="mb-2"><strong><i class="bi bi-person-badge me-2"></i>EventSub Owner:</strong>
+                                        <span class="@GetOwnerTextClass(selectedUserId)">@GetOwnerText(selectedUserId)</span>
+                                        @if (TryGetMonitoringState(selectedUserId, out var monitoringState) && monitoringState != null && !string.IsNullOrEmpty(monitoringState.BotUserId))
+                                        {
+                                            <small class="text-muted">(bot_user_id=@monitoringState.BotUserId)</small>
+                                        }
+                                    </li>
                                     <li class="mb-2"><strong><i class="bi bi-key me-2"></i>Session ID:</strong> <code class="small">@(status.EventSubSessionId ?? "-")</code></li>
                                     <li class="mb-2"><strong><i class="bi bi-stopwatch me-2"></i>Keepalive Age:</strong> @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s</li>
                                 </ul>
@@ -146,6 +154,11 @@
                                 {
                                     <div class="small">
                                         <div class="mb-1">
+                                            <i class="bi bi-person-badge me-1 text-info"></i>
+                                            <strong>Owner:</strong>
+                                            <span class="@GetOwnerTextClass(user.TwitchUserId)">@GetOwnerText(user.TwitchUserId)</span>
+                                        </div>
+                                        <div class="mb-1">
                                             <i class="bi bi-lightning me-1 text-warning"></i>
                                             <strong>Last Event:</strong> @(userStatus.LastEventType ?? "None")
                                         </div>
@@ -194,6 +207,34 @@
     private int connectedCount => allStatuses.Values.Count(s => s.Connected);
     private int subscribedCount => allStatuses.Values.Count(s => s.IsSubscribed);
     private int disconnectedCount => (users?.Count() ?? 0) - connectedCount;
+
+    private bool TryGetMonitoringState(string? userId, out MonitoringState? state)
+    {
+        state = null;
+        if (string.IsNullOrWhiteSpace(userId)) return false;
+
+        if (MonitoringRegistry.TryGetState(userId, out var s))
+        {
+            state = s;
+            return true;
+        }
+
+        return false;
+    }
+
+    private string GetOwnerText(string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return "-";
+        if (!TryGetMonitoringState(userId, out var state) || state == null) return "Not monitoring";
+        return state.UseBot ? "Forge Bot" : "Streamer";
+    }
+
+    private string GetOwnerTextClass(string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return "text-muted";
+        if (!TryGetMonitoringState(userId, out var state) || state == null) return "text-muted";
+        return state.UseBot ? "text-success" : "text-secondary";
+    }
 
     protected override async Task OnInitializedAsync()
     {

@@ -7,5 +7,7 @@ namespace OmniForge.Infrastructure.Interfaces
     {
         Task<bool> ValidateChannelAsync(string channelId, string botToken);
         Task SendMessageAsync(string channelId, string botToken, string? content, Embed embed, MessageComponent? components, AllowedMentions allowedMentions);
+        Task EnsureOnlineAsync(string botToken, string activityText);
+        Task SetIdleAsync(string botToken, string activityText);
     }
 }

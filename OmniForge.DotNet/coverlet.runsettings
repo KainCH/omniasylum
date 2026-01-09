@@ -5,7 +5,7 @@
       <DataCollector friendlyName="XPlat Code Coverage">
         <Configuration>
           <Format>cobertura</Format>
-          <Exclude>[OmniForge.Infrastructure]OmniForge.Infrastructure.DependencyInjection,[OmniForge.Web]Program,[OmniForge.Web]OmniForge.Web.Components.*</Exclude>
+          <Exclude>[OmniForge.Infrastructure]OmniForge.Infrastructure.DependencyInjection,[OmniForge.Web]Program,[OmniForge.Web]OmniForge.Web.Components.*,[OmniForge.Infrastructure]OmniForge.Infrastructure.Services.DiscordNetBotClient*,[OmniForge.Infrastructure]OmniForge.Infrastructure.Services.EventSubWebsocketClientWrapper*,[OmniForge.Infrastructure]OmniForge.Infrastructure.Repositories.BotCredentialRepository*</Exclude>
         </Configuration>
       </DataCollector>
     </DataCollectors>
