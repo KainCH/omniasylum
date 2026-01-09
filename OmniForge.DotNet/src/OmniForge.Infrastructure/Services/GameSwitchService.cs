@@ -172,7 +172,7 @@ namespace OmniForge.Infrastructure.Services
                     BoxArtUrl = boxArtUrl ?? string.Empty,
                     CreatedAt = existingLibraryItem?.CreatedAt ?? now,
                     LastSeenAt = now,
-                    EnabledContentClassificationLabels = existingLibraryItem?.EnabledContentClassificationLabels ?? new List<string>()
+                    EnabledContentClassificationLabels = existingLibraryItem?.EnabledContentClassificationLabels
                 };
 
                 await _gameLibraryRepository.UpsertAsync(upsertedLibraryItem);
@@ -314,8 +314,17 @@ namespace OmniForge.Infrastructure.Services
             // Apply per-game Content Classification Labels to the channel when a new game is detected.
             try
             {
-                var enabledCcls = upsertedLibraryItem?.EnabledContentClassificationLabels ?? new List<string>();
-                await _twitchApiService.UpdateChannelInformationAsync(userId, gameId, enabledCcls);
+                if (upsertedLibraryItem?.EnabledContentClassificationLabels != null)
+                {
+                    await _twitchApiService.UpdateChannelInformationAsync(userId, gameId, upsertedLibraryItem.EnabledContentClassificationLabels);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "ℹ️ Admin CCL config not set for game; skipping CCL apply. user_id={UserId} game_id={GameId}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(gameId));
+                }
             }
             catch (Exception ex)
             {

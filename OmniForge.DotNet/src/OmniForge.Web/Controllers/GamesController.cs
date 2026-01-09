@@ -65,6 +65,7 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("library/add")]
+        [Authorize(Roles = "admin", AuthenticationSchemes = "Bearer,Cookies")]
         public async Task<IActionResult> AddToLibrary([FromBody] AddGameRequest request)
         {
             var userId = User.FindFirst("userId")?.Value;

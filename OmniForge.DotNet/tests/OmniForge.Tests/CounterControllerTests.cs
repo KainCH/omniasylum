@@ -16,6 +16,8 @@ namespace OmniForge.Tests
     {
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<IGameContextRepository> _mockGameContextRepository;
+        private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
         private readonly Mock<INotificationService> _mockNotificationService;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ILogger<CounterController>> _mockLogger;
@@ -25,6 +27,8 @@ namespace OmniForge.Tests
         {
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
+            _mockGameContextRepository = new Mock<IGameContextRepository>();
+            _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
             _mockNotificationService = new Mock<INotificationService>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockLogger = new Mock<ILogger<CounterController>>();
@@ -32,6 +36,8 @@ namespace OmniForge.Tests
             _controller = new CounterController(
                 _mockCounterRepository.Object,
                 _mockUserRepository.Object,
+                _mockGameContextRepository.Object,
+                _mockGameCoreCountersConfigRepository.Object,
                 _mockNotificationService.Object,
                 _mockOverlayNotifier.Object,
                 _mockLogger.Object);
@@ -53,6 +59,8 @@ namespace OmniForge.Tests
             var controller = new CounterController(
                 _mockCounterRepository.Object,
                 _mockUserRepository.Object,
+                _mockGameContextRepository.Object,
+                _mockGameCoreCountersConfigRepository.Object,
                 _mockNotificationService.Object,
                 _mockOverlayNotifier.Object,
                 _mockLogger.Object);

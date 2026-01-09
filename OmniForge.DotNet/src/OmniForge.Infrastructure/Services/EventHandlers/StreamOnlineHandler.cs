@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +9,7 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using Microsoft.Extensions.Options;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -53,6 +55,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var discordService = scope.ServiceProvider.GetRequiredService<IDiscordService>();
             var helixWrapper = scope.ServiceProvider.GetRequiredService<ITwitchHelixWrapper>();
             var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+            var twitchApiService = scope.ServiceProvider.GetService<ITwitchApiService>();
+            var gameLibraryRepository = scope.ServiceProvider.GetService<IGameLibraryRepository>();
 
             var user = await userRepository.GetUserAsync(broadcasterId);
             if (user == null)
@@ -72,6 +76,85 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (overlayNotifier != null && counters != null)
             {
                 await overlayNotifier.NotifyStreamStartedAsync(broadcasterId, counters);
+            }
+
+            // When the stream goes online, fetch the channel category and apply per-game CCLs from the library.
+            if (twitchApiService != null && gameLibraryRepository != null)
+            {
+                try
+                {
+                    var category = await twitchApiService.GetChannelCategoryAsync(broadcasterId);
+                    if (category != null && !string.IsNullOrWhiteSpace(category.GameId))
+                    {
+                        Logger.LogInformation(
+                            "🎮 Stream online category for user {UserId}: {GameName} ({GameId})",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            LogSanitizer.Sanitize(category.GameName),
+                            LogSanitizer.Sanitize(category.GameId));
+
+                        var libraryItem = await gameLibraryRepository.GetAsync(broadcasterId, category.GameId);
+                        if (libraryItem == null)
+                        {
+                            Logger.LogInformation(
+                                "➕ Auto-adding missing game to global library on stream online. user_id={UserId} game_id={GameId} game_name={GameName}",
+                                LogSanitizer.Sanitize(broadcasterId),
+                                LogSanitizer.Sanitize(category.GameId),
+                                LogSanitizer.Sanitize(category.GameName));
+
+                            var now = DateTimeOffset.UtcNow;
+                            await gameLibraryRepository.UpsertAsync(new Core.Entities.GameLibraryItem
+                            {
+                                // Repository is global; UserId is ignored for partitioning.
+                                UserId = "global",
+                                GameId = category.GameId,
+                                GameName = category.GameName,
+                                CreatedAt = now,
+                                LastSeenAt = now,
+                                BoxArtUrl = string.Empty,
+                                EnabledContentClassificationLabels = null
+                            });
+
+                            // New games are unconfigured; do not change channel CCLs until an admin configures them.
+                            Logger.LogInformation(
+                                "ℹ️ Game auto-added but has no admin CCL config yet; skipping CCL apply. game_id={GameId}",
+                                LogSanitizer.Sanitize(category.GameId));
+                        }
+                        else
+                        {
+                            if (libraryItem.EnabledContentClassificationLabels == null)
+                            {
+                                Logger.LogInformation(
+                                    "ℹ️ Admin CCL config not set for this game; skipping CCL apply. user_id={UserId} game_id={GameId}",
+                                    LogSanitizer.Sanitize(broadcasterId),
+                                    LogSanitizer.Sanitize(category.GameId));
+                            }
+                            else
+                            {
+                                var enabledCcls = libraryItem.EnabledContentClassificationLabels;
+                                Logger.LogInformation(
+                                    "🏷️ Applying admin-configured CCLs on stream online. user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                                    LogSanitizer.Sanitize(broadcasterId),
+                                    LogSanitizer.Sanitize(category.GameId),
+                                    string.Join(", ", enabledCcls.Select(LogSanitizer.Sanitize)));
+
+                                await twitchApiService.UpdateChannelInformationAsync(
+                                    broadcasterId,
+                                    category.GameId,
+                                    enabledCcls);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Logger.LogInformation(
+                            "🎮 Stream online: no channel category returned; skipping CCL apply. user_id={UserId}",
+                            LogSanitizer.Sanitize(broadcasterId));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "⚠️ Failed applying CCLs on stream online for user {UserId}", LogSanitizer.Sanitize(broadcasterId));
+                }
             }
 
             // Fetch Stream Info

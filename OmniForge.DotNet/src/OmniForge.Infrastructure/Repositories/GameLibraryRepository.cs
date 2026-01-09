@@ -14,6 +14,7 @@ namespace OmniForge.Infrastructure.Repositories
 {
     public class GameLibraryRepository : IGameLibraryRepository
     {
+        private const string GlobalPartitionKey = "global";
         private readonly TableClient _tableClient;
 
         public GameLibraryRepository(TableServiceClient tableServiceClient, IOptions<AzureTableConfiguration> tableConfig)
@@ -28,19 +29,25 @@ namespace OmniForge.Infrastructure.Repositories
 
         public async Task UpsertAsync(GameLibraryItem item)
         {
-            if (string.IsNullOrWhiteSpace(item.UserId) || string.IsNullOrWhiteSpace(item.GameId))
+            if (string.IsNullOrWhiteSpace(item.GameId))
             {
                 return;
             }
 
-            var entity = new TableEntity(item.UserId, item.GameId)
+            var entity = new TableEntity(GlobalPartitionKey, item.GameId)
             {
                 ["gameName"] = item.GameName ?? string.Empty,
                 ["boxArtUrl"] = item.BoxArtUrl ?? string.Empty,
                 ["createdAt"] = item.CreatedAt,
-                ["lastSeenAt"] = item.LastSeenAt,
-                ["enabledCcls"] = JsonSerializer.Serialize(item.EnabledContentClassificationLabels ?? new List<string>())
+                ["lastSeenAt"] = item.LastSeenAt
             };
+
+            // Only persist CCL config when explicitly configured.
+            // Null means "not configured" and should not modify existing config.
+            if (item.EnabledContentClassificationLabels != null)
+            {
+                entity["enabledCcls"] = JsonSerializer.Serialize(item.EnabledContentClassificationLabels);
+            }
 
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Merge);
         }
@@ -49,7 +56,7 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                var response = await _tableClient.GetEntityAsync<TableEntity>(userId, gameId);
+                var response = await _tableClient.GetEntityAsync<TableEntity>(GlobalPartitionKey, gameId);
                 return Map(response.Value);
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
@@ -61,7 +68,7 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<IReadOnlyList<GameLibraryItem>> ListAsync(string userId, int take = 200)
         {
             var results = new List<GameLibraryItem>();
-            var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{userId}'");
+            var query = _tableClient.QueryAsync<TableEntity>(filter: $"PartitionKey eq '{GlobalPartitionKey}'");
 
             await foreach (var entity in query)
             {
@@ -76,21 +83,21 @@ namespace OmniForge.Infrastructure.Repositories
 
         private static GameLibraryItem Map(TableEntity entity)
         {
-            var enabledCcls = new List<string>();
-            try
+            List<string>? enabledCcls = null;
+            if (entity.TryGetValue("enabledCcls", out var raw) && raw != null)
             {
-                var json = entity.GetString("enabledCcls");
-                if (!string.IsNullOrWhiteSpace(json))
+                try
                 {
-                    enabledCcls = JsonSerializer.Deserialize<List<string>>(json, new JsonSerializerOptions
+                    var json = entity.GetString("enabledCcls");
+                    enabledCcls = JsonSerializer.Deserialize<List<string>>(json ?? "[]", new JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true
                     }) ?? new List<string>();
                 }
-            }
-            catch
-            {
-                enabledCcls = new List<string>();
+                catch
+                {
+                    enabledCcls = new List<string>();
+                }
             }
 
             return new GameLibraryItem

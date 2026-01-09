@@ -89,9 +89,9 @@ else
                     <div class="fw-semibold">@result.Name</div>
                     <div class="small text-muted">Game ID: @result.Id</div>
                   </div>
-                  <button class="btn btn-sm btn-outline-success" @onclick="() => AddToLibrary(result)"
-                    disabled="@(isBusy || alreadyAdded)">
-                    <i class="bi bi-plus-circle me-1"></i>@(alreadyAdded ? "Added" : "Add")
+                  <button class="btn btn-sm btn-outline-primary" @onclick="() => ActivateFromSearch(result)"
+                    disabled="@(isBusy)">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Activate
                   </button>
                 </div>
               }
@@ -199,44 +199,6 @@ else
                   }
                 </div>
                 <div class="small text-muted mt-1">These control overlay visibility and default chat commands per game.
-                </div>
-              </div>
-
-              <div class="col-12">
-                <label class="form-label">Content Classification Labels (CCLs)</label>
-                <div class="d-flex flex-wrap gap-3">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclProfanity" @bind="cclProfanityVulgarity" />
-                    <label class="form-check-label" for="cclProfanity">Profanity/Vulgarity</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclGambling" @bind="cclGambling" />
-                    <label class="form-check-label" for="cclGambling">Gambling</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclViolence" @bind="cclViolentGraphic" />
-                    <label class="form-check-label" for="cclViolence">Violent/Graphic</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclSexual" @bind="cclSexualThemes" />
-                    <label class="form-check-label" for="cclSexual">Sexual Themes</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclDrugs" @bind="cclDrugsIntoxication" />
-                    <label class="form-check-label" for="cclDrugs">Drugs/Intoxication</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclPolitics"
-                      @bind="cclDebatedSocialIssuesAndPolitics" />
-                    <label class="form-check-label" for="cclPolitics">Politics/Debated Issues</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="cclMature" @bind="cclMatureGame" />
-                    <label class="form-check-label" for="cclMature">Mature Game</label>
-                  </div>
-                </div>
-                <div class="small text-muted mt-1">These will be applied to your Twitch channel when this game is
-                  detected/activated.
                 </div>
               </div>
 
@@ -370,14 +332,6 @@ else
   private bool coreScreamsEnabled = true;
   private bool coreBitsEnabled = false;
 
-  private bool cclProfanityVulgarity = false;
-  private bool cclGambling = false;
-  private bool cclViolentGraphic = false;
-  private bool cclSexualThemes = false;
-  private bool cclDrugsIntoxication = false;
-  private bool cclDebatedSocialIssuesAndPolitics = false;
-  private bool cclMatureGame = false;
-
   private List<CounterLibraryItem> counterLibrary = new();
   private string counterRequestName = string.Empty;
   private string counterRequestIcon = string.Empty;
@@ -486,7 +440,7 @@ else
     }
   }
 
-  private async Task AddToLibrary(TwitchCategoryDto category)
+  private async Task ActivateFromSearch(TwitchCategoryDto category)
   {
     if (isBusy) return;
 
@@ -503,24 +457,20 @@ else
     isBusy = true;
     try
     {
-      var now = DateTimeOffset.UtcNow;
-      await GameLibraryRepository.UpsertAsync(new GameLibraryItem
-      {
-        UserId = UserId,
-        GameId = category.Id.Trim(),
-        GameName = category.Name.Trim(),
-        BoxArtUrl = category.BoxArtUrl?.Trim() ?? string.Empty,
-        CreatedAt = now,
-        LastSeenAt = now,
-        EnabledContentClassificationLabels = new List<string>()
-      });
+      await GameSwitchService.HandleGameDetectedAsync(
+      UserId,
+      category.Id.Trim(),
+      category.Name.Trim(),
+      category.BoxArtUrl?.Trim() ?? string.Empty);
 
       await LoadAsync();
-      successMessage = $"Added {category.Name} to your game library.";
+      var ctx = await GameContextRepository.GetAsync(UserId);
+      activeGameId = ctx?.ActiveGameId;
+      successMessage = $"Activated {category.Name}.";
     }
     catch (Exception ex)
     {
-      errorMessage = $"Failed to add game: {ex.Message}";
+      errorMessage = $"Failed to activate game: {ex.Message}";
     }
     finally
     {
@@ -578,16 +528,6 @@ else
       coreSwearsEnabled = selection.SwearsEnabled;
       coreScreamsEnabled = selection.ScreamsEnabled;
       coreBitsEnabled = selection.BitsEnabled;
-
-      var enabledCcls = (selectedGame?.EnabledContentClassificationLabels ?? new
-      List<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-      cclProfanityVulgarity = enabledCcls.Contains("ProfanityVulgarity");
-      cclGambling = enabledCcls.Contains("Gambling");
-      cclViolentGraphic = enabledCcls.Contains("ViolentGraphic");
-      cclSexualThemes = enabledCcls.Contains("SexualThemes");
-      cclDrugsIntoxication = enabledCcls.Contains("DrugsIntoxication");
-      cclDebatedSocialIssuesAndPolitics = enabledCcls.Contains("DebatedSocialIssuesAndPolitics");
-      cclMatureGame = enabledCcls.Contains("MatureGame");
     }
     catch (Exception ex)
     {
@@ -710,19 +650,6 @@ else
       ScreamsEnabled: coreScreamsEnabled,
       BitsEnabled: coreBitsEnabled,
       UpdatedAt: DateTimeOffset.UtcNow));
-
-      // Save per-game CCL selections to the game library.
-      selectedGame.EnabledContentClassificationLabels = new List<string>();
-      if (cclDebatedSocialIssuesAndPolitics)
-        selectedGame.EnabledContentClassificationLabels.Add("DebatedSocialIssuesAndPolitics");
-      if (cclDrugsIntoxication) selectedGame.EnabledContentClassificationLabels.Add("DrugsIntoxication");
-      if (cclSexualThemes) selectedGame.EnabledContentClassificationLabels.Add("SexualThemes");
-      if (cclViolentGraphic) selectedGame.EnabledContentClassificationLabels.Add("ViolentGraphic");
-      if (cclGambling) selectedGame.EnabledContentClassificationLabels.Add("Gambling");
-      if (cclProfanityVulgarity) selectedGame.EnabledContentClassificationLabels.Add("ProfanityVulgarity");
-      if (cclMatureGame) selectedGame.EnabledContentClassificationLabels.Add("MatureGame");
-
-      await GameLibraryRepository.UpsertAsync(selectedGame);
 
       await GameSwitchService.ApplyActiveCoreCountersSelectionAsync(UserId, selectedGame.GameId);
 

@@ -187,8 +187,12 @@ namespace OmniForge.Tests
             // Act
             var result = await _service.SubscribeToUserAsync("123");
 
+            var status = _service.GetUserConnectionStatus("123");
+
             // Assert
             Assert.Equal(SubscriptionResult.Success, result);
+
+            Assert.Contains("channel.update", status.Subscriptions);
 
             _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
                 "test_client",

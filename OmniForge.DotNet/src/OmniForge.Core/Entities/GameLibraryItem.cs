@@ -13,7 +13,8 @@ namespace OmniForge.Core.Entities
         public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
 
         // Twitch Content Classification Labels (CCLs) enabled for this game.
-        // Stored as a list of label ids (e.g., "ProfanityVulgarity").
-        public List<string> EnabledContentClassificationLabels { get; set; } = new();
+        // Null means "not configured" (do not modify Twitch channel CCLs).
+        // An empty list means "configured to clear all labels".
+        public List<string>? EnabledContentClassificationLabels { get; set; }
     }
 }

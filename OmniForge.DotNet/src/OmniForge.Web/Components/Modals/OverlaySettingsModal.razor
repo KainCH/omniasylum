@@ -1,6 +1,8 @@
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
 @inject IUserRepository UserRepository
+@inject IGameContextRepository GameContextRepository
+@inject IGameCoreCountersConfigRepository GameCoreCountersConfigRepository
 @inject IOverlayNotifier OverlayNotifier
 @inject IJSRuntime JSRuntime
 
@@ -76,22 +78,22 @@
                   <h6 class="text-uppercase text-muted mb-3">Visible Counters</h6>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showDeaths" class="form-check-input" @bind-Value="settings.Counters.Deaths" />
+                    <InputCheckbox id="showDeaths" class="form-check-input" @bind-Value="coreDeathsEnabled" />
                     <label class="form-check-label" for="showDeaths">Deaths</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showSwears" class="form-check-input" @bind-Value="settings.Counters.Swears" />
+                    <InputCheckbox id="showSwears" class="form-check-input" @bind-Value="coreSwearsEnabled" />
                     <label class="form-check-label" for="showSwears">Swears</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showScreams" class="form-check-input" @bind-Value="settings.Counters.Screams" />
+                    <InputCheckbox id="showScreams" class="form-check-input" @bind-Value="coreScreamsEnabled" />
                     <label class="form-check-label" for="showScreams">Screams</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showBits" class="form-check-input" @bind-Value="settings.Counters.Bits" />
+                    <InputCheckbox id="showBits" class="form-check-input" @bind-Value="coreBitsEnabled" />
                     <label class="form-check-label" for="showBits">Bits</label>
                   </div>
                 </div>
@@ -164,6 +166,14 @@
   [Parameter] public EventCallback OnSaved { get; set; }
 
   private OverlaySettings settings = new();
+  private string? activeGameId;
+
+  // Game-scoped core counter visibility (source of truth: GameCoreCountersConfig for active game)
+  private bool coreDeathsEnabled = true;
+  private bool coreSwearsEnabled = true;
+  private bool coreScreamsEnabled = true;
+  private bool coreBitsEnabled = false;
+
   private bool isLoading = false;
   private bool isSaving = false;
   private string? errorMessage = null;
@@ -187,6 +197,44 @@
       if (user != null)
       {
         settings = user.OverlaySettings ?? new OverlaySettings();
+
+        // Pull visible core counters from the active game's selection (if any)
+        var ctx = await GameContextRepository.GetAsync(UserId);
+        activeGameId = ctx?.ActiveGameId;
+
+        if (!string.IsNullOrWhiteSpace(activeGameId))
+        {
+          var selection = await GameCoreCountersConfigRepository.GetAsync(UserId, activeGameId);
+          if (selection == null)
+          {
+            // Seed selection from current user overlay settings if missing
+            settings.Counters ??= new OverlayCounters();
+            selection = new GameCoreCountersConfig(
+            UserId: UserId,
+            GameId: activeGameId,
+            DeathsEnabled: settings.Counters.Deaths,
+            SwearsEnabled: settings.Counters.Swears,
+            ScreamsEnabled: settings.Counters.Screams,
+            BitsEnabled: settings.Counters.Bits,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+            await GameCoreCountersConfigRepository.SaveAsync(UserId, activeGameId, selection);
+          }
+
+          coreDeathsEnabled = selection.DeathsEnabled;
+          coreSwearsEnabled = selection.SwearsEnabled;
+          coreScreamsEnabled = selection.ScreamsEnabled;
+          coreBitsEnabled = selection.BitsEnabled;
+        }
+        else
+        {
+          // Fallback: no active game; use user's overlay settings
+          settings.Counters ??= new OverlayCounters();
+          coreDeathsEnabled = settings.Counters.Deaths;
+          coreSwearsEnabled = settings.Counters.Swears;
+          coreScreamsEnabled = settings.Counters.Screams;
+          coreBitsEnabled = settings.Counters.Bits;
+        }
       }
       else
       {
@@ -214,6 +262,29 @@
       var user = await UserRepository.GetUserAsync(UserId);
       if (user != null)
       {
+        // Persist per-game core selection when an active game exists
+        if (!string.IsNullOrWhiteSpace(activeGameId))
+        {
+          await GameCoreCountersConfigRepository.SaveAsync(
+          UserId,
+          activeGameId,
+          new GameCoreCountersConfig(
+          UserId: UserId,
+          GameId: activeGameId,
+          DeathsEnabled: coreDeathsEnabled,
+          SwearsEnabled: coreSwearsEnabled,
+          ScreamsEnabled: coreScreamsEnabled,
+          BitsEnabled: coreBitsEnabled,
+          UpdatedAt: DateTimeOffset.UtcNow));
+        }
+
+        // Also keep the user's overlay settings in sync so the overlay gets immediate updates
+        settings.Counters ??= new OverlayCounters();
+        settings.Counters.Deaths = coreDeathsEnabled;
+        settings.Counters.Swears = coreSwearsEnabled;
+        settings.Counters.Screams = coreScreamsEnabled;
+        settings.Counters.Bits = coreBitsEnabled;
+
         user.OverlaySettings = settings;
         await UserRepository.SaveUserAsync(user);
 

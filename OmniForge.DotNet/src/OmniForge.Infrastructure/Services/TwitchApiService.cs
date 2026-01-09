@@ -265,6 +265,9 @@ namespace OmniForge.Infrastructure.Services
 
             [JsonPropertyName("game_name")]
             public string? GameName { get; set; }
+
+            [JsonPropertyName("content_classification_labels")]
+            public List<ContentClassificationLabel>? ContentClassificationLabels { get; set; }
         }
 
         private class ModifyChannelInformationRequest
@@ -565,9 +568,6 @@ namespace OmniForge.Infrastructure.Services
                 var scopes = await _authService.GetTokenScopesAsync(accessToken);
                 await EnsureScopesAsync(scopes, new[] { "channel:manage:broadcast" });
 
-                var enabled = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
                 var knownLabelIds = new[]
                 {
                     "DebatedSocialIssuesAndPolitics",
@@ -578,6 +578,24 @@ namespace OmniForge.Infrastructure.Services
                     "ProfanityVulgarity",
                     "MatureGame"
                 };
+
+                var enabled = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                if (enabled.Count > 0)
+                {
+                    var known = knownLabelIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var unknown = enabled.Where(id => !known.Contains(id)).ToList();
+                    if (unknown.Count > 0)
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Unknown CCL ids requested; they will be ignored. user_id={UserId} unknown={Unknown}",
+                            LogSanitizer.Sanitize(userId),
+                            string.Join(", ", unknown.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    enabled = enabled.Where(id => known.Contains(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                }
 
                 List<ContentClassificationLabel>? labels;
                 if (enabled.Count == 0)
@@ -594,6 +612,72 @@ namespace OmniForge.Infrastructure.Services
 
                 var client = _httpClientFactory.CreateClient();
                 var url = $"https://api.twitch.tv/helix/channels?broadcaster_id={Uri.EscapeDataString(userId)}";
+
+                // Fetch current channel info so we can log + skip no-op updates.
+                try
+                {
+                    using var getRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    getRequest.Headers.Add("Client-Id", clientId);
+                    getRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                    using var getResponse = await client.SendAsync(getRequest);
+                    var getBody = await getResponse.Content.ReadAsStringAsync();
+
+                    if (getResponse.IsSuccessStatusCode)
+                    {
+                        var parsed = JsonSerializer.Deserialize<GetChannelsHelixResponse>(getBody, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        var current = parsed?.Data?.FirstOrDefault();
+                        var currentEnabled = (current?.ContentClassificationLabels ?? new List<ContentClassificationLabel>())
+                            .Where(l => l.IsEnabled && !string.IsNullOrWhiteSpace(l.Id))
+                            .Select(l => l.Id)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        _logger.LogInformation(
+                            "✅ Retrieved channel info for user {UserId}: current_game_id={CurrentGameId}, current_enabled_ccls={CurrentCcls}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+
+                        var gameSame = string.Equals(current?.GameId ?? string.Empty, gameId, StringComparison.OrdinalIgnoreCase);
+                        var cclsSame = currentEnabled.SetEquals(enabled);
+
+                        if (gameSame && cclsSame)
+                        {
+                            _logger.LogInformation(
+                                "✅ Channel already up to date; skipping update. user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                                LogSanitizer.Sanitize(userId),
+                                LogSanitizer.Sanitize(gameId),
+                                string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                            return;
+                        }
+
+                        _logger.LogInformation(
+                            "🔄 Updating channel info for user {UserId}: game_id {OldGameId} -> {NewGameId}, enabled_ccls {OldCcls} -> {NewCcls}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
+                            LogSanitizer.Sanitize(gameId),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)),
+                            string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                    }
+                    else
+                    {
+                        var helixError = TryParseHelixError(getBody);
+                        _logger.LogWarning(
+                            "⚠️ Helix Get Channel Information failed before update attempt. user_id={UserId} status={StatusCode} error={Error} message={Message}",
+                            LogSanitizer.Sanitize(userId),
+                            (int)getResponse.StatusCode,
+                            LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                            LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Failed retrieving channel info before update attempt. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
 
                 var payload = new ModifyChannelInformationRequest
                 {
