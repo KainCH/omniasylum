@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using OmniForge.Core.Utilities;
+using OmniForge.Core.Exceptions;
 
 namespace OmniForge.Web.Controllers
 {
@@ -396,7 +397,7 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(redirectUri))
             {
                 _logger.LogCritical("Twitch:RedirectUri is not configured. Authentication cannot proceed.");
-                throw new InvalidOperationException("Twitch:RedirectUri is not configured.");
+                throw new ConfigurationException("Missing required configuration: Twitch:RedirectUri");
             }
 
             // Allow indirection via Key Vault secret/config key name.
@@ -417,7 +418,8 @@ namespace OmniForge.Web.Controllers
             _logger.LogCritical(
                 "Twitch:RedirectUri was set to '{RedirectUri}', but it was not a valid URL and could not be resolved from configuration.",
                 LogSanitizer.Sanitize(redirectUri));
-            throw new InvalidOperationException("Twitch:RedirectUri is not configured to a valid URL.");
+            throw new ConfigurationException(
+                "Invalid configuration for Twitch:RedirectUri. Provide an absolute http(s) URL or a configuration key whose value is an absolute http(s) URL.");
         }
 
         private string GetBotRedirectUri()
@@ -444,7 +446,8 @@ namespace OmniForge.Web.Controllers
                 _logger.LogCritical(
                     "Twitch:BotRedirectUri was set to '{BotRedirect}', but it was not a valid URL and could not be resolved from configuration.",
                     LogSanitizer.Sanitize(botRedirect));
-                throw new InvalidOperationException("Twitch:BotRedirectUri is not configured to a valid URL.");
+                throw new ConfigurationException(
+                    "Invalid configuration for Twitch:BotRedirectUri. Provide an absolute http(s) URL or a configuration key whose value is an absolute http(s) URL.");
             }
 
             // Safe fallback: derive from the configured user redirect (not from Request.Host).
@@ -455,7 +458,7 @@ namespace OmniForge.Web.Controllers
             }
 
             _logger.LogCritical("Twitch:BotRedirectUri is not configured and could not be derived.");
-            throw new InvalidOperationException("Twitch:BotRedirectUri is not configured.");
+            throw new ConfigurationException("Missing required configuration: Twitch:BotRedirectUri");
         }
     }
 }
