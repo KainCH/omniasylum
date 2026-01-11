@@ -24,6 +24,7 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchAuthService> _mockTwitchAuthService;
         private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly TwitchClientManager _twitchClientManager;
+        private readonly FakeBotClientFactory _fakeBotClientFactory;
 
         private sealed class FakeBotClient : ITwitchBotClient
         {
@@ -46,6 +47,14 @@ namespace OmniForge.Tests
                 return true;
             }
 
+            public void RaiseMessageReceived(TwitchLib.Client.Models.ChatMessage chatMessage)
+            {
+                OnMessageReceived?.Invoke(this, new TwitchLib.Client.Events.OnMessageReceivedArgs
+                {
+                    ChatMessage = chatMessage
+                });
+            }
+
             public void JoinChannel(string channel)
             {
                 // no-op
@@ -64,16 +73,12 @@ namespace OmniForge.Tests
 
         private sealed class FakeBotClientFactory : ITwitchBotClientFactory
         {
+            public FakeBotClient? LastClient { get; private set; }
+
             public ITwitchBotClient Create(TwitchLib.Communication.Models.ClientOptions clientOptions)
             {
-                var client = new FakeBotClient();
-
-                // No-op subscriptions to mirror production wiring and avoid unused-event warnings.
-                client.OnLog += (_, __) => { };
-                client.OnConnected += (_, __) => { };
-                client.OnMessageReceived += (_, __) => { };
-
-                return client;
+                LastClient = new FakeBotClient();
+                return LastClient;
             }
         }
 
@@ -114,12 +119,87 @@ namespace OmniForge.Tests
                 BotRefreshToken = "bot_refresh"
             });
 
+            _fakeBotClientFactory = new FakeBotClientFactory();
+
             _twitchClientManager = new TwitchClientManager(
                 _mockScopeFactory.Object,
                 _mockMessageHandler.Object,
                 twitchSettings,
                 _mockLogger.Object,
-                new FakeBotClientFactory());
+                _fakeBotClientFactory);
+        }
+
+        [Fact]
+        public async Task ConnectUserAsync_ShouldRouteIncomingChatMessage_ToHandler()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(user);
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            // Act: connect user (sets up channel mapping + event wiring)
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            var bot = _fakeBotClientFactory.LastClient;
+            Assert.NotNull(bot);
+
+            var chatMessage = new TwitchLib.Client.Models.ChatMessage(
+                botUsername: "forge_bot",
+                userId: "viewer1",
+                userName: "viewer",
+                displayName: "Viewer",
+                colorHex: "",
+                color: System.Drawing.Color.Black,
+                emoteSet: null,
+                message: "hello",
+                userType: TwitchLib.Client.Enums.UserType.Viewer,
+                channel: "testuser",
+                id: "id",
+                isSubscriber: false,
+                subscribedMonthCount: 0,
+                roomId: "room",
+                isTurbo: false,
+                isModerator: false,
+                isMe: false,
+                isBroadcaster: false,
+                isVip: false,
+                isPartner: false,
+                isStaff: false,
+                noisy: TwitchLib.Client.Enums.Noisy.False,
+                rawIrcMessage: "",
+                emoteReplacedMessage: "",
+                badges: null,
+                cheerBadge: null,
+                bits: 0,
+                bitsInDollars: 0);
+
+            bot!.RaiseMessageReceived(chatMessage);
+
+            // Assert
+            _mockMessageHandler.Verify(
+                x => x.HandleMessageAsync(
+                    userId,
+                    It.IsAny<TwitchLib.Client.Models.ChatMessage>(),
+                    It.IsAny<Func<string, string, Task>>()),
+                Times.Once);
         }
 
         [Fact]
