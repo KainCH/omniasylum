@@ -105,10 +105,10 @@ namespace OmniForge.Tests.Services
             userRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
                 u.OverlaySettings != null
                 && u.OverlaySettings.Counters != null
-                && u.OverlaySettings.Counters.Deaths == false
-                && u.OverlaySettings.Counters.Swears == true
-                && u.OverlaySettings.Counters.Screams == false
-                && u.OverlaySettings.Counters.Bits == true)), Times.Once);
+                && !u.OverlaySettings.Counters.Deaths
+                && u.OverlaySettings.Counters.Swears
+                && !u.OverlaySettings.Counters.Screams
+                && u.OverlaySettings.Counters.Bits)), Times.Once);
 
             Assert.NotNull(savedChat);
             Assert.NotNull(savedChat!.Commands);
@@ -117,10 +117,10 @@ namespace OmniForge.Tests.Services
             Assert.False(savedChat.Commands.ContainsKey("!swears"));
 
             // Disabled deaths/screams should have explicit overrides
-            Assert.True(savedChat.Commands.ContainsKey("!deaths"));
-            Assert.False(savedChat.Commands["!deaths"].Enabled);
-            Assert.True(savedChat.Commands.ContainsKey("!screams"));
-            Assert.False(savedChat.Commands["!screams"].Enabled);
+            Assert.True(savedChat.Commands.TryGetValue("!deaths", out var deaths));
+            Assert.False(deaths.Enabled);
+            Assert.True(savedChat.Commands.TryGetValue("!screams", out var screams));
+            Assert.False(screams.Enabled);
 
             overlayNotifier.Verify(n => n.NotifyCustomAlertAsync("user1", "chatCommandsUpdated", It.IsAny<object>()), Times.Once);
         }

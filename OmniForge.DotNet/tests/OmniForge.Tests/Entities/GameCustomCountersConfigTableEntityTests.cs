@@ -56,10 +56,10 @@ namespace OmniForge.Tests.Entities
             Assert.NotEqual(default, entity.lastUpdated);
 
             var roundTrip = entity.ToConfiguration();
-            Assert.True(roundTrip.Counters.ContainsKey("deaths"));
-            Assert.Equal("Deaths", roundTrip.Counters["deaths"].Name);
-            Assert.Equal(2, roundTrip.Counters["deaths"].IncrementBy);
-            Assert.Equal(2, roundTrip.Counters["deaths"].Milestones.Count);
+            Assert.True(roundTrip.Counters.TryGetValue("deaths", out var deaths));
+            Assert.Equal("Deaths", deaths.Name);
+            Assert.Equal(2, deaths.IncrementBy);
+            Assert.Equal(2, deaths.Milestones.Count);
         }
     }
 }

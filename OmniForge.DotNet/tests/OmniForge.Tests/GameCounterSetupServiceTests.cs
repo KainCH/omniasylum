@@ -102,10 +102,10 @@ namespace OmniForge.Tests
 
             Assert.NotNull(savedCustomConfig);
             Assert.NotNull(savedCustomConfig!.Counters);
-            Assert.True(savedCustomConfig.Counters.ContainsKey("kills"));
-            Assert.Equal("Kills", savedCustomConfig.Counters["kills"].Name);
-            Assert.Equal(2, savedCustomConfig.Counters["kills"].IncrementBy);
-            Assert.Equal(3, savedCustomConfig.Counters["kills"].DecrementBy);
+            Assert.True(savedCustomConfig.Counters.TryGetValue("kills", out var kills));
+            Assert.Equal("Kills", kills.Name);
+            Assert.Equal(2, kills.IncrementBy);
+            Assert.Equal(3, kills.DecrementBy);
 
             Assert.NotNull(savedChatConfig);
             Assert.NotNull(savedChatConfig!.Commands);
@@ -118,8 +118,8 @@ namespace OmniForge.Tests
 
             Assert.NotNull(savedCounters);
             Assert.NotNull(savedCounters!.CustomCounters);
-            Assert.True(savedCounters.CustomCounters.ContainsKey("kills"));
-            Assert.Equal(0, savedCounters.CustomCounters["kills"]);
+            Assert.True(savedCounters.CustomCounters.TryGetValue("kills", out var killCount));
+            Assert.Equal(0, killCount);
 
             counterRepository.Verify(r => r.SaveCustomCountersConfigAsync("user1", It.IsAny<CustomCounterConfiguration>()), Times.Once);
             userRepository.Verify(r => r.SaveChatCommandsConfigAsync("user1", It.IsAny<ChatCommandConfiguration>()), Times.Once);

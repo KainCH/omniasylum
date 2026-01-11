@@ -79,9 +79,9 @@ namespace OmniForge.Tests
             Assert.NotNull(capturedEntity);
             Assert.Equal("global", capturedEntity!.PartitionKey);
             Assert.Equal("1", capturedEntity.RowKey);
-            Assert.True(capturedEntity.ContainsKey("enabledCcls"));
+            Assert.True(capturedEntity.TryGetValue("enabledCcls", out var enabledCclsValue));
 
-            var enabledCclsJson = capturedEntity["enabledCcls"] as string;
+            var enabledCclsJson = enabledCclsValue as string;
             Assert.False(string.IsNullOrWhiteSpace(enabledCclsJson));
             Assert.Contains("Gambling", enabledCclsJson);
         }

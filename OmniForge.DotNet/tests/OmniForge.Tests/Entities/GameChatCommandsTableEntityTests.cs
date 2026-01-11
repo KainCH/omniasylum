@@ -63,9 +63,9 @@ namespace OmniForge.Tests.Entities
 
             var roundTrip = entity.ToConfiguration();
             Assert.Equal(3, roundTrip.MaxIncrementAmount);
-            Assert.True(roundTrip.Commands.ContainsKey("!hello"));
-            Assert.Equal("hi", roundTrip.Commands["!hello"].Response);
-            Assert.Equal("moderator", roundTrip.Commands["!hello"].Permission);
+            Assert.True(roundTrip.Commands.TryGetValue("!hello", out var hello));
+            Assert.Equal("hi", hello.Response);
+            Assert.Equal("moderator", hello.Permission);
         }
     }
 }

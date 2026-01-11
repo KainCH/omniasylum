@@ -267,6 +267,7 @@ namespace OmniForge.Tests
         {
             var callCount = 0;
             var jsonResponse = "{\"access_token\":\"app_access\",\"expires_in\":3600,\"token_type\":\"bearer\"}";
+            var responses = new List<HttpResponseMessage>();
 
             _mockHttpMessageHandler.Protected()
                 .Setup<Task<HttpResponseMessage>>(
@@ -274,37 +275,69 @@ namespace OmniForge.Tests
                     ItExpr.Is<HttpRequestMessage>(req => req.Method == HttpMethod.Post && req.RequestUri != null && req.RequestUri.ToString() == "https://id.twitch.tv/oauth2/token"),
                     ItExpr.IsAny<CancellationToken>())
                 .Callback(() => callCount++)
-                .ReturnsAsync(new HttpResponseMessage
+                .ReturnsAsync(() =>
                 {
-                    StatusCode = HttpStatusCode.OK,
-                    Content = new StringContent(jsonResponse)
+                    var response = new HttpResponseMessage
+                    {
+                        StatusCode = HttpStatusCode.OK,
+                        Content = new StringContent(jsonResponse)
+                    };
+                    responses.Add(response);
+                    return response;
                 });
 
-            var scopes = new List<string> { " user:write:chat ", "user:write:chat", "openid" };
-            var token1 = await _service.GetAppAccessTokenAsync(scopes);
-            var token2 = await _service.GetAppAccessTokenAsync(new[] { "openid", "user:write:chat" });
+            try
+            {
+                var scopes = new List<string> { " user:write:chat ", "user:write:chat", "openid" };
+                var token1 = await _service.GetAppAccessTokenAsync(scopes);
+                var token2 = await _service.GetAppAccessTokenAsync(new[] { "openid", "user:write:chat" });
 
-            Assert.Equal("app_access", token1);
-            Assert.Equal("app_access", token2);
-            Assert.Equal(1, callCount);
+                Assert.Equal("app_access", token1);
+                Assert.Equal("app_access", token2);
+                Assert.Equal(1, callCount);
+            }
+            finally
+            {
+                foreach (var response in responses)
+                {
+                    response.Dispose();
+                }
+            }
         }
 
         [Fact]
         public async Task GetAppAccessTokenAsync_WhenNonSuccess_ShouldReturnNull()
         {
+            var responses = new List<HttpResponseMessage>();
+
             _mockHttpMessageHandler.Protected()
                 .Setup<Task<HttpResponseMessage>>(
                     "SendAsync",
                     ItExpr.IsAny<HttpRequestMessage>(),
                     ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage
+                .ReturnsAsync(() =>
                 {
-                    StatusCode = HttpStatusCode.BadRequest,
-                    Content = new StringContent("{\"error\":\"bad\"}")
+                    var response = new HttpResponseMessage
+                    {
+                        StatusCode = HttpStatusCode.BadRequest,
+                        Content = new StringContent("{\"error\":\"bad\"}")
+                    };
+                    responses.Add(response);
+                    return response;
                 });
 
-            var token = await _service.GetAppAccessTokenAsync(new[] { "openid" });
-            Assert.Null(token);
+            try
+            {
+                var token = await _service.GetAppAccessTokenAsync(new[] { "openid" });
+                Assert.Null(token);
+            }
+            finally
+            {
+                foreach (var response in responses)
+                {
+                    response.Dispose();
+                }
+            }
         }
 
         [Fact]

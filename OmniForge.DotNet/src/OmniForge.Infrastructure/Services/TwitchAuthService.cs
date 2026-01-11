@@ -88,7 +88,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri)
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("client_id", _settings.ClientId),
                 new KeyValuePair<string, string>("client_secret", _settings.ClientSecret),
@@ -97,7 +97,7 @@ namespace OmniForge.Infrastructure.Services
                 new KeyValuePair<string, string>("redirect_uri", redirectUri)
             });
 
-            var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+            using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -173,7 +173,7 @@ namespace OmniForge.Infrastructure.Services
 
                 using var content = new FormUrlEncodedContent(form);
 
-                var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+                using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
@@ -287,7 +287,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken)
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("client_id", _settings.ClientId),
                 new KeyValuePair<string, string>("client_secret", _settings.ClientSecret),
@@ -295,7 +295,7 @@ namespace OmniForge.Infrastructure.Services
                 new KeyValuePair<string, string>("refresh_token", refreshToken)
             });
 
-            var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+            using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -324,7 +324,7 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
+                using var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to fetch Twitch OIDC keys. Status: {StatusCode}", response.StatusCode);
