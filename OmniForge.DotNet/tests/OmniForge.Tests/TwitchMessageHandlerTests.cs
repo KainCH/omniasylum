@@ -377,6 +377,56 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task ProcessAsync_ShouldIncrementCustomCounter_WhenAttachedAmount()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls+5", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 17 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 10))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 10), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
         public async Task ProcessAsync_ShouldNotMutateCustomCounter_WhenNotMod()
         {
             // Arrange
@@ -405,6 +455,43 @@ namespace OmniForge.Tests
 
             // Act
             await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIgnoreCustomCounter_WhenCounterIdTooLong()
+        {
+            // Arrange
+            var userId = "user1";
+            var tooLongId = new string('a', 65);
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { tooLongId, new CustomCounterDefinition { Name = "Too Long" } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { tooLongId, 1 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!" + tooLongId)), sendMessageMock.Object);
 
             // Assert
             _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
