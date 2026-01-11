@@ -77,23 +77,28 @@
                 <div class="col-md-6">
                   <h6 class="text-uppercase text-muted mb-3">Visible Counters</h6>
 
+                  <div class="text-muted small mb-2">
+                    Showing active per-game counters (read-only)
+                  </div>
+
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showDeaths" class="form-check-input" @bind-Value="coreDeathsEnabled" />
+                    <input id="showDeaths" type="checkbox" class="form-check-input" checked="@coreDeathsEnabled" disabled />
                     <label class="form-check-label" for="showDeaths">Deaths</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showSwears" class="form-check-input" @bind-Value="coreSwearsEnabled" />
+                    <input id="showSwears" type="checkbox" class="form-check-input" checked="@coreSwearsEnabled" disabled />
                     <label class="form-check-label" for="showSwears">Swears</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showScreams" class="form-check-input" @bind-Value="coreScreamsEnabled" />
+                    <input id="showScreams" type="checkbox" class="form-check-input" checked="@coreScreamsEnabled"
+                      disabled />
                     <label class="form-check-label" for="showScreams">Screams</label>
                   </div>
 
                   <div class="form-check mb-2">
-                    <InputCheckbox id="showBits" class="form-check-input" @bind-Value="coreBitsEnabled" />
+                    <input id="showBits" type="checkbox" class="form-check-input" checked="@coreBitsEnabled" disabled />
                     <label class="form-check-label" for="showBits">Bits</label>
                   </div>
                 </div>
@@ -205,26 +210,22 @@
         if (!string.IsNullOrWhiteSpace(activeGameId))
         {
           var selection = await GameCoreCountersConfigRepository.GetAsync(UserId, activeGameId);
-          if (selection == null)
+          if (selection != null)
           {
-            // Seed selection from current user overlay settings if missing
-            settings.Counters ??= new OverlayCounters();
-            selection = new GameCoreCountersConfig(
-            UserId: UserId,
-            GameId: activeGameId,
-            DeathsEnabled: settings.Counters.Deaths,
-            SwearsEnabled: settings.Counters.Swears,
-            ScreamsEnabled: settings.Counters.Screams,
-            BitsEnabled: settings.Counters.Bits,
-            UpdatedAt: DateTimeOffset.UtcNow);
-
-            await GameCoreCountersConfigRepository.SaveAsync(UserId, activeGameId, selection);
+            coreDeathsEnabled = selection.DeathsEnabled;
+            coreSwearsEnabled = selection.SwearsEnabled;
+            coreScreamsEnabled = selection.ScreamsEnabled;
+            coreBitsEnabled = selection.BitsEnabled;
           }
-
-          coreDeathsEnabled = selection.DeathsEnabled;
-          coreSwearsEnabled = selection.SwearsEnabled;
-          coreScreamsEnabled = selection.ScreamsEnabled;
-          coreBitsEnabled = selection.BitsEnabled;
+          else
+          {
+            // No per-game selection exists yet; show user's current overlay settings as a fallback.
+            settings.Counters ??= new OverlayCounters();
+            coreDeathsEnabled = settings.Counters.Deaths;
+            coreSwearsEnabled = settings.Counters.Swears;
+            coreScreamsEnabled = settings.Counters.Screams;
+            coreBitsEnabled = settings.Counters.Bits;
+          }
         }
         else
         {
@@ -262,28 +263,9 @@
       var user = await UserRepository.GetUserAsync(UserId);
       if (user != null)
       {
-        // Persist per-game core selection when an active game exists
-        if (!string.IsNullOrWhiteSpace(activeGameId))
-        {
-          await GameCoreCountersConfigRepository.SaveAsync(
-          UserId,
-          activeGameId,
-          new GameCoreCountersConfig(
-          UserId: UserId,
-          GameId: activeGameId,
-          DeathsEnabled: coreDeathsEnabled,
-          SwearsEnabled: coreSwearsEnabled,
-          ScreamsEnabled: coreScreamsEnabled,
-          BitsEnabled: coreBitsEnabled,
-          UpdatedAt: DateTimeOffset.UtcNow));
-        }
-
-        // Also keep the user's overlay settings in sync so the overlay gets immediate updates
-        settings.Counters ??= new OverlayCounters();
-        settings.Counters.Deaths = coreDeathsEnabled;
-        settings.Counters.Swears = coreSwearsEnabled;
-        settings.Counters.Screams = coreScreamsEnabled;
-        settings.Counters.Bits = coreBitsEnabled;
+        // Do NOT write per-game core counter selection from this modal.
+        // Preserve the existing stored counter selection when saving general overlay settings.
+        settings.Counters = user.OverlaySettings?.Counters ?? settings.Counters;
 
         user.OverlaySettings = settings;
         await UserRepository.SaveUserAsync(user);

@@ -47,6 +47,10 @@
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
 
+    .counter-item.custom {
+      cursor: pointer;
+    }
+
     .counter-icon {
       font-size: 24px;
       margin-right: 10px;
@@ -202,6 +206,9 @@
       // Store last counter data for re-rendering when settings change
       let lastCounterData = null;
 
+      // Store active custom counters config (per-game), keyed by counterId
+      let customCountersConfig = {};
+
       // Apply a safe default immediately so we don't rely on inline CSS.
       // This keeps the overlay positioned even if no settings are returned yet.
       currentSettings = { position: 'top-right', scale: 1 };
@@ -227,6 +234,10 @@
             console.log("⚙️ Loaded settings:", JSON.stringify(currentSettings));
             applySettings(data.settings);
           }
+
+          // Load custom counter definitions if present
+          customCountersConfig = data.customCountersConfig || data.CustomCountersConfig || {};
+
           updateCounters(data);
         })
         .catch(err => console.error("Error loading initial data:", err));
@@ -378,8 +389,33 @@
             break;
           case 'customAlert':
             // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
-            if (window.overlayInterop && data && data.alertType) {
-              window.overlayInterop.triggerAlert(data.alertType, data.data || {});
+            if (data && data.alertType) {
+              // These are control-plane updates, not user-facing alerts.
+              if (data.alertType === 'customCountersUpdated') {
+                customCountersConfig = (data.data && data.data.counters) ? data.data.counters : {};
+                if (lastCounterData) {
+                  updateCounters(lastCounterData);
+                }
+                return;
+              }
+
+              if (data.alertType === 'customCounterUpdate') {
+                // Update cached lastCounterData's customCounters if possible
+                const counterId = data.data?.counterId;
+                const value = data.data?.value;
+                if (counterId && value != null) {
+                  if (!lastCounterData) lastCounterData = {};
+                  if (!lastCounterData.customCounters) lastCounterData.customCounters = {};
+                  lastCounterData.customCounters[counterId] = value;
+                  updateCounters(lastCounterData);
+                }
+                return;
+              }
+
+              // Everything else is an actual alert
+              if (window.overlayInterop) {
+                window.overlayInterop.triggerAlert(data.alertType, data.data || {});
+              }
             }
             break;
           default:
@@ -494,6 +530,13 @@
 
         container.innerHTML = ''; // Clear current
 
+        // Normalize payload shapes (public endpoint vs Counter entity)
+        const deaths = (data.deaths !== undefined ? data.deaths : data.Deaths);
+        const swears = (data.swears !== undefined ? data.swears : data.Swears);
+        const screams = (data.screams !== undefined ? data.screams : data.Screams);
+        const bits = (data.bits !== undefined ? data.bits : data.Bits);
+        const customCounters = (data.customCounters || data.CustomCounters || {});
+
         // Get counter visibility settings (default to true if not specified)
         // Handle both camelCase and PascalCase
         const countersConfig = (currentSettings?.counters) || (currentSettings?.Counters) || {};
@@ -505,10 +548,35 @@
         console.log("📋 Counter visibility - Deaths:", showDeaths, "Swears:", showSwears, "Screams:", showScreams, "Bits:", showBits);
 
         // Only show counters that are enabled in settings
-        if (showDeaths && data.deaths !== undefined) createCounterItem(container, 'DEATHS', data.deaths, '💀');
-        if (showSwears && data.swears !== undefined) createCounterItem(container, 'SWEARS', data.swears, '🤬');
-        if (showScreams && data.screams !== undefined) createCounterItem(container, 'SCREAMS', data.screams, '😱');
-        if (showBits && data.bits !== undefined) createCounterItem(container, 'BITS', data.bits, '💎');
+        if (showDeaths && deaths !== undefined) createCounterItem(container, 'DEATHS', deaths, '💀');
+        if (showSwears && swears !== undefined) createCounterItem(container, 'SWEARS', swears, '🤬');
+        if (showScreams && screams !== undefined) createCounterItem(container, 'SCREAMS', screams, '😱');
+        if (showBits && bits !== undefined) createCounterItem(container, 'BITS', bits, '💎');
+
+        // Render custom counters configured for the active game
+        renderCustomCounters(container, customCounters);
+      }
+
+      function renderCustomCounters(container, customCounters) {
+        const defs = customCountersConfig || {};
+        const entries = Object.entries(defs);
+
+        if (!entries.length) return;
+
+        // Sort by display name for stable rendering
+        entries.sort((a, b) => {
+          const nameA = (a[1]?.name || a[1]?.Name || a[0]).toString().toLowerCase();
+          const nameB = (b[1]?.name || b[1]?.Name || b[0]).toString().toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+
+        for (const [counterId, def] of entries) {
+          const label = def?.name || def?.Name || counterId;
+          const icon = def?.icon || def?.Icon || '🔢';
+          const value = (customCounters && (customCounters[counterId] ?? customCounters[counterId.toLowerCase()])) ?? 0;
+
+          createCustomCounterItem(container, counterId, label, value, icon);
+        }
       }
 
       function createCounterItem(container, label, value, icon) {
@@ -541,6 +609,47 @@
 
         div.appendChild(iconDiv);
         div.appendChild(infoDiv);
+
+        container.appendChild(div);
+      }
+
+      function createCustomCounterItem(container, counterId, label, value, icon) {
+        // Reuse the same item structure but mark as custom and attach click-to-increment
+        const div = document.createElement('div');
+        div.className = 'counter-item custom';
+        div.setAttribute('data-counter-id', counterId);
+
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'counter-icon';
+        iconDiv.textContent = icon;
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'counter-info';
+
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'counter-label';
+        labelDiv.textContent = label;
+
+        const valueDiv = document.createElement('div');
+        valueDiv.className = 'counter-value';
+        valueDiv.textContent = (value === null || value === undefined || isNaN(Number(value))) ? '0' : String(value);
+
+        infoDiv.appendChild(labelDiv);
+        infoDiv.appendChild(valueDiv);
+
+        div.appendChild(iconDiv);
+        div.appendChild(infoDiv);
+
+        div.addEventListener('click', async () => {
+          try {
+            await fetch(`/api/counters/${userId}/custom/${encodeURIComponent(counterId)}/increment`, {
+              method: 'POST'
+            });
+            // No need to update DOM here; the server will broadcast a counterUpdate over WS.
+          } catch (err) {
+            console.error('❌ Failed to increment custom counter:', counterId, err);
+          }
+        });
 
         container.appendChild(div);
       }
