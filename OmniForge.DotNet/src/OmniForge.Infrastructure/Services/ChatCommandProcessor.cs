@@ -296,7 +296,9 @@ namespace OmniForge.Infrastructure.Services
             // - !<counterId>+5    (attached amount)
             // - !<counterId>+ 5   (space amount - parsed upstream into requestedAmount)
 
-            var match = Regex.Match(commandText, @"^!(?<id>[a-z0-9_\-]+?)(?<op>[\+\-])?(?<num>\d+)?$", RegexOptions.IgnoreCase);
+            // NOTE: Counter IDs may include '-' but a trailing '-' is interpreted as the decrement operator.
+            // This pattern allows internal hyphens but prevents the trailing operator from being consumed by the id.
+            var match = Regex.Match(commandText, @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$", RegexOptions.IgnoreCase);
             if (!match.Success)
             {
                 return false;
@@ -328,7 +330,28 @@ namespace OmniForge.Infrastructure.Services
             }
 
             var actualCounterId = await ResolveCustomCounterIdAsync(customConfig, requestedId, counterLibraryRepository);
-            if (string.IsNullOrWhiteSpace(actualCounterId) || !customConfig.Counters.TryGetValue(actualCounterId, out var def))
+            if (string.IsNullOrWhiteSpace(actualCounterId))
+            {
+                return false;
+            }
+
+            actualCounterId = actualCounterId.Trim();
+
+            // Explicit validation for storage-safe counter IDs.
+            const int maxCounterIdLength = 64;
+            var isValidCounterId = actualCounterId.Length <= maxCounterIdLength
+                && actualCounterId.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-');
+
+            if (!isValidCounterId)
+            {
+                _logger.LogWarning(
+                    "⚠️ Rejected custom counter command with invalid counterId '{CounterId}' for user {UserId}",
+                    LogSanitizer.Sanitize(actualCounterId),
+                    LogSanitizer.Sanitize(context.UserId));
+                return false;
+            }
+
+            if (!customConfig.Counters.TryGetValue(actualCounterId, out var def))
             {
                 return false;
             }
@@ -385,24 +408,15 @@ namespace OmniForge.Infrastructure.Services
             var incrementBy = Math.Max(1, def.IncrementBy);
             var decrementBy = Math.Max(1, def.DecrementBy);
 
-            Counter updatedCounters;
-            if (op == "+")
-            {
-                updatedCounters = await counterRepository.IncrementCounterAsync(context.UserId, actualCounterId, amount * incrementBy);
-            }
-            else
-            {
-                updatedCounters = await counterRepository.DecrementCounterAsync(context.UserId, actualCounterId, amount * decrementBy);
-            }
+            var updatedCounters = op == "+"
+                ? await counterRepository.IncrementCounterAsync(context.UserId, actualCounterId, amount * incrementBy)
+                : await counterRepository.DecrementCounterAsync(context.UserId, actualCounterId, amount * decrementBy);
 
             await _overlayNotifier.NotifyCounterUpdateAsync(context.UserId, updatedCounters);
 
             if (op == "+" && def.Milestones != null && def.Milestones.Any())
             {
-                var newValue = updatedCounters.CustomCounters != null
-                    && updatedCounters.CustomCounters.TryGetValue(actualCounterId, out var updated)
-                    ? updated
-                    : 0;
+                var newValue = GetCustomCounterValueCaseInsensitive(updatedCounters.CustomCounters, actualCounterId);
 
                 var crossed = def.Milestones.Where(m => previousValue < m && newValue >= m).ToList();
                 foreach (var milestone in crossed)
@@ -420,6 +434,19 @@ namespace OmniForge.Infrastructure.Services
 
             userCooldowns[cooldownKey] = now;
             return true;
+        }
+
+        private static int GetCustomCounterValueCaseInsensitive(Dictionary<string, int>? counters, string counterId)
+        {
+            if (counters == null || counters.Count == 0)
+            {
+                return 0;
+            }
+
+            return counters
+                .Where(kvp => string.Equals(kvp.Key, counterId, StringComparison.OrdinalIgnoreCase))
+                .Select(kvp => kvp.Value)
+                .FirstOrDefault();
         }
 
         private static async Task<string?> ResolveCustomCounterIdAsync(
@@ -447,14 +474,18 @@ namespace OmniForge.Infrastructure.Services
 
             var triggerToCounterId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var counterId in customConfig.Counters.Keys)
-            {
-                if (string.IsNullOrWhiteSpace(counterId)) continue;
+            // Avoid N+1 queries by fetching the library once.
+            var libraryItems = await counterLibraryRepository.ListAsync();
+            var enabledIds = new HashSet<string>(customConfig.Counters.Keys.Where(k => !string.IsNullOrWhiteSpace(k)), StringComparer.OrdinalIgnoreCase);
+            var libraryById = libraryItems
+                .Where(i => !string.IsNullOrWhiteSpace(i.CounterId) && enabledIds.Contains(i.CounterId))
+                .ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
 
+            foreach (var counterId in customConfig.Counters.Keys.Where(k => !string.IsNullOrWhiteSpace(k)))
+            {
                 triggerToCounterId[counterId] = counterId;
 
-                var item = await counterLibraryRepository.GetAsync(counterId);
-                if (item == null)
+                if (!libraryById.TryGetValue(counterId, out var item))
                 {
                     // Still allow the implicit command based on id (already added above).
                     continue;
