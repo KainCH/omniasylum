@@ -163,6 +163,11 @@ namespace OmniForge.Infrastructure.Entities
                 if (!jsonProps.Contains("StreamAlerts")) deserialized.StreamAlerts = defaults.StreamAlerts;
                 if (!jsonProps.Contains("StreamSettings")) deserialized.StreamSettings = defaults.StreamSettings;
 
+                if (deserialized.StreamSettings == null)
+                {
+                    deserialized.StreamSettings = defaults.StreamSettings;
+                }
+
                 return deserialized;
             }
             catch

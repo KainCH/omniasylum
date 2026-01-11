@@ -13,13 +13,28 @@ public class OverlaySettingsModalTests : BunitContext
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
     private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+    private readonly Mock<IGameContextRepository> _mockGameContextRepository;
+    private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
 
     public OverlaySettingsModalTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
         _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+        _mockGameContextRepository = new Mock<IGameContextRepository>();
+        _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
+
+        _mockOverlayNotifier
+            .Setup(n => n.NotifySettingsUpdateAsync(It.IsAny<string>(), It.IsAny<OverlaySettings>()))
+            .Returns(Task.CompletedTask);
+
+        _mockGameContextRepository
+            .Setup(r => r.GetAsync(It.IsAny<string>()))
+            .ReturnsAsync((GameContext?)null);
+
         Services.AddSingleton(_mockUserRepository.Object);
         Services.AddSingleton(_mockOverlayNotifier.Object);
+        Services.AddSingleton(_mockGameContextRepository.Object);
+        Services.AddSingleton(_mockGameCoreCountersConfigRepository.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

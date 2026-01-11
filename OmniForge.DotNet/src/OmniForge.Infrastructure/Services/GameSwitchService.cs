@@ -318,10 +318,21 @@ namespace OmniForge.Infrastructure.Services
                 {
                     await _twitchApiService.UpdateChannelInformationAsync(userId, gameId, upsertedLibraryItem.EnabledContentClassificationLabels);
                 }
+                else if (user?.Features?.StreamSettings?.DefaultContentClassificationLabels != null)
+                {
+                    var fallback = user.Features.StreamSettings.DefaultContentClassificationLabels;
+                    _logger.LogInformation(
+                        "🏷️ Using user default CCL fallback (game has no admin CCL config). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(gameId),
+                        string.Join(", ", fallback.Select(LogSanitizer.Sanitize)));
+
+                    await _twitchApiService.UpdateChannelInformationAsync(userId, gameId, fallback);
+                }
                 else
                 {
                     _logger.LogInformation(
-                        "ℹ️ Admin CCL config not set for game; skipping CCL apply. user_id={UserId} game_id={GameId}",
+                        "ℹ️ No admin CCL config and no user default CCL fallback; skipping CCL apply. user_id={UserId} game_id={GameId}",
                         LogSanitizer.Sanitize(userId),
                         LogSanitizer.Sanitize(gameId));
                 }

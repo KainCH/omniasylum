@@ -279,6 +279,7 @@ namespace OmniForge.Infrastructure.Services
             public List<ContentClassificationLabel>? ContentClassificationLabels { get; set; }
         }
 
+        [JsonConverter(typeof(ContentClassificationLabelConverter))]
         private class ContentClassificationLabel
         {
             [JsonPropertyName("id")]
@@ -286,6 +287,61 @@ namespace OmniForge.Infrastructure.Services
 
             [JsonPropertyName("is_enabled")]
             public bool IsEnabled { get; set; }
+        }
+
+        private sealed class ContentClassificationLabelConverter : JsonConverter<ContentClassificationLabel>
+        {
+            public override ContentClassificationLabel Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType == JsonTokenType.String)
+                {
+                    return new ContentClassificationLabel
+                    {
+                        Id = reader.GetString() ?? string.Empty,
+                        IsEnabled = true
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.StartObject)
+                {
+                    using var doc = JsonDocument.ParseValue(ref reader);
+                    var root = doc.RootElement;
+
+                    string id = string.Empty;
+                    bool isEnabled = false;
+
+                    if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+
+                    if (root.TryGetProperty("is_enabled", out var enabledProp) && enabledProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    {
+                        isEnabled = enabledProp.GetBoolean();
+                    }
+
+                    return new ContentClassificationLabel
+                    {
+                        Id = id,
+                        IsEnabled = isEnabled
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.Null)
+                {
+                    return new ContentClassificationLabel();
+                }
+
+                throw new JsonException($"Unexpected token {reader.TokenType} for content_classification_labels element");
+            }
+
+            public override void Write(Utf8JsonWriter writer, ContentClassificationLabel value, JsonSerializerOptions options)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", value.Id);
+                writer.WriteBoolean("is_enabled", value.IsEnabled);
+                writer.WriteEndObject();
+            }
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
@@ -568,6 +624,7 @@ namespace OmniForge.Infrastructure.Services
                 var scopes = await _authService.GetTokenScopesAsync(accessToken);
                 await EnsureScopesAsync(scopes, new[] { "channel:manage:broadcast" });
 
+                // Twitch currently allows only these 6 Helix CCL ids (max 6 items in payload).
                 var knownLabelIds = new[]
                 {
                     "DebatedSocialIssuesAndPolitics",
@@ -575,17 +632,20 @@ namespace OmniForge.Infrastructure.Services
                     "SexualThemes",
                     "ViolentGraphic",
                     "Gambling",
-                    "ProfanityVulgarity",
-                    "MatureGame"
+                    "ProfanityVulgarity"
                 };
 
-                var enabled = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                var requested = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
                     ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                if (enabled.Count > 0)
+                var requestedCount = enabledContentClassificationLabels?.Count ?? 0;
+
+                var known = knownLabelIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var enabled = requested.Where(id => known.Contains(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (requestedCount > 0)
                 {
-                    var known = knownLabelIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    var unknown = enabled.Where(id => !known.Contains(id)).ToList();
+                    var unknown = requested.Where(id => !known.Contains(id)).ToList();
                     if (unknown.Count > 0)
                     {
                         _logger.LogWarning(
@@ -593,21 +653,34 @@ namespace OmniForge.Infrastructure.Services
                             LogSanitizer.Sanitize(userId),
                             string.Join(", ", unknown.Select(LogSanitizer.Sanitize)));
                     }
-
-                    enabled = enabled.Where(id => known.Contains(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 }
 
-                List<ContentClassificationLabel>? labels;
-                if (enabled.Count == 0)
+                // Only include content_classification_labels in the payload when explicitly requested.
+                // - null => don't touch existing CCLs
+                // - empty array => clear all CCLs
+                // - 6-item array => explicitly set enable/disable for each known id
+                List<ContentClassificationLabel>? labels = null;
+                var wantsToSetCcls = enabledContentClassificationLabels != null;
+                if (wantsToSetCcls)
                 {
-                    // Per Helix docs: empty array clears all labels.
-                    labels = new List<ContentClassificationLabel>();
-                }
-                else
-                {
-                    labels = knownLabelIds
-                        .Select(id => new ContentClassificationLabel { Id = id, IsEnabled = enabled.Contains(id) })
-                        .ToList();
+                    if (requestedCount == 0)
+                    {
+                        // Per Helix docs: empty array clears all labels.
+                        labels = new List<ContentClassificationLabel>();
+                    }
+                    else if (enabled.Count == 0)
+                    {
+                        // Caller asked to set labels but only provided unknown/unsupported ids.
+                        // Do not clear labels in this case; omit CCL update entirely.
+                        labels = null;
+                    }
+                    else
+                    {
+                        // Helix contract: array length must be <= 6.
+                        labels = knownLabelIds
+                            .Select(id => new ContentClassificationLabel { Id = id, IsEnabled = enabled.Contains(id) })
+                            .ToList();
+                    }
                 }
 
                 var client = _httpClientFactory.CreateClient();
@@ -643,7 +716,7 @@ namespace OmniForge.Infrastructure.Services
                             string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
 
                         var gameSame = string.Equals(current?.GameId ?? string.Empty, gameId, StringComparison.OrdinalIgnoreCase);
-                        var cclsSame = currentEnabled.SetEquals(enabled);
+                        var cclsSame = labels == null || currentEnabled.SetEquals(enabled);
 
                         if (gameSame && cclsSame)
                         {

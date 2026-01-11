@@ -238,6 +238,140 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task UpdateChannelInformationAsync_ShouldNotSendMoreThanSixCcls_AndShouldExcludeUnsupportedIds()
+        {
+            _mockUserRepository
+                .Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User
+                {
+                    TwitchUserId = "user1",
+                    Username = "user1",
+                    AccessToken = "user_access",
+                    RefreshToken = "refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            _mockAuthService
+                .Setup(x => x.GetTokenScopesAsync("user_access"))
+                .ReturnsAsync(new List<string> { "channel:manage:broadcast" });
+
+            string? patchJson = null;
+
+            var getJson = "{\"data\":[{\"broadcaster_id\":\"user1\",\"game_id\":\"old\",\"game_name\":\"Old\",\"content_classification_labels\":[\"Gambling\"]}]}";
+
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                if (req.Method == HttpMethod.Get)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(getJson, Encoding.UTF8, "application/json")
+                    };
+                }
+
+                if (req.Method.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    patchJson = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                    return new HttpResponseMessage(HttpStatusCode.NoContent)
+                    {
+                        Content = new StringContent(string.Empty)
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            await _service.UpdateChannelInformationAsync(
+                "user1",
+                "newGame",
+                new List<string> { "MatureGame", "Gambling" });
+
+            Assert.NotNull(patchJson);
+
+            using var doc = JsonDocument.Parse(patchJson!);
+            Assert.Equal("newGame", doc.RootElement.GetProperty("game_id").GetString());
+
+            var ccls = doc.RootElement.GetProperty("content_classification_labels");
+            Assert.Equal(JsonValueKind.Array, ccls.ValueKind);
+
+            // Helix constraint: must be <= 6.
+            Assert.True(ccls.GetArrayLength() <= 6);
+
+            var ids = ccls.EnumerateArray().Select(e => e.GetProperty("id").GetString()).ToList();
+            Assert.DoesNotContain("MatureGame", ids);
+            Assert.Contains("Gambling", ids);
+
+            var gambling = ccls.EnumerateArray().First(e => e.GetProperty("id").GetString() == "Gambling");
+            Assert.True(gambling.GetProperty("is_enabled").GetBoolean());
+        }
+
+        [Fact]
+        public async Task UpdateChannelInformationAsync_WhenOnlyUnknownCclsRequested_ShouldOmitCclsFromPayload()
+        {
+            _mockUserRepository
+                .Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User
+                {
+                    TwitchUserId = "user1",
+                    Username = "user1",
+                    AccessToken = "user_access",
+                    RefreshToken = "refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            _mockAuthService
+                .Setup(x => x.GetTokenScopesAsync("user_access"))
+                .ReturnsAsync(new List<string> { "channel:manage:broadcast" });
+
+            string? patchJson = null;
+
+            var getJson = "{\"data\":[{\"broadcaster_id\":\"user1\",\"game_id\":\"old\",\"game_name\":\"Old\",\"content_classification_labels\":[\"Gambling\"]}]}";
+
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                if (req.Method == HttpMethod.Get)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(getJson, Encoding.UTF8, "application/json")
+                    };
+                }
+
+                if (req.Method.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    patchJson = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                    return new HttpResponseMessage(HttpStatusCode.NoContent)
+                    {
+                        Content = new StringContent(string.Empty)
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            await _service.UpdateChannelInformationAsync(
+                "user1",
+                "newGame",
+                new List<string> { "MatureGame" });
+
+            Assert.NotNull(patchJson);
+
+            using var doc = JsonDocument.Parse(patchJson!);
+            Assert.Equal("newGame", doc.RootElement.GetProperty("game_id").GetString());
+            Assert.False(doc.RootElement.TryGetProperty("content_classification_labels", out _));
+        }
+
+        [Fact]
         public async Task GetChannelCategoryAsync_WhenAppTokenAvailable_ShouldUseAppTokenWithoutUserLookup()
         {
             _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
@@ -270,6 +404,34 @@ namespace OmniForge.Tests
             Assert.Equal("123", result!.GameId);
             Assert.Equal("Test Game", result.GameName);
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetChannelCategoryAsync_WhenResponseIncludesStringCcls_ShouldNotThrow()
+        {
+            _mockConfiguration.Setup(x => x["Twitch:ClientId"]).Returns("test_client_id");
+
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync("app_access");
+
+            var json = "{\"data\":[{\"broadcaster_id\":\"user1\",\"game_id\":\"123\",\"game_name\":\"Test Game\",\"content_classification_labels\":[\"Gambling\",\"ProfanityVulgarity\"]}] }";
+
+            var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory
+                .Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(httpClient);
+
+            var result = await _service.GetChannelCategoryAsync("user1");
+
+            Assert.NotNull(result);
+            Assert.Equal("123", result!.GameId);
+            Assert.Equal("Test Game", result.GameName);
         }
 
         [Fact]

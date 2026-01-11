@@ -44,7 +44,8 @@
         <div class="card-body">
           <div class="row g-2">
             <div class="col-8">
-              <input class="form-control" placeholder="Search Twitch categories..." @bind="searchQuery" @bind:event="oninput" disabled="@isBusy" />
+              <input class="form-control" placeholder="Search Twitch categories..." @bind="searchQuery"
+                @bind:event="oninput" disabled="@isBusy" />
             </div>
             <div class="col-4">
               <button class="btn btn-primary w-100" @onclick="Search" disabled="@isBusy">
@@ -99,8 +100,10 @@
             <div class="list-group list-group-flush">
               @foreach (var game in games)
               {
-                var isSelected = selectedGameId != null && string.Equals(selectedGameId, game.GameId, StringComparison.Ordinal);
-                <button type="button" class="list-group-item list-group-item-action @(isSelected ? "active" : "")" @onclick="() => SelectGame(game)" disabled="@isBusy">
+                var isSelected = selectedGameId != null && string.Equals(selectedGameId, game.GameId,
+                StringComparison.Ordinal);
+                <button type="button" class="list-group-item list-group-item-action @(isSelected ? "active" : "")"
+                  @onclick="() => SelectGame(game)" disabled="@isBusy">
                   <div class="d-flex justify-content-between align-items-center">
                     <div>
                       <div class="fw-semibold">@game.GameName</div>
@@ -161,12 +164,9 @@
                 <label class="form-check-label" for="cclDrugs">Drugs/Intoxication</label>
               </div>
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="cclPolitics" @bind="cclDebatedSocialIssuesAndPolitics" />
+                <input class="form-check-input" type="checkbox" id="cclPolitics"
+                  @bind="cclDebatedSocialIssuesAndPolitics" />
                 <label class="form-check-label" for="cclPolitics">Politics/Debated Issues</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="cclMature" @bind="cclMatureGame" />
-                <label class="form-check-label" for="cclMature">Mature Game</label>
               </div>
             </div>
 
@@ -204,7 +204,6 @@
   private bool cclSexualThemes;
   private bool cclDrugsIntoxication;
   private bool cclDebatedSocialIssuesAndPolitics;
-  private bool cclMatureGame;
 
   protected override async Task OnInitializedAsync()
   {
@@ -326,14 +325,14 @@
     selectedGameId = game.GameId;
     selectedGame = game;
 
-    var enabled = (game.EnabledContentClassificationLabels ?? new List<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var enabled = (game.EnabledContentClassificationLabels ?? new
+    List<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
     cclProfanityVulgarity = enabled.Contains("ProfanityVulgarity");
     cclGambling = enabled.Contains("Gambling");
     cclViolentGraphic = enabled.Contains("ViolentGraphic");
     cclSexualThemes = enabled.Contains("SexualThemes");
     cclDrugsIntoxication = enabled.Contains("DrugsIntoxication");
     cclDebatedSocialIssuesAndPolitics = enabled.Contains("DebatedSocialIssuesAndPolitics");
-    cclMatureGame = enabled.Contains("MatureGame");
   }
 
   private async Task SaveCcls()
@@ -353,7 +352,6 @@
       if (cclViolentGraphic) enabled.Add("ViolentGraphic");
       if (cclGambling) enabled.Add("Gambling");
       if (cclProfanityVulgarity) enabled.Add("ProfanityVulgarity");
-      if (cclMatureGame) enabled.Add("MatureGame");
 
       selectedGame.EnabledContentClassificationLabels = enabled;
       await GameLibraryRepository.UpsertAsync(selectedGame);

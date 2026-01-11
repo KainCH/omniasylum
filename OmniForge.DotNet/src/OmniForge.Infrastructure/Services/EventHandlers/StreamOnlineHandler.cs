@@ -114,19 +114,53 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 EnabledContentClassificationLabels = null
                             });
 
-                            // New games are unconfigured; do not change channel CCLs until an admin configures them.
-                            Logger.LogInformation(
-                                "ℹ️ Game auto-added but has no admin CCL config yet; skipping CCL apply. game_id={GameId}",
-                                LogSanitizer.Sanitize(category.GameId));
+                            // New games are unconfigured; use per-user defaults if configured, otherwise skip.
+                            var fallback = user.Features?.StreamSettings?.DefaultContentClassificationLabels;
+                            if (fallback != null)
+                            {
+                                Logger.LogInformation(
+                                    "🏷️ Applying user default CCL fallback on stream online (game auto-added). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                                    LogSanitizer.Sanitize(broadcasterId),
+                                    LogSanitizer.Sanitize(category.GameId),
+                                    string.Join(", ", fallback.Select(LogSanitizer.Sanitize)));
+
+                                await twitchApiService.UpdateChannelInformationAsync(
+                                    broadcasterId,
+                                    category.GameId,
+                                    fallback);
+                            }
+                            else
+                            {
+                                Logger.LogInformation(
+                                    "ℹ️ Game auto-added but has no admin CCL config and no user default CCL fallback; skipping CCL apply. game_id={GameId}",
+                                    LogSanitizer.Sanitize(category.GameId));
+                            }
                         }
                         else
                         {
                             if (libraryItem.EnabledContentClassificationLabels == null)
                             {
-                                Logger.LogInformation(
-                                    "ℹ️ Admin CCL config not set for this game; skipping CCL apply. user_id={UserId} game_id={GameId}",
-                                    LogSanitizer.Sanitize(broadcasterId),
-                                    LogSanitizer.Sanitize(category.GameId));
+                                var fallback = user.Features?.StreamSettings?.DefaultContentClassificationLabels;
+                                if (fallback != null)
+                                {
+                                    Logger.LogInformation(
+                                        "🏷️ Applying user default CCL fallback on stream online (game unconfigured). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                                        LogSanitizer.Sanitize(broadcasterId),
+                                        LogSanitizer.Sanitize(category.GameId),
+                                        string.Join(", ", fallback.Select(LogSanitizer.Sanitize)));
+
+                                    await twitchApiService.UpdateChannelInformationAsync(
+                                        broadcasterId,
+                                        category.GameId,
+                                        fallback);
+                                }
+                                else
+                                {
+                                    Logger.LogInformation(
+                                        "ℹ️ Admin CCL config not set for this game and no user default CCL fallback; skipping CCL apply. user_id={UserId} game_id={GameId}",
+                                        LogSanitizer.Sanitize(broadcasterId),
+                                        LogSanitizer.Sanitize(category.GameId));
+                                }
                             }
                             else
                             {

@@ -9,6 +9,7 @@
 @inject ICounterRequestRepository CounterRequestRepository
 @inject IGameCounterSetupService GameCounterSetupService
 @inject IGameCoreCountersConfigRepository GameCoreCountersConfigRepository
+@inject IUserRepository UserRepository
 
 @if (isLoading)
 {
@@ -40,6 +41,66 @@ else
     <i class="bi bi-info-circle me-2"></i>
     View games you’ve played before and set per-game counters. Activating a game will swap your live counters to that
     game.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <i class="bi bi-shield-check me-2"></i>Default Channel CCLs (Fallback)
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb-3">
+        <i class="bi bi-info-circle me-2"></i>
+        Used when the detected game has no admin-configured CCLs.
+      </div>
+
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="useDefaultCcls" @bind="useDefaultCcls" disabled="@isBusy" />
+        <label class="form-check-label" for="useDefaultCcls">Enable default CCL fallback</label>
+      </div>
+
+      @if (useDefaultCcls)
+      {
+        <label class="form-label">Enabled Content Classification Labels</label>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclProfanity" @bind="defaultCclProfanityVulgarity"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclProfanity">Profanity/Vulgarity</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclGambling" @bind="defaultCclGambling"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclGambling">Gambling</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclViolence" @bind="defaultCclViolentGraphic"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclViolence">Violent/Graphic</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclSexual" @bind="defaultCclSexualThemes"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclSexual">Sexual Themes</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclDrugs" @bind="defaultCclDrugsIntoxication"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclDrugs">Drugs/Intoxication</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclPolitics"
+              @bind="defaultCclDebatedSocialIssuesAndPolitics" disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclPolitics">Politics/Debated Issues</label>
+          </div>
+        </div>
+      }
+
+      <div class="mt-3">
+        <button class="btn btn-success" @onclick="SaveDefaultCcls" disabled="@isBusy">
+          <i class="bi bi-save me-1"></i>Save Default CCLs
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="row g-3">
@@ -323,9 +384,18 @@ else
   private string? activeGameId;
 
   private string? loadedUserId;
+  private User? loadedUser;
   private string? selectedGameId;
   private GameLibraryItem? selectedGame;
   private Counter editCounters = new();
+
+  private bool useDefaultCcls;
+  private bool defaultCclProfanityVulgarity;
+  private bool defaultCclGambling;
+  private bool defaultCclViolentGraphic;
+  private bool defaultCclSexualThemes;
+  private bool defaultCclDrugsIntoxication;
+  private bool defaultCclDebatedSocialIssuesAndPolitics;
 
   private bool coreDeathsEnabled = true;
   private bool coreSwearsEnabled = true;
@@ -361,6 +431,9 @@ else
 
     try
     {
+      loadedUser = await UserRepository.GetUserAsync(UserId);
+      LoadDefaultCclsFromUser(loadedUser);
+
       library = (await GameLibraryRepository.ListAsync(UserId)).ToList();
       var ctx = await GameContextRepository.GetAsync(UserId);
       activeGameId = ctx?.ActiveGameId;
@@ -384,6 +457,82 @@ else
     finally
     {
       isLoading = false;
+    }
+  }
+
+  private void LoadDefaultCclsFromUser(User? user)
+  {
+    var enabled = user?.Features?.StreamSettings?.DefaultContentClassificationLabels;
+    if (enabled == null)
+    {
+      useDefaultCcls = false;
+      defaultCclProfanityVulgarity = false;
+      defaultCclGambling = false;
+      defaultCclViolentGraphic = false;
+      defaultCclSexualThemes = false;
+      defaultCclDrugsIntoxication = false;
+      defaultCclDebatedSocialIssuesAndPolitics = false;
+      return;
+    }
+
+    useDefaultCcls = true;
+    var set = enabled.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    defaultCclProfanityVulgarity = set.Contains("ProfanityVulgarity");
+    defaultCclGambling = set.Contains("Gambling");
+    defaultCclViolentGraphic = set.Contains("ViolentGraphic");
+    defaultCclSexualThemes = set.Contains("SexualThemes");
+    defaultCclDrugsIntoxication = set.Contains("DrugsIntoxication");
+    defaultCclDebatedSocialIssuesAndPolitics = set.Contains("DebatedSocialIssuesAndPolitics");
+  }
+
+  private async Task SaveDefaultCcls()
+  {
+    if (isBusy) return;
+    if (string.IsNullOrWhiteSpace(UserId)) return;
+
+    errorMessage = null;
+    successMessage = null;
+    isBusy = true;
+
+    try
+    {
+      loadedUser ??= await UserRepository.GetUserAsync(UserId);
+      if (loadedUser == null)
+      {
+        errorMessage = "User not found.";
+        return;
+      }
+
+      loadedUser.Features ??= new FeatureFlags();
+      loadedUser.Features.StreamSettings ??= new StreamSettings();
+
+      if (!useDefaultCcls)
+      {
+        loadedUser.Features.StreamSettings.DefaultContentClassificationLabels = null;
+      }
+      else
+      {
+        var enabled = new List<string>();
+        if (defaultCclDebatedSocialIssuesAndPolitics) enabled.Add("DebatedSocialIssuesAndPolitics");
+        if (defaultCclDrugsIntoxication) enabled.Add("DrugsIntoxication");
+        if (defaultCclSexualThemes) enabled.Add("SexualThemes");
+        if (defaultCclViolentGraphic) enabled.Add("ViolentGraphic");
+        if (defaultCclGambling) enabled.Add("Gambling");
+        if (defaultCclProfanityVulgarity) enabled.Add("ProfanityVulgarity");
+
+        loadedUser.Features.StreamSettings.DefaultContentClassificationLabels = enabled;
+      }
+
+      await UserRepository.SaveUserAsync(loadedUser);
+      successMessage = "Default CCLs saved.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save default CCLs: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
     }
   }
 
