@@ -7,6 +7,7 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -88,6 +89,7 @@ namespace OmniForge.Infrastructure.Services
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
+                    var counterLibraryRepository = scope.ServiceProvider.GetService<ICounterLibraryRepository>();
                     var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                     var counters = await counterRepository.GetCountersAsync(context.UserId) ?? new Counter { TwitchUserId = context.UserId };
                     var user = await userRepository.GetUserAsync(context.UserId);
@@ -103,6 +105,25 @@ namespace OmniForge.Infrastructure.Services
 
                     // Resolve command (exact match or attached number like !sw+5)
                     var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
+
+                    if (cmdConfig == null)
+                    {
+                        var handledCustom = await TryHandleCustomCounterCommandAsync(
+                            context,
+                            commandText,
+                            requestedAmount,
+                            maxIncrement,
+                            isMod,
+                            sendMessage,
+                            counterRepository,
+                            counterLibraryRepository,
+                            counters);
+
+                        if (handledCustom)
+                        {
+                            return;
+                        }
+                    }
 
                     if (cmdConfig != null)
                     {
@@ -255,6 +276,225 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogError(ex, "Error processing chat command for {UserId}", LogSanitizer.Sanitize(context.UserId));
             }
+        }
+
+        private async Task<bool> TryHandleCustomCounterCommandAsync(
+            ChatCommandContext context,
+            string commandText,
+            int? requestedAmount,
+            int maxIncrement,
+            bool isMod,
+            Func<string, string, Task>? sendMessage,
+            ICounterRepository counterRepository,
+            ICounterLibraryRepository? counterLibraryRepository,
+            Counter currentCounters)
+        {
+            // Supported:
+            // - !<counterId>      (show current value)
+            // - !<counterId>+     (increment, mod/broadcaster)
+            // - !<counterId>-     (decrement, mod/broadcaster)
+            // - !<counterId>+5    (attached amount)
+            // - !<counterId>+ 5   (space amount - parsed upstream into requestedAmount)
+
+            var match = Regex.Match(commandText, @"^!(?<id>[a-z0-9_\-]+?)(?<op>[\+\-])?(?<num>\d+)?$", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            var requestedId = match.Groups["id"].Value;
+            var op = match.Groups["op"].Success ? match.Groups["op"].Value : null;
+
+            int? attachedAmount = null;
+            if (match.Groups["num"].Success && int.TryParse(match.Groups["num"].Value, out var parsed) && parsed > 0)
+            {
+                attachedAmount = parsed;
+            }
+
+            CustomCounterConfiguration? customConfig;
+            try
+            {
+                customConfig = await counterRepository.GetCustomCountersConfigAsync(context.UserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", LogSanitizer.Sanitize(context.UserId));
+                return false;
+            }
+
+            if (customConfig?.Counters == null || customConfig.Counters.Count == 0)
+            {
+                return false;
+            }
+
+            var actualCounterId = await ResolveCustomCounterIdAsync(customConfig, requestedId, counterLibraryRepository);
+            if (string.IsNullOrWhiteSpace(actualCounterId) || !customConfig.Counters.TryGetValue(actualCounterId, out var def))
+            {
+                return false;
+            }
+
+            // Cooldown: keep it simple and consistent with defaults.
+            var cooldownSeconds = op == null ? 5 : 1;
+            var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
+            var now = DateTimeOffset.UtcNow;
+            var cooldownKey = op == null ? $"!{actualCounterId.ToLowerInvariant()}" : $"!{actualCounterId.ToLowerInvariant()}{op}";
+            if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cooldownSeconds)
+            {
+                return true;
+            }
+
+            // Read current value (best-effort, case-insensitive).
+            var previousValue = 0;
+            if (currentCounters.CustomCounters != null && currentCounters.CustomCounters.Count > 0)
+            {
+                var currentKey = currentCounters.CustomCounters.Keys.FirstOrDefault(k => string.Equals(k, actualCounterId, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(currentKey) && currentCounters.CustomCounters.TryGetValue(currentKey, out var existing))
+                {
+                    previousValue = existing;
+                }
+            }
+
+            // Query command: !<counterId>
+            if (op == null)
+            {
+                var counterName = string.IsNullOrWhiteSpace(def.Name) ? actualCounterId : def.Name;
+                await TrySend(sendMessage, context.UserId, $"Current {counterName}: {previousValue}");
+                userCooldowns[cooldownKey] = now;
+                return true;
+            }
+
+            // Mutation commands are mod/broadcaster only.
+            if (!isMod)
+            {
+                return true;
+            }
+
+            var amountToUse = attachedAmount ?? requestedAmount ?? 1;
+            var amount = Math.Clamp(amountToUse, 1, maxIncrement);
+
+            var incrementBy = Math.Max(1, def.IncrementBy);
+            var decrementBy = Math.Max(1, def.DecrementBy);
+
+            Counter updatedCounters;
+            if (op == "+")
+            {
+                updatedCounters = await counterRepository.IncrementCounterAsync(context.UserId, actualCounterId, amount * incrementBy);
+            }
+            else
+            {
+                updatedCounters = await counterRepository.DecrementCounterAsync(context.UserId, actualCounterId, amount * decrementBy);
+            }
+
+            await _overlayNotifier.NotifyCounterUpdateAsync(context.UserId, updatedCounters);
+
+            if (op == "+" && def.Milestones != null && def.Milestones.Any())
+            {
+                var newValue = updatedCounters.CustomCounters != null
+                    && updatedCounters.CustomCounters.TryGetValue(actualCounterId, out var updated)
+                    ? updated
+                    : 0;
+
+                var crossed = def.Milestones.Where(m => previousValue < m && newValue >= m).ToList();
+                foreach (var milestone in crossed)
+                {
+                    await _overlayNotifier.NotifyCustomAlertAsync(context.UserId, "customMilestoneReached", new
+                    {
+                        counterId = actualCounterId,
+                        counterName = def.Name,
+                        milestone,
+                        newValue,
+                        icon = def.Icon
+                    });
+                }
+            }
+
+            userCooldowns[cooldownKey] = now;
+            return true;
+        }
+
+        private static async Task<string?> ResolveCustomCounterIdAsync(
+            CustomCounterConfiguration customConfig,
+            string requestedToken,
+            ICounterLibraryRepository? counterLibraryRepository)
+        {
+            if (customConfig.Counters == null || customConfig.Counters.Count == 0)
+            {
+                return null;
+            }
+
+            // Fast path: match token to counterId.
+            var direct = customConfig.Counters.Keys.FirstOrDefault(k => string.Equals(k, requestedToken, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(direct))
+            {
+                return direct;
+            }
+
+            // Build trigger map using counter library command metadata.
+            if (counterLibraryRepository == null)
+            {
+                return null;
+            }
+
+            var triggerToCounterId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var counterId in customConfig.Counters.Keys)
+            {
+                if (string.IsNullOrWhiteSpace(counterId)) continue;
+
+                triggerToCounterId[counterId] = counterId;
+
+                var item = await counterLibraryRepository.GetAsync(counterId);
+                if (item == null)
+                {
+                    // Still allow the implicit command based on id (already added above).
+                    continue;
+                }
+
+                var defaultBase = $"!{counterId}";
+                var primary = NormalizeBaseCommandOrDefault(item.LongCommand, defaultBase);
+                var alias = NormalizeBaseCommandOrEmpty(item.AliasCommand);
+
+                var primaryToken = primary.TrimStart('!');
+                if (!string.IsNullOrWhiteSpace(primaryToken))
+                {
+                    triggerToCounterId[primaryToken] = counterId;
+                }
+
+                var aliasToken = alias.TrimStart('!');
+                if (!string.IsNullOrWhiteSpace(aliasToken))
+                {
+                    triggerToCounterId[aliasToken] = counterId;
+                }
+            }
+
+            return triggerToCounterId.TryGetValue(requestedToken, out var resolved)
+                ? resolved
+                : null;
+        }
+
+        private static string NormalizeBaseCommandOrDefault(string? command, string fallback)
+        {
+            var normalized = NormalizeBaseCommandOrEmpty(command);
+            if (string.IsNullOrWhiteSpace(normalized) || string.Equals(normalized, "!", StringComparison.Ordinal))
+            {
+                normalized = NormalizeBaseCommandOrEmpty(fallback);
+            }
+
+            return normalized;
+        }
+
+        private static string NormalizeBaseCommandOrEmpty(string? command)
+        {
+            var c = (command ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(c)) return string.Empty;
+
+            if (!c.StartsWith("!", StringComparison.Ordinal))
+            {
+                c = "!" + c;
+            }
+
+            c = c.TrimEnd('+', '-');
+            return c.ToLowerInvariant();
         }
 
         private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
