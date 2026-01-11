@@ -337,7 +337,17 @@ namespace OmniForge.Infrastructure.Services
             var cooldownSeconds = op == null ? 5 : 1;
             var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
             var now = DateTimeOffset.UtcNow;
-            var cooldownKey = op == null ? $"!{actualCounterId.ToLowerInvariant()}" : $"!{actualCounterId.ToLowerInvariant()}{op}";
+            // Use the trigger command text as the cooldown key so id/alias/long are all independently usable.
+            var cooldownKey = commandText;
+            if (attachedAmount.HasValue)
+            {
+                var baseMatch = Regex.Match(commandText, @"^(.+?)(\d+)$", RegexOptions.IgnoreCase);
+                if (baseMatch.Success)
+                {
+                    cooldownKey = baseMatch.Groups[1].Value;
+                }
+            }
+
             if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cooldownSeconds)
             {
                 return true;
