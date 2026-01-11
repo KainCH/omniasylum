@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -33,6 +34,9 @@ namespace OmniForge.Infrastructure.Services
 
         // Cooldown tracking: UserId -> Command -> LastUsedTime
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
+
+        // Cache for custom counter trigger resolution: (userId + enabledIdsKey) -> trigger map
+        private readonly ConcurrentDictionary<string, (DateTimeOffset ExpiresAt, Dictionary<string, string> TriggerToCounterId)> _customCounterTriggerCache = new();
 
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
@@ -171,7 +175,7 @@ namespace OmniForge.Infrastructure.Services
                             if (attachedAmount.HasValue)
                             {
                                 // If attached amount, strip digits to get base key
-                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$");
                                 if (match.Success) cooldownKey = match.Groups[1].Value;
                             }
 
@@ -329,7 +333,7 @@ namespace OmniForge.Infrastructure.Services
                 return false;
             }
 
-            var actualCounterId = await ResolveCustomCounterIdAsync(customConfig, requestedId, counterLibraryRepository);
+            var actualCounterId = await ResolveCustomCounterIdAsync(context.UserId, customConfig, requestedId, counterLibraryRepository);
             if (string.IsNullOrWhiteSpace(actualCounterId))
             {
                 return false;
@@ -364,7 +368,7 @@ namespace OmniForge.Infrastructure.Services
             var cooldownKey = commandText;
             if (attachedAmount.HasValue)
             {
-                var baseMatch = Regex.Match(commandText, @"^(.+?)(\d+)$", RegexOptions.IgnoreCase);
+                var baseMatch = Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$", RegexOptions.IgnoreCase);
                 if (baseMatch.Success)
                 {
                     cooldownKey = baseMatch.Groups[1].Value;
@@ -449,7 +453,8 @@ namespace OmniForge.Infrastructure.Services
                 .FirstOrDefault();
         }
 
-        private static async Task<string?> ResolveCustomCounterIdAsync(
+        private async Task<string?> ResolveCustomCounterIdAsync(
+            string userId,
             CustomCounterConfiguration customConfig,
             string requestedToken,
             ICounterLibraryRepository? counterLibraryRepository)
@@ -472,18 +477,34 @@ namespace OmniForge.Infrastructure.Services
                 return null;
             }
 
+            var enabledCounterIds = customConfig.Counters.Keys
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var enabledIdsKey = string.Join('|', enabledCounterIds);
+            var cacheKey = $"{userId}:{enabledIdsKey}";
+
+            var now = DateTimeOffset.UtcNow;
+            if (_customCounterTriggerCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+            {
+                return cached.TriggerToCounterId.TryGetValue(requestedToken, out var cachedResolved)
+                    ? cachedResolved
+                    : null;
+            }
+
             var triggerToCounterId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // Avoid N+1 queries by fetching the library once.
-            var libraryItems = await counterLibraryRepository.ListAsync();
-            var enabledIds = new HashSet<string>(customConfig.Counters.Keys.Where(k => !string.IsNullOrWhiteSpace(k)), StringComparer.OrdinalIgnoreCase);
+            var libraryItems = await counterLibraryRepository.ListAsync() ?? Array.Empty<CounterLibraryItem>();
+            var enabledIds = new HashSet<string>(enabledCounterIds, StringComparer.OrdinalIgnoreCase);
             var libraryById = libraryItems
                 .Where(i => !string.IsNullOrWhiteSpace(i.CounterId) && enabledIds.Contains(i.CounterId))
                 .ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var counterId in customConfig.Counters.Keys.Where(k => !string.IsNullOrWhiteSpace(k)))
+            foreach (var counterId in enabledCounterIds)
             {
-                triggerToCounterId[counterId] = counterId;
+                TryAddTrigger(triggerToCounterId, counterId, counterId, userId);
 
                 if (!libraryById.TryGetValue(counterId, out var item))
                 {
@@ -492,50 +513,47 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 var defaultBase = $"!{counterId}";
-                var primary = NormalizeBaseCommandOrDefault(item.LongCommand, defaultBase);
-                var alias = NormalizeBaseCommandOrEmpty(item.AliasCommand);
+                var primary = CommandNormalization.NormalizeBaseCommandOrDefault(item.LongCommand, defaultBase);
+                var alias = CommandNormalization.NormalizeBaseCommandOrEmpty(item.AliasCommand);
 
                 var primaryToken = primary.TrimStart('!');
                 if (!string.IsNullOrWhiteSpace(primaryToken))
                 {
-                    triggerToCounterId[primaryToken] = counterId;
+                    TryAddTrigger(triggerToCounterId, primaryToken, counterId, userId);
                 }
 
                 var aliasToken = alias.TrimStart('!');
                 if (!string.IsNullOrWhiteSpace(aliasToken))
                 {
-                    triggerToCounterId[aliasToken] = counterId;
+                    TryAddTrigger(triggerToCounterId, aliasToken, counterId, userId);
                 }
             }
+
+            _customCounterTriggerCache[cacheKey] = (now.AddMinutes(5), triggerToCounterId);
 
             return triggerToCounterId.TryGetValue(requestedToken, out var resolved)
                 ? resolved
                 : null;
         }
 
-        private static string NormalizeBaseCommandOrDefault(string? command, string fallback)
+        private void TryAddTrigger(
+            Dictionary<string, string> triggerToCounterId,
+            string triggerToken,
+            string counterId,
+            string userId)
         {
-            var normalized = NormalizeBaseCommandOrEmpty(command);
-            if (string.IsNullOrWhiteSpace(normalized) || string.Equals(normalized, "!", StringComparison.Ordinal))
+            if (triggerToCounterId.TryGetValue(triggerToken, out var existing) && !string.Equals(existing, counterId, StringComparison.OrdinalIgnoreCase))
             {
-                normalized = NormalizeBaseCommandOrEmpty(fallback);
+                _logger.LogWarning(
+                    "⚠️ Custom counter trigger collision for user {UserId}: trigger '{Trigger}' maps to both '{Existing}' and '{Incoming}'. Keeping existing mapping.",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(triggerToken),
+                    LogSanitizer.Sanitize(existing),
+                    LogSanitizer.Sanitize(counterId));
+                return;
             }
 
-            return normalized;
-        }
-
-        private static string NormalizeBaseCommandOrEmpty(string? command)
-        {
-            var c = (command ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(c)) return string.Empty;
-
-            if (!c.StartsWith("!", StringComparison.Ordinal))
-            {
-                c = "!" + c;
-            }
-
-            c = c.TrimEnd('+', '-');
-            return c.ToLowerInvariant();
+            triggerToCounterId[triggerToken] = counterId;
         }
 
         private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
@@ -547,8 +565,8 @@ namespace OmniForge.Infrastructure.Services
             if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
 
             // 2. Try parsing attached number (e.g. !sw+5)
-            // Regex: ^(.+?)(\d+)$
-            var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+            // Regex: ^(.+?[\+\-])(\d+)$
+            var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$");
             if (match.Success)
             {
                 var baseCmd = match.Groups[1].Value;
