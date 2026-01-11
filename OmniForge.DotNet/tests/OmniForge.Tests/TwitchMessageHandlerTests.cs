@@ -258,10 +258,63 @@ namespace OmniForge.Tests
 
             // Act
             await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p")), sendMessageMock.Object);
-            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!pullcount")), sendMessageMock.Object);
+            // Use a fresh handler instance so cooldown state doesn't block the second query.
+            var handler2 = new ChatCommandProcessor(
+                _mockScopeFactory.Object,
+                _mockOverlayNotifier.Object,
+                _mockLogger.Object);
+            await handler2.ProcessAsync(ToContext(userId, CreateMessage("!pullcount")), sendMessageMock.Object);
 
             // Assert
             sendMessageMock.Verify(x => x(userId, "Current Pulls: 7"), Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldShareCustomCounterCooldownAcrossAliases()
+        {
+            // Arrange
+            var userId = "user1";
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls" } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!p"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p")), sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!pullcount")), sendMessageMock.Object);
+
+            // Assert
+            // Cooldown key is resolved by counterId, so alias/long share a cooldown window.
+            sendMessageMock.Verify(x => x(userId, "Current Pulls: 7"), Times.Exactly(1));
         }
 
         [Fact]

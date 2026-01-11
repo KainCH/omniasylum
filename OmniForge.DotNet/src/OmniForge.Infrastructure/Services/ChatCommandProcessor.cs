@@ -38,6 +38,10 @@ namespace OmniForge.Infrastructure.Services
         // Cache for custom counter trigger resolution: (userId + enabledIdsKey) -> trigger map
         private readonly ConcurrentDictionary<string, (DateTimeOffset ExpiresAt, Dictionary<string, string> TriggerToCounterId)> _customCounterTriggerCache = new();
 
+        private static readonly Regex AttachedAmountRegex = new(
+            @"^(.+[\+\-])(\d+)$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
             { "!deaths", new ChatCommandDefinition { Response = "Current death count: {{deaths}}", Permission = "everyone", Cooldown = 5, Enabled = true } },
@@ -175,7 +179,7 @@ namespace OmniForge.Infrastructure.Services
                             if (attachedAmount.HasValue)
                             {
                                 // If attached amount, strip digits to get base key
-                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$");
+                                var match = AttachedAmountRegex.Match(commandText);
                                 if (match.Success) cooldownKey = match.Groups[1].Value;
                             }
 
@@ -364,16 +368,8 @@ namespace OmniForge.Infrastructure.Services
             var cooldownSeconds = op == null ? 5 : 1;
             var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
             var now = DateTimeOffset.UtcNow;
-            // Use the trigger command text as the cooldown key so id/alias/long are all independently usable.
-            var cooldownKey = commandText;
-            if (attachedAmount.HasValue)
-            {
-                var baseMatch = Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$", RegexOptions.IgnoreCase);
-                if (baseMatch.Success)
-                {
-                    cooldownKey = baseMatch.Groups[1].Value;
-                }
-            }
+            // Use resolved counterId (+ operation) so aliases/variants share cooldown.
+            var cooldownKey = op == null ? actualCounterId : $"{actualCounterId}{op}";
 
             if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cooldownSeconds)
             {
@@ -565,8 +561,8 @@ namespace OmniForge.Infrastructure.Services
             if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
 
             // 2. Try parsing attached number (e.g. !sw+5)
-            // Regex: ^(.+?[\+\-])(\d+)$
-            var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?[\+\-])(\d+)$");
+            // Regex: ^(.+[\+\-])(\d+)$
+            var match = AttachedAmountRegex.Match(commandText);
             if (match.Success)
             {
                 var baseCmd = match.Groups[1].Value;
