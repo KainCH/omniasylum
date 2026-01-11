@@ -17,6 +17,7 @@ using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api;
 using TwitchLib.Api.Core.Enums;
+using TwitchLib.Api.Core.Exceptions;
 using Xunit;
 
 namespace OmniForge.Tests
@@ -142,6 +143,100 @@ namespace OmniForge.Tests
                     "user:read:chat",
                     "moderator:read:followers"
                 });
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsAsync_WhenActingUserNotAdmin_ShouldReturnUnauthorized()
+        {
+            var targetUser = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            var actingUser = new User
+            {
+                TwitchUserId = "999",
+                AccessToken = "admin_access",
+                RefreshToken = "admin_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer" // not admin
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(targetUser);
+            _mockUserRepository.Setup(x => x.GetUserAsync("999")).ReturnsAsync(actingUser);
+
+            var result = await _service.SubscribeToUserAsAsync("123", "999");
+
+            Assert.Equal(SubscriptionResult.Unauthorized, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenHelixThrowsBadToken_ShouldRefreshAndRetry()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockUserRepository.Setup(x => x.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(false, null, "Bot is not a moderator"));
+
+            _mockAuthService
+                .Setup(x => x.RefreshTokenAsync("broadcaster_refresh"))
+                .ReturnsAsync(new TwitchTokenResponse
+                {
+                    AccessToken = "new_access",
+                    RefreshToken = "new_refresh",
+                    ExpiresIn = 3600,
+                    TokenType = "bearer"
+                });
+
+            // First subscription attempt throws BadTokenException; retry after refresh succeeds.
+            _mockHelixWrapper
+                .SetupSequence(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .ThrowsAsync(new BadTokenException("bad token"))
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask)
+                .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.SubscribeToUserAsync("123");
+
+            // Assert
+            Assert.Equal(SubscriptionResult.Success, result);
+
+            _mockAuthService.Verify(x => x.RefreshTokenAsync("broadcaster_refresh"), Times.Once);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.AccessToken == "new_access" && u.RefreshToken == "new_refresh")), Times.Once);
+            _mockHelixWrapper.Verify(x => x.CreateEventSubSubscriptionAsync(
+                "test_client",
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, string>>(),
+                EventSubTransportMethod.Websocket,
+                "test_session_id"), Times.AtLeast(2));
         }
 
         [Fact]

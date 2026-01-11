@@ -135,7 +135,7 @@ public class OverlaySettingsModalTests : BunitContext
         // Saving the modal should not overwrite counter visibility.
         var form = cut.Find("form");
         form.Submit();
-        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.OverlaySettings.Counters.Deaths == false)), Times.Once);
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => !u.OverlaySettings.Counters.Deaths)), Times.Once);
     }
 
     [Fact]

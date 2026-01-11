@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -234,6 +235,122 @@ namespace OmniForge.Tests
 
             var result = await _service.GetOidcKeysAsync();
             Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task GetAppAccessTokenAsync_WhenMissingClientSecret_ShouldReturnNull_WithoutHttpCall()
+        {
+            var settings = new TwitchSettings
+            {
+                ClientId = "test_client_id",
+                ClientSecret = "",
+                RedirectUri = "http://localhost/callback"
+            };
+
+            var options = new Mock<IOptions<TwitchSettings>>();
+            options.Setup(x => x.Value).Returns(settings);
+
+            var handler = new Mock<HttpMessageHandler>();
+            handler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .Throws(new Exception("HTTP should not be called"));
+
+            using var httpClient = new HttpClient(handler.Object);
+            var service = new TwitchAuthService(httpClient, options.Object, _mockLogger.Object);
+
+            var token = await service.GetAppAccessTokenAsync();
+            Assert.Null(token);
+        }
+
+        [Fact]
+        public async Task GetAppAccessTokenAsync_WhenSuccess_ShouldCacheByNormalizedScopeKey()
+        {
+            var callCount = 0;
+            var jsonResponse = "{\"access_token\":\"app_access\",\"expires_in\":3600,\"token_type\":\"bearer\"}";
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req => req.Method == HttpMethod.Post && req.RequestUri != null && req.RequestUri.ToString() == "https://id.twitch.tv/oauth2/token"),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback(() => callCount++)
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(jsonResponse)
+                });
+
+            var scopes = new List<string> { " user:write:chat ", "user:write:chat", "openid" };
+            var token1 = await _service.GetAppAccessTokenAsync(scopes);
+            var token2 = await _service.GetAppAccessTokenAsync(new[] { "openid", "user:write:chat" });
+
+            Assert.Equal("app_access", token1);
+            Assert.Equal("app_access", token2);
+            Assert.Equal(1, callCount);
+        }
+
+        [Fact]
+        public async Task GetAppAccessTokenAsync_WhenNonSuccess_ShouldReturnNull()
+        {
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Content = new StringContent("{\"error\":\"bad\"}")
+                });
+
+            var token = await _service.GetAppAccessTokenAsync(new[] { "openid" });
+            Assert.Null(token);
+        }
+
+        [Fact]
+        public async Task ValidateTokenAsync_WhenSuccess_ShouldReturnValidationResult_AndScopeHelpersWork()
+        {
+            var jsonResponse = "{\"client_id\":\"cid\",\"scopes\":[\"user:write:chat\",\"openid\"],\"user_id\":\"u1\",\"expires_in\":1234}";
+
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req => req.Method == HttpMethod.Get && req.RequestUri != null && req.RequestUri.ToString() == "https://id.twitch.tv/oauth2/validate"),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(() => new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(jsonResponse)
+                });
+
+            var validation = await _service.ValidateTokenAsync("access123");
+            Assert.NotNull(validation);
+            Assert.Equal("cid", validation!.ClientId);
+            Assert.Equal("u1", validation.UserId);
+            Assert.Contains("openid", validation.Scopes);
+
+            var scopes = await _service.GetTokenScopesAsync("access123");
+            Assert.Contains("user:write:chat", scopes);
+
+            var hasScopes = await _service.HasScopesAsync("access123", new[] { "openid", "user:write:chat" });
+            Assert.True(hasScopes);
+
+            var missingScopes = await _service.HasScopesAsync("access123", new[] { "channel:manage:broadcast" });
+            Assert.False(missingScopes);
+        }
+
+        [Fact]
+        public async Task ValidateTokenAsync_WhenNonSuccess_ShouldReturnNull()
+        {
+            _mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(() => new HttpResponseMessage { StatusCode = HttpStatusCode.Unauthorized });
+
+            var validation = await _service.ValidateTokenAsync("bad");
+            Assert.Null(validation);
+
+            var scopes = await _service.GetTokenScopesAsync("bad");
+            Assert.Empty(scopes);
         }
     }
 }

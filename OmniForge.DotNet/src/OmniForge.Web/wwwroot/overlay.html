@@ -403,7 +403,7 @@
                 // Update cached lastCounterData's customCounters if possible
                 const counterId = data.data?.counterId;
                 const value = data.data?.value;
-                if (counterId && value != null) {
+                if (counterId && value !== null && value !== undefined) {
                   if (!lastCounterData) lastCounterData = {};
                   if (!lastCounterData.customCounters) lastCounterData.customCounters = {};
                   lastCounterData.customCounters[counterId] = value;
