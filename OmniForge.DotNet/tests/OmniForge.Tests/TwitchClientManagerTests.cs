@@ -25,6 +25,58 @@ namespace OmniForge.Tests
         private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly TwitchClientManager _twitchClientManager;
 
+        private sealed class FakeBotClient : ITwitchBotClient
+        {
+            public bool IsConnected { get; private set; } = true;
+
+#pragma warning disable CS0067
+            public event EventHandler<TwitchLib.Client.Events.OnLogArgs>? OnLog;
+            public event EventHandler<TwitchLib.Client.Events.OnConnectedArgs>? OnConnected;
+            public event EventHandler<TwitchLib.Client.Events.OnMessageReceivedArgs>? OnMessageReceived;
+#pragma warning restore CS0067
+
+            public void Initialize(TwitchLib.Client.Models.ConnectionCredentials credentials)
+            {
+                // no-op
+            }
+
+            public bool Connect()
+            {
+                IsConnected = true;
+                return true;
+            }
+
+            public void JoinChannel(string channel)
+            {
+                // no-op
+            }
+
+            public void LeaveChannel(string channel)
+            {
+                // no-op
+            }
+
+            public void SendMessage(string channel, string message)
+            {
+                // no-op
+            }
+        }
+
+        private sealed class FakeBotClientFactory : ITwitchBotClientFactory
+        {
+            public ITwitchBotClient Create(TwitchLib.Communication.Models.ClientOptions clientOptions)
+            {
+                var client = new FakeBotClient();
+
+                // No-op subscriptions to mirror production wiring and avoid unused-event warnings.
+                client.OnLog += (_, __) => { };
+                client.OnConnected += (_, __) => { };
+                client.OnMessageReceived += (_, __) => { };
+
+                return client;
+            }
+        }
+
         public TwitchClientManagerTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
@@ -66,7 +118,8 @@ namespace OmniForge.Tests
                 _mockScopeFactory.Object,
                 _mockMessageHandler.Object,
                 twitchSettings,
-                _mockLogger.Object);
+                _mockLogger.Object,
+                new FakeBotClientFactory());
         }
 
         [Fact]
