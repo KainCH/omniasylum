@@ -215,7 +215,11 @@
       applySettings(currentSettings);
 
       if (!userId) {
-        document.body.innerHTML = '<div style="color: red; background: black; padding: 20px;">Error: No userId provided in URL query parameter.</div>';
+        // Avoid innerHTML to keep CodeQL happy and prevent DOM XSS patterns.
+        const message = document.createElement('div');
+        message.setAttribute('style', 'color: red; background: black; padding: 20px;');
+        message.textContent = 'Error: No userId provided in URL query parameter.';
+        document.body.replaceChildren(message);
         return;
       }
 
@@ -528,7 +532,8 @@
           container.classList.remove('visible');
         }
 
-        container.innerHTML = ''; // Clear current
+        // Clear current (avoid innerHTML)
+        container.replaceChildren();
 
         // Normalize payload shapes (public endpoint vs Counter entity)
         const deaths = (data.deaths !== undefined ? data.deaths : data.Deaths);
