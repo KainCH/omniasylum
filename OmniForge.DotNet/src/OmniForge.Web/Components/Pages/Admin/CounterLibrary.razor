@@ -163,7 +163,7 @@
             else
             {
               <i class="bi bi-save me-1"></i>
-          
+
               <span>Save</span>
             }
           </button>
@@ -352,12 +352,11 @@
 
     var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     var values = new List<int>();
-    foreach (var part in parts)
+    foreach (var v in parts
+    .Select(part => int.TryParse(part, out var parsed) ? parsed : 0)
+    .Where(v => v > 0))
     {
-      if (int.TryParse(part, out var v) && v > 0)
-      {
-        values.Add(v);
-      }
+      values.Add(v);
     }
 
     item.Milestones = values.Distinct().OrderBy(v => v).ToArray();

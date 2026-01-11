@@ -107,7 +107,7 @@ public class OverlaySettingsModalTests : BunitContext
     }
 
     [Fact]
-    public void ToggleCounter_ShouldUpdateSettings()
+    public void VisibleCounters_ShouldBeReadOnlyAndReflectCurrentSettings()
     {
         // Arrange
         var userId = "test-user-id";
@@ -126,15 +126,16 @@ public class OverlaySettingsModalTests : BunitContext
 
         cut.WaitForState(() => cut.FindAll("form").Count > 0);
 
-        // Act
+        // Assert
         var deathsCheckbox = cut.Find("#showDeaths");
-        deathsCheckbox.Change(true);
+        Assert.Equal("checkbox", deathsCheckbox.GetAttribute("type"));
+        Assert.NotNull(deathsCheckbox.GetAttribute("disabled"));
+        Assert.Null(deathsCheckbox.GetAttribute("checked"));
 
+        // Saving the modal should not overwrite counter visibility.
         var form = cut.Find("form");
         form.Submit();
-
-        // Assert
-        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.OverlaySettings.Counters.Deaths == true)), Times.Once);
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.OverlaySettings.Counters.Deaths == false)), Times.Once);
     }
 
     [Fact]

@@ -171,9 +171,9 @@ namespace OmniForge.Infrastructure.Services
                     form.Add(new KeyValuePair<string, string>("scope", scopeString));
                 }
 
-                var content = new FormUrlEncodedContent(form);
+                                using var content = new FormUrlEncodedContent(form);
 
-                var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+                                var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();

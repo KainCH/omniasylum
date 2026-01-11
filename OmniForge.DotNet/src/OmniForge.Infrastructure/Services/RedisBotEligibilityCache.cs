@@ -191,17 +191,17 @@ namespace OmniForge.Infrastructure.Services
                                     t.Result?.Dispose();
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // Ignore dispose failures
+                                _logger.LogDebug(ex, "⚠️ Failed disposing Redis connection (async)");
                             }
                         }, TaskScheduler.Default);
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore dispose failures
+                _logger.LogDebug(ex, "⚠️ Failed disposing Redis connection");
             }
         }
     }

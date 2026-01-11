@@ -138,8 +138,6 @@ else
             <div class="list-group mt-3">
               @foreach (var result in searchResults)
               {
-                var alreadyAdded = library.Any(g => string.Equals(g.GameId, result.Id, StringComparison.Ordinal));
-
                 <div class="list-group-item d-flex align-items-center gap-3">
                   @if (!string.IsNullOrWhiteSpace(result.BoxArtUrl))
                   {
