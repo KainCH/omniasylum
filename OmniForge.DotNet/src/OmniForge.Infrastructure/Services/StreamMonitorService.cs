@@ -121,20 +121,43 @@ namespace OmniForge.Infrastructure.Services
                     // Connect if not already connected
                     await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
+                    if (token.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("🛑 Subscription cancelled after connect: user {UserId}", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
+                        return SubscriptionResult.Failed;
+                    }
+
                     if (!UserStillWantsMonitoring(userId))
                     {
                         _logger.LogInformation("🛑 Subscription aborted after connect: user {UserId} no longer wants monitoring", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
                         return SubscriptionResult.Failed;
                     }
 
                     // Wait for the welcome message with a timeout
-                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
+                    Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(10), token);
+                    Task completedTask;
+                    try
+                    {
+                        completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogInformation("🛑 Subscription cancelled while waiting for EventSub welcome: user {UserId}", LogSanitizer.Sanitize(userId));
+                        _eventSubService.OnSessionWelcome -= welcomeHandler;
+                        return SubscriptionResult.Failed;
+                    }
 
                     _eventSubService.OnSessionWelcome -= welcomeHandler;
 
                     if (completedTask == timeoutTask)
                     {
+                        if (token.IsCancellationRequested)
+                        {
+                            _logger.LogInformation("🛑 Subscription cancelled (welcome wait): user {UserId}", LogSanitizer.Sanitize(userId));
+                            return SubscriptionResult.Failed;
+                        }
                         _logger.LogError("Timed out waiting for EventSub Session Welcome message.");
                         return SubscriptionResult.Failed;
                     }
@@ -160,6 +183,8 @@ namespace OmniForge.Infrastructure.Services
                 var botCredentialRepository = scope.ServiceProvider.GetService<IBotCredentialRepository>();
                 var botEligibilityService = scope.ServiceProvider.GetService<ITwitchBotEligibilityService>();
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var twitchApiService = scope.ServiceProvider.GetService<ITwitchApiService>();
+                var gameSwitchService = scope.ServiceProvider.GetService<IGameSwitchService>();
                 var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
                 var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
                 var user = await userRepository.GetUserAsync(userId).ConfigureAwait(false);
@@ -338,6 +363,8 @@ namespace OmniForge.Infrastructure.Services
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", broadcasterId } };
                     var sessionId = _eventSubService.SessionId;
 
+                    var subscribedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                     if (string.IsNullOrEmpty(sessionId))
                     {
                         _logger.LogWarning("Cannot subscribe user {UserId}: Session ID is missing.", LogSanitizer.Sanitize(userId));
@@ -360,13 +387,27 @@ namespace OmniForge.Infrastructure.Services
                         // Subscribe to stream events
                         if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition, token).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition, token).ConfigureAwait(false);
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.online", "1", condition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("stream.online");
+                            }
+
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "stream.offline", "1", condition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("stream.offline");
+                            }
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "stream.online", "1", condition, token).ConfigureAwait(false);
-                            await SubscribeWithRetryAsync(context, "stream.offline", "1", condition, token).ConfigureAwait(false);
+                            if (await SubscribeWithRetryAsync(context, "stream.online", "1", condition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("stream.online");
+                            }
+
+                            if (await SubscribeWithRetryAsync(context, "stream.offline", "1", condition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("stream.offline");
+                            }
                         }
                     }
                     else
@@ -382,11 +423,17 @@ namespace OmniForge.Infrastructure.Services
                     };
                     if (useBotForChannelEvents)
                     {
-                        await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition, token).ConfigureAwait(false);
+                        if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.follow", "2", followCondition, token).ConfigureAwait(false))
+                        {
+                            subscribedTypes.Add("channel.follow");
+                        }
                     }
                     else
                     {
-                        await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition, token).ConfigureAwait(false);
+                        if (await SubscribeWithRetryAsync(context, "channel.follow", "2", followCondition, token).ConfigureAwait(false))
+                        {
+                            subscribedTypes.Add("channel.follow");
+                        }
                     }
 
                     // Chat subscriptions require 'user:read:chat' scope
@@ -404,18 +451,63 @@ namespace OmniForge.Infrastructure.Services
                         // Chat subscriptions don't retry on BadTokenException - user needs to re-login
                         if (useBotForChannelEvents)
                         {
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
-                            await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.chat.message");
+                            }
+
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.chat.notification");
+                            }
                         }
                         else
                         {
-                            await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
-                            await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false);
+                            if (await SubscribeWithRetryAsync(context, "channel.chat.message", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.chat.message");
+                            }
+
+                            if (await SubscribeWithRetryAsync(context, "channel.chat.notification", "1", chatCondition, token, retryOnBadToken: false).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.chat.notification");
+                            }
                         }
                     }
                     else
                     {
                         _logger.LogInformation("⏭️ Skipping chat EventSub subscriptions (channel.chat.message, channel.chat.notification) - missing 'user:read:chat' scope. Basic stream monitoring will still work.");
+                    }
+
+                    // Best-effort: subscribe to channel.update so we can detect game/category changes.
+                    // Do not fail monitoring if Twitch rejects this subscription due to missing scopes.
+                    try
+                    {
+                        var channelUpdateCondition = new Dictionary<string, string>
+                        {
+                            { "broadcaster_user_id", broadcasterId }
+                        };
+
+                        if (useBotForChannelEvents)
+                        {
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.update", "2", channelUpdateCondition, token, retryOnBadToken: true).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.update");
+                            }
+                        }
+                        else
+                        {
+                            if (await SubscribeWithRetryAsync(context, "channel.update", "2", channelUpdateCondition, token, retryOnBadToken: true).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.update");
+                            }
+                        }
+
+                        _logger.LogInformation("✅ Subscribed to channel.update for broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Failed to subscribe to channel.update for user {UserId}. Game auto-switch will be disabled.", LogSanitizer.Sanitize(userId));
                     }
 
                     // User may have pressed Stop during reconnect/resubscribe. Don't re-add them.
@@ -426,6 +518,7 @@ namespace OmniForge.Infrastructure.Services
                         diagCancelled.IsSubscribed = false;
                         diagCancelled.LastSubscribeAt = DateTimeOffset.UtcNow;
                         diagCancelled.LastSubscribeResult = SubscriptionResult.Failed;
+                        diagCancelled.SubscribedTypes = Array.Empty<string>();
                         diagCancelled.LastError = "Cancelled by user";
                         return SubscriptionResult.Failed;
                     }
@@ -437,6 +530,9 @@ namespace OmniForge.Infrastructure.Services
                     diag.AdminInitiated = isAdminActing;
                     diag.LastSubscribeAt = DateTimeOffset.UtcNow;
                     diag.LastSubscribeResult = SubscriptionResult.Success;
+                    diag.SubscribedTypes = subscribedTypes
+                        .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
                     diag.LastError = null;
 
                     monitoringRegistry?.SetState(userId, new MonitoringState(
@@ -477,6 +573,38 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogWarning(ex, "Failed to bring Discord bot online for monitoring start (user {UserId})", LogSanitizer.Sanitize(userId));
                     }
 
+                    // Best-effort: seed the current channel game/category immediately on monitor start.
+                    // This allows the overlay/counters to switch before the next channel.update event arrives.
+                    if (!isAdminActing && twitchApiService != null && gameSwitchService != null)
+                    {
+                        try
+                        {
+                            var category = await twitchApiService.GetChannelCategoryAsync(userId).ConfigureAwait(false);
+                            if (category != null && !string.IsNullOrWhiteSpace(category.GameId))
+                            {
+                                _logger.LogInformation(
+                                    "🎮 Seeding active game on monitor start for user {UserId}: {GameName} ({GameId})",
+                                    LogSanitizer.Sanitize(userId),
+                                    LogSanitizer.Sanitize(category.GameName),
+                                    LogSanitizer.Sanitize(category.GameId));
+
+                                await gameSwitchService
+                                    .HandleGameDetectedAsync(userId, category.GameId, category.GameName)
+                                    .ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                _logger.LogInformation(
+                                    "🎮 No active game/category returned for seed on monitor start (user {UserId})",
+                                    LogSanitizer.Sanitize(userId));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "⚠️ Failed to seed active game on monitor start for user {UserId}", LogSanitizer.Sanitize(userId));
+                        }
+                    }
+
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
@@ -506,10 +634,10 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("🛑 Stop Monitoring requested for user {UserId}", LogSanitizer.Sanitize(userId));
 
             // Cancel any in-flight subscribe/reconnect work immediately.
+            // IMPORTANT: do not dispose CTS here (can race with in-flight code registering callbacks on the token).
             if (_monitoringCancellation.TryRemove(userId, out var cts))
             {
                 try { cts.Cancel(); } catch { /* ignore */ }
-                cts.Dispose();
             }
 
             try
@@ -567,6 +695,7 @@ namespace OmniForge.Infrastructure.Services
             var diag = _diagnostics.GetOrAdd(userId, _ => new MonitorDiagnostics());
             diag.IsSubscribed = false;
             diag.LastSubscribeResult = null;
+            diag.SubscribedTypes = Array.Empty<string>();
             diag.LastError = null;
 
             _logger.LogInformation("🛑 User {UserId} removed. WasSubscribed: {WasSubscribed}, WasWanting: {WasWanting}. Remaining active: {Count}, wanting: {WantingCount}",
@@ -685,6 +814,55 @@ namespace OmniForge.Infrastructure.Services
                 {
                     return false;
                 }
+                // Pre-validate the bot token so we can detect clientId mismatches and expired/invalid tokens
+                // with clear diagnostics (TwitchLib BadRequestException messages can be generic).
+                try
+                {
+                    var validation = await authService.ValidateTokenAsync(botCredentials.AccessToken).ConfigureAwait(false);
+                    if (validation == null)
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Bot access token validation failed before subscribing to {SubscriptionType}.",
+                            LogSanitizer.Sanitize(subscriptionType));
+
+                        if (retryOnBadToken)
+                        {
+                            _logger.LogInformation("🔄 Attempting bot token refresh after failed validation...");
+                            var refreshed = await authService.RefreshTokenAsync(botCredentials.RefreshToken).ConfigureAwait(false);
+                            if (refreshed != null)
+                            {
+                                botCredentials.AccessToken = refreshed.AccessToken;
+                                botCredentials.RefreshToken = refreshed.RefreshToken;
+                                botCredentials.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                                await botCredentialRepository.SaveAsync(botCredentials).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "🔎 Bot token validated. TokenClientId={TokenClientId} TokenUserId={TokenUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
+                            LogSanitizer.Sanitize(validation.ClientId),
+                            LogSanitizer.Sanitize(validation.UserId),
+                            validation.Scopes?.Count ?? 0,
+                            validation.ExpiresIn);
+
+                        if (!string.IsNullOrWhiteSpace(_twitchSettings.ClientId)
+                            && !string.Equals(validation.ClientId, _twitchSettings.ClientId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogError(
+                                "❌ Bot token clientId mismatch; cannot create EventSub subscriptions with Forge bot. ExpectedClientId={ExpectedClientId} TokenClientId={TokenClientId}. Re-auth the bot with the current Twitch app.",
+                                LogSanitizer.Sanitize(_twitchSettings.ClientId),
+                                LogSanitizer.Sanitize(validation.ClientId));
+                            return false;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Bot token validation threw before subscribing to {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                }
+
                 await helixWrapper.CreateEventSubSubscriptionAsync(
                     _twitchSettings.ClientId,
                     botCredentials.AccessToken,
@@ -695,6 +873,11 @@ namespace OmniForge.Infrastructure.Services
                     sessionId).ConfigureAwait(false);
                 _logger.LogInformation("✅ Successfully subscribed to {SubscriptionType} (Forge bot)", LogSanitizer.Sanitize(subscriptionType));
                 return true;
+            }
+            catch (TwitchLib.Api.Core.Exceptions.BadRequestException brEx)
+            {
+                _logger.LogError(brEx, "❌ BadRequest subscribing to {SubscriptionType} (Forge bot). This commonly indicates ClientId/token mismatch or invalid refresh token.", LogSanitizer.Sanitize(subscriptionType));
+                return false;
             }
             catch (TwitchLib.Api.Core.Exceptions.BadTokenException btEx)
             {
@@ -931,7 +1114,7 @@ namespace OmniForge.Infrastructure.Services
             return new StreamMonitorStatus
             {
                 Connected = _eventSubService.IsConnected,
-                Subscriptions = _subscribedUsers.ContainsKey(userId) ? new[] { "stream.online", "stream.offline" } : Array.Empty<string>(),
+                Subscriptions = diag?.SubscribedTypes ?? (_subscribedUsers.ContainsKey(userId) ? new[] { "stream.online", "stream.offline" } : Array.Empty<string>()),
                 LastConnected = _eventSubService.IsConnected ? DateTimeOffset.UtcNow : null, // Approximate
                 LastDiscordNotification = discordStatus?.Time,
                 LastDiscordNotificationSuccess = discordStatus?.Success ?? false,
@@ -1165,6 +1348,7 @@ namespace OmniForge.Infrastructure.Services
             public bool AdminInitiated { get; set; }
             public DateTimeOffset? LastSubscribeAt { get; set; }
             public SubscriptionResult? LastSubscribeResult { get; set; }
+            public string[] SubscribedTypes { get; set; } = Array.Empty<string>();
             public string? LastEventType { get; set; }
             public DateTimeOffset? LastEventAt { get; set; }
             public string? LastEventSummary { get; set; }

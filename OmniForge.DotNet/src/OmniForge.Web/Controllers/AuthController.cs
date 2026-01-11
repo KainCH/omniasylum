@@ -76,6 +76,7 @@ namespace OmniForge.Web.Controllers
                 "user:read:chat",
                 "user:write:chat",
                 "user:bot",
+                "channel:bot",
 
                 // Whispers (optional - for DM functionality)
                 "user:manage:whispers",
@@ -84,6 +85,7 @@ namespace OmniForge.Web.Controllers
                 "channel:read:subscriptions",
                 "channel:read:redemptions",
                 "channel:manage:polls",
+                "channel:manage:broadcast",
 
                 // Moderation & followers
                 "moderator:read:followers",
@@ -135,6 +137,18 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Failed to exchange authorization code");
             }
 
+            // Best-effort: verify bot scopes (do not block auth flow if validation is unavailable).
+            var botScopes = (await _twitchAuthService.GetTokenScopesAsync(tokenResponse.AccessToken)) ?? Array.Empty<string>();
+            var requiredBotScopes = new[] { "channel:manage:broadcast", "channel:bot" };
+            var missingBotScopes = requiredBotScopes.Where(rs => !botScopes.Contains(rs, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (botScopes.Count > 0 && missingBotScopes.Any())
+            {
+                _logger.LogWarning(
+                    "⚠️ Bot OAuth token appears to be missing required scopes. missing={Missing} scopes={Scopes}",
+                    string.Join(", ", missingBotScopes.Select(LogSanitizer.Sanitize)),
+                    string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+            }
+
             var userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
             if (userInfo == null)
             {
@@ -179,6 +193,15 @@ namespace OmniForge.Web.Controllers
             if (tokenResponse == null)
             {
                 return BadRequest("Failed to exchange authorization code");
+            }
+
+            // Best-effort: verify user scopes (do not block auth flow if validation is unavailable).
+            var userScopes = (await _twitchAuthService.GetTokenScopesAsync(tokenResponse.AccessToken)) ?? Array.Empty<string>();
+            if (userScopes.Count > 0 && !userScopes.Contains("channel:manage:broadcast", StringComparer.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "⚠️ User OAuth token appears to be missing required scope channel:manage:broadcast. user_scopes={Scopes}",
+                    string.Join(", ", userScopes.Select(LogSanitizer.Sanitize)));
             }
 
             TwitchUserInfo? userInfo = null;

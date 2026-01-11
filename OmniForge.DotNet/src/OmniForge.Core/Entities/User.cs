@@ -56,6 +56,11 @@ namespace OmniForge.Core.Entities
         public bool AutoStartStream { get; set; } = false;
         public bool ResetOnStreamStart { get; set; } = true;
         public bool AutoIncrementCounters { get; set; } = false;
+
+        // Optional per-user fallback CCLs to apply when the active game's admin CCLs are not configured.
+        // Null = do not change channel CCLs as a fallback.
+        // Empty list = clear all channel CCLs as a fallback.
+        public List<string>? DefaultContentClassificationLabels { get; set; }
     }
 
     public class BitThresholds

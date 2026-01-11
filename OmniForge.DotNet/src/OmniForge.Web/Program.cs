@@ -20,6 +20,7 @@ using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using OmniForge.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -146,6 +147,15 @@ using (var scope = app.Services.CreateScope())
     var alertRepository = scope.ServiceProvider.GetRequiredService<IAlertRepository>();
     var channelPointRepository = scope.ServiceProvider.GetRequiredService<IChannelPointRepository>();
     var seriesRepository = scope.ServiceProvider.GetRequiredService<ISeriesRepository>();
+    var gameLibraryRepository = scope.ServiceProvider.GetRequiredService<IGameLibraryRepository>();
+    var gameCountersRepository = scope.ServiceProvider.GetRequiredService<IGameCountersRepository>();
+    var gameContextRepository = scope.ServiceProvider.GetRequiredService<IGameContextRepository>();
+    var counterLibraryRepository = scope.ServiceProvider.GetRequiredService<ICounterLibraryRepository>();
+    var counterRequestRepository = scope.ServiceProvider.GetRequiredService<ICounterRequestRepository>();
+    var gameChatCommandsRepository = scope.ServiceProvider.GetRequiredService<IGameChatCommandsRepository>();
+    var gameCustomCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCustomCountersConfigRepository>();
+    var gameCoreCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCoreCountersConfigRepository>();
+    var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<CoreCounterLibrarySeeder>();
 
     try
     {
@@ -154,6 +164,16 @@ using (var scope = app.Services.CreateScope())
         await alertRepository.InitializeAsync();
         await channelPointRepository.InitializeAsync();
         await seriesRepository.InitializeAsync();
+        await gameLibraryRepository.InitializeAsync();
+        await gameCountersRepository.InitializeAsync();
+        await gameContextRepository.InitializeAsync();
+        await counterLibraryRepository.InitializeAsync();
+        await counterRequestRepository.InitializeAsync();
+        await gameChatCommandsRepository.InitializeAsync();
+        await gameCustomCountersConfigRepository.InitializeAsync();
+        await gameCoreCountersConfigRepository.InitializeAsync();
+
+        await coreCounterLibrarySeeder.SeedAsync();
     }
     catch (Exception ex)
     {

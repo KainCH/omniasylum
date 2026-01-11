@@ -69,9 +69,21 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IAlertRepository, AlertRepository>();
             services.AddScoped<IChannelPointRepository, ChannelPointRepository>();
             services.AddScoped<ISeriesRepository, SeriesRepository>();
+            services.AddScoped<IGameLibraryRepository, GameLibraryRepository>();
+            services.AddScoped<IGameCountersRepository, GameCountersRepository>();
+            services.AddScoped<IGameContextRepository, GameContextRepository>();
+            services.AddScoped<ICounterLibraryRepository, CounterLibraryRepository>();
+            services.AddScoped<ICounterRequestRepository, CounterRequestRepository>();
+            services.AddScoped<IGameChatCommandsRepository, GameChatCommandsRepository>();
+            services.AddScoped<IGameCustomCountersConfigRepository, GameCustomCountersConfigRepository>();
+            services.AddScoped<IGameCoreCountersConfigRepository, GameCoreCountersConfigRepository>();
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();
+
+            services.AddScoped<IGameSwitchService, GameSwitchService>();
+            services.AddScoped<IGameCounterSetupService, GameCounterSetupService>();
+            services.AddScoped<CoreCounterLibrarySeeder>();
             // Bot eligibility caching: Redis when configured, otherwise in-memory.
             services.AddSingleton<IBotEligibilityCache>(sp =>
             {
@@ -108,6 +120,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IEventSubHandler, RaidHandler>();
             services.AddScoped<IEventSubHandler, ChatMessageHandler>();
             services.AddScoped<IEventSubHandler, ChatNotificationHandler>();
+            services.AddScoped<IEventSubHandler, ChannelUpdateHandler>();
             services.AddScoped<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
 
             // Twitch EventSub

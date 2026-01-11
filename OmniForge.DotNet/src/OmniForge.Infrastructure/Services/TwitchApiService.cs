@@ -233,6 +233,117 @@ namespace OmniForge.Infrastructure.Services
             public string? UserName { get; set; }
         }
 
+        private class SearchCategoriesHelixResponse
+        {
+            public List<SearchCategoriesHelixData> Data { get; set; } = new();
+        }
+
+        private class SearchCategoriesHelixData
+        {
+            [JsonPropertyName("id")]
+            public string? Id { get; set; }
+
+            [JsonPropertyName("name")]
+            public string? Name { get; set; }
+
+            [JsonPropertyName("box_art_url")]
+            public string? BoxArtUrl { get; set; }
+        }
+
+        private class GetChannelsHelixResponse
+        {
+            public List<GetChannelsHelixData> Data { get; set; } = new();
+        }
+
+        private class GetChannelsHelixData
+        {
+            [JsonPropertyName("broadcaster_id")]
+            public string? BroadcasterId { get; set; }
+
+            [JsonPropertyName("game_id")]
+            public string? GameId { get; set; }
+
+            [JsonPropertyName("game_name")]
+            public string? GameName { get; set; }
+
+            [JsonPropertyName("content_classification_labels")]
+            public List<ContentClassificationLabel>? ContentClassificationLabels { get; set; }
+        }
+
+        private class ModifyChannelInformationRequest
+        {
+            [JsonPropertyName("game_id")]
+            public string? GameId { get; set; }
+
+            [JsonPropertyName("content_classification_labels")]
+            public List<ContentClassificationLabel>? ContentClassificationLabels { get; set; }
+        }
+
+        [JsonConverter(typeof(ContentClassificationLabelConverter))]
+        private class ContentClassificationLabel
+        {
+            [JsonPropertyName("id")]
+            public string Id { get; set; } = string.Empty;
+
+            [JsonPropertyName("is_enabled")]
+            public bool IsEnabled { get; set; }
+        }
+
+        private sealed class ContentClassificationLabelConverter : JsonConverter<ContentClassificationLabel>
+        {
+            public override ContentClassificationLabel Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType == JsonTokenType.String)
+                {
+                    return new ContentClassificationLabel
+                    {
+                        Id = reader.GetString() ?? string.Empty,
+                        IsEnabled = true
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.StartObject)
+                {
+                    using var doc = JsonDocument.ParseValue(ref reader);
+                    var root = doc.RootElement;
+
+                    string id = string.Empty;
+                    bool isEnabled = false;
+
+                    if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+
+                    if (root.TryGetProperty("is_enabled", out var enabledProp) && enabledProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    {
+                        isEnabled = enabledProp.GetBoolean();
+                    }
+
+                    return new ContentClassificationLabel
+                    {
+                        Id = id,
+                        IsEnabled = isEnabled
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.Null)
+                {
+                    return new ContentClassificationLabel();
+                }
+
+                throw new JsonException($"Unexpected token {reader.TokenType} for content_classification_labels element");
+            }
+
+            public override void Write(Utf8JsonWriter writer, ContentClassificationLabel value, JsonSerializerOptions options)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", value.Id);
+                writer.WriteBoolean("is_enabled", value.IsEnabled);
+                writer.WriteEndObject();
+            }
+        }
+
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
         {
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
@@ -368,6 +479,319 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task<IReadOnlyList<TwitchCategoryDto>> SearchCategoriesAsync(string userId, string query, int first = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Array.Empty<TwitchCategoryDto>();
+            }
+
+            var requestedFirst = Math.Clamp(first, 1, 100);
+
+            async Task<IReadOnlyList<TwitchCategoryDto>> ExecuteAsync(string accessToken)
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/search/categories?query={Uri.EscapeDataString(query)}&first={requestedFirst}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Search Categories failed. Status={StatusCode} Error={Error} Message={Message}",
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    throw new Exception($"Twitch Search Categories failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                var parsed = JsonSerializer.Deserialize<SearchCategoriesHelixResponse>(body, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return (IReadOnlyList<TwitchCategoryDto>)(parsed?.Data ?? new List<SearchCategoriesHelixData>())
+                    .Where(d => !string.IsNullOrWhiteSpace(d.Id) && !string.IsNullOrWhiteSpace(d.Name))
+                    .Select(d => new TwitchCategoryDto
+                    {
+                        Id = d.Id ?? string.Empty,
+                        Name = d.Name ?? string.Empty,
+                        BoxArtUrl = d.BoxArtUrl ?? string.Empty
+                    })
+                    .ToList();
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ SearchCategories with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(userId, ExecuteAsync);
+        }
+
+        public async Task<TwitchChannelCategoryDto?> GetChannelCategoryAsync(string userId)
+        {
+            async Task<TwitchChannelCategoryDto?> ExecuteAsync(string accessToken)
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/channels?broadcaster_id={Uri.EscapeDataString(userId)}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Get Channel Category failed. Status={StatusCode} Error={Error} Message={Message}",
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    throw new Exception($"Twitch Get Channel Category failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                var parsed = JsonSerializer.Deserialize<GetChannelsHelixResponse>(body, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                var data = parsed?.Data?.FirstOrDefault();
+                if (data == null)
+                {
+                    return null;
+                }
+
+                return new TwitchChannelCategoryDto
+                {
+                    BroadcasterId = data.BroadcasterId ?? userId,
+                    GameId = data.GameId ?? string.Empty,
+                    GameName = data.GameName ?? string.Empty
+                };
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ GetChannelCategory with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(userId, ExecuteAsync);
+        }
+
+        public async Task UpdateChannelInformationAsync(string userId, string gameId, IReadOnlyCollection<string> enabledContentClassificationLabels)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(gameId))
+            {
+                return;
+            }
+
+            await ExecuteWithRetryAsync(userId, async (accessToken) =>
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var scopes = await _authService.GetTokenScopesAsync(accessToken);
+                await EnsureScopesAsync(scopes, new[] { "channel:manage:broadcast" });
+
+                // Twitch currently allows only these 6 Helix CCL ids (max 6 items in payload).
+                var knownLabelIds = new[]
+                {
+                    "DebatedSocialIssuesAndPolitics",
+                    "DrugsIntoxication",
+                    "SexualThemes",
+                    "ViolentGraphic",
+                    "Gambling",
+                    "ProfanityVulgarity"
+                };
+
+                var requested = enabledContentClassificationLabels?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var requestedCount = enabledContentClassificationLabels?.Count ?? 0;
+
+                var known = knownLabelIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var enabled = requested.Where(id => known.Contains(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (requestedCount > 0)
+                {
+                    var unknown = requested.Where(id => !known.Contains(id)).ToList();
+                    if (unknown.Count > 0)
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Unknown CCL ids requested; they will be ignored. user_id={UserId} unknown={Unknown}",
+                            LogSanitizer.Sanitize(userId),
+                            string.Join(", ", unknown.Select(LogSanitizer.Sanitize)));
+                    }
+                }
+
+                // Only include content_classification_labels in the payload when explicitly requested.
+                // - null => don't touch existing CCLs
+                // - empty array => clear all CCLs
+                // - 6-item array => explicitly set enable/disable for each known id
+                List<ContentClassificationLabel>? labels = null;
+                var wantsToSetCcls = enabledContentClassificationLabels != null;
+                if (wantsToSetCcls)
+                {
+                    if (requestedCount == 0)
+                    {
+                        // Per Helix docs: empty array clears all labels.
+                        labels = new List<ContentClassificationLabel>();
+                    }
+                    else if (enabled.Count == 0)
+                    {
+                        // Caller asked to set labels but only provided unknown/unsupported ids.
+                        // Do not clear labels in this case; omit CCL update entirely.
+                        labels = null;
+                    }
+                    else
+                    {
+                        // Helix contract: array length must be <= 6.
+                        labels = knownLabelIds
+                            .Select(id => new ContentClassificationLabel { Id = id, IsEnabled = enabled.Contains(id) })
+                            .ToList();
+                    }
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/channels?broadcaster_id={Uri.EscapeDataString(userId)}";
+
+                // Fetch current channel info so we can log + skip no-op updates.
+                try
+                {
+                    using var getRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                    getRequest.Headers.Add("Client-Id", clientId);
+                    getRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                    using var getResponse = await client.SendAsync(getRequest);
+                    var getBody = await getResponse.Content.ReadAsStringAsync();
+
+                    if (getResponse.IsSuccessStatusCode)
+                    {
+                        var parsed = JsonSerializer.Deserialize<GetChannelsHelixResponse>(getBody, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        var current = parsed?.Data?.FirstOrDefault();
+                        var currentEnabled = (current?.ContentClassificationLabels ?? new List<ContentClassificationLabel>())
+                            .Where(l => l.IsEnabled && !string.IsNullOrWhiteSpace(l.Id))
+                            .Select(l => l.Id)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        _logger.LogInformation(
+                            "✅ Retrieved channel info for user {UserId}: current_game_id={CurrentGameId}, current_enabled_ccls={CurrentCcls}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+
+                        var gameSame = string.Equals(current?.GameId ?? string.Empty, gameId, StringComparison.OrdinalIgnoreCase);
+                        var cclsSame = labels == null || currentEnabled.SetEquals(enabled);
+
+                        if (gameSame && cclsSame)
+                        {
+                            _logger.LogInformation(
+                                "✅ Channel already up to date; skipping update. user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
+                                LogSanitizer.Sanitize(userId),
+                                LogSanitizer.Sanitize(gameId),
+                                string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                            return;
+                        }
+
+                        _logger.LogInformation(
+                            "🔄 Updating channel info for user {UserId}: game_id {OldGameId} -> {NewGameId}, enabled_ccls {OldCcls} -> {NewCcls}",
+                            LogSanitizer.Sanitize(userId),
+                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
+                            LogSanitizer.Sanitize(gameId),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)),
+                            string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                    }
+                    else
+                    {
+                        var helixError = TryParseHelixError(getBody);
+                        _logger.LogWarning(
+                            "⚠️ Helix Get Channel Information failed before update attempt. user_id={UserId} status={StatusCode} error={Error} message={Message}",
+                            LogSanitizer.Sanitize(userId),
+                            (int)getResponse.StatusCode,
+                            LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                            LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Failed retrieving channel info before update attempt. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                }
+
+                var payload = new ModifyChannelInformationRequest
+                {
+                    GameId = gameId,
+                    ContentClassificationLabels = labels
+                };
+
+                var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+                {
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                });
+
+                using var request = new HttpRequestMessage(HttpMethod.Patch, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning(
+                        "❌ Helix Modify Channel Information failed. user_id={UserId} status={StatusCode} error={Error} message={Message}",
+                        LogSanitizer.Sanitize(userId),
+                        (int)response.StatusCode,
+                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
+                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+
+                    throw new Exception($"Twitch Modify Channel Information failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                _logger.LogInformation(
+                    "✅ Updated channel information for user {UserId}: game_id={GameId}, enabled_ccls={CclCount}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(gameId),
+                    enabled.Count);
+            });
+        }
+
         public async Task SendChatMessageAsync(string broadcasterId, string message, string? replyParentMessageId = null, string? senderId = null)
         {
             var (user, _) = await EnsureUserTokenValidAsync(senderId ?? broadcasterId);
@@ -419,7 +843,48 @@ namespace OmniForge.Infrastructure.Services
                     return;
                 }
 
-                await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
+                var botScopes = (await _authService.GetTokenScopesAsync(botCreds.AccessToken)) ?? Array.Empty<string>();
+
+                // Prefer app access token for Send Chat Message (per Twitch docs).
+                // Twitch enforces additional requirements when using app tokens (e.g., bot authorized with user:bot, and bot is mod).
+                var appChatToken = await _authService.GetAppAccessTokenAsync(new[] { "user:write:chat" });
+                if (!string.IsNullOrEmpty(appChatToken))
+                {
+                    if (botScopes.Count > 0 && !botScopes.Contains("user:bot", StringComparer.OrdinalIgnoreCase))
+                    {
+                        _logger.LogWarning(
+                            "⚠️ Bot token appears to be missing user:bot. App-token chat send may fail. bot_scopes={Scopes}",
+                            string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                    }
+
+                    var appSendOk = await SendChatMessageWithTokenAsync(appChatToken, botUserId, broadcasterId, message, replyParentMessageId);
+                    if (appSendOk)
+                    {
+                        return;
+                    }
+
+                    _logger.LogWarning("⚠️ App-token chat send failed; attempting bot user token send");
+                }
+
+                // Bot user token fallback path (requires user token chat scopes)
+                var requiredBotChatScopes = new[] { "user:write:chat", "user:bot", "channel:bot" };
+                var missingBotChatScopes = requiredBotChatScopes.Where(rs => !botScopes.Contains(rs, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (botScopes.Count > 0 && missingBotChatScopes.Any())
+                {
+                    _logger.LogWarning(
+                        "⚠️ Bot token missing required chat scopes. missing={Missing} scopes={Scopes}. Falling back to broadcaster send.",
+                        string.Join(", ", missingBotChatScopes.Select(LogSanitizer.Sanitize)),
+                        string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    return;
+                }
+
+                var botSendOk = await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
+                if (!botSendOk)
+                {
+                    _logger.LogWarning("⚠️ Bot-token chat send failed; falling back to broadcaster send");
+                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                }
             }
             catch (Exception ex)
             {
@@ -428,7 +893,7 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
-        private async Task SendChatMessageWithTokenAsync(string accessToken, string senderId, string broadcasterId, string message, string? replyParentMessageId)
+        private async Task<bool> SendChatMessageWithTokenAsync(string accessToken, string senderId, string broadcasterId, string message, string? replyParentMessageId)
         {
             var clientId = _configuration["Twitch:ClientId"];
             if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -454,7 +919,10 @@ namespace OmniForge.Infrastructure.Services
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
                 _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+                return false;
             }
+
+            return true;
         }
 
         public async Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId)
@@ -709,7 +1177,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId)
         {
-            return await ExecuteWithRetryAsync(actingUserId, async (accessToken) =>
+            async Task<TwitchUserDto?> ExecuteAsync(string accessToken)
             {
                 var clientId = _configuration["Twitch:ClientId"];
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
@@ -727,7 +1195,22 @@ namespace OmniForge.Infrastructure.Services
                     ProfileImageUrl = user.ProfileImageUrl,
                     Email = user.Email
                 };
-            });
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ GetUserByLogin with app token failed; falling back to user token. acting_user_id={UserId}", LogSanitizer.Sanitize(actingUserId));
+                }
+            }
+
+            return await ExecuteWithRetryAsync(actingUserId, ExecuteAsync);
         }
 
         private static void ValidateAutomodValue(string name, int value)

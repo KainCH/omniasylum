@@ -27,6 +27,9 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IDiscordService> _mockDiscordService;
         private readonly Mock<ITwitchHelixWrapper> _mockHelixWrapper;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<ITwitchAuthService> _mockAuthService;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly Mock<IGameLibraryRepository> _mockGameLibraryRepository;
         private readonly StreamOnlineHandler _handler;
 
         public StreamOnlineHandlerTests()
@@ -42,6 +45,9 @@ namespace OmniForge.Tests.EventHandlers
             _mockDiscordService = new Mock<IDiscordService>();
             _mockHelixWrapper = new Mock<ITwitchHelixWrapper>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockAuthService = new Mock<ITwitchAuthService>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
+            _mockGameLibraryRepository = new Mock<IGameLibraryRepository>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
             {
@@ -55,7 +61,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockSettings.Object,
-                _mockDiscordTracker.Object);
+                _mockDiscordTracker.Object,
+                _mockAuthService.Object);
         }
 
         private void SetupDependencyInjection()
@@ -67,6 +74,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockServiceProvider.Setup(x => x.GetService(typeof(IDiscordService))).Returns(_mockDiscordService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchHelixWrapper))).Returns(_mockHelixWrapper.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(_mockOverlayNotifier.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchApiService))).Returns(_mockTwitchApiService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameLibraryRepository))).Returns(_mockGameLibraryRepository.Object);
         }
 
         [Fact]
@@ -215,6 +224,10 @@ namespace OmniForge.Tests.EventHandlers
             _mockHelixWrapper.Setup(x => x.GetStreamsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.List<string>>()))
                 .ReturnsAsync((TwitchLib.Api.Helix.Models.Streams.GetStreams.GetStreamsResponse?)null!);
 
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Returns(Task.CompletedTask);
+
             // Act
             await _handler.HandleAsync(eventData);
 
@@ -297,7 +310,7 @@ namespace OmniForge.Tests.EventHandlers
         }
 
         [Fact]
-        public async Task HandleAsync_WhenNoAccessToken_ShouldSkipStreamInfoFetch()
+        public async Task HandleAsync_WhenNoAccessToken_AndNoAppToken_ShouldSkipStreamInfoFetch()
         {
             // Arrange
             var eventData = JsonDocument.Parse(@"{
@@ -310,6 +323,9 @@ namespace OmniForge.Tests.EventHandlers
 
             _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
             _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockAuthService
+                .Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync((string?)null);
 
             // Act
             await _handler.HandleAsync(eventData);
@@ -318,6 +334,137 @@ namespace OmniForge.Tests.EventHandlers
             _mockHelixWrapper.Verify(x => x.GetStreamsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<System.Collections.Generic.List<string>>()), Times.Never);
             // But should still send Discord notification
             _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenChannelCategoryMissing_ShouldSkipCclApply()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "token" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            _mockTwitchApiService
+                .Setup(x => x.GetChannelCategoryAsync("123"))
+                .ReturnsAsync((TwitchChannelCategoryDto?)null);
+
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Returns(Task.CompletedTask);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockTwitchApiService.Verify(
+                x => x.UpdateChannelInformationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenGameMissingInLibraryAndUserFallbackExists_ShouldUpsertAndApplyFallbackCcls()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User
+            {
+                TwitchUserId = "123",
+                DisplayName = "TestUser",
+                AccessToken = "token",
+                Features = new FeatureFlags
+                {
+                    StreamSettings = new StreamSettings
+                    {
+                        DefaultContentClassificationLabels = new List<string> { "Gambling" }
+                    }
+                }
+            };
+
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            _mockTwitchApiService
+                .Setup(x => x.GetChannelCategoryAsync("123"))
+                .ReturnsAsync(new TwitchChannelCategoryDto { BroadcasterId = "123", GameId = "game1", GameName = "Test Game" });
+
+            _mockGameLibraryRepository
+                .Setup(x => x.GetAsync("123", "game1"))
+                .ReturnsAsync((GameLibraryItem?)null);
+
+            _mockGameLibraryRepository
+                .Setup(x => x.UpsertAsync(It.IsAny<GameLibraryItem>()))
+                .Returns(Task.CompletedTask);
+
+            _mockTwitchApiService
+                .Setup(x => x.UpdateChannelInformationAsync("123", "game1", It.IsAny<IReadOnlyCollection<string>>()))
+                .Returns(Task.CompletedTask);
+
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Returns(Task.CompletedTask);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockGameLibraryRepository.Verify(
+                x => x.UpsertAsync(It.Is<GameLibraryItem>(g => g.GameId == "game1" && g.GameName == "Test Game")),
+                Times.Once);
+
+            _mockTwitchApiService.Verify(
+                x => x.UpdateChannelInformationAsync("123", "game1", It.Is<IReadOnlyCollection<string>>(c => c.Contains("Gambling"))),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenAdminCclsConfigured_ShouldApplyAdminCcls()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "token" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            _mockTwitchApiService
+                .Setup(x => x.GetChannelCategoryAsync("123"))
+                .ReturnsAsync(new TwitchChannelCategoryDto { BroadcasterId = "123", GameId = "game1", GameName = "Test Game" });
+
+            _mockGameLibraryRepository
+                .Setup(x => x.GetAsync("123", "game1"))
+                .ReturnsAsync(new GameLibraryItem
+                {
+                    UserId = "global",
+                    GameId = "game1",
+                    GameName = "Test Game",
+                    EnabledContentClassificationLabels = new List<string> { "DrugsIntoxication" }
+                });
+
+            _mockTwitchApiService
+                .Setup(x => x.UpdateChannelInformationAsync("123", "game1", It.IsAny<IReadOnlyCollection<string>>()))
+                .Returns(Task.CompletedTask);
+
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Returns(Task.CompletedTask);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockGameLibraryRepository.Verify(x => x.UpsertAsync(It.IsAny<GameLibraryItem>()), Times.Never);
+            _mockTwitchApiService.Verify(
+                x => x.UpdateChannelInformationAsync("123", "game1", It.Is<IReadOnlyCollection<string>>(c => c.Contains("DrugsIntoxication"))),
+                Times.Once);
         }
     }
 

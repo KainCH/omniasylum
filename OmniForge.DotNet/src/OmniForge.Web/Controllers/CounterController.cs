@@ -16,6 +16,8 @@ namespace OmniForge.Web.Controllers
     {
         private readonly ICounterRepository _counterRepository;
         private readonly IUserRepository _userRepository;
+        private readonly IGameContextRepository _gameContextRepository;
+        private readonly IGameCoreCountersConfigRepository _gameCoreCountersConfigRepository;
         private readonly INotificationService _notificationService;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<CounterController> _logger;
@@ -23,15 +25,51 @@ namespace OmniForge.Web.Controllers
         public CounterController(
             ICounterRepository counterRepository,
             IUserRepository userRepository,
+            IGameContextRepository gameContextRepository,
+            IGameCoreCountersConfigRepository gameCoreCountersConfigRepository,
             INotificationService notificationService,
             IOverlayNotifier overlayNotifier,
             ILogger<CounterController> logger)
         {
             _counterRepository = counterRepository;
             _userRepository = userRepository;
+            _gameContextRepository = gameContextRepository;
+            _gameCoreCountersConfigRepository = gameCoreCountersConfigRepository;
             _notificationService = notificationService;
             _overlayNotifier = overlayNotifier;
             _logger = logger;
+        }
+
+        private async Task<Core.Entities.OverlaySettings> GetEffectiveOverlaySettingsAsync(string userId, Core.Entities.User user)
+        {
+            var effective = user.OverlaySettings ?? new Core.Entities.OverlaySettings();
+
+            try
+            {
+                var ctx = await _gameContextRepository.GetAsync(userId);
+                if (ctx == null || string.IsNullOrWhiteSpace(ctx.ActiveGameId))
+                {
+                    return effective;
+                }
+
+                var selection = await _gameCoreCountersConfigRepository.GetAsync(userId, ctx.ActiveGameId);
+                if (selection == null)
+                {
+                    return effective;
+                }
+
+                effective.Counters ??= new Core.Entities.OverlayCounters();
+                effective.Counters.Deaths = selection.DeathsEnabled;
+                effective.Counters.Swears = selection.SwearsEnabled;
+                effective.Counters.Screams = selection.ScreamsEnabled;
+                effective.Counters.Bits = selection.BitsEnabled;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed computing effective overlay settings for user {UserId}", LogSanitizer.Sanitize(userId));
+            }
+
+            return effective;
         }
 
         [HttpGet]
@@ -194,10 +232,12 @@ namespace OmniForge.Web.Controllers
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
-            _logger.LogDebug("📋 Returning overlay settings: Position={Position}, Scale={Scale}",
-                LogSanitizer.Sanitize(user.OverlaySettings?.Position), user.OverlaySettings?.Scale);
+            var effective = await GetEffectiveOverlaySettingsAsync(userId, user);
 
-            return Ok(user.OverlaySettings ?? new Core.Entities.OverlaySettings());
+            _logger.LogDebug("📋 Returning overlay settings (effective): Position={Position}, Scale={Scale}",
+                LogSanitizer.Sanitize(effective?.Position), effective?.Scale);
+
+            return Ok(effective);
         }
 
         [HttpPut("overlay/settings")]
@@ -236,6 +276,31 @@ namespace OmniForge.Web.Controllers
             user.OverlaySettings = request;
             await _userRepository.SaveUserAsync(user);
 
+            // Persist core counter visibility to the active game's per-game selection, if applicable.
+            try
+            {
+                var ctx = await _gameContextRepository.GetAsync(userId);
+                if (ctx != null && !string.IsNullOrWhiteSpace(ctx.ActiveGameId) && request.Counters != null)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    await _gameCoreCountersConfigRepository.SaveAsync(
+                        userId,
+                        ctx.ActiveGameId,
+                        new Core.Entities.GameCoreCountersConfig(
+                            UserId: userId,
+                            GameId: ctx.ActiveGameId,
+                            DeathsEnabled: request.Counters.Deaths,
+                            SwearsEnabled: request.Counters.Swears,
+                            ScreamsEnabled: request.Counters.Screams,
+                            BitsEnabled: request.Counters.Bits,
+                            UpdatedAt: now));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed persisting active game core counter selection for user {UserId}", LogSanitizer.Sanitize(userId));
+            }
+
             _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", LogSanitizer.Sanitize(userId));
 
             return Ok(new
@@ -265,15 +330,29 @@ namespace OmniForge.Web.Controllers
                 return NotFound();
             }
 
-            _logger.LogDebug("📋 User OverlaySettings for {UserId}: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(user.OverlaySettings?.Position), user.OverlaySettings?.Scale, user.OverlaySettings?.Enabled);
-            _logger.LogDebug("📋 OverlaySettings.Counters: Deaths={Deaths}, Swears={Swears}, Screams={Screams}, Bits={Bits}",
-                user.OverlaySettings?.Counters?.Deaths, user.OverlaySettings?.Counters?.Swears,
-                user.OverlaySettings?.Counters?.Screams, user.OverlaySettings?.Counters?.Bits);
+            var effectiveSettings = await GetEffectiveOverlaySettingsAsync(userId, user);
+
+            OmniForge.Core.Entities.CustomCounterConfiguration? customCountersConfig = null;
+            try
+            {
+                // This should already reflect the active game's custom counters config, as game switching
+                // persists the active per-game config into the user's active custom counters config.
+                customCountersConfig = await _counterRepository.GetCustomCountersConfigAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for user {UserId}", LogSanitizer.Sanitize(userId));
+            }
+
+            _logger.LogDebug("📋 User OverlaySettings (effective) for {UserId}: Position={Position}, Scale={Scale}, Enabled={Enabled}",
+                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(effectiveSettings?.Position), effectiveSettings?.Scale, effectiveSettings?.Enabled);
+            _logger.LogDebug("📋 OverlaySettings.Counters (effective): Deaths={Deaths}, Swears={Swears}, Screams={Screams}, Bits={Bits}",
+                effectiveSettings?.Counters?.Deaths, effectiveSettings?.Counters?.Swears,
+                effectiveSettings?.Counters?.Screams, effectiveSettings?.Counters?.Bits);
 
             var previewRequested = HttpContext.Request.Query.TryGetValue("preview", out var previewValues)
                 && previewValues.ToString().Equals("true", StringComparison.OrdinalIgnoreCase);
-            var offlinePreviewEnabled = user.OverlaySettings?.OfflinePreview ?? false;
+            var offlinePreviewEnabled = effectiveSettings?.OfflinePreview ?? false;
 
             var streamStartedValue = counters.StreamStarted;
             if (streamStartedValue == null && (previewRequested || offlinePreviewEnabled))
@@ -287,15 +366,89 @@ namespace OmniForge.Web.Controllers
                 swears = counters.Swears,
                 screams = counters.Screams,
                 bits = counters.Bits,
+                customCounters = counters.CustomCounters,
+                customCountersConfig = customCountersConfig?.Counters,
                 lastUpdated = counters.LastUpdated,
                 streamStarted = streamStartedValue,
-                settings = user.OverlaySettings
+                settings = effectiveSettings
             };
 
             _logger.LogInformation("✅ Returning public counters for {UserId}: Deaths={Deaths}, Swears={Swears}, StreamStarted={StreamStarted}",
                 LogSanitizer.Sanitize(userId), counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
 
             return Ok(response);
+        }
+
+        [HttpPost("{userId}/custom/{counterId}/increment")]
+        [AllowAnonymous]
+        public async Task<IActionResult> IncrementPublicCustomCounter(string userId, string counterId)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(counterId))
+            {
+                return BadRequest(new { error = "userId and counterId are required" });
+            }
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null)
+            {
+                return NotFound(new { error = "User not found" });
+            }
+
+            if (!user.Features.StreamOverlay)
+            {
+                return StatusCode(403, new { error = "Stream overlay not enabled for this user" });
+            }
+
+            var normalizedCounterId = counterId.Trim();
+
+            // Look up the active custom counter definition to determine increment amount and milestones.
+            var config = await _counterRepository.GetCustomCountersConfigAsync(userId);
+            if (config?.Counters == null || !config.Counters.TryGetValue(normalizedCounterId, out var counterDef))
+            {
+                return NotFound(new { error = "Custom counter not found" });
+            }
+
+            var incrementBy = Math.Max(1, counterDef.IncrementBy);
+
+            var currentCounters = await _counterRepository.GetCountersAsync(userId);
+            var previousValue = 0;
+            if (currentCounters?.CustomCounters != null
+                && currentCounters.CustomCounters.TryGetValue(normalizedCounterId, out var existingValue))
+            {
+                previousValue = existingValue;
+            }
+
+            var updatedCounters = await _counterRepository.IncrementCounterAsync(userId, normalizedCounterId, incrementBy);
+            var newValue = updatedCounters.CustomCounters != null && updatedCounters.CustomCounters.TryGetValue(normalizedCounterId, out var updated)
+                ? updated
+                : 0;
+
+            // Notify overlay clients with the updated counter object.
+            await _overlayNotifier.NotifyCounterUpdateAsync(userId, updatedCounters);
+
+            // Emit milestone alerts if any were crossed.
+            if (counterDef.Milestones != null && counterDef.Milestones.Any())
+            {
+                var crossedMilestones = counterDef.Milestones.Where(t => previousValue < t && newValue >= t).ToList();
+                foreach (var milestone in crossedMilestones)
+                {
+                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "customMilestoneReached", new
+                    {
+                        counterId = normalizedCounterId,
+                        counterName = counterDef.Name,
+                        milestone = milestone,
+                        newValue = newValue,
+                        icon = counterDef.Icon
+                    });
+                }
+            }
+
+            return Ok(new
+            {
+                counterId = normalizedCounterId,
+                value = newValue,
+                change = incrementBy
+            });
         }
 
         private int GetValueByType(Core.Entities.Counter counter, string type)

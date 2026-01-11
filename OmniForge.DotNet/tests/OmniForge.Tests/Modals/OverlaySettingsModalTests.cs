@@ -13,13 +13,28 @@ public class OverlaySettingsModalTests : BunitContext
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
     private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+    private readonly Mock<IGameContextRepository> _mockGameContextRepository;
+    private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
 
     public OverlaySettingsModalTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
         _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+        _mockGameContextRepository = new Mock<IGameContextRepository>();
+        _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
+
+        _mockOverlayNotifier
+            .Setup(n => n.NotifySettingsUpdateAsync(It.IsAny<string>(), It.IsAny<OverlaySettings>()))
+            .Returns(Task.CompletedTask);
+
+        _mockGameContextRepository
+            .Setup(r => r.GetAsync(It.IsAny<string>()))
+            .ReturnsAsync((GameContext?)null);
+
         Services.AddSingleton(_mockUserRepository.Object);
         Services.AddSingleton(_mockOverlayNotifier.Object);
+        Services.AddSingleton(_mockGameContextRepository.Object);
+        Services.AddSingleton(_mockGameCoreCountersConfigRepository.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -92,7 +107,7 @@ public class OverlaySettingsModalTests : BunitContext
     }
 
     [Fact]
-    public void ToggleCounter_ShouldUpdateSettings()
+    public void VisibleCounters_ShouldBeReadOnlyAndReflectCurrentSettings()
     {
         // Arrange
         var userId = "test-user-id";
@@ -111,15 +126,16 @@ public class OverlaySettingsModalTests : BunitContext
 
         cut.WaitForState(() => cut.FindAll("form").Count > 0);
 
-        // Act
+        // Assert
         var deathsCheckbox = cut.Find("#showDeaths");
-        deathsCheckbox.Change(true);
+        Assert.Equal("checkbox", deathsCheckbox.GetAttribute("type"));
+        Assert.NotNull(deathsCheckbox.GetAttribute("disabled"));
+        Assert.Null(deathsCheckbox.GetAttribute("checked"));
 
+        // Saving the modal should not overwrite counter visibility.
         var form = cut.Find("form");
         form.Submit();
-
-        // Assert
-        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.OverlaySettings.Counters.Deaths == true)), Times.Once);
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => !u.OverlaySettings.Counters.Deaths)), Times.Once);
     }
 
     [Fact]

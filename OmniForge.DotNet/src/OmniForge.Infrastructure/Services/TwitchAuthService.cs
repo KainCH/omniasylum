@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OmniForge.Core.Entities;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
@@ -20,6 +21,18 @@ namespace OmniForge.Infrastructure.Services
         private readonly HttpClient _httpClient;
         private readonly TwitchSettings _settings;
         private readonly ILogger<TwitchAuthService> _logger; // Added
+
+        private readonly SemaphoreSlim _appTokenLock = new SemaphoreSlim(1, 1);
+
+        private sealed class CachedAppToken
+        {
+            public string AccessToken { get; set; } = string.Empty;
+            public DateTimeOffset ExpiresAt { get; set; } = DateTimeOffset.MinValue;
+        }
+
+        // Cache app access tokens by requested scope set.
+        // Key is a normalized, space-delimited scope string.
+        private readonly Dictionary<string, CachedAppToken> _cachedAppTokensByScope = new(StringComparer.Ordinal);
 
         public TwitchAuthService(HttpClient httpClient, IOptions<TwitchSettings> settings, ILogger<TwitchAuthService> logger) // Updated
         {
@@ -52,6 +65,7 @@ namespace OmniForge.Infrastructure.Services
                 "channel:read:subscriptions",
                 "channel:read:redemptions",
                 "channel:manage:polls",
+                "channel:manage:broadcast",
 
                 // Moderation & followers
                 "moderator:read:followers",
@@ -74,7 +88,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri)
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("client_id", _settings.ClientId),
                 new KeyValuePair<string, string>("client_secret", _settings.ClientSecret),
@@ -83,7 +97,7 @@ namespace OmniForge.Infrastructure.Services
                 new KeyValuePair<string, string>("redirect_uri", redirectUri)
             });
 
-            var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+            using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -104,6 +118,104 @@ namespace OmniForge.Infrastructure.Services
                 ExpiresIn = tokenData.ExpiresIn,
                 TokenType = tokenData.TokenType
             };
+        }
+
+        public async Task<string?> GetAppAccessTokenAsync(IReadOnlyCollection<string>? scopes = null)
+        {
+            // Use a small refresh buffer so we don't hand out nearly-expired tokens.
+            var refreshBuffer = TimeSpan.FromMinutes(1);
+
+            var normalizedScopes = (scopes ?? Array.Empty<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var scopeString = string.Join(" ", normalizedScopes);
+            var cacheKey = scopeString; // already normalized
+
+            if (_cachedAppTokensByScope.TryGetValue(cacheKey, out var cached)
+                && !string.IsNullOrEmpty(cached.AccessToken)
+                && cached.ExpiresAt > DateTimeOffset.UtcNow.Add(refreshBuffer))
+            {
+                return cached.AccessToken;
+            }
+
+            await _appTokenLock.WaitAsync();
+            try
+            {
+                if (_cachedAppTokensByScope.TryGetValue(cacheKey, out cached)
+                    && !string.IsNullOrEmpty(cached.AccessToken)
+                    && cached.ExpiresAt > DateTimeOffset.UtcNow.Add(refreshBuffer))
+                {
+                    return cached.AccessToken;
+                }
+
+                if (string.IsNullOrWhiteSpace(_settings.ClientId) || string.IsNullOrWhiteSpace(_settings.ClientSecret))
+                {
+                    _logger.LogWarning("⚠️ Cannot request Twitch app access token: missing ClientId/ClientSecret");
+                    return null;
+                }
+
+                var form = new List<KeyValuePair<string, string>>
+                {
+                    new("client_id", _settings.ClientId),
+                    new("client_secret", _settings.ClientSecret),
+                    new("grant_type", "client_credentials")
+                };
+
+                if (!string.IsNullOrWhiteSpace(scopeString))
+                {
+                    // Twitch supports requesting scopes with client-credentials app tokens for certain endpoints.
+                    form.Add(new KeyValuePair<string, string>("scope", scopeString));
+                }
+
+                using var content = new FormUrlEncodedContent(form);
+
+                using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning(
+                        "❌ Failed to get Twitch app access token. Status: {StatusCode}, Response: {Response}",
+                        response.StatusCode,
+                        LogSanitizer.Sanitize(errorContent));
+                    return null;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var tokenData = JsonSerializer.Deserialize<TwitchAppTokenResponseInternal>(json, options);
+                if (tokenData == null || string.IsNullOrWhiteSpace(tokenData.AccessToken) || tokenData.ExpiresIn <= 0)
+                {
+                    _logger.LogWarning("⚠️ Twitch app token response was invalid");
+                    return null;
+                }
+
+                cached = new CachedAppToken
+                {
+                    AccessToken = tokenData.AccessToken,
+                    ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(tokenData.ExpiresIn)
+                };
+                _cachedAppTokensByScope[cacheKey] = cached;
+
+                _logger.LogInformation(
+                    "✅ Retrieved Twitch app access token. scopes_count={ScopesCount} expires_in_seconds={ExpiresIn}",
+                    normalizedScopes.Count,
+                    tokenData.ExpiresIn);
+
+                return cached.AccessToken;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error requesting Twitch app access token");
+                return null;
+            }
+            finally
+            {
+                _appTokenLock.Release();
+            }
         }
 
         public async Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId)
@@ -175,7 +287,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken)
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("client_id", _settings.ClientId),
                 new KeyValuePair<string, string>("client_secret", _settings.ClientSecret),
@@ -183,7 +295,7 @@ namespace OmniForge.Infrastructure.Services
                 new KeyValuePair<string, string>("refresh_token", refreshToken)
             });
 
-            var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
+            using var response = await _httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -212,7 +324,7 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
+                using var response = await _httpClient.GetAsync("https://id.twitch.tv/oauth2/keys");
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to fetch Twitch OIDC keys. Status: {StatusCode}", response.StatusCode);
@@ -238,6 +350,18 @@ namespace OmniForge.Infrastructure.Services
             public string IdToken { get; set; } = "";
             [JsonPropertyName("expires_in")]
             public int ExpiresIn { get; set; }
+            [JsonPropertyName("token_type")]
+            public string TokenType { get; set; } = "";
+        }
+
+        private class TwitchAppTokenResponseInternal
+        {
+            [JsonPropertyName("access_token")]
+            public string AccessToken { get; set; } = "";
+
+            [JsonPropertyName("expires_in")]
+            public int ExpiresIn { get; set; }
+
             [JsonPropertyName("token_type")]
             public string TokenType { get; set; } = "";
         }

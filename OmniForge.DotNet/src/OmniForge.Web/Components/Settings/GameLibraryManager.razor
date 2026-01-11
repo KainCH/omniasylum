@@ -1,0 +1,952 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IGameLibraryRepository GameLibraryRepository
+@inject IGameCountersRepository GameCountersRepository
+@inject IGameContextRepository GameContextRepository
+@inject IGameSwitchService GameSwitchService
+@inject ITwitchApiService TwitchApiService
+@inject ICounterLibraryRepository CounterLibraryRepository
+@inject ICounterRequestRepository CounterRequestRepository
+@inject IGameCounterSetupService GameCounterSetupService
+@inject IGameCoreCountersConfigRepository GameCoreCountersConfigRepository
+@inject IUserRepository UserRepository
+
+@if (isLoading)
+{
+  <div class="text-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+}
+else
+{
+  @if (!string.IsNullOrEmpty(successMessage))
+  {
+    <div class="alert alert-success alert-dismissible fade show">
+      <i class="bi bi-check-circle me-2"></i>@successMessage
+      <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+    </div>
+  }
+
+  @if (!string.IsNullOrEmpty(errorMessage))
+  {
+    <div class="alert alert-danger alert-dismissible fade show">
+      <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+      <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+  }
+
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    View games you’ve played before and set per-game counters. Activating a game will swap your live counters to that
+    game.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <i class="bi bi-shield-check me-2"></i>Default Channel CCLs (Fallback)
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb-3">
+        <i class="bi bi-info-circle me-2"></i>
+        Used when the detected game has no admin-configured CCLs.
+      </div>
+
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="useDefaultCcls" @bind="useDefaultCcls" disabled="@isBusy" />
+        <label class="form-check-label" for="useDefaultCcls">Enable default CCL fallback</label>
+      </div>
+
+      @if (useDefaultCcls)
+      {
+        <label class="form-label">Enabled Content Classification Labels</label>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclProfanity" @bind="defaultCclProfanityVulgarity"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclProfanity">Profanity/Vulgarity</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclGambling" @bind="defaultCclGambling"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclGambling">Gambling</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclViolence" @bind="defaultCclViolentGraphic"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclViolence">Violent/Graphic</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclSexual" @bind="defaultCclSexualThemes"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclSexual">Sexual Themes</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclDrugs" @bind="defaultCclDrugsIntoxication"
+              disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclDrugs">Drugs/Intoxication</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="defaultCclPolitics"
+              @bind="defaultCclDebatedSocialIssuesAndPolitics" disabled="@isBusy" />
+            <label class="form-check-label" for="defaultCclPolitics">Politics/Debated Issues</label>
+          </div>
+        </div>
+      }
+
+      <div class="mt-3">
+        <button class="btn btn-success" @onclick="SaveDefaultCcls" disabled="@isBusy">
+          <i class="bi bi-save me-1"></i>Save Default CCLs
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header">
+          <i class="bi bi-search me-2"></i>Add Game
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-8">
+              <input type="text" class="form-control" placeholder="Search Twitch categories..." @bind="searchQuery"
+                @bind:event="oninput" maxlength="100" disabled="@isBusy" />
+            </div>
+            <div class="col-4">
+              <button class="btn btn-primary w-100" @onclick="Search" disabled="@isBusy">
+                @if (isSearching)
+                {
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                <i class="bi bi-search me-1"></i>Search
+              </button>
+            </div>
+          </div>
+
+          @if (!string.IsNullOrWhiteSpace(searchError))
+          {
+            <div class="alert alert-danger mt-3 mb-0">
+              <i class="bi bi-exclamation-triangle me-2"></i>@searchError
+            </div>
+          }
+
+          @if (searchResults.Count > 0)
+          {
+            <div class="list-group mt-3">
+              @foreach (var result in searchResults)
+              {
+                <div class="list-group-item d-flex align-items-center gap-3">
+                  @if (!string.IsNullOrWhiteSpace(result.BoxArtUrl))
+                  {
+                    <img src="@FormatBoxArt(result.BoxArtUrl)" alt="@result.Name"
+                      style="width: 52px; height: 72px; object-fit: cover;" />
+                  }
+                  <div class="flex-fill">
+                    <div class="fw-semibold">@result.Name</div>
+                    <div class="small text-muted">Game ID: @result.Id</div>
+                  </div>
+                  <button class="btn btn-sm btn-outline-primary" @onclick="() => ActivateFromSearch(result)"
+                    disabled="@(isBusy)">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Activate
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            <i class="bi bi-journal-text me-2"></i>Game Library (@library.Count)
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" @onclick="Reload" disabled="@isBusy">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+          </button>
+        </div>
+        <div class="card-body p-0">
+          @if (library.Count == 0)
+          {
+            <div class="text-center text-muted p-4">
+              <i class="bi bi-controller fs-1 d-block mb-2"></i>
+              No games in your library yet.
+            </div>
+          }
+          else
+          {
+            <div class="list-group list-group-flush">
+              @foreach (var game in library)
+              {
+                var isSelected = selectedGameId != null && string.Equals(selectedGameId, game.GameId,
+                StringComparison.Ordinal);
+                var isActive = !string.IsNullOrWhiteSpace(activeGameId) && string.Equals(activeGameId, game.GameId,
+                StringComparison.Ordinal);
+
+                <button type="button"
+                  class="list-group-item list-group-item-action d-flex align-items-center gap-3 @(isSelected ? "active" : "")"
+                  @onclick="() => SelectGame(game)" disabled="@isBusy">
+                  @if (!string.IsNullOrWhiteSpace(game.BoxArtUrl))
+                  {
+                    <img src="@FormatBoxArt(game.BoxArtUrl)" alt="@game.GameName"
+                      style="width: 52px; height: 72px; object-fit: cover;" />
+                  }
+                  <div class="flex-fill text-start">
+                    <div class="fw-semibold">
+                      @game.GameName
+                      @if (isActive)
+                      {
+                        <span class="badge bg-primary ms-2">Active</span>
+                      }
+                    </div>
+                    <div class="small text-muted">Last seen: @game.LastSeenAt.ToLocalTime().ToString("g")</div>
+                  </div>
+                  <i class="bi bi-chevron-right"></i>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <i class="bi bi-sliders me-2"></i>Game Counters
+        </div>
+        <div class="card-body">
+          @if (selectedGame == null)
+          {
+            <div class="text-muted">Select a game to edit its counters.</div>
+          }
+          else
+          {
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <div>
+                <div class="h5 mb-1">@selectedGame.GameName</div>
+                <div class="small text-muted">Game ID: @selectedGame.GameId</div>
+              </div>
+              <button class="btn btn-outline-primary" @onclick="ActivateSelected" disabled="@isBusy">
+                <i class="bi bi-box-arrow-in-right me-1"></i>Activate
+              </button>
+            </div>
+
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label">Enabled Counters</label>
+                <div class="d-flex flex-wrap gap-3">
+                  @if (counterLibrary.Count == 0)
+                  {
+                    <div class="text-muted small">No counters found in the counter library.</div>
+                  }
+                  else
+                  {
+                    @foreach (var item in counterLibrary.OrderBy(c => c.Name))
+                    {
+                      var id = GetCounterCheckboxId(item.CounterId);
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="@id"
+                          checked="@IsLibraryCounterEnabled(item.CounterId)"
+                          @onchange="e => OnLibraryCounterEnabledChanged(item.CounterId, e)" disabled="@isBusy" />
+                        <label class="form-check-label" for="@id">@item.Name</label>
+                      </div>
+                    }
+                  }
+                </div>
+                <div class="small text-muted mt-1">These control overlay visibility and default chat commands per game.
+                </div>
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Deaths</label>
+                <input class="form-control" type="number" @bind="editCounters.Deaths" disabled="@(!coreDeathsEnabled)" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Swears</label>
+                <input class="form-control" type="number" @bind="editCounters.Swears" disabled="@(!coreSwearsEnabled)" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Screams</label>
+                <input class="form-control" type="number" @bind="editCounters.Screams" disabled="@(!coreScreamsEnabled)" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Bits</label>
+                <input class="form-control" type="number" @bind="editCounters.Bits" disabled="@(!coreBitsEnabled)" />
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <button class="btn btn-success" @onclick="SaveSelected" disabled="@isBusy">
+                @if (isBusy)
+                {
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                <i class="bi bi-save me-1"></i>Save
+              </button>
+            </div>
+
+            <div class="small text-muted mt-3">
+              Last updated: @editCounters.LastUpdated.ToLocalTime().ToString("g")
+            </div>
+
+            <hr />
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-semibold"><i class="bi bi-collection me-2"></i>Counter Library</div>
+              <button class="btn btn-sm btn-outline-secondary" @onclick="LoadCounterLibrary" disabled="@isBusy">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+              </button>
+            </div>
+
+            @if (counterLibrary.Count == 0)
+            {
+              <div class="text-muted small">No counters in the library yet.</div>
+            }
+            else
+            {
+              <div class="list-group">
+                @foreach (var item in counterLibrary)
+                {
+                  var alreadyAdded = editCounters.CustomCounters != null &&
+                  editCounters.CustomCounters.ContainsKey(item.CounterId);
+                  var isCore = IsCoreCounterId(item.CounterId);
+                  <div class="list-group-item d-flex align-items-center justify-content-between">
+                    <div>
+                      <div class="fw-semibold">
+                        @item.Name
+                        @if (isCore)
+                        {
+                          <span class="badge bg-secondary ms-2">Core</span>
+                        }
+                      </div>
+                      <div class="small text-muted">Key: @item.CounterId</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-success"
+                      @onclick="() => AddLibraryCounterToSelectedGame(item.CounterId)"
+                      disabled="@(isBusy || alreadyAdded || isCore)">
+                      <i class="bi bi-plus-circle me-1"></i>@(isCore ? "Core" : (alreadyAdded ? "Added" : "Add"))
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+
+            <hr />
+
+            <div class="fw-semibold mb-2"><i class="bi bi-inbox me-2"></i>Request New Counter</div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">Name</label>
+                <input class="form-control" @bind="counterRequestName" maxlength="60" />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Icon (Bootstrap)</label>
+                <input class="form-control" @bind="counterRequestIcon" maxlength="60" placeholder="bi-emoji-smile" />
+              </div>
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" rows="2" @bind="counterRequestDescription" maxlength="240"></textarea>
+              </div>
+            </div>
+            <div class="d-flex justify-content-end mt-2">
+              <button class="btn btn-outline-primary" @onclick="SubmitCounterRequest" disabled="@isBusy">
+                <i class="bi bi-send me-1"></i>Submit Request
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@code {
+  [Parameter] public string UserId { get; set; } = string.Empty;
+
+  private bool isLoading = true;
+  private bool isBusy = false;
+
+  private string? successMessage;
+  private string? errorMessage;
+
+  private string searchQuery = string.Empty;
+  private bool isSearching = false;
+  private string? searchError;
+  private List<TwitchCategoryDto> searchResults = new();
+
+  private List<GameLibraryItem> library = new();
+  private string? activeGameId;
+
+  private string? loadedUserId;
+  private User? loadedUser;
+  private string? selectedGameId;
+  private GameLibraryItem? selectedGame;
+  private Counter editCounters = new();
+
+  private bool useDefaultCcls;
+  private bool defaultCclProfanityVulgarity;
+  private bool defaultCclGambling;
+  private bool defaultCclViolentGraphic;
+  private bool defaultCclSexualThemes;
+  private bool defaultCclDrugsIntoxication;
+  private bool defaultCclDebatedSocialIssuesAndPolitics;
+
+  private bool coreDeathsEnabled = true;
+  private bool coreSwearsEnabled = true;
+  private bool coreScreamsEnabled = true;
+  private bool coreBitsEnabled = false;
+
+  private List<CounterLibraryItem> counterLibrary = new();
+  private string counterRequestName = string.Empty;
+  private string counterRequestIcon = string.Empty;
+  private string counterRequestDescription = string.Empty;
+
+  protected override async Task OnParametersSetAsync()
+  {
+    if (string.IsNullOrWhiteSpace(UserId))
+    {
+      return;
+    }
+
+    if (string.Equals(loadedUserId, UserId, StringComparison.Ordinal))
+    {
+      return;
+    }
+
+    loadedUserId = UserId;
+    await LoadAsync();
+  }
+
+  private async Task LoadAsync()
+  {
+    isLoading = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      loadedUser = await UserRepository.GetUserAsync(UserId);
+      LoadDefaultCclsFromUser(loadedUser);
+
+      library = (await GameLibraryRepository.ListAsync(UserId)).ToList();
+      var ctx = await GameContextRepository.GetAsync(UserId);
+      activeGameId = ctx?.ActiveGameId;
+
+      counterLibrary = (await CounterLibraryRepository.ListAsync()).ToList();
+
+      // If current selection disappeared, clear it.
+      if (!string.IsNullOrWhiteSpace(selectedGameId) && library.All(g => !string.Equals(g.GameId, selectedGameId,
+      StringComparison.Ordinal)))
+      {
+        selectedGameId = null;
+        selectedGame = null;
+        editCounters = new Counter { TwitchUserId = UserId, LastUpdated = DateTimeOffset.UtcNow };
+      }
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to load games: {ex.Message}";
+      library = new List<GameLibraryItem>();
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
+
+  private void LoadDefaultCclsFromUser(User? user)
+  {
+    var enabled = user?.Features?.StreamSettings?.DefaultContentClassificationLabels;
+    if (enabled == null)
+    {
+      useDefaultCcls = false;
+      defaultCclProfanityVulgarity = false;
+      defaultCclGambling = false;
+      defaultCclViolentGraphic = false;
+      defaultCclSexualThemes = false;
+      defaultCclDrugsIntoxication = false;
+      defaultCclDebatedSocialIssuesAndPolitics = false;
+      return;
+    }
+
+    useDefaultCcls = true;
+    var set = enabled.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    defaultCclProfanityVulgarity = set.Contains("ProfanityVulgarity");
+    defaultCclGambling = set.Contains("Gambling");
+    defaultCclViolentGraphic = set.Contains("ViolentGraphic");
+    defaultCclSexualThemes = set.Contains("SexualThemes");
+    defaultCclDrugsIntoxication = set.Contains("DrugsIntoxication");
+    defaultCclDebatedSocialIssuesAndPolitics = set.Contains("DebatedSocialIssuesAndPolitics");
+  }
+
+  private async Task SaveDefaultCcls()
+  {
+    if (isBusy) return;
+    if (string.IsNullOrWhiteSpace(UserId)) return;
+
+    errorMessage = null;
+    successMessage = null;
+    isBusy = true;
+
+    try
+    {
+      loadedUser ??= await UserRepository.GetUserAsync(UserId);
+      if (loadedUser == null)
+      {
+        errorMessage = "User not found.";
+        return;
+      }
+
+      loadedUser.Features ??= new FeatureFlags();
+      loadedUser.Features.StreamSettings ??= new StreamSettings();
+
+      if (!useDefaultCcls)
+      {
+        loadedUser.Features.StreamSettings.DefaultContentClassificationLabels = null;
+      }
+      else
+      {
+        var enabled = new List<string>();
+        if (defaultCclDebatedSocialIssuesAndPolitics) enabled.Add("DebatedSocialIssuesAndPolitics");
+        if (defaultCclDrugsIntoxication) enabled.Add("DrugsIntoxication");
+        if (defaultCclSexualThemes) enabled.Add("SexualThemes");
+        if (defaultCclViolentGraphic) enabled.Add("ViolentGraphic");
+        if (defaultCclGambling) enabled.Add("Gambling");
+        if (defaultCclProfanityVulgarity) enabled.Add("ProfanityVulgarity");
+
+        loadedUser.Features.StreamSettings.DefaultContentClassificationLabels = enabled;
+      }
+
+      await UserRepository.SaveUserAsync(loadedUser);
+      successMessage = "Default CCLs saved.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save default CCLs: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task LoadCounterLibrary()
+  {
+    if (isBusy) return;
+
+    try
+    {
+      counterLibrary = (await CounterLibraryRepository.ListAsync()).ToList();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to load counter library: {ex.Message}";
+    }
+  }
+
+  private async Task Reload()
+  {
+    if (isBusy) return;
+    await LoadAsync();
+  }
+
+  private async Task Search()
+  {
+    if (isBusy) return;
+
+    searchError = null;
+    successMessage = null;
+    errorMessage = null;
+
+    var q = (searchQuery ?? string.Empty).Trim();
+    if (q.Length < 2)
+    {
+      searchResults = new List<TwitchCategoryDto>();
+      searchError = "Search query must be at least 2 characters.";
+      return;
+    }
+
+    isSearching = true;
+    try
+    {
+      var results = await TwitchApiService.SearchCategoriesAsync(UserId, q, first: 20);
+      searchResults = results.ToList();
+    }
+    catch (Exception ex)
+    {
+      searchResults = new List<TwitchCategoryDto>();
+      searchError = $"Failed to search Twitch categories: {ex.Message}";
+    }
+    finally
+    {
+      isSearching = false;
+    }
+  }
+
+  private async Task ActivateFromSearch(TwitchCategoryDto category)
+  {
+    if (isBusy) return;
+
+    errorMessage = null;
+    successMessage = null;
+    searchError = null;
+
+    if (string.IsNullOrWhiteSpace(category.Id) || string.IsNullOrWhiteSpace(category.Name))
+    {
+      searchError = "Invalid category result.";
+      return;
+    }
+
+    isBusy = true;
+    try
+    {
+      await GameSwitchService.HandleGameDetectedAsync(
+      UserId,
+      category.Id.Trim(),
+      category.Name.Trim(),
+      category.BoxArtUrl?.Trim() ?? string.Empty);
+
+      await LoadAsync();
+      var ctx = await GameContextRepository.GetAsync(UserId);
+      activeGameId = ctx?.ActiveGameId;
+      successMessage = $"Activated {category.Name}.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to activate game: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task SelectGame(GameLibraryItem game)
+  {
+    if (isBusy) return;
+
+    selectedGameId = game.GameId;
+    selectedGame = game;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      var counters = await GameCountersRepository.GetAsync(UserId, game.GameId);
+      editCounters = counters ?? new Counter
+      {
+        TwitchUserId = UserId,
+        Deaths = 0,
+        Swears = 0,
+        Screams = 0,
+        Bits = 0,
+        LastUpdated = DateTimeOffset.UtcNow
+      };
+
+      editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+      int>(StringComparer.OrdinalIgnoreCase);
+
+      if (editCounters.LastUpdated == default)
+      {
+        editCounters.LastUpdated = DateTimeOffset.UtcNow;
+      }
+
+      // Load core counter selection for this game (seed defaults if missing)
+      var selection = await GameCoreCountersConfigRepository.GetAsync(UserId, game.GameId);
+      if (selection == null)
+      {
+        selection = new GameCoreCountersConfig(
+        UserId: UserId,
+        GameId: game.GameId,
+        DeathsEnabled: true,
+        SwearsEnabled: true,
+        ScreamsEnabled: true,
+        BitsEnabled: false,
+        UpdatedAt: DateTimeOffset.UtcNow);
+
+        await GameCoreCountersConfigRepository.SaveAsync(UserId, game.GameId, selection);
+      }
+
+      coreDeathsEnabled = selection.DeathsEnabled;
+      coreSwearsEnabled = selection.SwearsEnabled;
+      coreScreamsEnabled = selection.ScreamsEnabled;
+      coreBitsEnabled = selection.BitsEnabled;
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to load game counters: {ex.Message}";
+      editCounters = new Counter { TwitchUserId = UserId, LastUpdated = DateTimeOffset.UtcNow };
+    }
+  }
+
+  private async Task AddLibraryCounterToSelectedGame(string counterId)
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      await GameCounterSetupService.AddLibraryCounterToGameAsync(UserId, selectedGame.GameId, counterId);
+
+      var counters = await GameCountersRepository.GetAsync(UserId, selectedGame.GameId);
+      editCounters = counters ?? new Counter
+      {
+        TwitchUserId = UserId,
+        Deaths = 0,
+        Swears = 0,
+        Screams = 0,
+        Bits = 0,
+        LastUpdated = DateTimeOffset.UtcNow
+      };
+
+      editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+      int>(StringComparer.OrdinalIgnoreCase);
+      successMessage = "Counter added to game.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to add counter: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task SubmitCounterRequest()
+  {
+    if (isBusy) return;
+
+    if (string.IsNullOrWhiteSpace(counterRequestName))
+    {
+      errorMessage = "Counter name is required.";
+      return;
+    }
+
+    if (string.IsNullOrWhiteSpace(counterRequestIcon))
+    {
+      errorMessage = "Icon is required (e.g., bi-emoji-smile).";
+      return;
+    }
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      var request = new CounterRequest
+      {
+        RequestId = Guid.NewGuid().ToString("N"),
+        RequestedByUserId = UserId,
+        Name = counterRequestName.Trim(),
+        Icon = counterRequestIcon.Trim(),
+        Description = counterRequestDescription?.Trim() ?? string.Empty,
+        Status = "pending",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow
+      };
+
+      await CounterRequestRepository.CreateAsync(request);
+
+      counterRequestName = string.Empty;
+      counterRequestIcon = string.Empty;
+      counterRequestDescription = string.Empty;
+
+      successMessage = "Counter request submitted.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to submit request: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task SaveSelected()
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      editCounters.TwitchUserId = UserId;
+      editCounters.LastUpdated = DateTimeOffset.UtcNow;
+      await GameCountersRepository.SaveAsync(UserId, selectedGame.GameId, editCounters);
+
+      await GameCoreCountersConfigRepository.SaveAsync(
+      UserId,
+      selectedGame.GameId,
+      new GameCoreCountersConfig(
+      UserId: UserId,
+      GameId: selectedGame.GameId,
+      DeathsEnabled: coreDeathsEnabled,
+      SwearsEnabled: coreSwearsEnabled,
+      ScreamsEnabled: coreScreamsEnabled,
+      BitsEnabled: coreBitsEnabled,
+      UpdatedAt: DateTimeOffset.UtcNow));
+
+      await GameSwitchService.ApplyActiveCoreCountersSelectionAsync(UserId, selectedGame.GameId);
+
+      successMessage = "Saved game counters.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save game counters: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task ActivateSelected()
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      await GameSwitchService.HandleGameDetectedAsync(UserId, selectedGame.GameId, selectedGame.GameName,
+      selectedGame.BoxArtUrl);
+      var ctx = await GameContextRepository.GetAsync(UserId);
+      activeGameId = ctx?.ActiveGameId;
+      successMessage = $"Activated {selectedGame.GameName}.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to activate game: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private static string FormatBoxArt(string url)
+  {
+    if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+    return url.Replace("{width}", "52").Replace("{height}", "72");
+  }
+
+  private static bool IsCoreCounterId(string counterId)
+  {
+    if (string.IsNullOrWhiteSpace(counterId)) return false;
+    return string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static string GetCounterCheckboxId(string counterId)
+  {
+    var safe = new string((counterId ?? string.Empty)
+    .Select(c => char.IsLetterOrDigit(c) ? c : '_')
+    .ToArray());
+
+    if (string.IsNullOrWhiteSpace(safe))
+    {
+      safe = Guid.NewGuid().ToString("N");
+    }
+
+    return $"counterEnabled_{safe}";
+  }
+
+  private bool IsLibraryCounterEnabled(string counterId)
+  {
+    if (IsCoreCounterId(counterId))
+    {
+      if (string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)) return coreDeathsEnabled;
+      if (string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)) return coreSwearsEnabled;
+      if (string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)) return coreScreamsEnabled;
+      if (string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase)) return coreBitsEnabled;
+      return false;
+    }
+
+    return editCounters.CustomCounters != null && editCounters.CustomCounters.ContainsKey(counterId);
+  }
+
+  private async Task OnLibraryCounterEnabledChanged(string counterId, ChangeEventArgs e)
+  {
+    if (isBusy || selectedGame == null) return;
+
+    var enabled = e.Value switch
+    {
+      bool b => b,
+      string s when bool.TryParse(s, out var b) => b,
+      _ => false
+    };
+
+    if (IsCoreCounterId(counterId))
+    {
+      if (string.Equals(counterId, "deaths", StringComparison.OrdinalIgnoreCase)) coreDeathsEnabled = enabled;
+      else if (string.Equals(counterId, "swears", StringComparison.OrdinalIgnoreCase)) coreSwearsEnabled = enabled;
+      else if (string.Equals(counterId, "screams", StringComparison.OrdinalIgnoreCase)) coreScreamsEnabled = enabled;
+      else if (string.Equals(counterId, "bits", StringComparison.OrdinalIgnoreCase)) coreBitsEnabled = enabled;
+
+      return;
+    }
+
+    var currentlyEnabled = editCounters.CustomCounters != null && editCounters.CustomCounters.ContainsKey(counterId);
+    if (enabled && !currentlyEnabled)
+    {
+      await AddLibraryCounterToSelectedGame(counterId);
+    }
+    else if (!enabled && currentlyEnabled)
+    {
+      await RemoveLibraryCounterFromSelectedGame(counterId);
+    }
+  }
+
+  private async Task RemoveLibraryCounterFromSelectedGame(string counterId)
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      await GameCounterSetupService.RemoveLibraryCounterFromGameAsync(UserId, selectedGame.GameId, counterId);
+
+      var counters = await GameCountersRepository.GetAsync(UserId, selectedGame.GameId);
+      editCounters = counters ?? new Counter
+      {
+        TwitchUserId = UserId,
+        Deaths = 0,
+        Swears = 0,
+        Screams = 0,
+        Bits = 0,
+        LastUpdated = DateTimeOffset.UtcNow
+      };
+
+      editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+      int>(StringComparer.OrdinalIgnoreCase);
+      successMessage = "Counter removed from game.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to remove counter: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+}

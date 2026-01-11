@@ -1,0 +1,377 @@
+@page "/admin/games"
+@using Microsoft.AspNetCore.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@inject IGameLibraryRepository GameLibraryRepository
+@inject ITwitchApiService TwitchApiService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Admin - Game Library</PageTitle>
+
+<div class="container-fluid">
+  <div class="row mb-3">
+    <div class="col">
+      <h1 class="h3">Game Library (Global)</h1>
+      <div class="text-muted">CCLs are global and managed here.</div>
+    </div>
+  </div>
+
+  @if (!string.IsNullOrWhiteSpace(errorMessage))
+  {
+    <div class="alert alert-danger">
+      <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+    </div>
+  }
+
+  @if (!string.IsNullOrWhiteSpace(successMessage))
+  {
+    <div class="alert alert-success">
+      <i class="bi bi-check-circle me-2"></i>@successMessage
+    </div>
+  }
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div><i class="bi bi-search me-2"></i>Add / Find Game</div>
+          <button class="btn btn-sm btn-outline-secondary" @onclick="Reload" disabled="@isBusy">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-8">
+              <input class="form-control" placeholder="Search Twitch categories..." @bind="searchQuery"
+                @bind:event="oninput" disabled="@isBusy" />
+            </div>
+            <div class="col-4">
+              <button class="btn btn-primary w-100" @onclick="Search" disabled="@isBusy">
+                @if (isSearching)
+                {
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                <i class="bi bi-search me-1"></i>Search
+              </button>
+            </div>
+          </div>
+
+          @if (!string.IsNullOrWhiteSpace(searchError))
+          {
+            <div class="alert alert-danger mt-3 mb-0">
+              <i class="bi bi-exclamation-triangle me-2"></i>@searchError
+            </div>
+          }
+
+          @if (searchResults.Count > 0)
+          {
+            <div class="list-group mt-3">
+              @foreach (var result in searchResults)
+              {
+                var alreadyAdded = games.Any(g => string.Equals(g.GameId, result.Id, StringComparison.Ordinal));
+                <div class="list-group-item d-flex align-items-center gap-3">
+                  <div class="flex-fill">
+                    <div class="fw-semibold">@result.Name</div>
+                    <div class="small text-muted">Game ID: @result.Id</div>
+                  </div>
+                  <button class="btn btn-sm btn-outline-success" @onclick="() => AddOrSelect(result)" disabled="@isBusy">
+                    <i class="bi bi-plus-circle me-1"></i>@(alreadyAdded ? "Select" : "Add")
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <i class="bi bi-journal-text me-2"></i>Games (@games.Count)
+        </div>
+        <div class="card-body p-0">
+          @if (games.Count == 0)
+          {
+            <div class="text-center text-muted p-4">No games yet.</div>
+          }
+          else
+          {
+            <div class="list-group list-group-flush">
+              @foreach (var game in games)
+              {
+                var isSelected = selectedGameId != null && string.Equals(selectedGameId, game.GameId,
+                StringComparison.Ordinal);
+                <button type="button" class="list-group-item list-group-item-action @(isSelected ? "active" : "")"
+                  @onclick="() => SelectGame(game)" disabled="@isBusy">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <div class="fw-semibold">@game.GameName</div>
+                      <div class="small text-muted">@game.GameId</div>
+                    </div>
+                    <div class="small text-muted">Last seen: @game.LastSeenAt.ToLocalTime().ToString("g")</div>
+                  </div>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <i class="bi bi-sliders me-2"></i>CCL Configuration
+        </div>
+        <div class="card-body">
+          @if (selectedGame == null)
+          {
+            <div class="text-muted">Select a game to configure CCLs.</div>
+          }
+          else
+          {
+            <div class="mb-2">
+              <div class="h5 mb-1">@selectedGame.GameName</div>
+              <div class="small text-muted">Game ID: @selectedGame.GameId</div>
+            </div>
+
+            <div class="alert alert-info">
+              <i class="bi bi-info-circle me-2"></i>
+              CCLs are applied when the game is detected/activated.
+            </div>
+
+            <label class="form-label">Enabled Content Classification Labels</label>
+            <div class="d-flex flex-wrap gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclProfanity" @bind="cclProfanityVulgarity" />
+                <label class="form-check-label" for="cclProfanity">Profanity/Vulgarity</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclGambling" @bind="cclGambling" />
+                <label class="form-check-label" for="cclGambling">Gambling</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclViolence" @bind="cclViolentGraphic" />
+                <label class="form-check-label" for="cclViolence">Violent/Graphic</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclSexual" @bind="cclSexualThemes" />
+                <label class="form-check-label" for="cclSexual">Sexual Themes</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclDrugs" @bind="cclDrugsIntoxication" />
+                <label class="form-check-label" for="cclDrugs">Drugs/Intoxication</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cclPolitics"
+                  @bind="cclDebatedSocialIssuesAndPolitics" />
+                <label class="form-check-label" for="cclPolitics">Politics/Debated Issues</label>
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-end mt-3">
+              <button class="btn btn-success" @onclick="SaveCcls" disabled="@isBusy">
+                <i class="bi bi-save me-1"></i>Save CCLs
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+@code {
+  private bool isBusy;
+  private string? errorMessage;
+  private string? successMessage;
+
+  private string? adminUserId;
+
+  private List<GameLibraryItem> games = new();
+  private string? selectedGameId;
+  private GameLibraryItem? selectedGame;
+
+  private string searchQuery = string.Empty;
+  private bool isSearching;
+  private string? searchError;
+  private List<TwitchCategoryDto> searchResults = new();
+
+  private bool cclProfanityVulgarity;
+  private bool cclGambling;
+  private bool cclViolentGraphic;
+  private bool cclSexualThemes;
+  private bool cclDrugsIntoxication;
+  private bool cclDebatedSocialIssuesAndPolitics;
+
+  protected override async Task OnInitializedAsync()
+  {
+    var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+    adminUserId = authState.User.FindFirst("userId")?.Value;
+    await Reload();
+  }
+
+  private async Task Reload()
+  {
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      games = (await GameLibraryRepository.ListAsync("global")).ToList();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to load games: {ex.Message}";
+      games = new();
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private async Task Search()
+  {
+    if (isBusy) return;
+
+    searchError = null;
+    var q = (searchQuery ?? string.Empty).Trim();
+    if (q.Length < 2)
+    {
+      searchResults = new();
+      searchError = "Search query must be at least 2 characters.";
+      return;
+    }
+
+    if (string.IsNullOrWhiteSpace(adminUserId))
+    {
+      searchError = "Missing admin user context.";
+      return;
+    }
+
+    isSearching = true;
+    try
+    {
+      var results = await TwitchApiService.SearchCategoriesAsync(adminUserId, q, first: 20);
+      searchResults = results.ToList();
+    }
+    catch (Exception ex)
+    {
+      searchResults = new();
+      searchError = $"Failed to search Twitch categories: {ex.Message}";
+    }
+    finally
+    {
+      isSearching = false;
+    }
+  }
+
+  private async Task AddOrSelect(TwitchCategoryDto category)
+  {
+    if (isBusy) return;
+
+    if (string.IsNullOrWhiteSpace(category.Id) || string.IsNullOrWhiteSpace(category.Name))
+    {
+      searchError = "Invalid category.";
+      return;
+    }
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      var existing = games.FirstOrDefault(g => string.Equals(g.GameId, category.Id, StringComparison.Ordinal));
+      if (existing == null)
+      {
+        var now = DateTimeOffset.UtcNow;
+        await GameLibraryRepository.UpsertAsync(new GameLibraryItem
+        {
+          UserId = "global",
+          GameId = category.Id.Trim(),
+          GameName = category.Name.Trim(),
+          BoxArtUrl = category.BoxArtUrl?.Trim() ?? string.Empty,
+          CreatedAt = now,
+          LastSeenAt = now,
+          EnabledContentClassificationLabels = null
+        });
+
+        await Reload();
+        existing = games.FirstOrDefault(g => string.Equals(g.GameId, category.Id, StringComparison.Ordinal));
+        successMessage = "Game added.";
+      }
+
+      if (existing != null)
+      {
+        SelectGame(existing);
+      }
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to add/select game: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+
+  private void SelectGame(GameLibraryItem game)
+  {
+    selectedGameId = game.GameId;
+    selectedGame = game;
+
+    var enabled = (game.EnabledContentClassificationLabels ?? new
+    List<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    cclProfanityVulgarity = enabled.Contains("ProfanityVulgarity");
+    cclGambling = enabled.Contains("Gambling");
+    cclViolentGraphic = enabled.Contains("ViolentGraphic");
+    cclSexualThemes = enabled.Contains("SexualThemes");
+    cclDrugsIntoxication = enabled.Contains("DrugsIntoxication");
+    cclDebatedSocialIssuesAndPolitics = enabled.Contains("DebatedSocialIssuesAndPolitics");
+  }
+
+  private async Task SaveCcls()
+  {
+    if (isBusy || selectedGame == null) return;
+
+    isBusy = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      var enabled = new List<string>();
+      if (cclDebatedSocialIssuesAndPolitics) enabled.Add("DebatedSocialIssuesAndPolitics");
+      if (cclDrugsIntoxication) enabled.Add("DrugsIntoxication");
+      if (cclSexualThemes) enabled.Add("SexualThemes");
+      if (cclViolentGraphic) enabled.Add("ViolentGraphic");
+      if (cclGambling) enabled.Add("Gambling");
+      if (cclProfanityVulgarity) enabled.Add("ProfanityVulgarity");
+
+      selectedGame.EnabledContentClassificationLabels = enabled;
+      await GameLibraryRepository.UpsertAsync(selectedGame);
+
+      await Reload();
+      var refreshed = games.FirstOrDefault(g => string.Equals(g.GameId, selectedGame.GameId, StringComparison.Ordinal));
+      if (refreshed != null)
+      {
+        SelectGame(refreshed);
+      }
+
+      successMessage = "Saved CCL configuration.";
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save CCLs: {ex.Message}";
+    }
+    finally
+    {
+      isBusy = false;
+    }
+  }
+}

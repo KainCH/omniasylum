@@ -115,7 +115,18 @@ namespace OmniForge.Infrastructure.Services
             }
 
             var mux = await _connection.Value.ConfigureAwait(false);
-            return mux?.GetDatabase();
+            if (mux == null)
+            {
+                return null;
+            }
+
+            // If Redis isn't connected, skip caching entirely to avoid per-operation timeouts.
+            if (!mux.IsConnected)
+            {
+                return null;
+            }
+
+            return mux.GetDatabase();
         }
 
         private async Task<IConnectionMultiplexer?> ConnectAsync()
@@ -137,8 +148,26 @@ namespace OmniForge.Infrastructure.Services
                 options.AbortOnConnectFail = false;
 
                 var mux = await ConnectionMultiplexer.ConnectAsync(options).ConfigureAwait(false);
-                _logger.LogInformation("✅ Connected to Redis for caching. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
-                return mux;
+                try
+                {
+                    // Proactively validate connectivity; if this fails, treat Redis as unavailable.
+                    await mux.GetDatabase().PingAsync().ConfigureAwait(false);
+                    _logger.LogInformation("✅ Connected to Redis for caching. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
+                    return mux;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Redis connected but not ready; disabling cache. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
+                    try
+                    {
+                        mux.Dispose();
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        _logger.LogDebug(disposeEx, "⚠️ Failed disposing Redis connection (connect failure)");
+                    }
+                    return null;
+                }
             }
             catch (Exception ex)
             {
@@ -169,17 +198,17 @@ namespace OmniForge.Infrastructure.Services
                                     t.Result?.Dispose();
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // Ignore dispose failures
+                                _logger.LogDebug(ex, "⚠️ Failed disposing Redis connection (async)");
                             }
                         }, TaskScheduler.Default);
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore dispose failures
+                _logger.LogDebug(ex, "⚠️ Failed disposing Redis connection");
             }
         }
     }

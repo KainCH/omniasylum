@@ -9,6 +9,7 @@ namespace OmniForge.Core.Interfaces
         string GetAuthorizationUrl(string redirectUri);
         Task<TwitchTokenResponse?> ExchangeCodeForTokenAsync(string code, string redirectUri);
         Task<TwitchTokenResponse?> RefreshTokenAsync(string refreshToken);
+        Task<string?> GetAppAccessTokenAsync(IReadOnlyCollection<string>? scopes = null);
         Task<TwitchUserInfo?> GetUserInfoAsync(string accessToken, string clientId);
         Task<string?> GetOidcKeysAsync();
         Task<IReadOnlyList<string>> GetTokenScopesAsync(string accessToken);

@@ -15,6 +15,13 @@ namespace OmniForge.Core.Interfaces
         Task<StreamInfo?> GetStreamInfoAsync(string userId);
         Task<ClipInfo?> CreateClipAsync(string userId);
 
+        // Games/Categories
+        Task<IReadOnlyList<TwitchCategoryDto>> SearchCategoriesAsync(string userId, string query, int first = 20);
+        Task<TwitchChannelCategoryDto?> GetChannelCategoryAsync(string userId);
+
+        // Channel updates
+        Task UpdateChannelInformationAsync(string userId, string gameId, IReadOnlyCollection<string> enabledContentClassificationLabels);
+
         // Moderation
         Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default);
 
@@ -71,6 +78,20 @@ namespace OmniForge.Core.Interfaces
         public string Game { get; set; } = string.Empty;
         public int Viewers { get; set; }
         public DateTimeOffset? StartedAt { get; set; }
+    }
+
+    public class TwitchCategoryDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string BoxArtUrl { get; set; } = string.Empty;
+    }
+
+    public class TwitchChannelCategoryDto
+    {
+        public string BroadcasterId { get; set; } = string.Empty;
+        public string GameId { get; set; } = string.Empty;
+        public string GameName { get; set; } = string.Empty;
     }
 
     public class ClipInfo
