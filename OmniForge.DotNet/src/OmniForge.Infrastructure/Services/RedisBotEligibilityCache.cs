@@ -158,7 +158,14 @@ namespace OmniForge.Infrastructure.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "⚠️ Redis connected but not ready; disabling cache. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
-                    try { mux.Dispose(); } catch { }
+                    try
+                    {
+                        mux.Dispose();
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        _logger.LogDebug(disposeEx, "⚠️ Failed disposing Redis connection (connect failure)");
+                    }
                     return null;
                 }
             }
