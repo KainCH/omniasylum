@@ -11,11 +11,15 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
     /// </summary>
     public class StreamOfflineHandler : BaseEventSubHandler
     {
+        private readonly IDiscordInviteBroadcastScheduler _discordInviteBroadcastScheduler;
+
         public StreamOfflineHandler(
             IServiceScopeFactory scopeFactory,
-            ILogger<StreamOfflineHandler> logger)
+            ILogger<StreamOfflineHandler> logger,
+            IDiscordInviteBroadcastScheduler discordInviteBroadcastScheduler)
             : base(scopeFactory, logger)
         {
+            _discordInviteBroadcastScheduler = discordInviteBroadcastScheduler;
         }
 
         public override string SubscriptionType => "stream.offline";
@@ -31,6 +35,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
 
             Logger.LogInformation("Stream Offline: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
+
+            // Stop periodic Discord invite broadcasting.
+            await _discordInviteBroadcastScheduler.StopAsync(broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();
             var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();

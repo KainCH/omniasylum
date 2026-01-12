@@ -1,13 +1,9 @@
 using System;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OmniForge.Core.Interfaces;
-using OmniForge.Infrastructure.Configuration;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -17,24 +13,27 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
     public class DiscordInviteSender : IDiscordInviteSender
     {
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<DiscordInviteSender> _logger;
-        private readonly TwitchSettings _twitchSettings;
         private readonly IDiscordNotificationTracker _notificationTracker;
+        private readonly IMonitoringRegistry _monitoringRegistry;
+        private readonly ITwitchBotEligibilityService _botEligibilityService;
+        private readonly ITwitchApiService _twitchApiService;
         private readonly TimeSpan _throttleDuration = TimeSpan.FromMinutes(5);
 
         public DiscordInviteSender(
             IServiceScopeFactory scopeFactory,
-            IHttpClientFactory httpClientFactory,
             ILogger<DiscordInviteSender> logger,
-            IOptions<TwitchSettings> twitchSettings,
-            IDiscordNotificationTracker notificationTracker)
+            IDiscordNotificationTracker notificationTracker,
+            IMonitoringRegistry monitoringRegistry,
+            ITwitchBotEligibilityService botEligibilityService,
+            ITwitchApiService twitchApiService)
         {
             _scopeFactory = scopeFactory;
-            _httpClientFactory = httpClientFactory;
             _logger = logger;
-            _twitchSettings = twitchSettings.Value;
             _notificationTracker = notificationTracker;
+            _monitoringRegistry = monitoringRegistry;
+            _botEligibilityService = botEligibilityService;
+            _twitchApiService = twitchApiService;
         }
 
         public async Task SendDiscordInviteAsync(string broadcasterId)
@@ -53,7 +52,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
             var user = await userRepository.GetUserAsync(broadcasterId);
 
-            if (user == null || string.IsNullOrEmpty(user.AccessToken))
+            if (user == null)
             {
                 return;
             }
@@ -66,30 +65,31 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                 string message = $"Join our Discord community! {discordInviteLink}";
 
-                // Send message to chat
-                var client = _httpClientFactory.CreateClient();
-                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages");
-                request.Headers.Add("Client-Id", _twitchSettings.ClientId);
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", user.AccessToken);
-
-                var payload = new
+                // Resolve bot user id from monitoring registry, or (if needed) eligibility cache.
+                string? botUserId = null;
+                if (_monitoringRegistry.TryGetState(broadcasterId, out var state) && state.UseBot && !string.IsNullOrWhiteSpace(state.BotUserId))
                 {
-                    broadcaster_id = broadcasterId,
-                    sender_id = broadcasterId,
-                    message
-                };
-
-                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                var response = await client.SendAsync(request);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Failed to send chat message. Status: {StatusCode}, Error: {Error}",
-                        response.StatusCode, errorContent);
-                    throw new HttpRequestException($"Failed to send chat message: {response.StatusCode}");
+                    botUserId = state.BotUserId;
                 }
+                else if (!string.IsNullOrWhiteSpace(user.AccessToken))
+                {
+                    var eligibility = await _botEligibilityService.GetEligibilityAsync(broadcasterId, user.AccessToken);
+                    _monitoringRegistry.SetState(broadcasterId, new MonitoringState(eligibility.UseBot, eligibility.BotUserId, DateTimeOffset.UtcNow));
+                    if (eligibility.UseBot && !string.IsNullOrWhiteSpace(eligibility.BotUserId))
+                    {
+                        botUserId = eligibility.BotUserId;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(botUserId))
+                {
+                    _logger.LogWarning(
+                        "⚠️ Skipping Discord invite chat send (must use app/bot token only). broadcaster_id={BroadcasterId}",
+                        LogSanitizer.Sanitize(broadcasterId));
+                    return;
+                }
+
+                await _twitchApiService.SendChatMessageAsBotAsync(broadcasterId, botUserId, message);
 
                 // Update tracker
                 _notificationTracker.RecordNotification(broadcasterId, true);

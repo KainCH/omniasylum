@@ -30,6 +30,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly Mock<ITwitchApiService> _mockTwitchApiService;
         private readonly Mock<IGameLibraryRepository> _mockGameLibraryRepository;
+        private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOnlineHandler _handler;
 
         public StreamOnlineHandlerTests()
@@ -48,6 +49,7 @@ namespace OmniForge.Tests.EventHandlers
             _mockAuthService = new Mock<ITwitchAuthService>();
             _mockTwitchApiService = new Mock<ITwitchApiService>();
             _mockGameLibraryRepository = new Mock<IGameLibraryRepository>();
+            _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
             {
@@ -62,7 +64,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockLogger.Object,
                 _mockSettings.Object,
                 _mockDiscordTracker.Object,
-                _mockAuthService.Object);
+                _mockAuthService.Object,
+                _mockDiscordInviteBroadcastScheduler.Object);
         }
 
         private void SetupDependencyInjection()
@@ -95,6 +98,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -113,6 +117,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -135,6 +140,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -477,6 +483,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOfflineHandler _handler;
 
         public StreamOfflineHandlerTests()
@@ -488,10 +495,14 @@ namespace OmniForge.Tests.EventHandlers
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             SetupDependencyInjection();
 
-            _handler = new StreamOfflineHandler(_mockScopeFactory.Object, _mockLogger.Object);
+            _handler = new StreamOfflineHandler(
+                _mockScopeFactory.Object,
+                _mockLogger.Object,
+                _mockDiscordInviteBroadcastScheduler.Object);
         }
 
         private void SetupDependencyInjection()
@@ -515,6 +526,7 @@ namespace OmniForge.Tests.EventHandlers
             var eventData = JsonDocument.Parse("{}").RootElement;
             await _handler.HandleAsync(eventData);
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -534,6 +546,7 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null)), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -553,6 +566,7 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync("123", counters), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
         }
     }
 

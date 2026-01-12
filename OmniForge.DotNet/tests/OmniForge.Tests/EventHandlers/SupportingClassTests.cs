@@ -158,24 +158,25 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
-        private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
         private readonly Mock<ILogger<DiscordInviteSender>> _mockLogger;
-        private readonly Mock<IOptions<TwitchSettings>> _mockTwitchSettings;
         private readonly Mock<IDiscordNotificationTracker> _mockTracker;
         private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry;
+        private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
 
         public DiscordInviteSenderTests()
         {
             _mockScopeFactory = new Mock<IServiceScopeFactory>();
             _mockScope = new Mock<IServiceScope>();
             _mockServiceProvider = new Mock<IServiceProvider>();
-            _mockHttpClientFactory = new Mock<IHttpClientFactory>();
             _mockLogger = new Mock<ILogger<DiscordInviteSender>>();
-            _mockTwitchSettings = new Mock<IOptions<TwitchSettings>>();
             _mockTracker = new Mock<IDiscordNotificationTracker>();
             _mockUserRepository = new Mock<IUserRepository>();
 
-            _mockTwitchSettings.Setup(x => x.Value).Returns(new TwitchSettings { ClientId = "test" });
+            _mockMonitoringRegistry = new Mock<IMonitoringRegistry>();
+            _mockBotEligibilityService = new Mock<ITwitchBotEligibilityService>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
 
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
@@ -191,16 +192,19 @@ namespace OmniForge.Tests.EventHandlers
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockTwitchApiService.Verify(x => x.SendChatMessageAsBotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+            _mockTracker.Verify(x => x.RecordNotification(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
@@ -212,107 +216,119 @@ namespace OmniForge.Tests.EventHandlers
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
+            _mockTwitchApiService.Verify(x => x.SendChatMessageAsBotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             _mockTracker.Verify(x => x.RecordNotification(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
-        public async Task SendDiscordInviteAsync_WhenUserHasNoToken_ShouldNotSend()
+        public async Task SendDiscordInviteAsync_WhenCannotUseBot_ShouldNotSend()
         {
             // Arrange
             _mockTracker.Setup(x => x.GetLastNotification("123")).Returns((ValueTuple<DateTimeOffset, bool>?)null);
-            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(new User { TwitchUserId = "123" });
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(new User { TwitchUserId = "123", AccessToken = "token123" });
+
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out It.Ref<MonitoringState>.IsAny))
+                .Returns(false);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "token123", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(false, null, "not_mod"));
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
+            _mockTwitchApiService.Verify(x => x.SendChatMessageAsBotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             _mockTracker.Verify(x => x.RecordNotification(It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
-        public async Task SendDiscordInviteAsync_WhenSuccessful_ShouldRecordSuccess()
+        public async Task SendDiscordInviteAsync_WhenMonitoringStateUsesBot_ShouldSendAndRecordSuccess()
         {
             // Arrange
             _mockTracker.Setup(x => x.GetLastNotification("123")).Returns((ValueTuple<DateTimeOffset, bool>?)null);
             _mockUserRepository.Setup(x => x.GetUserAsync("123"))
-                .ReturnsAsync(new User { TwitchUserId = "123", AccessToken = "token123" });
+                .ReturnsAsync(new User { TwitchUserId = "123", DiscordInviteLink = "https://discord.gg/customlink" });
 
-            var mockHandler = new Mock<HttpMessageHandler>();
-            mockHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
-
-            var httpClient = new HttpClient(mockHandler.Object);
-            _mockHttpClientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            var state = new MonitoringState(true, "999", DateTimeOffset.UtcNow);
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out state))
+                .Returns(true);
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
+            _mockTwitchApiService.Verify(
+                x => x.SendChatMessageAsBotAsync("123", "999", It.Is<string>(m => m.Contains("customlink")), null),
+                Times.Once);
             _mockTracker.Verify(x => x.RecordNotification("123", true), Times.Once);
         }
 
         [Fact]
-        public async Task SendDiscordInviteAsync_WhenFails_ShouldRecordFailure()
+        public async Task SendDiscordInviteAsync_WhenEligibilityUsesBot_ShouldCacheStateSendAndRecordSuccess()
         {
             // Arrange
             _mockTracker.Setup(x => x.GetLastNotification("123")).Returns((ValueTuple<DateTimeOffset, bool>?)null);
             _mockUserRepository.Setup(x => x.GetUserAsync("123"))
                 .ReturnsAsync(new User { TwitchUserId = "123", AccessToken = "token123" });
 
-            var mockHandler = new Mock<HttpMessageHandler>();
-            mockHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.BadRequest });
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out It.Ref<MonitoringState>.IsAny))
+                .Returns(false);
 
-            var httpClient = new HttpClient(mockHandler.Object);
-            _mockHttpClientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "token123", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(true, "999", null));
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
-            _mockTracker.Verify(x => x.RecordNotification("123", false), Times.Once);
+            _mockMonitoringRegistry.Verify(x => x.SetState("123", It.Is<MonitoringState>(s => s.UseBot && s.BotUserId == "999")), Times.Once);
+            _mockTwitchApiService.Verify(
+                x => x.SendChatMessageAsBotAsync("123", "999", It.IsAny<string>(), null),
+                Times.Once);
+            _mockTracker.Verify(x => x.RecordNotification("123", true), Times.Once);
         }
 
         [Fact]
-        public async Task SendDiscordInviteAsync_WhenUserHasCustomDiscordLink_ShouldUseIt()
+        public async Task SendDiscordInviteAsync_WhenUserHasNoCustomLink_ShouldUseFallbackLink()
         {
             // Arrange
             _mockTracker.Setup(x => x.GetLastNotification("123")).Returns((ValueTuple<DateTimeOffset, bool>?)null);
@@ -320,37 +336,29 @@ namespace OmniForge.Tests.EventHandlers
                 .ReturnsAsync(new User
                 {
                     TwitchUserId = "123",
-                    AccessToken = "token123",
-                    DiscordInviteLink = "https://discord.gg/customlink"
+                    DiscordInviteLink = string.Empty
                 });
 
-            HttpRequestMessage? capturedRequest = null;
-            var mockHandler = new Mock<HttpMessageHandler>();
-            mockHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>())
-                .Callback<HttpRequestMessage, CancellationToken>((req, _) => capturedRequest = req)
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
-
-            var httpClient = new HttpClient(mockHandler.Object);
-            _mockHttpClientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            var state = new MonitoringState(true, "999", DateTimeOffset.UtcNow);
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out state))
+                .Returns(true);
 
             var sender = new DiscordInviteSender(
                 _mockScopeFactory.Object,
-                _mockHttpClientFactory.Object,
                 _mockLogger.Object,
-                _mockTwitchSettings.Object,
-                _mockTracker.Object);
+                _mockTracker.Object,
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockTwitchApiService.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
 
             // Assert
-            Assert.NotNull(capturedRequest);
-            var content = await capturedRequest!.Content!.ReadAsStringAsync();
-            Assert.Contains("customlink", content);
+            _mockTwitchApiService.Verify(
+                x => x.SendChatMessageAsBotAsync("123", "999", It.Is<string>(m => m.Contains("discord.gg/omniasylum")), null),
+                Times.Once);
         }
     }
 }
