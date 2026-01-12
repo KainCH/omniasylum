@@ -28,7 +28,7 @@ namespace OmniForge.Tests
 
         private sealed class FakeBotClient : ITwitchBotClient
         {
-            public bool IsConnected { get; private set; } = true;
+            public bool IsConnected { get; set; } = true;
 
 #pragma warning disable CS0067
             public event EventHandler<TwitchLib.Client.Events.OnLogArgs>? OnLog;

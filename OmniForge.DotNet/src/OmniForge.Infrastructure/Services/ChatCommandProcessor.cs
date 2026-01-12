@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace OmniForge.Infrastructure.Services
@@ -40,6 +41,17 @@ namespace OmniForge.Infrastructure.Services
         // Cache for custom counter trigger resolution: (userId + enabledIdsKey) -> trigger map
         private readonly ConcurrentDictionary<string, (DateTimeOffset ExpiresAt, Dictionary<string, string> TriggerToCounterId)> _customCounterTriggerCache = new();
 
+        // Shared cache for counter library items to avoid repeated ListAsync calls.
+        // Cache is per repository instance to avoid cross-instance pollution (and to keep tests isolated).
+        private sealed class CounterLibraryCacheEntry
+        {
+            public DateTimeOffset ExpiresAt { get; set; }
+            public CounterLibraryItem[] Items { get; set; } = Array.Empty<CounterLibraryItem>();
+            public SemaphoreSlim Gate { get; } = new(1, 1);
+        }
+
+        private static readonly ConditionalWeakTable<ICounterLibraryRepository, CounterLibraryCacheEntry> CounterLibraryCache = new();
+
         private static readonly Regex AttachedAmountRegex = new(
             @"^(.+[\+\-])(\d+)$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -47,6 +59,14 @@ namespace OmniForge.Infrastructure.Services
         private static readonly Regex CustomCounterCommandRegex = new(
             @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+        // Custom counter trigger cache expiration.
+        // 5 minutes: reduces DB reads on chat spam while keeping admin edits reasonably fresh.
+        private static readonly TimeSpan CustomCounterTriggerCacheTtl = TimeSpan.FromMinutes(5);
+
+        // Counter library cache expiration.
+        // Kept the same as the trigger cache for simplicity.
+        private static readonly TimeSpan CounterLibraryCacheTtl = TimeSpan.FromMinutes(5);
 
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
@@ -530,7 +550,7 @@ namespace OmniForge.Infrastructure.Services
             var triggerToCounterId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // Avoid N+1 queries by fetching the library once.
-            var libraryItems = await counterLibraryRepository.ListAsync() ?? Array.Empty<CounterLibraryItem>();
+            var libraryItems = await GetCounterLibraryItemsCachedAsync(counterLibraryRepository);
             var enabledIds = new HashSet<string>(enabledCounterIds, StringComparer.OrdinalIgnoreCase);
             var libraryById = libraryItems
                 .Where(i => !string.IsNullOrWhiteSpace(i.CounterId) && enabledIds.Contains(i.CounterId))
@@ -563,11 +583,52 @@ namespace OmniForge.Infrastructure.Services
                 }
             }
 
-            _customCounterTriggerCache[cacheKey] = (now.AddMinutes(5), triggerToCounterId);
+            _customCounterTriggerCache[cacheKey] = (now.Add(CustomCounterTriggerCacheTtl), triggerToCounterId);
 
             return triggerToCounterId.TryGetValue(requestedToken, out var resolved)
                 ? resolved
                 : null;
+        }
+
+        private async Task<CounterLibraryItem[]> GetCounterLibraryItemsCachedAsync(ICounterLibraryRepository counterLibraryRepository)
+        {
+            var now = DateTimeOffset.UtcNow;
+
+            var entry = CounterLibraryCache.GetValue(counterLibraryRepository, _ => new CounterLibraryCacheEntry());
+            if (entry.ExpiresAt > now)
+            {
+                return entry.Items;
+            }
+
+            await entry.Gate.WaitAsync();
+            try
+            {
+                // Double-check after acquiring the lock.
+                if (entry.ExpiresAt > now)
+                {
+                    return entry.Items;
+                }
+
+                CounterLibraryItem[] items;
+                try
+                {
+                    var fetched = await counterLibraryRepository.ListAsync();
+                    items = fetched?.ToArray() ?? Array.Empty<CounterLibraryItem>();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Failed to fetch counter library items; using empty list for trigger resolution.");
+                    items = Array.Empty<CounterLibraryItem>();
+                }
+
+                entry.Items = items;
+                entry.ExpiresAt = now.Add(CounterLibraryCacheTtl);
+                return entry.Items;
+            }
+            finally
+            {
+                entry.Gate.Release();
+            }
         }
 
         private void TryAddTrigger(
