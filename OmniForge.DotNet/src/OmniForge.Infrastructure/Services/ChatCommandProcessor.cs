@@ -8,6 +8,8 @@ using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace OmniForge.Infrastructure.Services
@@ -41,6 +43,10 @@ namespace OmniForge.Infrastructure.Services
         private static readonly Regex AttachedAmountRegex = new(
             @"^(.+[\+\-])(\d+)$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private static readonly Regex CustomCounterCommandRegex = new(
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
@@ -332,7 +338,7 @@ namespace OmniForge.Infrastructure.Services
 
             // NOTE: Counter IDs may include '-' but a trailing '-' is interpreted as the decrement operator.
             // This pattern allows internal hyphens but prevents the trailing operator from being consumed by the id.
-            var match = Regex.Match(commandText, @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$", RegexOptions.IgnoreCase);
+            var match = CustomCounterCommandRegex.Match(commandText);
             if (!match.Success)
             {
                 return false;
@@ -425,6 +431,11 @@ namespace OmniForge.Infrastructure.Services
             // Mutation commands are mod/broadcaster only.
             if (!isMod)
             {
+                _logger.LogDebug(
+                    "Ignoring custom counter mutation from non-mod/broadcaster. user_id={UserId} counter_id={CounterId} op={Op}",
+                    LogSanitizer.Sanitize(context.UserId),
+                    LogSanitizer.Sanitize(actualCounterId),
+                    LogSanitizer.Sanitize(op));
                 return true;
             }
 
@@ -505,7 +516,8 @@ namespace OmniForge.Infrastructure.Services
                 .ToArray();
 
             var enabledIdsKey = string.Join('|', enabledCounterIds);
-            var cacheKey = $"{userId}:{enabledIdsKey}";
+            var enabledIdsKeyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(enabledIdsKey)));
+            var cacheKey = $"{userId}:{enabledIdsKeyHash}";
 
             var now = DateTimeOffset.UtcNow;
             if (_customCounterTriggerCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
