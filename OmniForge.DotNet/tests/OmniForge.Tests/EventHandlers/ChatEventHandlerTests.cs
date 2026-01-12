@@ -19,6 +19,8 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IChatCommandProcessor> _mockChatCommandProcessor;
         private readonly Mock<ITwitchApiService> _mockTwitchApiService;
         private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry;
+        private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService;
+        private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly ChatMessageHandler _handler;
 
         public ChatMessageHandlerTests()
@@ -29,6 +31,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockChatCommandProcessor = new Mock<IChatCommandProcessor>();
             _mockTwitchApiService = new Mock<ITwitchApiService>();
             _mockMonitoringRegistry = new Mock<IMonitoringRegistry>();
+            _mockBotEligibilityService = new Mock<ITwitchBotEligibilityService>();
+            _mockUserRepository = new Mock<IUserRepository>();
 
             _handler = new ChatMessageHandler(
                 _mockScopeFactory.Object,
@@ -36,7 +40,9 @@ namespace OmniForge.Tests.EventHandlers
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
                 _mockTwitchApiService.Object,
-                _mockMonitoringRegistry.Object);
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockUserRepository.Object);
         }
 
         [Fact]

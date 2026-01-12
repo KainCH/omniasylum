@@ -137,6 +137,32 @@ namespace OmniForge.Infrastructure.Services
                     {
                         if (!cmdConfig.Enabled) return;
 
+                        // If this is an increment/decrement command targeting a custom counter, route through
+                        // the custom counter handler so we respect IncrementBy/DecrementBy, milestones, and
+                        // storage-safe atomic updates.
+                        var actionForRouting = cmdConfig.Action?.ToLowerInvariant();
+                        if ((actionForRouting == "increment" || actionForRouting == "decrement")
+                            && !string.IsNullOrWhiteSpace(cmdConfig.Counter)
+                            && cmdConfig.Counter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                .Any(t => t is not "deaths" and not "swears" and not "screams" and not "bits"))
+                        {
+                            var handledCustom = await TryHandleCustomCounterCommandAsync(
+                                context,
+                                commandText,
+                                requestedAmount,
+                                maxIncrement,
+                                isMod,
+                                sendMessage,
+                                counterRepository,
+                                counterLibraryRepository,
+                                counters);
+
+                            if (handledCustom)
+                            {
+                                return;
+                            }
+                        }
+
                         // Determine amount: Attached > Requested > Default(1)
                         var amountToUse = attachedAmount ?? requestedAmount ?? 1;
                         var amount = Math.Clamp(amountToUse, 1, maxIncrement);
@@ -190,7 +216,7 @@ namespace OmniForge.Infrastructure.Services
 
                             if (!onCooldown)
                             {
-                                var action = cmdConfig.Action?.ToLowerInvariant();
+                                var action = actionForRouting;
                                 if (!string.IsNullOrWhiteSpace(action))
                                 {
                                     changed = ApplyActionToCounters(user, counters, action, cmdConfig.Counter, amount) || changed;
