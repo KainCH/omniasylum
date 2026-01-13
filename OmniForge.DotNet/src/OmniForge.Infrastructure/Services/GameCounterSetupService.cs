@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -79,8 +80,8 @@ namespace OmniForge.Infrastructure.Services
             gameChatConfig.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
 
             var defaultBase = $"!{libraryItem.CounterId}";
-            var primaryBaseCommand = NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
-            var aliasBaseCommand = NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
+            var primaryBaseCommand = CommandNormalization.NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
+            var aliasBaseCommand = CommandNormalization.NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
             if (!string.IsNullOrWhiteSpace(aliasBaseCommand)
                 && string.Equals(aliasBaseCommand, primaryBaseCommand, StringComparison.OrdinalIgnoreCase))
             {
@@ -203,8 +204,8 @@ namespace OmniForge.Infrastructure.Services
             if (libraryItem != null)
             {
                 var defaultBase = $"!{libraryItem.CounterId}";
-                var primaryBaseCommand = NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
-                var aliasBaseCommand = NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
+                var primaryBaseCommand = CommandNormalization.NormalizeBaseCommandOrDefault(libraryItem.LongCommand, defaultBase);
+                var aliasBaseCommand = CommandNormalization.NormalizeBaseCommandOrEmpty(libraryItem.AliasCommand);
                 if (!string.IsNullOrWhiteSpace(aliasBaseCommand)
                     && string.Equals(aliasBaseCommand, primaryBaseCommand, StringComparison.OrdinalIgnoreCase))
                 {
@@ -281,29 +282,5 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("✅ Removed library counter {CounterId} from game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
         }
 
-        private static string NormalizeBaseCommandOrDefault(string? command, string fallback)
-        {
-            var normalized = NormalizeBaseCommandOrEmpty(command);
-            if (string.IsNullOrWhiteSpace(normalized) || string.Equals(normalized, "!", StringComparison.Ordinal))
-            {
-                normalized = NormalizeBaseCommandOrEmpty(fallback);
-            }
-
-            return normalized;
-        }
-
-        private static string NormalizeBaseCommandOrEmpty(string? command)
-        {
-            var c = (command ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(c)) return string.Empty;
-
-            if (!c.StartsWith("!", StringComparison.Ordinal))
-            {
-                c = "!" + c;
-            }
-
-            c = c.TrimEnd('+', '-');
-            return c.ToLowerInvariant();
-        }
     }
 }

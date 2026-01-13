@@ -43,6 +43,8 @@ namespace OmniForge.Tests
         private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService;
         private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly Mock<IGameSwitchService> _mockGameSwitchService;
         private readonly StreamMonitorService _service;
 
         private sealed class TestableStreamMonitorService : StreamMonitorService
@@ -91,6 +93,8 @@ namespace OmniForge.Tests
             _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
             _mockBotEligibilityService = new Mock<ITwitchBotEligibilityService>();
             _mockMonitoringRegistry = new Mock<IMonitoringRegistry>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
+            _mockGameSwitchService = new Mock<IGameSwitchService>();
 
             // Setup TwitchAPI mock
             _mockTwitchApi = new Mock<TwitchAPI>(MockBehavior.Loose, null!, null!, _mockApiSettings.Object, null!);
@@ -125,6 +129,8 @@ namespace OmniForge.Tests
             _mockServiceProvider.Setup(x => x.GetService(typeof(IBotCredentialRepository))).Returns(_mockBotCredentialRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchBotEligibilityService))).Returns(_mockBotEligibilityService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IMonitoringRegistry))).Returns(_mockMonitoringRegistry.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchApiService))).Returns(_mockTwitchApiService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameSwitchService))).Returns(_mockGameSwitchService.Object);
 
             _service = new TestableStreamMonitorService(
                 _mockEventSubService.Object,
@@ -172,6 +178,113 @@ namespace OmniForge.Tests
             var result = await _service.SubscribeToUserAsAsync("123", "999");
 
             Assert.Equal(SubscriptionResult.Unauthorized, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenTokenClientIdMismatch_ShouldReturnRequiresReauth()
+        {
+            var service = new TestableStreamMonitorService(
+                _mockEventSubService.Object,
+                _mockTwitchApi.Object,
+                _mockHttpClientFactory.Object,
+                _mockLogger.Object,
+                _mockScopeFactory.Object,
+                _mockTwitchSettings.Object,
+                _mockDiscordTracker.Object,
+                "123",
+                "testuser",
+                "different_client",
+                new List<string> { "moderation:read", "user:read:chat", "moderator:read:followers" });
+
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            var result = await service.SubscribeToUserAsync("123");
+
+            Assert.Equal(SubscriptionResult.RequiresReauth, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenMissingModerationReadScope_ShouldReturnRequiresReauth()
+        {
+            var service = new TestableStreamMonitorService(
+                _mockEventSubService.Object,
+                _mockTwitchApi.Object,
+                _mockHttpClientFactory.Object,
+                _mockLogger.Object,
+                _mockScopeFactory.Object,
+                _mockTwitchSettings.Object,
+                _mockDiscordTracker.Object,
+                "123",
+                "testuser",
+                "test_client",
+                new List<string> { "user:read:chat", "moderator:read:followers" });
+
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            var result = await service.SubscribeToUserAsync("123");
+
+            Assert.Equal(SubscriptionResult.RequiresReauth, result);
+        }
+
+        [Fact]
+        public async Task SubscribeToUserAsync_WhenChannelCategoryReturned_ShouldSeedGameSwitch()
+        {
+            var user = new User
+            {
+                TwitchUserId = "123",
+                AccessToken = "broadcaster_access",
+                RefreshToken = "broadcaster_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1),
+                Role = "streamer"
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "broadcaster_access", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new BotEligibilityResult(false, null, "not mod"));
+
+            _mockHelixWrapper
+                .Setup(x => x.CreateEventSubSubscriptionAsync(
+                    "test_client",
+                    "broadcaster_access",
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, string>>(),
+                    EventSubTransportMethod.Websocket,
+                    "test_session_id"))
+                .Returns(Task.CompletedTask);
+
+            _mockTwitchApiService
+                .Setup(x => x.GetChannelCategoryAsync("123"))
+                .ReturnsAsync(new TwitchChannelCategoryDto { GameId = "game1", GameName = "Test Game" });
+
+            _mockGameSwitchService
+                .Setup(x => x.HandleGameDetectedAsync("123", "game1", "Test Game", null))
+                .Returns(Task.CompletedTask);
+
+            var result = await _service.SubscribeToUserAsync("123");
+
+            Assert.Equal(SubscriptionResult.Success, result);
+            _mockGameSwitchService.Verify(x => x.HandleGameDetectedAsync("123", "game1", "Test Game", null), Times.Once);
         }
 
         [Fact]

@@ -18,6 +18,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly IChatCommandProcessor _chatCommandProcessor;
         private readonly ITwitchApiService _twitchApiService;
         private readonly IMonitoringRegistry _monitoringRegistry;
+        private readonly ITwitchBotEligibilityService _botEligibilityService;
+        private readonly IUserRepository _userRepository;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
@@ -25,13 +27,17 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             IDiscordInviteSender discordInviteSender,
             IChatCommandProcessor chatCommandProcessor,
             ITwitchApiService twitchApiService,
-            IMonitoringRegistry monitoringRegistry)
+            IMonitoringRegistry monitoringRegistry,
+            ITwitchBotEligibilityService botEligibilityService,
+            IUserRepository userRepository)
             : base(scopeFactory, logger)
         {
             _discordInviteSender = discordInviteSender;
             _chatCommandProcessor = chatCommandProcessor;
             _twitchApiService = twitchApiService;
             _monitoringRegistry = monitoringRegistry;
+            _botEligibilityService = botEligibilityService;
+            _userRepository = userRepository;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -82,7 +88,27 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 return;
                             }
 
-                            await _twitchApiService.SendChatMessageAsync(uid, msg, replyParentMessageId: messageId);
+                            // Multi-instance fallback: MonitoringRegistry is per-instance.
+                            // If the current instance doesn't have state, use the cached eligibility lookup.
+                            // This keeps replies consistently on the bot/app-token path when eligible.
+                            var broadcaster = await _userRepository.GetUserAsync(uid);
+                            if (broadcaster != null && !string.IsNullOrWhiteSpace(broadcaster.AccessToken))
+                            {
+                                var eligibility = await _botEligibilityService.GetEligibilityAsync(uid, broadcaster.AccessToken);
+
+                                // Cache decision locally for this instance.
+                                _monitoringRegistry.SetState(uid, new MonitoringState(eligibility.UseBot, eligibility.BotUserId, DateTimeOffset.UtcNow));
+
+                                if (eligibility.UseBot && !string.IsNullOrWhiteSpace(eligibility.BotUserId))
+                                {
+                                    await _twitchApiService.SendChatMessageAsBotAsync(uid, eligibility.BotUserId!, msg, replyParentMessageId: messageId);
+                                    return;
+                                }
+                            }
+
+                            Logger.LogWarning(
+                                "⚠️ Skipping chat reply (must use app/bot token only). broadcaster_user_id={BroadcasterUserId}",
+                                OmniForge.Core.Utilities.LogSanitizer.Sanitize(uid));
                         }
                         catch (Exception ex)
                         {

@@ -110,6 +110,7 @@ namespace OmniForge.Infrastructure
 
             // EventSub Event Handlers (Strategy Pattern)
             services.AddSingleton<IDiscordNotificationTracker, DiscordNotificationTracker>();
+            services.AddSingleton<IDiscordInviteBroadcastScheduler, DiscordInviteBroadcastScheduler>();
             services.AddSingleton<IDiscordInviteSender, DiscordInviteSender>();
             services.AddScoped<IEventSubHandler, StreamOnlineHandler>();
             services.AddScoped<IEventSubHandler, StreamOfflineHandler>();

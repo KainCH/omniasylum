@@ -813,8 +813,7 @@ namespace OmniForge.Infrastructure.Services
                 var botCreds = await _botCredentialRepository.GetAsync();
                 if (botCreds == null || string.IsNullOrEmpty(botCreds.RefreshToken))
                 {
-                    _logger.LogWarning("⚠️ Cannot send as bot: bot credentials missing. Falling back to broadcaster send.");
-                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    _logger.LogWarning("⚠️ Cannot send as bot: bot credentials missing. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
                     return;
                 }
 
@@ -825,8 +824,7 @@ namespace OmniForge.Infrastructure.Services
                     var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
                     if (refreshed == null)
                     {
-                        _logger.LogError("❌ Failed to refresh Forge bot token; falling back to broadcaster send");
-                        await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                        _logger.LogError("❌ Failed to refresh Forge bot token; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
                         return;
                     }
 
@@ -838,8 +836,7 @@ namespace OmniForge.Infrastructure.Services
 
                 if (string.IsNullOrEmpty(botCreds.AccessToken))
                 {
-                    _logger.LogWarning("⚠️ Bot access token missing; falling back to broadcaster send");
-                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    _logger.LogWarning("⚠️ Bot access token missing; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
                     return;
                 }
 
@@ -872,24 +869,21 @@ namespace OmniForge.Infrastructure.Services
                 if (botScopes.Count > 0 && missingBotChatScopes.Any())
                 {
                     _logger.LogWarning(
-                        "⚠️ Bot token missing required chat scopes. missing={Missing} scopes={Scopes}. Falling back to broadcaster send.",
+                        "⚠️ Bot token missing required chat scopes. missing={Missing} scopes={Scopes}. Cannot send chat reply.",
                         string.Join(", ", missingBotChatScopes.Select(LogSanitizer.Sanitize)),
                         string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
-                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
                     return;
                 }
 
                 var botSendOk = await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
                 if (!botSendOk)
                 {
-                    _logger.LogWarning("⚠️ Bot-token chat send failed; falling back to broadcaster send");
-                    await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
+                    _logger.LogWarning("⚠️ Bot-token chat send failed; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error sending chat message as bot for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
-                await SendChatMessageAsync(broadcasterId, message, replyParentMessageId);
             }
         }
 

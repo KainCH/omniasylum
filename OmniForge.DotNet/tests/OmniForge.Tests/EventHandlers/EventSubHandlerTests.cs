@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,8 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services.EventHandlers;
+using TwitchLib.Api.Helix.Models.Channels.GetChannelInformation;
+using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 using Xunit;
 
 namespace OmniForge.Tests.EventHandlers
@@ -30,6 +33,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly Mock<ITwitchApiService> _mockTwitchApiService;
         private readonly Mock<IGameLibraryRepository> _mockGameLibraryRepository;
+        private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOnlineHandler _handler;
 
         public StreamOnlineHandlerTests()
@@ -48,6 +52,7 @@ namespace OmniForge.Tests.EventHandlers
             _mockAuthService = new Mock<ITwitchAuthService>();
             _mockTwitchApiService = new Mock<ITwitchApiService>();
             _mockGameLibraryRepository = new Mock<IGameLibraryRepository>();
+            _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
             {
@@ -62,7 +67,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockLogger.Object,
                 _mockSettings.Object,
                 _mockDiscordTracker.Object,
-                _mockAuthService.Object);
+                _mockAuthService.Object,
+                _mockDiscordInviteBroadcastScheduler.Object);
         }
 
         private void SetupDependencyInjection()
@@ -95,6 +101,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -113,6 +120,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -135,6 +143,7 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted != null)), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StartAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -261,6 +270,131 @@ namespace OmniForge.Tests.EventHandlers
             // Assert - since GetStreams threw, should still send Discord notification with empty data
             _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()), Times.Once);
             _mockDiscordTracker.Verify(x => x.RecordNotification("123", true), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenGetStreamsReturnsStream_ShouldIncludeStreamDataInNotification()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "token" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            var startedAt = DateTime.UtcNow.AddMinutes(-5);
+
+            var streamsResponse = new GetStreamsResponse();
+            var stream = new TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream();
+            SetNonPublicProperty(stream, "Title", "My Title");
+            SetNonPublicProperty(stream, "GameName", "My Game");
+            SetNonPublicProperty(stream, "ThumbnailUrl", "https://thumb/{width}x{height}");
+            SetNonPublicProperty(stream, "ViewerCount", 42);
+            SetNonPublicProperty(stream, "StartedAt", startedAt);
+            SetNonPublicProperty(stream, "UserName", "TestUser");
+
+            SetNonPublicProperty(streamsResponse, nameof(GetStreamsResponse.Streams), new[] { stream });
+
+            _mockHelixWrapper
+                .Setup(x => x.GetStreamsAsync("test_client", "token", It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(streamsResponse);
+
+            object? captured = null;
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Callback<User, string, object>((_, __, payload) => captured = payload)
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert
+            Assert.NotNull(captured);
+            var json = JsonSerializer.Serialize(captured);
+            Assert.Contains("My Title", json, StringComparison.Ordinal);
+            Assert.Contains("My Game", json, StringComparison.Ordinal);
+            Assert.Contains("\"viewerCount\":42", json, StringComparison.Ordinal);
+            Assert.Contains("640", json, StringComparison.Ordinal);
+            Assert.Contains("360", json, StringComparison.Ordinal);
+
+            _mockHelixWrapper.Verify(
+                x => x.GetChannelInformationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenNoStreamData_ShouldFallbackToChannelInformation()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "token", ProfileImageUrl = "https://profile.jpg" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            var emptyStreamsResponse = new GetStreamsResponse();
+            SetNonPublicProperty(emptyStreamsResponse, nameof(GetStreamsResponse.Streams), Array.Empty<TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream>());
+
+            _mockHelixWrapper
+                .Setup(x => x.GetStreamsAsync("test_client", "token", It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(emptyStreamsResponse);
+
+            var channelInfo = new ChannelInformation();
+            SetNonPublicProperty(channelInfo, nameof(ChannelInformation.Title), "Channel Title");
+            SetNonPublicProperty(channelInfo, nameof(ChannelInformation.GameName), "Channel Game");
+            SetNonPublicProperty(channelInfo, nameof(ChannelInformation.BroadcasterName), "TestUser");
+
+            var channelInfoResponse = new GetChannelInformationResponse();
+            SetNonPublicProperty(channelInfoResponse, nameof(GetChannelInformationResponse.Data), new[] { channelInfo });
+
+            _mockHelixWrapper
+                .Setup(x => x.GetChannelInformationAsync("test_client", "token", "123"))
+                .ReturnsAsync(channelInfoResponse);
+
+            object? captured = null;
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<object>()))
+                .Callback<User, string, object>((_, __, payload) => captured = payload)
+                .Returns(Task.CompletedTask);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert
+            Assert.NotNull(captured);
+            var json = JsonSerializer.Serialize(captured);
+            Assert.Contains("Channel Title", json, StringComparison.Ordinal);
+            Assert.Contains("Channel Game", json, StringComparison.Ordinal);
+            Assert.Contains("https://profile.jpg", json, StringComparison.Ordinal);
+
+            _mockHelixWrapper.Verify(x => x.GetChannelInformationAsync("test_client", "token", "123"), Times.Once);
+        }
+
+        private static void SetNonPublicProperty<T>(object instance, string propertyName, T value)
+        {
+            var property = instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null)
+            {
+                throw new InvalidOperationException($"Property '{propertyName}' not found on type '{instance.GetType().FullName}'.");
+            }
+
+            var setter = property.GetSetMethod(true);
+            if (setter == null)
+            {
+                throw new InvalidOperationException($"Property '{propertyName}' on type '{instance.GetType().FullName}' does not have a setter.");
+            }
+
+            setter.Invoke(instance, new object?[] { value });
         }
 
         [Fact]
@@ -477,6 +611,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOfflineHandler _handler;
 
         public StreamOfflineHandlerTests()
@@ -488,10 +623,14 @@ namespace OmniForge.Tests.EventHandlers
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             SetupDependencyInjection();
 
-            _handler = new StreamOfflineHandler(_mockScopeFactory.Object, _mockLogger.Object);
+            _handler = new StreamOfflineHandler(
+                _mockScopeFactory.Object,
+                _mockLogger.Object,
+                _mockDiscordInviteBroadcastScheduler.Object);
         }
 
         private void SetupDependencyInjection()
@@ -515,6 +654,7 @@ namespace OmniForge.Tests.EventHandlers
             var eventData = JsonDocument.Parse("{}").RootElement;
             await _handler.HandleAsync(eventData);
             _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -534,6 +674,7 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null)), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
         }
 
         [Fact]
@@ -553,6 +694,7 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync("123", counters), Times.Once);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
         }
     }
 

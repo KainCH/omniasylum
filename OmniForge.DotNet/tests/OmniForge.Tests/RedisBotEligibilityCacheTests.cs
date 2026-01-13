@@ -46,6 +46,36 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task TryGetAsync_WhenDbFactoryReturnsNull_ReturnsNull()
+        {
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(null));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_WhenValueDeserializesToNull_ReturnsNull()
+        {
+            var db = new Mock<IDatabase>(MockBehavior.Strict);
+            db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .ReturnsAsync((RedisValue)"null");
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(db.Object));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+        }
+
+        [Fact]
         public async Task SetAsync_ThenTryGetAsync_ReturnsCachedValue()
         {
             var expected = new BotEligibilityResult(true, "botUserId", "ok");
@@ -114,6 +144,128 @@ namespace OmniForge.Tests
             var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(db.Object));
 
             await cache.SetAsync("broadcaster", "bot", new BotEligibilityResult(true, "id", "ok"), TimeSpan.FromMinutes(1), CancellationToken.None);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_UsesNormalizedCacheKey()
+        {
+            RedisKey? capturedKey = null;
+
+            var db = new Mock<IDatabase>(MockBehavior.Strict);
+            db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .Callback<RedisKey, CommandFlags>((k, _) => capturedKey = k)
+                .ReturnsAsync(RedisValue.Null);
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "  PrOd  " });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(db.Object));
+
+            var result = await cache.TryGetAsync(" broadcaster ", " BoT ", CancellationToken.None);
+
+            Assert.Null(result);
+            Assert.NotNull(capturedKey);
+            Assert.Equal("botEligibility:v1:prod:broadcaster:bot", (string)capturedKey!);
+        }
+
+        [Fact]
+        public async Task SetAsync_WhenDbFactoryReturnsNull_DoesNotThrow()
+        {
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(null));
+
+            await cache.SetAsync("broadcaster", "bot", new BotEligibilityResult(true, "id", "ok"), TimeSpan.FromMinutes(5), CancellationToken.None);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_WhenConnectionFactoryReturnsNull_ReturnsNull()
+        {
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(
+                settings,
+                logger,
+                connectionFactory: () => Task.FromResult<IConnectionMultiplexer?>(null));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_WhenMuxNotConnected_ReturnsNull()
+        {
+            var mux = new Mock<IConnectionMultiplexer>(MockBehavior.Strict);
+            mux.SetupGet(m => m.IsConnected).Returns(false);
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(
+                settings,
+                logger,
+                connectionFactory: () => Task.FromResult<IConnectionMultiplexer?>(mux.Object));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+            mux.VerifyGet(m => m.IsConnected, Times.AtLeastOnce);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_WhenMuxConnected_UsesDatabaseAndReturnsValue()
+        {
+            var expected = new BotEligibilityResult(true, "botUserId", "ok");
+            var json = JsonSerializer.Serialize(new { UseBot = expected.UseBot, BotUserId = expected.BotUserId, Reason = expected.Reason });
+
+            var db = new Mock<IDatabase>(MockBehavior.Strict);
+            db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .ReturnsAsync((RedisValue)json);
+
+            var mux = new Mock<IConnectionMultiplexer>(MockBehavior.Strict);
+            mux.SetupGet(m => m.IsConnected).Returns(true);
+            mux.Setup(m => m.GetDatabase(It.IsAny<int>(), It.IsAny<object?>()))
+                .Returns(db.Object);
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(
+                settings,
+                logger,
+                connectionFactory: () => Task.FromResult<IConnectionMultiplexer?>(mux.Object));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.True(result!.UseBot);
+            Assert.Equal("botUserId", result.BotUserId);
+            Assert.Equal("ok", result.Reason);
+        }
+
+        [Fact]
+        public async Task Dispose_WhenConnectionCreated_DisposesMux()
+        {
+            var mux = new Mock<IConnectionMultiplexer>(MockBehavior.Strict);
+            mux.SetupGet(m => m.IsConnected).Returns(false);
+            mux.Setup(m => m.Dispose());
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(
+                settings,
+                logger,
+                connectionFactory: () => Task.FromResult<IConnectionMultiplexer?>(mux.Object));
+
+            _ = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            cache.Dispose();
+
+            mux.Verify(m => m.Dispose(), Times.Once);
         }
 
         [Fact]

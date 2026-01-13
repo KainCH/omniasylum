@@ -1,12 +1,17 @@
 using System;
 using System.IO;
 using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
+using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Middleware;
 using Xunit;
@@ -184,6 +189,91 @@ namespace OmniForge.Tests.Middleware
 
             // Assert
             _mockNext.Verify(x => x(context), Times.Once);
+        }
+
+        [Fact]
+        public async Task InvokeAsync_WhenNextThrowsReauthRequired_ForApi_ShouldSignOutAndReturn401Json()
+        {
+            // Arrange
+            var authService = new Mock<IAuthenticationService>();
+            authService
+                .Setup(s => s.SignOutAsync(It.IsAny<HttpContext>(), It.IsAny<string?>(), It.IsAny<AuthenticationProperties?>()))
+                .Returns(Task.CompletedTask);
+
+            var services = new ServiceCollection();
+            services.AddSingleton(authService.Object);
+            var provider = services.BuildServiceProvider();
+
+            _mockNext
+                .Setup(x => x(It.IsAny<HttpContext>()))
+                .ThrowsAsync(new ReauthRequiredException("expired"));
+
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
+            var context = CreateHttpContext("/api/test", isAuthenticated: false);
+            context.RequestServices = provider;
+            context.Request.Headers.Accept = "application/json";
+            context.Response.Body = new MemoryStream();
+
+            // Act
+            await middleware.InvokeAsync(context, _mockUserRepository.Object);
+
+            // Assert
+            authService.Verify(
+                s => s.SignOutAsync(
+                    It.IsAny<HttpContext>(),
+                    It.Is<string?>(scheme => scheme == CookieAuthenticationDefaults.AuthenticationScheme),
+                    It.IsAny<AuthenticationProperties?>()),
+                Times.Once);
+
+            Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+            Assert.StartsWith("application/json", context.Response.ContentType, StringComparison.OrdinalIgnoreCase);
+
+            context.Response.Body.Position = 0;
+            using var reader = new StreamReader(context.Response.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+            var json = await reader.ReadToEndAsync();
+            Assert.Contains("requireReauth", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("/auth/twitch", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("/auth/logout?reauth=1", json, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task InvokeAsync_WhenNextThrowsReauthRequired_ForNonApi_ShouldRedirectToLogout()
+        {
+            // Arrange
+            var authService = new Mock<IAuthenticationService>();
+            authService
+                .Setup(s => s.SignOutAsync(It.IsAny<HttpContext>(), It.IsAny<string?>(), It.IsAny<AuthenticationProperties?>()))
+                .Returns(Task.CompletedTask);
+
+            var services = new ServiceCollection();
+            services.AddSingleton(authService.Object);
+            var provider = services.BuildServiceProvider();
+
+            _mockNext
+                .Setup(x => x(It.IsAny<HttpContext>()))
+                .ThrowsAsync(new ReauthRequiredException("expired"));
+
+            var middleware = new AuthMiddleware(_mockNext.Object, _mockLogger.Object);
+            var context = CreateHttpContext("/dashboard", isAuthenticated: false);
+            context.RequestServices = provider;
+            context.Request.QueryString = new QueryString("?x=1");
+
+            // Act
+            await middleware.InvokeAsync(context, _mockUserRepository.Object);
+
+            // Assert
+            authService.Verify(
+                s => s.SignOutAsync(
+                    It.IsAny<HttpContext>(),
+                    It.Is<string?>(scheme => scheme == CookieAuthenticationDefaults.AuthenticationScheme),
+                    It.IsAny<AuthenticationProperties?>()),
+                Times.Once);
+
+            Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
+
+            var location = context.Response.Headers.Location.ToString();
+            Assert.StartsWith("/auth/logout?reauth=1&returnUrl=", location, StringComparison.Ordinal);
+            Assert.Contains("%2Fdashboard%3Fx%3D1", location, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

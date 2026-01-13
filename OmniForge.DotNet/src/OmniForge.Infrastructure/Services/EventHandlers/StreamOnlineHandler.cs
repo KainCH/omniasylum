@@ -21,18 +21,21 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly TwitchSettings _twitchSettings;
         private readonly IDiscordNotificationTracker _discordTracker;
         private readonly ITwitchAuthService _twitchAuthService;
+        private readonly IDiscordInviteBroadcastScheduler _discordInviteBroadcastScheduler;
 
         public StreamOnlineHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<StreamOnlineHandler> logger,
             IOptions<TwitchSettings> twitchSettings,
             IDiscordNotificationTracker discordTracker,
-            ITwitchAuthService twitchAuthService)
+            ITwitchAuthService twitchAuthService,
+            IDiscordInviteBroadcastScheduler discordInviteBroadcastScheduler)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
             _discordTracker = discordTracker;
             _twitchAuthService = twitchAuthService;
+            _discordInviteBroadcastScheduler = discordInviteBroadcastScheduler;
         }
 
         public override string SubscriptionType => "stream.online";
@@ -48,6 +51,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
 
             Logger.LogInformation("Stream Online: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
+
+            // Start periodic Discord invite broadcasting (immediate + random 15-30 min interval).
+            await _discordInviteBroadcastScheduler.StartAsync(broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();
             var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();

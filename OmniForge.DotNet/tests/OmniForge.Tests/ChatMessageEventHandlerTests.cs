@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
+using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
@@ -17,6 +18,8 @@ namespace OmniForge.Tests
         private readonly Mock<IChatCommandProcessor> _mockChatCommandProcessor = new();
         private readonly Mock<ITwitchApiService> _mockTwitchApiService = new();
         private readonly Mock<IMonitoringRegistry> _mockMonitoringRegistry = new();
+        private readonly Mock<ITwitchBotEligibilityService> _mockBotEligibilityService = new();
+        private readonly Mock<IUserRepository> _mockUserRepository = new();
         private readonly Mock<ILogger<ChatMessageHandler>> _mockLogger = new();
         private readonly ChatMessageHandler _handler;
 
@@ -28,7 +31,9 @@ namespace OmniForge.Tests
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
                 _mockTwitchApiService.Object,
-                _mockMonitoringRegistry.Object);
+                _mockMonitoringRegistry.Object,
+                _mockBotEligibilityService.Object,
+                _mockUserRepository.Object);
         }
 
         [Fact]
@@ -140,9 +145,55 @@ namespace OmniForge.Tests
                 })
                 .Returns(Task.CompletedTask);
 
+            _mockMonitoringRegistry
+                .Setup(r => r.TryGetState("broadcaster123", out It.Ref<MonitoringState>.IsAny))
+                .Returns(false);
+
+            _mockUserRepository
+                .Setup(r => r.GetUserAsync("broadcaster123"))
+                .ReturnsAsync(new User { TwitchUserId = "broadcaster123", AccessToken = "broadcaster-access-token" });
+
+            _mockBotEligibilityService
+                .Setup(s => s.GetEligibilityAsync("broadcaster123", "broadcaster-access-token", default))
+                .ReturnsAsync(new BotEligibilityResult(true, "bot-1", "ok"));
+
             await _handler.HandleAsync(evt);
 
-            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync("broadcaster123", "Custom Response", "msg-1", null), Times.Once);
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsBotAsync("broadcaster123", "bot-1", "Custom Response", "msg-1"), Times.Once);
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_ShouldSendChatReply_UsingMonitoringRegistryBotState()
+        {
+            var json = @"{
+                ""broadcaster_user_id"": ""broadcaster123"",
+                ""chatter_user_id"": ""user999"",
+                ""message_id"": ""msg-1"",
+                ""message"": { ""text"": ""!custom"" },
+                ""badges"": []
+            }";
+
+            using var doc = JsonDocument.Parse(json);
+            var evt = doc.RootElement;
+
+            _mockChatCommandProcessor
+                .Setup(p => p.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<System.Func<string, string, Task>>()))
+                .Callback<ChatCommandContext, System.Func<string, string, Task>>(async (ctx, sender) =>
+                {
+                    await sender(ctx.UserId, "Custom Response");
+                })
+                .Returns(Task.CompletedTask);
+
+            var state = new MonitoringState(true, "bot-1", System.DateTimeOffset.UtcNow);
+            _mockMonitoringRegistry
+                .Setup(r => r.TryGetState("broadcaster123", out state))
+                .Returns(true);
+
+            await _handler.HandleAsync(evt);
+
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsBotAsync("broadcaster123", "bot-1", "Custom Response", "msg-1"), Times.Once);
+            _mockTwitchApiService.Verify(s => s.SendChatMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]

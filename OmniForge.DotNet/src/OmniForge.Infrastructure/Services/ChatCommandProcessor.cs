@@ -5,8 +5,13 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -32,6 +37,36 @@ namespace OmniForge.Infrastructure.Services
 
         // Cooldown tracking: UserId -> Command -> LastUsedTime
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
+
+        // Cache for custom counter trigger resolution: (userId + enabledIdsKey) -> trigger map
+        private readonly ConcurrentDictionary<string, (DateTimeOffset ExpiresAt, Dictionary<string, string> TriggerToCounterId)> _customCounterTriggerCache = new();
+
+        // Shared cache for counter library items to avoid repeated ListAsync calls.
+        // Cache is per repository instance to avoid cross-instance pollution (and to keep tests isolated).
+        private sealed class CounterLibraryCacheEntry
+        {
+            public DateTimeOffset ExpiresAt { get; set; }
+            public CounterLibraryItem[] Items { get; set; } = Array.Empty<CounterLibraryItem>();
+            public SemaphoreSlim Gate { get; } = new(1, 1);
+        }
+
+        private static readonly ConditionalWeakTable<ICounterLibraryRepository, CounterLibraryCacheEntry> CounterLibraryCache = new();
+
+        private static readonly Regex AttachedAmountRegex = new(
+            @"^(.+[\+\-])(\d+)$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private static readonly Regex CustomCounterCommandRegex = new(
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+        // Custom counter trigger cache expiration.
+        // 5 minutes: reduces DB reads on chat spam while keeping admin edits reasonably fresh.
+        private static readonly TimeSpan CustomCounterTriggerCacheTtl = TimeSpan.FromMinutes(5);
+
+        // Counter library cache expiration.
+        // Kept the same as the trigger cache for simplicity.
+        private static readonly TimeSpan CounterLibraryCacheTtl = TimeSpan.FromMinutes(5);
 
         private static readonly Dictionary<string, ChatCommandDefinition> _defaultCommands = new()
         {
@@ -88,6 +123,7 @@ namespace OmniForge.Infrastructure.Services
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var counterRepository = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
+                    var counterLibraryRepository = scope.ServiceProvider.GetService<ICounterLibraryRepository>();
                     var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
                     var counters = await counterRepository.GetCountersAsync(context.UserId) ?? new Counter { TwitchUserId = context.UserId };
                     var user = await userRepository.GetUserAsync(context.UserId);
@@ -104,9 +140,54 @@ namespace OmniForge.Infrastructure.Services
                     // Resolve command (exact match or attached number like !sw+5)
                     var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
 
+                    if (cmdConfig == null)
+                    {
+                        var handledCustom = await TryHandleCustomCounterCommandAsync(
+                            context,
+                            commandText,
+                            requestedAmount,
+                            maxIncrement,
+                            isMod,
+                            sendMessage,
+                            counterRepository,
+                            counterLibraryRepository,
+                            counters);
+
+                        if (handledCustom)
+                        {
+                            return;
+                        }
+                    }
+
                     if (cmdConfig != null)
                     {
                         if (!cmdConfig.Enabled) return;
+
+                        // If this is an increment/decrement command targeting a custom counter, route through
+                        // the custom counter handler so we respect IncrementBy/DecrementBy, milestones, and
+                        // storage-safe atomic updates.
+                        var actionForRouting = cmdConfig.Action?.ToLowerInvariant();
+                        if ((actionForRouting == "increment" || actionForRouting == "decrement")
+                            && !string.IsNullOrWhiteSpace(cmdConfig.Counter)
+                            && cmdConfig.Counter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                .Any(t => t is not "deaths" and not "swears" and not "screams" and not "bits"))
+                        {
+                            var handledCustom = await TryHandleCustomCounterCommandAsync(
+                                context,
+                                commandText,
+                                requestedAmount,
+                                maxIncrement,
+                                isMod,
+                                sendMessage,
+                                counterRepository,
+                                counterLibraryRepository,
+                                counters);
+
+                            if (handledCustom)
+                            {
+                                return;
+                            }
+                        }
 
                         // Determine amount: Attached > Requested > Default(1)
                         var amountToUse = attachedAmount ?? requestedAmount ?? 1;
@@ -150,7 +231,7 @@ namespace OmniForge.Infrastructure.Services
                             if (attachedAmount.HasValue)
                             {
                                 // If attached amount, strip digits to get base key
-                                var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+                                var match = AttachedAmountRegex.Match(commandText);
                                 if (match.Success) cooldownKey = match.Groups[1].Value;
                             }
 
@@ -161,7 +242,7 @@ namespace OmniForge.Infrastructure.Services
 
                             if (!onCooldown)
                             {
-                                var action = cmdConfig.Action?.ToLowerInvariant();
+                                var action = actionForRouting;
                                 if (!string.IsNullOrWhiteSpace(action))
                                 {
                                     changed = ApplyActionToCounters(user, counters, action, cmdConfig.Counter, amount) || changed;
@@ -257,6 +338,319 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        private async Task<bool> TryHandleCustomCounterCommandAsync(
+            ChatCommandContext context,
+            string commandText,
+            int? requestedAmount,
+            int maxIncrement,
+            bool isMod,
+            Func<string, string, Task>? sendMessage,
+            ICounterRepository counterRepository,
+            ICounterLibraryRepository? counterLibraryRepository,
+            Counter currentCounters)
+        {
+            // Supported:
+            // - !<counterId>      (show current value)
+            // - !<counterId>+     (increment, mod/broadcaster)
+            // - !<counterId>-     (decrement, mod/broadcaster)
+            // - !<counterId>+5    (attached amount)
+            // - !<counterId>+ 5   (space amount - parsed upstream into requestedAmount)
+
+            // NOTE: Counter IDs may include '-' but a trailing '-' is interpreted as the decrement operator.
+            // This pattern allows internal hyphens but prevents the trailing operator from being consumed by the id.
+            var match = CustomCounterCommandRegex.Match(commandText);
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            var requestedId = match.Groups["id"].Value;
+            var op = match.Groups["op"].Success ? match.Groups["op"].Value : null;
+
+            int? attachedAmount = null;
+            if (match.Groups["num"].Success && int.TryParse(match.Groups["num"].Value, out var parsed) && parsed > 0)
+            {
+                attachedAmount = parsed;
+            }
+
+            CustomCounterConfiguration? customConfig;
+            try
+            {
+                customConfig = await counterRepository.GetCustomCountersConfigAsync(context.UserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", LogSanitizer.Sanitize(context.UserId));
+                return false;
+            }
+
+            if (customConfig?.Counters == null || customConfig.Counters.Count == 0)
+            {
+                return false;
+            }
+
+            var actualCounterId = await ResolveCustomCounterIdAsync(context.UserId, customConfig, requestedId, counterLibraryRepository);
+            if (string.IsNullOrWhiteSpace(actualCounterId))
+            {
+                return false;
+            }
+
+            actualCounterId = actualCounterId.Trim();
+
+            // Explicit validation for storage-safe counter IDs.
+            const int maxCounterIdLength = 64;
+            var isValidCounterId = actualCounterId.Length <= maxCounterIdLength
+                && actualCounterId.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-');
+
+            if (!isValidCounterId)
+            {
+                _logger.LogWarning(
+                    "⚠️ Rejected custom counter command with invalid counterId '{CounterId}' for user {UserId}",
+                    LogSanitizer.Sanitize(actualCounterId),
+                    LogSanitizer.Sanitize(context.UserId));
+                return false;
+            }
+
+            if (!customConfig.Counters.TryGetValue(actualCounterId, out var def))
+            {
+                return false;
+            }
+
+            // Cooldown: keep it simple and consistent with defaults.
+            var cooldownSeconds = op == null ? 5 : 1;
+            var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
+            var now = DateTimeOffset.UtcNow;
+            // Use resolved counterId (+ operation) so aliases/variants share cooldown.
+            var cooldownKey = op == null ? actualCounterId : $"{actualCounterId}{op}";
+
+            if (userCooldowns.TryGetValue(cooldownKey, out var lastUsed) && (now - lastUsed).TotalSeconds < cooldownSeconds)
+            {
+                return true;
+            }
+
+            // Read current value (best-effort, case-insensitive).
+            var previousValue = 0;
+            if (currentCounters.CustomCounters != null && currentCounters.CustomCounters.Count > 0)
+            {
+                var currentKey = currentCounters.CustomCounters.Keys.FirstOrDefault(k => string.Equals(k, actualCounterId, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(currentKey) && currentCounters.CustomCounters.TryGetValue(currentKey, out var existing))
+                {
+                    previousValue = existing;
+                }
+            }
+
+            // Query command: !<counterId>
+            if (op == null)
+            {
+                var counterName = string.IsNullOrWhiteSpace(def.Name) ? actualCounterId : def.Name;
+                await TrySend(sendMessage, context.UserId, $"Current {counterName}: {previousValue}");
+                userCooldowns[cooldownKey] = now;
+                return true;
+            }
+
+            // Mutation commands are mod/broadcaster only.
+            if (!isMod)
+            {
+                _logger.LogDebug(
+                    "Ignoring custom counter mutation from non-mod/broadcaster. user_id={UserId} counter_id={CounterId} op={Op}",
+                    LogSanitizer.Sanitize(context.UserId),
+                    LogSanitizer.Sanitize(actualCounterId),
+                    LogSanitizer.Sanitize(op));
+                return true;
+            }
+
+            var amountToUse = attachedAmount ?? requestedAmount ?? 1;
+            var amount = Math.Clamp(amountToUse, 1, maxIncrement);
+
+            var incrementBy = Math.Max(1, def.IncrementBy);
+            var decrementBy = Math.Max(1, def.DecrementBy);
+
+            var updatedCounters = op == "+"
+                ? await counterRepository.IncrementCounterAsync(context.UserId, actualCounterId, amount * incrementBy)
+                : await counterRepository.DecrementCounterAsync(context.UserId, actualCounterId, amount * decrementBy);
+
+            await _overlayNotifier.NotifyCounterUpdateAsync(context.UserId, updatedCounters);
+
+            if (op == "+" && def.Milestones != null && def.Milestones.Any())
+            {
+                var newValue = GetCustomCounterValueCaseInsensitive(updatedCounters.CustomCounters, actualCounterId);
+
+                var crossed = def.Milestones.Where(m => previousValue < m && newValue >= m).ToList();
+                foreach (var milestone in crossed)
+                {
+                    await _overlayNotifier.NotifyCustomAlertAsync(context.UserId, "customMilestoneReached", new
+                    {
+                        counterId = actualCounterId,
+                        counterName = def.Name,
+                        milestone,
+                        newValue,
+                        icon = def.Icon
+                    });
+                }
+            }
+
+            userCooldowns[cooldownKey] = now;
+            return true;
+        }
+
+        private static int GetCustomCounterValueCaseInsensitive(Dictionary<string, int>? counters, string counterId)
+        {
+            if (counters == null || counters.Count == 0)
+            {
+                return 0;
+            }
+
+            return counters
+                .Where(kvp => string.Equals(kvp.Key, counterId, StringComparison.OrdinalIgnoreCase))
+                .Select(kvp => kvp.Value)
+                .FirstOrDefault();
+        }
+
+        private async Task<string?> ResolveCustomCounterIdAsync(
+            string userId,
+            CustomCounterConfiguration customConfig,
+            string requestedToken,
+            ICounterLibraryRepository? counterLibraryRepository)
+        {
+            if (customConfig.Counters == null || customConfig.Counters.Count == 0)
+            {
+                return null;
+            }
+
+            // Fast path: match token to counterId.
+            var direct = customConfig.Counters.Keys.FirstOrDefault(k => string.Equals(k, requestedToken, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(direct))
+            {
+                return direct;
+            }
+
+            // Build trigger map using counter library command metadata.
+            if (counterLibraryRepository == null)
+            {
+                return null;
+            }
+
+            var enabledCounterIds = customConfig.Counters.Keys
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var enabledIdsKey = string.Join('|', enabledCounterIds);
+            var enabledIdsKeyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(enabledIdsKey)));
+            var cacheKey = $"{userId}:{enabledIdsKeyHash}";
+
+            var now = DateTimeOffset.UtcNow;
+            if (_customCounterTriggerCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+            {
+                return cached.TriggerToCounterId.TryGetValue(requestedToken, out var cachedResolved)
+                    ? cachedResolved
+                    : null;
+            }
+
+            var triggerToCounterId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // Avoid N+1 queries by fetching the library once.
+            var libraryItems = await GetCounterLibraryItemsCachedAsync(counterLibraryRepository);
+            var enabledIds = new HashSet<string>(enabledCounterIds, StringComparer.OrdinalIgnoreCase);
+            var libraryById = libraryItems
+                .Where(i => !string.IsNullOrWhiteSpace(i.CounterId) && enabledIds.Contains(i.CounterId))
+                .ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var counterId in enabledCounterIds)
+            {
+                TryAddTrigger(triggerToCounterId, counterId, counterId, userId);
+
+                if (!libraryById.TryGetValue(counterId, out var item))
+                {
+                    // Still allow the implicit command based on id (already added above).
+                    continue;
+                }
+
+                var defaultBase = $"!{counterId}";
+                var primary = CommandNormalization.NormalizeBaseCommandOrDefault(item.LongCommand, defaultBase);
+                var alias = CommandNormalization.NormalizeBaseCommandOrEmpty(item.AliasCommand);
+
+                var primaryToken = primary.TrimStart('!');
+                if (!string.IsNullOrWhiteSpace(primaryToken))
+                {
+                    TryAddTrigger(triggerToCounterId, primaryToken, counterId, userId);
+                }
+
+                var aliasToken = alias.TrimStart('!');
+                if (!string.IsNullOrWhiteSpace(aliasToken))
+                {
+                    TryAddTrigger(triggerToCounterId, aliasToken, counterId, userId);
+                }
+            }
+
+            _customCounterTriggerCache[cacheKey] = (now.Add(CustomCounterTriggerCacheTtl), triggerToCounterId);
+
+            return triggerToCounterId.TryGetValue(requestedToken, out var resolved)
+                ? resolved
+                : null;
+        }
+
+        private async Task<CounterLibraryItem[]> GetCounterLibraryItemsCachedAsync(ICounterLibraryRepository counterLibraryRepository)
+        {
+            var now = DateTimeOffset.UtcNow;
+
+            var entry = CounterLibraryCache.GetValue(counterLibraryRepository, _ => new CounterLibraryCacheEntry());
+            if (entry.ExpiresAt > now)
+            {
+                return entry.Items;
+            }
+
+            await entry.Gate.WaitAsync();
+            try
+            {
+                // Double-check after acquiring the lock.
+                if (entry.ExpiresAt > now)
+                {
+                    return entry.Items;
+                }
+
+                CounterLibraryItem[] items;
+                try
+                {
+                    var fetched = await counterLibraryRepository.ListAsync();
+                    items = fetched?.ToArray() ?? Array.Empty<CounterLibraryItem>();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Failed to fetch counter library items; using empty list for trigger resolution.");
+                    items = Array.Empty<CounterLibraryItem>();
+                }
+
+                entry.Items = items;
+                entry.ExpiresAt = now.Add(CounterLibraryCacheTtl);
+                return entry.Items;
+            }
+            finally
+            {
+                entry.Gate.Release();
+            }
+        }
+
+        private void TryAddTrigger(
+            Dictionary<string, string> triggerToCounterId,
+            string triggerToken,
+            string counterId,
+            string userId)
+        {
+            if (triggerToCounterId.TryGetValue(triggerToken, out var existing) && !string.Equals(existing, counterId, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "⚠️ Custom counter trigger collision for user {UserId}: trigger '{Trigger}' maps to both '{Existing}' and '{Incoming}'. Keeping existing mapping.",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(triggerToken),
+                    LogSanitizer.Sanitize(existing),
+                    LogSanitizer.Sanitize(counterId));
+                return;
+            }
+
+            triggerToCounterId[triggerToken] = counterId;
+        }
+
         private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
             string commandText,
             ChatCommandConfiguration userConfig)
@@ -266,8 +660,8 @@ namespace OmniForge.Infrastructure.Services
             if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
 
             // 2. Try parsing attached number (e.g. !sw+5)
-            // Regex: ^(.+?)(\d+)$
-            var match = System.Text.RegularExpressions.Regex.Match(commandText, @"^(.+?)(\d+)$");
+            // Regex: ^(.+[\+\-])(\d+)$
+            var match = AttachedAmountRegex.Match(commandText);
             if (match.Success)
             {
                 var baseCmd = match.Groups[1].Value;

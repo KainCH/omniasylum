@@ -86,6 +86,33 @@ namespace OmniForge.Tests
             Assert.Null(principal);
         }
 
+        [Fact]
+        public void ValidateToken_ShouldReturnNull_WhenTokenAlgorithmIsNotHS256()
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = System.Text.Encoding.ASCII.GetBytes(_settings.Secret);
+
+            var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[] { new Claim("userId", "12345") }),
+                Expires = DateTime.UtcNow.AddMinutes(10),
+                IssuedAt = DateTime.UtcNow,
+                NotBefore = DateTime.UtcNow.AddMinutes(-1),
+                Issuer = _settings.Issuer,
+                Audience = _settings.Audience,
+                SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                    new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
+                    Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha384Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            var tokenString = tokenHandler.WriteToken(token);
+
+            var principal = _service.ValidateToken(tokenString);
+
+            Assert.Null(principal);
+        }
+
         private string CreateTokenWithCustomExpiry(string userId, DateTime issuedAt, DateTime notBefore, DateTime expires)
         {
             var tokenHandler = new JwtSecurityTokenHandler();

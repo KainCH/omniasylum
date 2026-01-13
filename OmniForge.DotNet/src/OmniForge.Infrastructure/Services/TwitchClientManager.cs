@@ -10,35 +10,117 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using TwitchLib.Client;
 using TwitchLib.Client.Models;
+using TwitchLib.Client.Events;
 using TwitchLib.Communication.Clients;
 using TwitchLib.Communication.Models;
 using OmniForge.Infrastructure.Configuration;
 
 namespace OmniForge.Infrastructure.Services
 {
+    internal interface ITwitchBotClient
+    {
+        bool IsConnected { get; }
+        event EventHandler<OnLogArgs>? OnLog;
+        event EventHandler<OnConnectedArgs>? OnConnected;
+        event EventHandler<OnMessageReceivedArgs>? OnMessageReceived;
+        void Initialize(ConnectionCredentials credentials);
+        bool Connect();
+        void JoinChannel(string channel);
+        void LeaveChannel(string channel);
+        void SendMessage(string channel, string message);
+    }
+
+    internal interface ITwitchBotClientFactory
+    {
+        ITwitchBotClient Create(ClientOptions clientOptions);
+    }
+
+    internal sealed class TwitchLibBotClientFactory : ITwitchBotClientFactory
+    {
+        private sealed class TwitchLibBotClient : ITwitchBotClient
+        {
+            private readonly TwitchClient _client;
+
+            public TwitchLibBotClient(TwitchClient client)
+            {
+                _client = client;
+            }
+
+            public bool IsConnected => _client.IsConnected;
+
+            public event EventHandler<OnLogArgs>? OnLog
+            {
+                add => _client.OnLog += value;
+                remove => _client.OnLog -= value;
+            }
+
+            public event EventHandler<OnConnectedArgs>? OnConnected
+            {
+                add => _client.OnConnected += value;
+                remove => _client.OnConnected -= value;
+            }
+
+            public event EventHandler<OnMessageReceivedArgs>? OnMessageReceived
+            {
+                add => _client.OnMessageReceived += value;
+                remove => _client.OnMessageReceived -= value;
+            }
+
+            public void Initialize(ConnectionCredentials credentials) => _client.Initialize(credentials);
+
+            public bool Connect() => _client.Connect();
+
+            public void JoinChannel(string channel) => _client.JoinChannel(channel);
+
+            public void LeaveChannel(string channel) => _client.LeaveChannel(channel);
+
+            public void SendMessage(string channel, string message) => _client.SendMessage(channel, message);
+        }
+
+        public ITwitchBotClient Create(ClientOptions clientOptions)
+        {
+            var customClient = new WebSocketClient(clientOptions);
+            var client = new TwitchClient(customClient);
+            return new TwitchLibBotClient(client);
+        }
+    }
+
     public class TwitchClientManager : ITwitchClientManager
     {
         private readonly ConcurrentDictionary<string, string> _userIdToChannel = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, string> _channelToUserId = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private readonly SemaphoreSlim _botConnectLock = new SemaphoreSlim(1, 1);
-        private TwitchClient? _botClient;
+        private ITwitchBotClient? _botClient;
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ITwitchMessageHandler _messageHandler;
         private readonly TwitchSettings _twitchSettings;
         private readonly ILogger<TwitchClientManager> _logger;
 
+        private readonly ITwitchBotClientFactory _botClientFactory;
+
         public TwitchClientManager(
             IServiceScopeFactory scopeFactory,
             ITwitchMessageHandler messageHandler,
             IOptions<TwitchSettings> twitchSettings,
             ILogger<TwitchClientManager> logger)
+            : this(scopeFactory, messageHandler, twitchSettings, logger, new TwitchLibBotClientFactory())
+        {
+        }
+
+        internal TwitchClientManager(
+            IServiceScopeFactory scopeFactory,
+            ITwitchMessageHandler messageHandler,
+            IOptions<TwitchSettings> twitchSettings,
+            ILogger<TwitchClientManager> logger,
+            ITwitchBotClientFactory botClientFactory)
         {
             _scopeFactory = scopeFactory;
             _messageHandler = messageHandler;
             _twitchSettings = twitchSettings.Value;
             _logger = logger;
+            _botClientFactory = botClientFactory;
         }
 
         public async Task ConnectUserAsync(string userId)
@@ -160,7 +242,7 @@ namespace OmniForge.Infrastructure.Services
                 TaskScheduler.Default);
         }
 
-        private async Task<TwitchClient?> EnsureBotConnectedAsync(
+        private async Task<ITwitchBotClient?> EnsureBotConnectedAsync(
             IBotCredentialRepository botCredentialRepository,
             ITwitchAuthService authService)
         {
@@ -230,18 +312,25 @@ namespace OmniForge.Infrastructure.Services
                     MessagesAllowedInPeriod = 750,
                     ThrottlingPeriod = TimeSpan.FromSeconds(30)
                 };
-                var customClient = new WebSocketClient(clientOptions);
-                var client = new TwitchClient(customClient);
 
+                var client = _botClientFactory.Create(clientOptions);
                 client.Initialize(credentials);
 
                 client.OnLog += (s, e) => _logger.LogDebug("Forge Bot: {Data}", LogSanitizer.Sanitize(e.Data));
                 client.OnConnected += (s, e) => _logger.LogInformation("✅ Forge bot connected as {Username}", LogSanitizer.Sanitize(creds.Username));
                 client.OnMessageReceived += (s, e) => HandleMessage(e.ChatMessage);
 
-                if (!client.Connect())
+                try
                 {
-                    _logger.LogError("❌ Failed to connect Forge bot Twitch client");
+                    if (!client.Connect())
+                    {
+                        _logger.LogError("❌ Failed to connect Forge bot Twitch client");
+                        return null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed to connect Forge bot Twitch client (exception)");
                     return null;
                 }
 

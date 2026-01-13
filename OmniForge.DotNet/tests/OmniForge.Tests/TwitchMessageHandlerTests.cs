@@ -22,6 +22,7 @@ namespace OmniForge.Tests
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ILogger<ChatCommandProcessor>> _mockLogger;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
+        private readonly Mock<ICounterLibraryRepository> _mockCounterLibraryRepository;
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly ChatCommandProcessor _handler;
 
@@ -33,12 +34,15 @@ namespace OmniForge.Tests
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockLogger = new Mock<ILogger<ChatCommandProcessor>>();
             _mockCounterRepository = new Mock<ICounterRepository>();
+            _mockCounterLibraryRepository = new Mock<ICounterLibraryRepository>();
             _mockUserRepository = new Mock<IUserRepository>();
 
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository)))
                 .Returns(_mockCounterRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterLibraryRepository)))
+                .Returns(_mockCounterLibraryRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IUserRepository)))
                 .Returns(_mockUserRepository.Object);
 
@@ -174,6 +178,627 @@ namespace OmniForge.Tests
 
             // Assert
             sendMessageMock.Verify(x => x(It.IsAny<string>(), It.Is<string>(s => s.Contains("Deaths: 10") && s.Contains("Swears: 5"))), Times.Once);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldReturnCustomCounterValue_WhenDefined()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls");
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls" } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Current Pulls: 7"), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldAllowCustomCounterLongCommandAndAlias_ForQuery()
+        {
+            // Arrange
+            var userId = "user1";
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls" } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!p"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p")), sendMessageMock.Object);
+            // Use a fresh handler instance so cooldown state doesn't block the second query.
+            var handler2 = new ChatCommandProcessor(
+                _mockScopeFactory.Object,
+                _mockOverlayNotifier.Object,
+                _mockLogger.Object);
+            await handler2.ProcessAsync(ToContext(userId, CreateMessage("!pullcount")), sendMessageMock.Object);
+
+            // Assert
+            sendMessageMock.Verify(x => x(userId, "Current Pulls: 7"), Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldShareCustomCounterCooldownAcrossAliases()
+        {
+            // Arrange
+            var userId = "user1";
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls" } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!p"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p")), sendMessageMock.Object);
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!pullcount")), sendMessageMock.Object);
+
+            // Assert
+            // Cooldown key is resolved by counterId, so alias/long share a cooldown window.
+            sendMessageMock.Verify(x => x(userId, "Current Pulls: 7"), Times.Exactly(1));
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldAllowCustomCounterLongCommandAndAlias_ForMutations()
+        {
+            // Arrange
+            var userId = "user1";
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!p"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 11 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 4))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p+ 2", isMod: true)), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 4), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIncrementCustomCounter_WhenMod()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls+ 3", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 13 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 6))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 6), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIncrementCustomCounter_WhenAttachedAmount()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls+5", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 17 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 10))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 10), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIncrementCustomCounter_WhenAliasAttachedAmount()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!alia+5", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!alia"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 17 } }
+            };
+
+            // 5 (attached) * 2 (IncrementBy) = 10
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 10))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 10), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldRouteAliasAttachedAmountThroughCustomCounterHandler_WhenChatCommandExists()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!alia+5", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration
+                {
+                    MaxIncrementAmount = 10,
+                    Commands = new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        // Simulate per-game generated command entry for alias increment
+                        ["!alia+"] = new ChatCommandDefinition { Action = "increment", Counter = "pulls", Permission = "moderator", Cooldown = 1, Enabled = true }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 2, DecrementBy = 1 } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!alia"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 17 } }
+            };
+
+            // 5 (attached) * 2 (IncrementBy) = 10
+            _mockCounterRepository
+                .Setup(x => x.IncrementCounterAsync(userId, "pulls", 10))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(userId, "pulls", 10), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldNotMutateCustomCounter_WhenNotMod()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls+", isMod: false);
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls" } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldIgnoreCustomCounter_WhenCounterIdTooLong()
+        {
+            // Arrange
+            var userId = "user1";
+            var tooLongId = new string('a', 65);
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { tooLongId, new CustomCounterDefinition { Name = "Too Long" } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { tooLongId, 1 } }
+                });
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!" + tooLongId)), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldDecrementCustomCounter_WhenMod()
+        {
+            // Arrange
+            var userId = "user1";
+            var message = CreateMessage("!pulls- 3", isMod: true);
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", IncrementBy = 1, DecrementBy = 2 } }
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 1 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.DecrementCounterAsync(userId, "pulls", 6))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, message), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(userId, "pulls", 6), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ProcessAsync_ShouldAllowCustomCounterAlias_ForDecrement()
+        {
+            // Arrange
+            var userId = "user1";
+
+            _mockUserRepository
+                .Setup(x => x.GetChatCommandsConfigAsync(userId))
+                .ReturnsAsync(new ChatCommandConfiguration { MaxIncrementAmount = 10 });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCustomCountersConfigAsync(userId))
+                .ReturnsAsync(new CustomCounterConfiguration
+                {
+                    Counters = new Dictionary<string, CustomCounterDefinition>
+                    {
+                        { "pulls", new CustomCounterDefinition { Name = "Pulls", DecrementBy = 2 } }
+                    }
+                });
+
+            _mockCounterLibraryRepository
+                .Setup(x => x.ListAsync())
+                .ReturnsAsync(new[]
+                {
+                    new CounterLibraryItem
+                    {
+                        CounterId = "pulls",
+                        Name = "Pulls",
+                        LongCommand = "!pullcount",
+                        AliasCommand = "!p"
+                    }
+                });
+
+            _mockCounterRepository
+                .Setup(x => x.GetCountersAsync(userId))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = userId,
+                    CustomCounters = new Dictionary<string, int> { { "pulls", 7 } }
+                });
+
+            var updatedCounters = new Counter
+            {
+                TwitchUserId = userId,
+                CustomCounters = new Dictionary<string, int> { { "pulls", 3 } }
+            };
+
+            _mockCounterRepository
+                .Setup(x => x.DecrementCounterAsync(userId, "pulls", 4))
+                .ReturnsAsync(updatedCounters);
+
+            var sendMessageMock = new Mock<Func<string, string, Task>>();
+
+            // Act
+            await _handler.ProcessAsync(ToContext(userId, CreateMessage("!p- 2", isMod: true)), sendMessageMock.Object);
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(userId, "pulls", 4), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync(userId, updatedCounters), Times.Once);
+            sendMessageMock.Verify(x => x(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
