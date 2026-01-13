@@ -62,13 +62,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             if (_loops.TryRemove(broadcasterId, out var cts))
             {
-                try
+                using (cts)
                 {
                     cts.Cancel();
-                }
-                finally
-                {
-                    cts.Dispose();
                 }
             }
 

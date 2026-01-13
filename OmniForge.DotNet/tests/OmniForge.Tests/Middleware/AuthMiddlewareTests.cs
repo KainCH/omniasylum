@@ -229,7 +229,8 @@ namespace OmniForge.Tests.Middleware
             Assert.StartsWith("application/json", context.Response.ContentType, StringComparison.OrdinalIgnoreCase);
 
             context.Response.Body.Position = 0;
-            var json = await new StreamReader(context.Response.Body, Encoding.UTF8).ReadToEndAsync();
+            using var reader = new StreamReader(context.Response.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+            var json = await reader.ReadToEndAsync();
             Assert.Contains("requireReauth", json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("/auth/twitch", json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("/auth/logout?reauth=1", json, StringComparison.OrdinalIgnoreCase);
