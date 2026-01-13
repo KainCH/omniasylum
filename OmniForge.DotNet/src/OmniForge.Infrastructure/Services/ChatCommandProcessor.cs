@@ -220,7 +220,6 @@ namespace OmniForge.Infrastructure.Services
                             var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
                             var now = DateTimeOffset.UtcNow;
 
-                            bool onCooldown = false;
                             // Use the base command name for cooldown key, not the full text (so !sw+5 shares cooldown with !sw+)
                             // We don't have the base command name easily here unless we return it from ResolveCommand.
                             // For now, use commandText which might be !sw+5. Ideally should be !sw+.
