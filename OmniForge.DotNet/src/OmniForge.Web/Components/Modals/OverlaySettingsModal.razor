@@ -23,8 +23,9 @@
               <div class="d-flex align-items-center">
                 <i class="bi bi-person-workspace me-2"></i>
                 <span>Viewing settings for:</span>
-                <InputSelect TValue="string" id="contextUserSelect" class="form-select form-select-sm ms-2" style="width: auto;"
-                  Value="selectedUserId" ValueChanged="OnContextChanged" ValueExpression="(() => selectedUserId)">
+                <InputSelect TValue="string" id="contextUserSelect" class="form-select form-select-sm ms-2"
+                  style="width: auto;" Value="selectedUserId" ValueChanged="OnContextChanged"
+                  ValueExpression="(() => selectedUserId)">
                   <option value="@currentUserId">Myself (@currentUserDisplayName)</option>
                   @foreach (var streamer in managedStreamers)
                   {
@@ -203,6 +204,8 @@
   private readonly List<User> managedStreamers = new();
   private string? selectedUserId;
   private bool showContextSelector;
+  private string? contextLoadedForUserId;
+  private readonly SemaphoreSlim contextLoadSemaphore = new(1, 1);
 
   // Game-scoped core counter visibility (source of truth: GameCoreCountersConfig for active game)
   private bool coreDeathsEnabled = true;
@@ -251,6 +254,7 @@
 
   private async Task EnsureContextLoadedAsync()
   {
+    await contextLoadSemaphore.WaitAsync();
     try
     {
       var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -259,7 +263,16 @@
 
       if (string.IsNullOrWhiteSpace(currentUserId))
       {
+        contextLoadedForUserId = null;
+        managedStreamers.Clear();
         showContextSelector = false;
+        return;
+      }
+
+      // Avoid repeated reloads within the same component instance.
+      if (contextLoadedForUserId == currentUserId)
+      {
+        showContextSelector = managedStreamers.Any();
         return;
       }
 
@@ -269,22 +282,29 @@
       managedStreamers.Clear();
       if (currentUser?.ManagedStreamers != null && currentUser.ManagedStreamers.Any())
       {
-        foreach (var streamerId in currentUser.ManagedStreamers.Distinct())
-        {
-          var streamer = await UserRepository.GetUserAsync(streamerId);
-          if (streamer != null)
-          {
-            managedStreamers.Add(streamer);
-          }
-        }
+        var streamerIds = currentUser.ManagedStreamers
+          .Where(id => !string.IsNullOrWhiteSpace(id))
+          .Distinct()
+          .ToArray();
+
+        var streamerTasks = streamerIds.Select(UserRepository.GetUserAsync);
+        var streamerResults = await Task.WhenAll(streamerTasks);
+
+        managedStreamers.AddRange(streamerResults.Where(streamer => streamer != null).Cast<User>());
       }
 
       showContextSelector = managedStreamers.Any();
+      contextLoadedForUserId = currentUserId;
     }
     catch (Exception ex)
     {
       Console.WriteLine($"❌ Error loading context selector state: {ex.Message}");
+      contextLoadedForUserId = null;
       showContextSelector = false;
+    }
+    finally
+    {
+      contextLoadSemaphore.Release();
     }
   }
 
