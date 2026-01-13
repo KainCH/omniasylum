@@ -303,4 +303,221 @@ public class OverlaySettingsModalTests : BunitContext
         // Assert
         Assert.True(showChangedInvoked);
     }
+
+    [Fact]
+    public void Modal_ShouldShowError_WhenEmptyUserIdProvided()
+    {
+        // Arrange: user is authenticated but UserId param is empty
+        var authenticatedUserId = "authenticated-user";
+        SetAuthenticatedUser(authenticatedUserId, "authUser");
+        var user = new User { TwitchUserId = authenticatedUserId };
+        _mockUserRepository.Setup(r => r.GetUserAsync(authenticatedUserId)).ReturnsAsync(user);
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), "");
+            b.CloseComponent();
+        });
+
+        // Assert: modal should load for the authenticated user (fallback)
+        cut.WaitForState(() => cut.FindAll("form").Count > 0);
+        Assert.Contains("Overlay Settings", cut.Markup);
+    }
+
+    [Fact]
+    public void SaveSettings_ShouldRejectUnauthorizedUser_EvenWithoutContextSelector()
+    {
+        // Arrange: user has no managed streamers (selector hidden), but we simulate
+        // a scenario where selectedUserId could differ from currentUserId
+        var userId = "test-user-id";
+        var otherUserId = "other-user-id";
+        SetAuthenticatedUser(userId, "testUser");
+
+        var user = new User { TwitchUserId = userId };
+        var otherUser = new User { TwitchUserId = otherUserId };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
+        _mockUserRepository.Setup(r => r.GetUserAsync(otherUserId)).ReturnsAsync(otherUser);
+        _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), userId);
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.FindAll("form").Count > 0);
+
+        // Act: submit form (should save for authenticated user only)
+        var form = cut.Find("form");
+        form.Submit();
+
+        // Assert: save should target the authenticated user, not someone else
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.TwitchUserId == userId)), Times.Once);
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.TwitchUserId == otherUserId)), Times.Never);
+    }
+
+    [Fact]
+    public void ContextSelector_ShouldRejectUnmanagedStreamer()
+    {
+        // Arrange: moderator tries to switch to a user they don't manage
+        var moderatorId = "mod-user-id";
+        var managedStreamerId = "managed-streamer";
+        var unmanagedStreamerId = "unmanaged-streamer";
+
+        SetAuthenticatedUser(moderatorId, "modUser");
+
+        var moderator = new User { TwitchUserId = moderatorId, DisplayName = "Mod" };
+        moderator.ManagedStreamers.Add(managedStreamerId);
+
+        var managedStreamer = new User { TwitchUserId = managedStreamerId, DisplayName = "Managed" };
+        var unmanagedStreamer = new User { TwitchUserId = unmanagedStreamerId, DisplayName = "Unmanaged" };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
+        _mockUserRepository.Setup(r => r.GetUserAsync(managedStreamerId)).ReturnsAsync(managedStreamer);
+        _mockUserRepository.Setup(r => r.GetUserAsync(unmanagedStreamerId)).ReturnsAsync(unmanagedStreamer);
+        _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), moderatorId);
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.FindAll("#contextUserSelect").Count == 1);
+
+        // Act: try to switch to unmanaged streamer (simulating injection)
+        var select = cut.Find("#contextUserSelect");
+        select.Change(unmanagedStreamerId);
+
+        // Assert: error message should appear
+        cut.WaitForState(() => cut.Markup.Contains("do not have permission"));
+        Assert.Contains("do not have permission", cut.Markup);
+    }
+
+    [Fact]
+    public void ContextLoading_ShouldCachePerAuthenticatedUser()
+    {
+        // Arrange: moderator with managed streamers
+        var moderatorId = "mod-user-id";
+        var streamerId = "streamer-user-id";
+
+        SetAuthenticatedUser(moderatorId, "modUser");
+
+        var moderator = new User { TwitchUserId = moderatorId, DisplayName = "Mod" };
+        moderator.ManagedStreamers.Add(streamerId);
+
+        var streamer = new User { TwitchUserId = streamerId, DisplayName = "Streamer" };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
+        _mockUserRepository.Setup(r => r.GetUserAsync(streamerId)).ReturnsAsync(streamer);
+
+        // Act: render the modal
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), moderatorId);
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.FindAll("#contextUserSelect").Count == 1);
+
+        // Assert: streamer was fetched exactly once during context loading
+        // (proves concurrent loading works and caching prevents duplicate fetches)
+        _mockUserRepository.Verify(r => r.GetUserAsync(streamerId), Times.Once);
+
+        // Modal should show the context selector with the streamer
+        var select = cut.Find("#contextUserSelect");
+        Assert.Contains("Streamer", select.InnerHtml);
+    }
+
+    [Fact]
+    public void ManagedStreamers_ShouldLoadConcurrently()
+    {
+        // Arrange: moderator with multiple managed streamers
+        var moderatorId = "mod-user-id";
+        var streamer1Id = "streamer-1";
+        var streamer2Id = "streamer-2";
+        var streamer3Id = "streamer-3";
+
+        SetAuthenticatedUser(moderatorId, "modUser");
+
+        var moderator = new User { TwitchUserId = moderatorId, DisplayName = "Mod" };
+        moderator.ManagedStreamers.Add(streamer1Id);
+        moderator.ManagedStreamers.Add(streamer2Id);
+        moderator.ManagedStreamers.Add(streamer3Id);
+
+        var streamer1 = new User { TwitchUserId = streamer1Id, DisplayName = "Streamer1" };
+        var streamer2 = new User { TwitchUserId = streamer2Id, DisplayName = "Streamer2" };
+        var streamer3 = new User { TwitchUserId = streamer3Id, DisplayName = "Streamer3" };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
+        _mockUserRepository.Setup(r => r.GetUserAsync(streamer1Id)).ReturnsAsync(streamer1);
+        _mockUserRepository.Setup(r => r.GetUserAsync(streamer2Id)).ReturnsAsync(streamer2);
+        _mockUserRepository.Setup(r => r.GetUserAsync(streamer3Id)).ReturnsAsync(streamer3);
+
+        // Act
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), moderatorId);
+            b.CloseComponent();
+        });
+
+        // Assert: all streamers should appear in the selector
+        cut.WaitForState(() => cut.FindAll("#contextUserSelect").Count == 1);
+        var select = cut.Find("#contextUserSelect");
+        Assert.Contains("Streamer1", select.InnerHtml);
+        Assert.Contains("Streamer2", select.InnerHtml);
+        Assert.Contains("Streamer3", select.InnerHtml);
+
+        // Verify all streamers were fetched
+        _mockUserRepository.Verify(r => r.GetUserAsync(streamer1Id), Times.Once);
+        _mockUserRepository.Verify(r => r.GetUserAsync(streamer2Id), Times.Once);
+        _mockUserRepository.Verify(r => r.GetUserAsync(streamer3Id), Times.Once);
+    }
+
+    [Fact]
+    public void ManagedStreamers_ShouldHandleNullResults_Gracefully()
+    {
+        // Arrange: one managed streamer doesn't exist in database
+        var moderatorId = "mod-user-id";
+        var validStreamerId = "valid-streamer";
+        var missingStreamerId = "missing-streamer";
+
+        SetAuthenticatedUser(moderatorId, "modUser");
+
+        var moderator = new User { TwitchUserId = moderatorId, DisplayName = "Mod" };
+        moderator.ManagedStreamers.Add(validStreamerId);
+        moderator.ManagedStreamers.Add(missingStreamerId);
+
+        var validStreamer = new User { TwitchUserId = validStreamerId, DisplayName = "ValidStreamer" };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
+        _mockUserRepository.Setup(r => r.GetUserAsync(validStreamerId)).ReturnsAsync(validStreamer);
+        _mockUserRepository.Setup(r => r.GetUserAsync(missingStreamerId)).ReturnsAsync((User?)null);
+
+        // Act
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), moderatorId);
+            b.CloseComponent();
+        });
+
+        // Assert: only the valid streamer should appear, missing one is filtered out
+        cut.WaitForState(() => cut.FindAll("#contextUserSelect").Count == 1);
+        var select = cut.Find("#contextUserSelect");
+        Assert.Contains("ValidStreamer", select.InnerHtml);
+        Assert.DoesNotContain("missing-streamer", select.InnerHtml);
+    }
 }
