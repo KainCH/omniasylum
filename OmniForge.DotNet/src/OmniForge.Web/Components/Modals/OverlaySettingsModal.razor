@@ -283,9 +283,9 @@
       if (currentUser?.ManagedStreamers != null && currentUser.ManagedStreamers.Any())
       {
         var streamerIds = currentUser.ManagedStreamers
-          .Where(id => !string.IsNullOrWhiteSpace(id))
-          .Distinct()
-          .ToArray();
+        .Where(id => !string.IsNullOrWhiteSpace(id))
+        .Distinct()
+        .ToArray();
 
         var streamerTasks = streamerIds.Select(UserRepository.GetUserAsync);
         var streamerResults = await Task.WhenAll(streamerTasks);
