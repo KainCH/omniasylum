@@ -23,18 +23,14 @@
               <div class="d-flex align-items-center">
                 <i class="bi bi-person-workspace me-2"></i>
                 <span>Viewing settings for:</span>
-                <select id="contextUserSelect" class="form-select form-select-sm ms-2" style="width: auto;"
-                  @onchange="OnContextChanged">
-                  <option value="@currentUserId" selected="@(selectedUserId == currentUserId)">
-                    Myself (@currentUserDisplayName)
-                  </option>
+                <InputSelect TValue="string" id="contextUserSelect" class="form-select form-select-sm ms-2" style="width: auto;"
+                  Value="selectedUserId" ValueChanged="OnContextChanged" ValueExpression="(() => selectedUserId)">
+                  <option value="@currentUserId">Myself (@currentUserDisplayName)</option>
                   @foreach (var streamer in managedStreamers)
                   {
-                    <option value="@streamer.TwitchUserId" selected="@(selectedUserId == streamer.TwitchUserId)">
-                      @streamer.DisplayName
-                    </option>
+                    <option value="@streamer.TwitchUserId">@streamer.DisplayName</option>
                   }
-                </select>
+                </InputSelect>
               </div>
               @if (!string.IsNullOrEmpty(currentUserId) && selectedUserId != currentUserId)
               {
@@ -224,16 +220,18 @@
     {
       await EnsureContextLoadedAsync();
 
-      // Default selection: prefer explicit UserId param, else current user
-      if (string.IsNullOrWhiteSpace(selectedUserId))
+      // Default selection: prefer explicit UserId param, else current user.
+      // If caller updates UserId between openings, always respect it.
+      if (!string.IsNullOrWhiteSpace(UserId))
       {
-        selectedUserId = !string.IsNullOrWhiteSpace(UserId) ? UserId : currentUserId;
+        if (selectedUserId != UserId)
+        {
+          selectedUserId = UserId;
+        }
       }
-
-      // If caller updates UserId between openings, respect it.
-      if (!string.IsNullOrWhiteSpace(UserId) && selectedUserId != UserId)
+      else if (string.IsNullOrWhiteSpace(selectedUserId))
       {
-        selectedUserId = UserId;
+        selectedUserId = currentUserId;
       }
 
       if (!string.IsNullOrWhiteSpace(selectedUserId))
@@ -292,14 +290,14 @@
 
   private bool IsAllowedContext(string userId)
   {
+    if (string.IsNullOrWhiteSpace(userId)) return false;
     if (string.IsNullOrWhiteSpace(currentUserId)) return false;
     if (userId == currentUserId) return true;
     return managedStreamers.Any(s => s.TwitchUserId == userId);
   }
 
-  private async Task OnContextChanged(ChangeEventArgs e)
+  private async Task OnContextChanged(string? newUserId)
   {
-    var newUserId = e.Value?.ToString();
     if (string.IsNullOrWhiteSpace(newUserId)) return;
 
     errorMessage = null;
@@ -390,7 +388,7 @@
         return;
       }
 
-      if (showContextSelector && !IsAllowedContext(selectedUserId))
+      if (!IsAllowedContext(selectedUserId))
       {
         errorMessage = "You do not have permission to update that user's settings.";
         return;

@@ -43,6 +43,17 @@ public class OverlaySettingsModalTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
+    private void SetAuthenticatedUser(string userId, string? username = null)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId),
+            new Claim(ClaimTypes.Name, username ?? userId)
+        }, "mock"));
+
+        _authProvider.SetUser(principal);
+    }
+
     [Fact]
     public void Modal_ShouldNotRender_WhenShowIsFalse()
     {
@@ -63,6 +74,7 @@ public class OverlaySettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
+        SetAuthenticatedUser(userId, "testUser");
         var user = new User { TwitchUserId = userId };
         user.OverlaySettings.Position = "top-right";
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
@@ -86,6 +98,7 @@ public class OverlaySettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
+        SetAuthenticatedUser(userId, "testUser");
         var user = new User { TwitchUserId = userId };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
@@ -116,6 +129,7 @@ public class OverlaySettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
+        SetAuthenticatedUser(userId, "testUser");
         var user = new User { TwitchUserId = userId };
         user.OverlaySettings.Counters.Deaths = false;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
@@ -266,6 +280,7 @@ public class OverlaySettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
+        SetAuthenticatedUser(userId, "testUser");
         var user = new User { TwitchUserId = userId };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         bool showChangedInvoked = false;
