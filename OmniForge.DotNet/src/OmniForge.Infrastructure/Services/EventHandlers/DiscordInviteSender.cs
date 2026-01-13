@@ -16,24 +16,18 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly ILogger<DiscordInviteSender> _logger;
         private readonly IDiscordNotificationTracker _notificationTracker;
         private readonly IMonitoringRegistry _monitoringRegistry;
-        private readonly ITwitchBotEligibilityService _botEligibilityService;
-        private readonly ITwitchApiService _twitchApiService;
         private readonly TimeSpan _throttleDuration = TimeSpan.FromMinutes(5);
 
         public DiscordInviteSender(
             IServiceScopeFactory scopeFactory,
             ILogger<DiscordInviteSender> logger,
             IDiscordNotificationTracker notificationTracker,
-            IMonitoringRegistry monitoringRegistry,
-            ITwitchBotEligibilityService botEligibilityService,
-            ITwitchApiService twitchApiService)
+            IMonitoringRegistry monitoringRegistry)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _notificationTracker = notificationTracker;
             _monitoringRegistry = monitoringRegistry;
-            _botEligibilityService = botEligibilityService;
-            _twitchApiService = twitchApiService;
         }
 
         public async Task SendDiscordInviteAsync(string broadcasterId)
@@ -50,6 +44,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             using var scope = _scopeFactory.CreateScope();
             var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var botEligibilityService = scope.ServiceProvider.GetRequiredService<ITwitchBotEligibilityService>();
+            var twitchApiService = scope.ServiceProvider.GetRequiredService<ITwitchApiService>();
             var user = await userRepository.GetUserAsync(broadcasterId);
 
             if (user == null)
@@ -73,7 +69,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
                 else if (!string.IsNullOrWhiteSpace(user.AccessToken))
                 {
-                    var eligibility = await _botEligibilityService.GetEligibilityAsync(broadcasterId, user.AccessToken);
+                    var eligibility = await botEligibilityService.GetEligibilityAsync(broadcasterId, user.AccessToken);
                     _monitoringRegistry.SetState(broadcasterId, new MonitoringState(eligibility.UseBot, eligibility.BotUserId, DateTimeOffset.UtcNow));
                     if (eligibility.UseBot && !string.IsNullOrWhiteSpace(eligibility.BotUserId))
                     {
@@ -89,7 +85,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     return;
                 }
 
-                await _twitchApiService.SendChatMessageAsBotAsync(broadcasterId, botUserId, message);
+                await twitchApiService.SendChatMessageAsBotAsync(broadcasterId, botUserId, message);
 
                 // Update tracker
                 _notificationTracker.RecordNotification(broadcasterId, true);

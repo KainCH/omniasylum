@@ -181,6 +181,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IUserRepository))).Returns(_mockUserRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchBotEligibilityService))).Returns(_mockBotEligibilityService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchApiService))).Returns(_mockTwitchApiService.Object);
         }
 
         [Fact]
@@ -194,9 +196,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
@@ -218,9 +218,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
@@ -249,9 +247,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
@@ -278,9 +274,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
@@ -312,9 +306,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
@@ -348,9 +340,7 @@ namespace OmniForge.Tests.EventHandlers
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
                 _mockTracker.Object,
-                _mockMonitoringRegistry.Object,
-                _mockBotEligibilityService.Object,
-                _mockTwitchApiService.Object);
+                _mockMonitoringRegistry.Object);
 
             // Act
             await sender.SendDiscordInviteAsync("123");
