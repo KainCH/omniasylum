@@ -6,6 +6,7 @@
 @inject IOverlayNotifier OverlayNotifier
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@implements IDisposable
 
 @if (Show)
 {
@@ -454,5 +455,10 @@
   {
     Show = false;
     await ShowChanged.InvokeAsync(false);
+  }
+
+  public void Dispose()
+  {
+    contextLoadSemaphore.Dispose();
   }
 }

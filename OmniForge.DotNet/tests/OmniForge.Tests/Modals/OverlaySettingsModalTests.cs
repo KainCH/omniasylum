@@ -7,6 +7,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Web.Components.Modals;
 using System.Security.Claims;
+using System.Reflection;
 using Xunit;
 
 namespace OmniForge.Tests.Modals;
@@ -252,6 +253,77 @@ public class OverlaySettingsModalTests : BunitContext
         // Assert: save should target the streamer user
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u => u.TwitchUserId == streamerId)), Times.Once);
         _mockOverlayNotifier.Verify(n => n.NotifySettingsUpdateAsync(streamerId, It.IsAny<OverlaySettings>()), Times.Once);
+    }
+
+    [Fact]
+    public void ContextSelector_ShouldNotRender_WhenUserHasNoManagedStreamers()
+    {
+        // Arrange
+        var userId = "regular-user-id";
+        SetAuthenticatedUser(userId, "regularUser");
+
+        var user = new User { TwitchUserId = userId, DisplayName = "Regular" };
+        _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
+
+        // Act
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), userId);
+            b.CloseComponent();
+        });
+
+        // Assert
+        cut.WaitForState(() => cut.FindAll("form").Count > 0);
+        Assert.Empty(cut.FindAll("#contextUserSelect"));
+    }
+
+    [Fact]
+    public void SaveSettings_ShouldRejectUnmanagedStreamer_WhenModeratorSelectionIsTampered()
+    {
+        // Arrange
+        var moderatorId = "mod-user-id";
+        var managedStreamerId = "managed-streamer";
+        var unmanagedStreamerId = "unmanaged-streamer";
+
+        SetAuthenticatedUser(moderatorId, "modUser");
+
+        var moderator = new User { TwitchUserId = moderatorId, DisplayName = "Mod" };
+        moderator.ManagedStreamers.Add(managedStreamerId);
+
+        var managedStreamer = new User { TwitchUserId = managedStreamerId, DisplayName = "Managed" };
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
+        _mockUserRepository.Setup(r => r.GetUserAsync(managedStreamerId)).ReturnsAsync(managedStreamer);
+        _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<OverlaySettingsModal>(0);
+            b.AddAttribute(1, nameof(OverlaySettingsModal.Show), true);
+            b.AddAttribute(2, nameof(OverlaySettingsModal.UserId), moderatorId);
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.FindAll("#contextUserSelect").Count == 1);
+
+        var component = cut.FindComponent<OverlaySettingsModal>();
+
+        // Tamper the private selectedUserId field to simulate a malicious client
+        var selectedUserIdField = typeof(OverlaySettingsModal)
+            .GetField("selectedUserId", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(selectedUserIdField);
+        selectedUserIdField!.SetValue(component.Instance, unmanagedStreamerId);
+
+        // Act
+        var form = cut.Find("form");
+        form.Submit();
+
+        // Assert
+        cut.WaitForState(() => cut.Markup.Contains("do not have permission"));
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.IsAny<User>()), Times.Never);
+        _mockOverlayNotifier.Verify(n => n.NotifySettingsUpdateAsync(It.IsAny<string>(), It.IsAny<OverlaySettings>()), Times.Never);
     }
 
     public class MockAuthenticationStateProvider : AuthenticationStateProvider
