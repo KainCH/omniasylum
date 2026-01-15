@@ -32,6 +32,7 @@ namespace OmniForge.Web.Controllers
         [EnableRateLimiting("feedback-issues")]
         public async Task<IActionResult> CreateGitHubIssue([FromBody] CreateGitHubIssueRequest request, CancellationToken cancellationToken)
         {
+            // [Authorize] ensures an authenticated principal, but we require a stable user identifier claim.
             var hasUser = !string.IsNullOrWhiteSpace(User.FindFirst("userId")?.Value)
                 || !string.IsNullOrWhiteSpace(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             if (!hasUser) return Unauthorized();

@@ -19,6 +19,17 @@ namespace OmniForge.Infrastructure.Services
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
         private const string DoNotStoreTokenPlaceholder = "DO_NOT_STORE_GITHUB_PAT_HERE_USE_KEY_VAULT_OR_ENVIRONMENT_VARIABLE";
+        private const int LogBodyMaxLength = 512;
+
+        private static string TruncateForLogging(string text, int maxLength = LogBodyMaxLength)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return text.Length <= maxLength ? text : text.Substring(0, maxLength);
+        }
 
         private readonly HttpClient _httpClient;
         private readonly IOptionsMonitor<GitHubSettings> _settings;
@@ -101,8 +112,7 @@ namespace OmniForge.Infrastructure.Services
 
                     if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrWhiteSpace(responseBody))
                     {
-                        var snippet = responseBody.Length <= 512 ? responseBody : responseBody.Substring(0, 512);
-                        _logger.LogDebug("GitHub issue create response body (snippet): {Body}", LogSanitizer.Sanitize(snippet));
+                        _logger.LogDebug("GitHub issue create response body (snippet): {Body}", LogSanitizer.Sanitize(TruncateForLogging(responseBody)));
                     }
 
                     throw new InvalidOperationException("GitHub issue creation failed.");
@@ -124,7 +134,7 @@ namespace OmniForge.Infrastructure.Services
                     if (_logger.IsEnabled(LogLevel.Debug))
                     {
                         _logger.LogWarning("⚠️ GitHub create issue succeeded but response missing expected fields.");
-                        _logger.LogDebug("GitHub create issue response body (snippet): {Body}", LogSanitizer.Sanitize(responseBody.Length <= 512 ? responseBody : responseBody.Substring(0, 512)));
+                        _logger.LogDebug("GitHub create issue response body (snippet): {Body}", LogSanitizer.Sanitize(TruncateForLogging(responseBody)));
                     }
                     else
                     {

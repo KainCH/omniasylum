@@ -71,6 +71,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("feedback-issues", httpContext =>
     {
+        // Threshold: allow occasional bursts but prevent abuse / GitHub API rate exhaustion.
+        // If we ever need to tune this, promote PermitLimit/Window to configuration.
         var userKey = httpContext.User.FindFirst("userId")?.Value
             ?? httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
