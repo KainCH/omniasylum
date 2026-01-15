@@ -21,6 +21,9 @@ using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using OmniForge.Infrastructure.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +64,31 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("feedback-issues", httpContext =>
+    {
+        // Threshold: allow occasional bursts but prevent abuse / GitHub API rate exhaustion.
+        // If we ever need to tune this, promote PermitLimit/Window to configuration.
+        var userKey = httpContext.User.FindFirst("userId")?.Value
+            ?? httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        var partitionKey = !string.IsNullOrWhiteSpace(userKey)
+            ? $"user:{userKey}"
+            : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
+    });
+});
 
 // Configure Data Protection
 var storageAccountName = builder.Configuration["AzureStorage:AccountName"];
@@ -129,6 +157,7 @@ builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
 builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IFeedbackIssueService, FeedbackIssueService>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -197,6 +226,7 @@ app.UseHttpsRedirection();
 app.UseStaticFiles(); // Enable static file serving
 app.UseAntiforgery();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseWebSockets(); // Enable WebSockets
 app.UseMiddleware<AuthMiddleware>();

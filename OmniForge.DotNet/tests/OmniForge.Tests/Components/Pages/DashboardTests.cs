@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using AngleSharp.Dom;
 using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.AspNetCore.Components;
@@ -364,8 +365,11 @@ namespace OmniForge.Tests.Components.Pages
             var cut = RenderDashboard();
 
             // Assert
-            var buttons = cut.FindAll("button");
-            Assert.Contains(buttons, b => b.TextContent.Contains("Stop Monitor"));
+            cut.WaitForAssertion(() =>
+            {
+                var buttons = cut.FindAll("button");
+                Assert.Contains(buttons, b => b.TextContent.Contains("Stop Monitor"));
+            });
         }
 
         [Fact]
@@ -446,8 +450,13 @@ namespace OmniForge.Tests.Components.Pages
             var cut = RenderDashboard();
 
             // Act
-            var stopButton = cut.FindAll("button").First(b => b.TextContent.Contains("Stop Monitor"));
-            await cut.InvokeAsync(() => stopButton.Click());
+            IElement? stopButton = null;
+            cut.WaitForAssertion(() =>
+            {
+                stopButton = cut.FindAll("button").First(b => b.TextContent.Contains("Stop Monitor"));
+                Assert.NotNull(stopButton);
+            });
+            await cut.InvokeAsync(() => stopButton!.Click());
 
             // Assert
             _mockStreamMonitorService.Verify(x => x.UnsubscribeFromUserAsync("12345"), Times.Once);
