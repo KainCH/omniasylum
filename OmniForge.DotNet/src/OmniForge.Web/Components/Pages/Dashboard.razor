@@ -95,8 +95,8 @@
           <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
             <i class="bi bi-magic"></i> Effects
           </button>
-          <button class="btn-custom btn-export" @onclick="() => showReportIssue = true">
-            <i class="bi bi-bug-fill"></i> Report
+          <button class="btn-custom btn-export" @onclick="NavigateToRequests">
+            <i class="bi bi-bug-fill"></i> Feature Requests &amp; Bugs
           </button>
         </div>
 
@@ -191,16 +191,12 @@
 
         <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
         <AlertEffectsModal @bind-Show="showAlertEffects" />
-        <ReportIssueModal @bind-Show="showReportIssue" />
       }
     </Authorized>
   </AuthorizeView>
 </div>
 
 @code {
-  [SupplyParameterFromQuery(Name = "report")]
-  public bool Report { get; set; }
-
   [CascadingParameter]
   private Task<AuthenticationState>? authenticationStateTask { get; set; }
 
@@ -213,22 +209,11 @@
   private bool resettingCounters = false;
   private bool showOverlaySettings = false;
   private bool showAlertEffects = false;
-  private bool showReportIssue = false;
-  private bool _openedReportFromQuery = false;
   private bool isMonitoring = false;
   private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
   private Timer? _refreshTimer;
   private string? errorMessage;
   private string? overlaySaveError;
-
-  protected override void OnParametersSet()
-  {
-    if (Report && !_openedReportFromQuery)
-    {
-      showReportIssue = true;
-      _openedReportFromQuery = true;
-    }
-  }
 
   protected override async Task OnInitializedAsync()
   {
@@ -280,6 +265,11 @@
     NavigationManager.NavigateTo("alerts");
   }
 
+  private void NavigateToRequests()
+  {
+    NavigationManager.NavigateTo("requests");
+  }
+
   private void RefreshStatus()
   {
     if (!string.IsNullOrEmpty(TwitchUserId))
@@ -291,7 +281,7 @@
 
   private bool IsAnyModalOpen()
   {
-    return showOverlaySettings || showAlertEffects || showReportIssue;
+    return showOverlaySettings || showAlertEffects;
   }
 
   public void Dispose()
