@@ -103,6 +103,26 @@ else
                                     <span class="badge bg-secondary"><i class="bi bi-gem me-1"></i>Bits: @(series.Snapshot?.Bits ?? 0)</span>
                                 }
                             </div>
+
+                            @if (!string.IsNullOrWhiteSpace(series.Snapshot?.LastCategoryName))
+                            {
+                                <div class="mt-2">
+                                    <span class="badge bg-dark"><i class="bi bi-controller me-1"></i>@series.Snapshot.LastCategoryName</span>
+                                </div>
+                            }
+
+                            @if (series.Snapshot?.CustomCounters != null && series.Snapshot.CustomCounters.Count > 0)
+                            {
+                                <div class="mt-2">
+                                    <div class="small text-muted mb-1">Custom counters:</div>
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        @foreach (var kvp in series.Snapshot.CustomCounters.OrderBy(k => k.Key))
+                                        {
+                                            <span class="badge bg-light text-dark border">@kvp.Key: @kvp.Value</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
                             <small class="text-muted">
                                 Saved: @series.LastUpdated.ToLocalTime().ToString("g")
                             </small>
@@ -315,6 +335,7 @@ else
             Screams = series.Snapshot.Screams,
             Bits = series.Snapshot.Bits,
             CustomCounters = series.Snapshot.CustomCounters ?? new Dictionary<string, int>(),
+            LastCategoryName = series.Snapshot.LastCategoryName,
             LastUpdated = DateTimeOffset.UtcNow,
             StreamStarted = null,
             LastNotifiedStreamId = null

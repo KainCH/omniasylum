@@ -25,6 +25,8 @@ namespace OmniForge.Web.Controllers
             swears = series.Snapshot?.Swears ?? 0,
             screams = series.Snapshot?.Screams ?? 0,
             bits = series.Snapshot?.Bits ?? 0,
+            customCounters = series.Snapshot?.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+            lastCategoryName = series.Snapshot?.LastCategoryName,
             savedAt = series.LastUpdated
         };
 
@@ -65,6 +67,7 @@ namespace OmniForge.Web.Controllers
                 screams = s.Snapshot?.Screams ?? 0,
                 bits = s.Snapshot?.Bits ?? 0,
                 customCounters = s.Snapshot?.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                lastCategoryName = s.Snapshot?.LastCategoryName,
                 savedAt = s.LastUpdated,
                 createdAt = s.CreatedAt,
                 isActive = s.IsActive
@@ -160,6 +163,7 @@ namespace OmniForge.Web.Controllers
                 Screams = series.Snapshot.Screams,
                 Bits = series.Snapshot.Bits,
                 CustomCounters = series.Snapshot.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                LastCategoryName = series.Snapshot.LastCategoryName,
                 LastUpdated = DateTimeOffset.UtcNow,
                 StreamStarted = null, // Don't restore stream state
                 LastNotifiedStreamId = null
@@ -185,6 +189,8 @@ namespace OmniForge.Web.Controllers
                     swears = restoredCounter.Swears,
                     screams = restoredCounter.Screams,
                     bits = restoredCounter.Bits,
+                    customCounters = restoredCounter.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
+                    lastCategoryName = restoredCounter.LastCategoryName,
                     lastUpdated = restoredCounter.LastUpdated
                 },
                 seriesInfo = new
@@ -228,6 +234,34 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 message = "Series updated successfully",
+                save = CreateSeriesSaveResponse(existingSeries)
+            });
+        }
+
+        /// <summary>
+        /// Overwrite an existing series snapshot with the current counters (no body required)
+        /// </summary>
+        [HttpPost("{seriesId}/overwrite")]
+        public async Task<IActionResult> OverwriteSeries(string seriesId)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var existingSeries = await _seriesRepository.GetSeriesByIdAsync(userId, seriesId);
+            if (existingSeries == null)
+            {
+                return Ok(null);
+            }
+
+            var currentCounters = await _counterRepository.GetCountersAsync(userId);
+            existingSeries.Snapshot = currentCounters ?? new Counter { TwitchUserId = userId };
+            existingSeries.LastUpdated = DateTimeOffset.UtcNow;
+
+            await _seriesRepository.UpdateSeriesAsync(existingSeries);
+
+            return Ok(new
+            {
+                message = "Series overwritten successfully",
                 save = CreateSeriesSaveResponse(existingSeries)
             });
         }

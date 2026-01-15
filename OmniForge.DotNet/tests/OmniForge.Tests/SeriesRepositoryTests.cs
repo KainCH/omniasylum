@@ -263,7 +263,17 @@ namespace OmniForge.Tests
                 Id = "abc",
                 Name = "Full Series",
                 Description = "Full Description",
-                Snapshot = new Counter { Deaths = 10, Swears = 5, Screams = 3 },
+                Snapshot = new Counter
+                {
+                    Deaths = 10,
+                    Swears = 5,
+                    Screams = 3,
+                    LastCategoryName = "Dark Souls III",
+                    CustomCounters = new Dictionary<string, int>
+                    {
+                        ["Bosses"] = 3
+                    }
+                },
                 CreatedAt = DateTimeOffset.UtcNow,
                 LastUpdated = DateTimeOffset.UtcNow,
                 IsActive = true
@@ -281,6 +291,48 @@ namespace OmniForge.Tests
                     (string)e["description"] == "Full Description" &&
                     (bool)e["isActive"] == true),
                 default), Times.Once);
+
+            _mockTableClient.Verify(x => x.AddEntityAsync(
+                It.Is<TableEntity>(e =>
+                    SnapshotContainsLastCategoryAndCustomCounter(e, "Dark Souls III", "Bosses", 3)
+                ),
+                default), Times.Once);
+        }
+
+        private static bool SnapshotContainsLastCategoryAndCustomCounter(
+            TableEntity entity,
+            string expectedLastCategoryName,
+            string expectedCustomCounterKey,
+            int expectedCustomCounterValue)
+        {
+            if (!entity.TryGetValue("snapshot", out var snapshotObj))
+            {
+                return false;
+            }
+
+            if (snapshotObj is not string snapshotJson)
+            {
+                return false;
+            }
+
+            var snapshot = JsonSerializer.Deserialize<Counter>(snapshotJson, (JsonSerializerOptions?)null);
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            if (!string.Equals(snapshot.LastCategoryName, expectedLastCategoryName, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (snapshot.CustomCounters == null)
+            {
+                return false;
+            }
+
+            return snapshot.CustomCounters.TryGetValue(expectedCustomCounterKey, out var value)
+                && value == expectedCustomCounterValue;
         }
 
         [Fact]

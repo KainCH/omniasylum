@@ -54,7 +54,7 @@ Updates the chat commands configuration. Can also update `MaxIncrementAmount`.
 
 ## MaxIncrementAmount
 
-- **Description**: Controls the maximum numeric value that can be used in increment commands (e.g. `!death+ 5`).
+- **Description**: Controls the maximum numeric value that can be used in increment commands (e.g. `!death+ 5` or `!death+:5`).
 - **Range**: 1 to 10.
 - **Default**: 1.
 

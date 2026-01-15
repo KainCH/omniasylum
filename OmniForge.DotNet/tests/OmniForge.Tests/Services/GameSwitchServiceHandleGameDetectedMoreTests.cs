@@ -13,6 +13,102 @@ namespace OmniForge.Tests.Services
     public class GameSwitchServiceHandleGameDetectedMoreTests
     {
         [Fact]
+        public async Task HandleGameDetectedAsync_WhenSwitchingGames_ShouldSavePreviousGameCountersIncludingCustomCountersAndCategoryName()
+        {
+            var gameContextRepository = new Mock<IGameContextRepository>();
+            var gameCountersRepository = new Mock<IGameCountersRepository>();
+            var gameLibraryRepository = new Mock<IGameLibraryRepository>();
+            var gameChatCommandsRepository = new Mock<IGameChatCommandsRepository>();
+            var gameCustomCountersConfigRepository = new Mock<IGameCustomCountersConfigRepository>();
+            var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
+            var counterRepository = new Mock<ICounterRepository>();
+            var userRepository = new Mock<IUserRepository>();
+            var twitchApiService = new Mock<ITwitchApiService>();
+            var overlayNotifier = new Mock<IOverlayNotifier>();
+            var logger = new Mock<ILogger<GameSwitchService>>();
+
+            gameContextRepository
+                .Setup(r => r.GetAsync("user1"))
+                .ReturnsAsync(new GameContext { UserId = "user1", ActiveGameId = "oldGame", ActiveGameName = "Old Category" });
+
+            userRepository.Setup(r => r.GetUserAsync("user1")).ReturnsAsync(new User
+            {
+                TwitchUserId = "user1",
+                Username = "user1",
+                DisplayName = "User1",
+                OverlaySettings = new OverlaySettings { Counters = new OverlayCounters() }
+            });
+
+            userRepository.Setup(r => r.GetChatCommandsConfigAsync("user1")).ReturnsAsync(new ChatCommandConfiguration());
+            userRepository.Setup(r => r.SaveChatCommandsConfigAsync("user1", It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
+            userRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            counterRepository
+                .Setup(r => r.GetCountersAsync("user1"))
+                .ReturnsAsync(new Counter
+                {
+                    TwitchUserId = "user1",
+                    Deaths = 3,
+                    CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["kills"] = 5,
+                        ["assists"] = 2
+                    }
+                });
+
+            counterRepository.Setup(r => r.GetCustomCountersConfigAsync("user1")).ReturnsAsync(new CustomCounterConfiguration());
+            counterRepository.Setup(r => r.SaveCustomCountersConfigAsync("user1", It.IsAny<CustomCounterConfiguration>())).Returns(Task.CompletedTask);
+            counterRepository.Setup(r => r.SaveCountersAsync(It.IsAny<Counter>())).Returns(Task.CompletedTask);
+
+            gameLibraryRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((GameLibraryItem?)null);
+            gameLibraryRepository.Setup(r => r.UpsertAsync(It.IsAny<GameLibraryItem>())).Returns(Task.CompletedTask);
+
+            Counter? savedPrevious = null;
+            gameCountersRepository
+                .Setup(r => r.SaveAsync("user1", "oldGame", It.IsAny<Counter>()))
+                .Callback<string, string, Counter>((_, __, c) => savedPrevious = c)
+                .Returns(Task.CompletedTask);
+
+            gameCountersRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((Counter?)null);
+
+            gameChatCommandsRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((ChatCommandConfiguration?)null);
+            gameChatCommandsRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
+
+            gameCustomCountersConfigRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((CustomCounterConfiguration?)null);
+            gameCustomCountersConfigRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<CustomCounterConfiguration>())).Returns(Task.CompletedTask);
+
+            gameCoreCountersConfigRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((GameCoreCountersConfig?)null);
+            gameCoreCountersConfigRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<GameCoreCountersConfig>())).Returns(Task.CompletedTask);
+
+            gameContextRepository.Setup(r => r.SaveAsync(It.IsAny<GameContext>())).Returns(Task.CompletedTask);
+
+            overlayNotifier.Setup(n => n.NotifySettingsUpdateAsync("user1", It.IsAny<OverlaySettings>())).Returns(Task.CompletedTask);
+            overlayNotifier.Setup(n => n.NotifyCustomAlertAsync("user1", It.IsAny<string>(), It.IsAny<object>())).Returns(Task.CompletedTask);
+            overlayNotifier.Setup(n => n.NotifyCounterUpdateAsync("user1", It.IsAny<Counter>())).Returns(Task.CompletedTask);
+
+            var service = new GameSwitchService(
+                gameContextRepository.Object,
+                gameCountersRepository.Object,
+                gameLibraryRepository.Object,
+                gameChatCommandsRepository.Object,
+                gameCustomCountersConfigRepository.Object,
+                gameCoreCountersConfigRepository.Object,
+                counterRepository.Object,
+                userRepository.Object,
+                twitchApiService.Object,
+                overlayNotifier.Object,
+                logger.Object);
+
+            await service.HandleGameDetectedAsync("user1", "newGame", "New Category");
+
+            gameCountersRepository.Verify(r => r.SaveAsync("user1", "oldGame", It.IsAny<Counter>()), Times.Once);
+            Assert.NotNull(savedPrevious);
+            Assert.Equal("Old Category", savedPrevious!.LastCategoryName);
+            Assert.Equal(5, savedPrevious.CustomCounters["kills"]);
+            Assert.Equal(2, savedPrevious.CustomCounters["assists"]);
+        }
+
+        [Fact]
         public async Task HandleGameDetectedAsync_WhenSameGameAlreadyActive_ShouldNoOp()
         {
             var gameContextRepository = new Mock<IGameContextRepository>(MockBehavior.Strict);

@@ -54,11 +54,11 @@ namespace OmniForge.Infrastructure.Services
         private static readonly ConditionalWeakTable<ICounterLibraryRepository, CounterLibraryCacheEntry> CounterLibraryCache = new();
 
         private static readonly Regex AttachedAmountRegex = new(
-            @"^(.+[\+\-])(\d+)$",
+            @"^(.+[\+\-]):(\d+)$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly Regex CustomCounterCommandRegex = new(
-            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?<op>[\+\-])?(?<num>\d+)?$",
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?:(?<op>[\+\-])(?::(?<num>\d+))?)?$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         // Custom counter trigger cache expiration.
@@ -105,7 +105,10 @@ namespace OmniForge.Infrastructure.Services
         {
             if (!context.Message.StartsWith("!")) return;
 
-            var parts = context.Message.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            // Twitch chat (especially mobile) can contain non-breaking spaces or other unicode whitespace.
+            // Normalize and split on any whitespace so "!cmd+ 5" reliably parses the amount.
+            var normalizedMessage = context.Message.Replace('\u00A0', ' ').Trim();
+            var parts = normalizedMessage.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return;
 
             var commandText = parts[0].ToLowerInvariant();
@@ -137,7 +140,7 @@ namespace OmniForge.Infrastructure.Services
 
                     bool changed = false;
 
-                    // Resolve command (exact match or attached number like !sw+5)
+                    // Resolve command (exact match or attached amount like !sw+:5)
                     var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
 
                     if (cmdConfig == null)
@@ -220,9 +223,9 @@ namespace OmniForge.Infrastructure.Services
                             var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
                             var now = DateTimeOffset.UtcNow;
 
-                            // Use the base command name for cooldown key, not the full text (so !sw+5 shares cooldown with !sw+)
+                            // Use the base command name for cooldown key, not the full text (so !sw+:5 shares cooldown with !sw+)
                             // We don't have the base command name easily here unless we return it from ResolveCommand.
-                            // For now, use commandText which might be !sw+5. Ideally should be !sw+.
+                            // For now, use commandText which might be !sw+:5. Ideally should be !sw+.
                             // Let's improve ResolveCommand to return the base key.
 
                             // Re-resolving key for cooldown consistency
@@ -350,7 +353,7 @@ namespace OmniForge.Infrastructure.Services
             // - !<counterId>      (show current value)
             // - !<counterId>+     (increment, mod/broadcaster)
             // - !<counterId>-     (decrement, mod/broadcaster)
-            // - !<counterId>+5    (attached amount)
+            // - !<counterId>+:5   (attached amount)
             // - !<counterId>+ 5   (space amount - parsed upstream into requestedAmount)
 
             // NOTE: Counter IDs may include '-' but a trailing '-' is interpreted as the decrement operator.
@@ -656,8 +659,8 @@ namespace OmniForge.Infrastructure.Services
             if (userConfig.Commands.TryGetValue(commandText, out var userCmd)) return (userCmd, null);
             if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
 
-            // 2. Try parsing attached number (e.g. !sw+5)
-            // Regex: ^(.+[\+\-])(\d+)$
+            // 2. Try parsing attached amount (e.g. !sw+:5)
+            // Regex: ^(.+[\+\-]):(\d+)$
             var match = AttachedAmountRegex.Match(commandText);
             if (match.Success)
             {

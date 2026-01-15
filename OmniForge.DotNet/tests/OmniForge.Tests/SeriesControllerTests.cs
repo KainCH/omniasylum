@@ -225,6 +225,55 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task OverwriteSeries_ShouldOverwriteSnapshot_WithoutChangingNameOrDescription()
+        {
+            var seriesId = "s1";
+            var existingSeries = new Series
+            {
+                Id = seriesId,
+                UserId = "12345",
+                Name = "My Series",
+                Description = "My Description",
+                Snapshot = new Counter { Deaths = 5 }
+            };
+
+            var counters = new Counter { Deaths = 30, Swears = 15, Screams = 8 };
+
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
+                .ReturnsAsync(existingSeries);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(counters);
+
+            var result = await _controller.OverwriteSeries(seriesId);
+
+            Assert.IsType<OkObjectResult>(result);
+            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.Is<Series>(s =>
+                s.Id == seriesId &&
+                s.Name == "My Series" &&
+                s.Description == "My Description" &&
+                s.Snapshot.Deaths == 30 &&
+                s.Snapshot.Swears == 15 &&
+                s.Snapshot.Screams == 8
+            )), Times.Once);
+        }
+
+        [Fact]
+        public async Task OverwriteSeries_ShouldReturnNull_WhenSeriesDoesNotExist_AndNotLoadCounters()
+        {
+            var seriesId = "missing";
+
+            _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
+                .ReturnsAsync((Series?)null);
+
+            var result = await _controller.OverwriteSeries(seriesId);
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            Assert.Null(ok.Value);
+            _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
+            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.IsAny<Series>()), Times.Never);
+        }
+
+        [Fact]
         public async Task DeleteSeries_ShouldReturnOk_WhenSeriesExists()
         {
             var seriesId = "s1";

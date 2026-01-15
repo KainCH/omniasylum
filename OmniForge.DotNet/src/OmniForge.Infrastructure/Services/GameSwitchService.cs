@@ -104,6 +104,7 @@ namespace OmniForge.Infrastructure.Services
                 {
                     var existing = await _counterRepository.GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId, LastUpdated = now };
                     existing.LastUpdated = now;
+                    existing.LastCategoryName = current.ActiveGameName;
                     await _gameCountersRepository.SaveAsync(userId, current.ActiveGameId!, existing);
                     _logger.LogInformation("💾 Saved counters for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(current.ActiveGameId!));
 
@@ -238,6 +239,7 @@ namespace OmniForge.Infrastructure.Services
 
             newCounters.TwitchUserId = userId;
             newCounters.LastUpdated = now;
+            newCounters.LastCategoryName = gameName;
 
             // Load per-game core counter selection (seed from current user's overlay settings if missing)
             GameCoreCountersConfig? coreSelection = null;
