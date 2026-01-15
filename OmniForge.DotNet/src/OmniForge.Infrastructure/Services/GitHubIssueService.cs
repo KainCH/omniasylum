@@ -94,7 +94,7 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                var response = await _httpClient.PostAsJsonAsync(route, payload, JsonOptions, cancellationToken);
+                using var response = await _httpClient.PostAsJsonAsync(route, payload, JsonOptions, cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)

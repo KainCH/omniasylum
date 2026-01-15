@@ -132,6 +132,9 @@
       var result = await FeedbackIssueService.CreateIssueAsync(model, authState.User, CancellationToken.None);
       createdIssueUrl = result.HtmlUrl;
       createdIssueNumber = result.Number;
+
+      // Reset so users can submit another issue easily.
+      model = new CreateGitHubIssueRequest();
     }
     catch (UnauthorizedAccessException)
     {

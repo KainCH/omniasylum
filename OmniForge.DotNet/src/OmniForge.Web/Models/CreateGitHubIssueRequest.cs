@@ -6,7 +6,7 @@ namespace OmniForge.Web.Models
     {
         [Required]
         [MaxLength(20)]
-        public string Type { get; set; } = "";
+        public string Type { get; set; } = "bug";
 
         [Required]
         [MinLength(5)]
