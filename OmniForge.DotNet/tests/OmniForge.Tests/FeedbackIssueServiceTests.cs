@@ -67,7 +67,7 @@ namespace OmniForge.Tests
 
             gitHub.Verify(s => s.CreateIssueAsync(
                 It.Is<string>(t => t.StartsWith("[Feature] ", StringComparison.Ordinal) && t.Contains("Add a thing")),
-                It.Is<string>(b => b.Contains("**UserId:** twitch-123")),
+                It.Is<string>(b => b.Contains("**Submitted by:** twitch-123") && !b.Contains("**UserId:**")),
                 It.Is<IReadOnlyCollection<string>>(labels => labels.Contains("feature") && labels.Contains("from-app")),
                 It.IsAny<CancellationToken>()),
                 Times.Once);

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.RateLimiting;
 using OmniForge.Core.Utilities;
 using OmniForge.Web.Models;
 using OmniForge.Web.Services;
@@ -28,6 +29,7 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("issues")]
+        [EnableRateLimiting("feedback-issues")]
         public async Task<IActionResult> CreateGitHubIssue([FromBody] CreateGitHubIssueRequest request, CancellationToken cancellationToken)
         {
             var hasUser = !string.IsNullOrWhiteSpace(User.FindFirst("userId")?.Value)

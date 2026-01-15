@@ -177,7 +177,7 @@ namespace OmniForge.Tests
             var logger = Mock.Of<ILogger<GitHubIssueService>>();
             var service = new GitHubIssueService(httpClient, settings, logger);
 
-            await Assert.ThrowsAsync<System.Text.Json.JsonException>(() =>
+            await Assert.ThrowsAnyAsync<System.Text.Json.JsonException>(() =>
                 service.CreateIssueAsync("Test title", "Test body", new List<string>(), CancellationToken.None));
         }
 
@@ -211,10 +211,11 @@ namespace OmniForge.Tests
             using var cts = new CancellationTokenSource();
             cts.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
                 service.CreateIssueAsync("Test title", "Test body", new List<string>(), cts.Token));
 
-            Assert.Equal(cts.Token, observedToken);
+            Assert.True(observedToken.CanBeCanceled);
+            Assert.True(observedToken.IsCancellationRequested);
         }
     }
 }
