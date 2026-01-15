@@ -54,7 +54,7 @@ namespace OmniForge.Web.Services
                 ? displayName
                 : (!string.IsNullOrWhiteSpace(username) ? username : userId);
 
-            var body = BuildIssueBody(request, submittedBy, userId);
+            var body = BuildIssueBody(request, submittedBy);
 
             try
             {
@@ -62,12 +62,12 @@ namespace OmniForge.Web.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed creating GitHub issue for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "❌ Failed creating GitHub issue from feedback submission");
                 throw;
             }
         }
 
-        private static string BuildIssueBody(CreateGitHubIssueRequest request, string submittedBy, string userId)
+        private static string BuildIssueBody(CreateGitHubIssueRequest request, string submittedBy)
         {
             var now = DateTimeOffset.UtcNow;
 
@@ -75,7 +75,6 @@ namespace OmniForge.Web.Services
             var body = "";
             body += $"**Type:** {request.Type.Trim()}" + nl;
             body += $"**Submitted by:** {submittedBy}" + nl;
-            body += $"**UserId:** {userId}" + nl;
             body += $"**Submitted at (UTC):** {now:O}" + nl + nl;
 
             body += "## Description" + nl;

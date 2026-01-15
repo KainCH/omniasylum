@@ -18,6 +18,7 @@ namespace OmniForge.Infrastructure.Services
     public class GitHubIssueService : IGitHubIssueService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private const string DoNotStoreTokenPlaceholder = "DO_NOT_STORE_GITHUB_PAT_HERE_USE_KEY_VAULT_OR_ENVIRONMENT_VARIABLE";
 
         private readonly HttpClient _httpClient;
         private readonly IOptionsMonitor<GitHubSettings> _settings;
@@ -40,10 +41,10 @@ namespace OmniForge.Infrastructure.Services
 
             if (string.IsNullOrWhiteSpace(settings.RepoOwner) || string.IsNullOrWhiteSpace(settings.RepoName))
             {
-                throw new InvalidOperationException("GitHub repository is not configured (GitHub:RepoOwner / GitHub:RepoName). ");
+                throw new InvalidOperationException("GitHub repository is not configured (GitHub:RepoOwner / GitHub:RepoName).");
             }
 
-            if (string.IsNullOrWhiteSpace(settings.IssuesToken))
+            if (string.IsNullOrWhiteSpace(settings.IssuesToken) || string.Equals(settings.IssuesToken, DoNotStoreTokenPlaceholder, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("GitHub issue token is not configured (GitHub:IssuesToken).");
             }
@@ -58,30 +59,10 @@ namespace OmniForge.Infrastructure.Services
                 throw new ArgumentException("Body is required", nameof(body));
             }
 
-            // GitHub requires a User-Agent. Also set the newest JSON media type.
-            if (!_httpClient.DefaultRequestHeaders.UserAgent.TryParseAdd("OmniForge/1.0"))
-            {
-                // ignore
-            }
-
-            _httpClient.DefaultRequestHeaders.Accept.Clear();
-            _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            _httpClient.DefaultRequestHeaders.Remove("X-GitHub-Api-Version");
-            _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-
-            // token vs bearer: classic PATs prefer "token", fine-grained tokens prefer "Bearer".
-            var scheme = settings.IssuesToken.StartsWith("github_pat_", StringComparison.OrdinalIgnoreCase)
-                ? "Bearer"
-                : "token";
-
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(scheme, settings.IssuesToken);
-
             if (!Uri.TryCreate(settings.ApiBaseUrl, UriKind.Absolute, out var baseUri))
             {
-                throw new InvalidOperationException("GitHub API base URL is invalid (GitHub:ApiBaseUrl). ");
+                throw new InvalidOperationException("GitHub API base URL is invalid (GitHub:ApiBaseUrl).");
             }
-
-            _httpClient.BaseAddress = baseUri;
 
             var payload = new
             {
@@ -92,14 +73,38 @@ namespace OmniForge.Infrastructure.Services
 
             var route = $"/repos/{settings.RepoOwner}/{settings.RepoName}/issues";
 
+            // token vs bearer: classic PATs prefer "token", fine-grained tokens prefer "Bearer".
+            var scheme = settings.IssuesToken.StartsWith("github_pat_", StringComparison.OrdinalIgnoreCase)
+                ? "Bearer"
+                : "token";
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, route))
+            {
+                Content = JsonContent.Create(payload, options: JsonOptions)
+            };
+
+            // Avoid mutating shared HttpClient headers (HttpClient can be reused concurrently).
+            request.Headers.UserAgent.TryParseAdd("OmniForge/1.0");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+            request.Headers.Authorization = new AuthenticationHeaderValue(scheme, settings.IssuesToken);
+
             try
             {
-                using var response = await _httpClient.PostAsJsonAsync(route, payload, JsonOptions, cancellationToken);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("❌ GitHub issue create failed: status={Status}, body={Body}", (int)response.StatusCode, LogSanitizer.Sanitize(responseBody));
+                    // Avoid logging full response bodies at Error level.
+                    _logger.LogError("❌ GitHub issue create failed: status={Status}", (int)response.StatusCode);
+
+                    if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrWhiteSpace(responseBody))
+                    {
+                        var snippet = responseBody.Length <= 512 ? responseBody : responseBody.Substring(0, 512);
+                        _logger.LogDebug("GitHub issue create response body (snippet): {Body}", LogSanitizer.Sanitize(snippet));
+                    }
+
                     throw new InvalidOperationException("GitHub issue creation failed.");
                 }
 
@@ -116,7 +121,15 @@ namespace OmniForge.Infrastructure.Services
 
                 if (number <= 0 || string.IsNullOrWhiteSpace(htmlUrl))
                 {
-                    _logger.LogWarning("⚠️ GitHub create issue succeeded but response missing expected fields: body={Body}", LogSanitizer.Sanitize(responseBody));
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogWarning("⚠️ GitHub create issue succeeded but response missing expected fields.");
+                        _logger.LogDebug("GitHub create issue response body (snippet): {Body}", LogSanitizer.Sanitize(responseBody.Length <= 512 ? responseBody : responseBody.Substring(0, 512)));
+                    }
+                    else
+                    {
+                        _logger.LogWarning("⚠️ GitHub create issue succeeded but response missing expected fields.");
+                    }
                 }
 
                 _logger.LogInformation("✅ Created GitHub issue #{Number} for {Owner}/{Repo}", number, settings.RepoOwner, settings.RepoName);

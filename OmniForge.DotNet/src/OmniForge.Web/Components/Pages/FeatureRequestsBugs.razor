@@ -2,10 +2,12 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Logging
 @using OmniForge.Web.Models
 @attribute [Authorize]
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject OmniForge.Web.Services.IFeedbackIssueService FeedbackIssueService
+@inject ILogger<FeatureRequestsBugs> Logger
 
 <PageTitle>Features & Bugs</PageTitle>
 
@@ -125,6 +127,8 @@
   {
     isSubmitting = true;
     errorMessage = null;
+    createdIssueUrl = null;
+    createdIssueNumber = null;
 
     try
     {
@@ -147,7 +151,7 @@
     catch (Exception ex)
     {
       errorMessage = "Failed to submit. Please try again.";
-      Console.WriteLine($"Error submitting issue: {ex.Message}");
+      Logger.LogError(ex, "❌ Error submitting feedback issue");
     }
     finally
     {

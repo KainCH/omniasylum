@@ -30,9 +30,9 @@ namespace OmniForge.Web.Controllers
         [HttpPost("issues")]
         public async Task<IActionResult> CreateGitHubIssue([FromBody] CreateGitHubIssueRequest request, CancellationToken cancellationToken)
         {
-            var userId = User.FindFirst("userId")?.Value
-                ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrWhiteSpace(userId)) return Unauthorized();
+            var hasUser = !string.IsNullOrWhiteSpace(User.FindFirst("userId")?.Value)
+                || !string.IsNullOrWhiteSpace(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            if (!hasUser) return Unauthorized();
 
             if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
@@ -52,7 +52,7 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed creating GitHub issue for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "❌ Failed creating GitHub issue from feedback API");
                 return StatusCode(500, new { error = "Failed to submit report. Please try again later." });
             }
         }
