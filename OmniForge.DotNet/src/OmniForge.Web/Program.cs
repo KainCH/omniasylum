@@ -129,6 +129,7 @@ builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
 builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IFeedbackIssueService, FeedbackIssueService>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 

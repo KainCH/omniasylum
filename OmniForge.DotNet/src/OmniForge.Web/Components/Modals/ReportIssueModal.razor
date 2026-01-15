@@ -1,0 +1,170 @@
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using OmniForge.Web.Models
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject OmniForge.Web.Services.IFeedbackIssueService FeedbackIssueService
+
+@if (Show)
+{
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bug-fill me-2"></i>Report a Bug / Request a Feature</h5>
+          <button type="button" class="btn-close" @onclick="Close" disabled="@isSubmitting"></button>
+        </div>
+        <div class="modal-body">
+          @if (!string.IsNullOrWhiteSpace(errorMessage))
+          {
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+            </div>
+          }
+          @if (createdIssueUrl != null)
+          {
+            <div class="alert alert-success">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                  <i class="bi bi-check-circle me-2"></i>Submitted!
+                  @if (createdIssueNumber.HasValue)
+                  {
+                    <span>Issue #@createdIssueNumber created.</span>
+                  }
+                </div>
+                <a class="btn btn-sm btn-outline-success" href="@createdIssueUrl" target="_blank" rel="noopener">Open on
+                  GitHub</a>
+              </div>
+            </div>
+          }
+
+          <EditForm Model="@model" OnValidSubmit="SubmitAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger mb-3" />
+
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label" for="issueType">Type</label>
+                <InputSelect id="issueType" class="form-select" @bind-Value="model.Type" disabled="@isSubmitting">
+                  <option value="bug">Bug report</option>
+                  <option value="feature">Feature request</option>
+                </InputSelect>
+              </div>
+
+              <div class="col-md-8">
+                <label class="form-label" for="issueTitle">Title</label>
+                <InputText id="issueTitle" class="form-control" @bind-Value="model.Title" disabled="@isSubmitting" />
+              </div>
+
+              <div class="col-12">
+                <label class="form-label" for="issueDesc">Description</label>
+                <InputTextArea id="issueDesc" class="form-control" style="min-height: 120px"
+                  @bind-Value="model.Description" disabled="@isSubmitting" />
+              </div>
+
+              <div class="col-12">
+                <details>
+                  <summary class="text-muted">Optional details</summary>
+                  <div class="mt-3">
+                    <label class="form-label" for="issueSteps">Steps to reproduce (bugs)</label>
+                    <InputTextArea id="issueSteps" class="form-control" style="min-height: 90px"
+                      @bind-Value="model.StepsToReproduce" disabled="@isSubmitting" />
+                  </div>
+                  <div class="mt-3">
+                    <label class="form-label" for="issueExpected">Expected behavior (bugs)</label>
+                    <InputTextArea id="issueExpected" class="form-control" style="min-height: 70px"
+                      @bind-Value="model.ExpectedBehavior" disabled="@isSubmitting" />
+                  </div>
+                  <div class="mt-3">
+                    <label class="form-label" for="issueActual">Actual behavior (bugs)</label>
+                    <InputTextArea id="issueActual" class="form-control" style="min-height: 70px"
+                      @bind-Value="model.ActualBehavior" disabled="@isSubmitting" />
+                  </div>
+                  <div class="mt-3">
+                    <label class="form-label" for="issueMore">Additional info</label>
+                    <InputTextArea id="issueMore" class="form-control" style="min-height: 70px"
+                      @bind-Value="model.AdditionalInfo" disabled="@isSubmitting" />
+                  </div>
+                </details>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" @onclick="Close"
+                disabled="@isSubmitting">Close</button>
+              <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                @if (isSubmitting)
+                {
+                  <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  <span>Submitting...</span>
+                }
+                else
+                {
+                  <span>Submit</span>
+                }
+              </button>
+            </div>
+          </EditForm>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@code {
+  [Parameter]
+  public bool Show { get; set; }
+
+  [Parameter]
+  public EventCallback<bool> ShowChanged { get; set; }
+
+  private CreateGitHubIssueRequest model = new();
+  private bool isSubmitting = false;
+  private string? errorMessage;
+  private string? createdIssueUrl;
+  private int? createdIssueNumber;
+
+  private async Task SubmitAsync()
+  {
+    isSubmitting = true;
+    errorMessage = null;
+
+    try
+    {
+      var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      var result = await FeedbackIssueService.CreateIssueAsync(model, authState.User, CancellationToken.None);
+      createdIssueUrl = result.HtmlUrl;
+      createdIssueNumber = result.Number;
+    }
+    catch (UnauthorizedAccessException)
+    {
+      errorMessage = "You must be logged in to submit a report.";
+    }
+    catch (ArgumentException ex)
+    {
+      errorMessage = ex.Message;
+    }
+    catch (Exception ex)
+    {
+      errorMessage = "Failed to submit report. Please try again.";
+      Console.WriteLine($"Error submitting issue: {ex.Message}");
+    }
+    finally
+    {
+      isSubmitting = false;
+      StateHasChanged();
+    }
+  }
+
+  private async Task Close()
+  {
+    await ShowChanged.InvokeAsync(false);
+
+    // reset state when closing
+    model = new CreateGitHubIssueRequest();
+    errorMessage = null;
+    createdIssueUrl = null;
+    createdIssueNumber = null;
+  }
+}

@@ -20,6 +20,9 @@ namespace OmniForge.Web.Configuration
 
                 // Discord bot token (used for Discord notifications)
                 "OMNIFORGE-BOT-KEY" => "DiscordBot:BotToken",
+
+                // GitHub issue creation token (used to create repo issues from in-app feedback)
+                "GITHUB-ISSUES-TOKEN" => "GitHub:IssuesToken",
                 _ => base.GetKey(secret)
             };
         }

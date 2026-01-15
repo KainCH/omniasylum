@@ -26,8 +26,10 @@ namespace OmniForge.Infrastructure
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
             services.Configure<RedisSettings>(configuration.GetSection("Redis"));
+            services.Configure<GitHubSettings>(configuration.GetSection("GitHub"));
 
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
+            services.AddHttpClient<IGitHubIssueService, GitHubIssueService>();
             services.AddScoped<IJwtService, JwtService>();
 
             var storageAccountName = configuration["AzureStorage:AccountName"];
