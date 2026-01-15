@@ -68,7 +68,6 @@ namespace OmniForge.Tests.Components.Pages
             ComponentFactories.AddStub<AlertEffectsModal>();
             ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
             ComponentFactories.AddStub<AlertsManagerModal>();
-            ComponentFactories.AddStub<ReportIssueModal>();
         }
 
         private IRenderedComponent<Dashboard> RenderDashboard()

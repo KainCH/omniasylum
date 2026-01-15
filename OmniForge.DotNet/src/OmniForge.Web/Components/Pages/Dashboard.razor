@@ -77,7 +77,8 @@
 
         <div class="controls-section">
           <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
-            <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill")"></i> @(isMonitoring ? "Stop          Monitor" : "Start Monitor")
+            <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
+            <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
           </button>
           <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
             @if (resettingCounters)
@@ -94,9 +95,6 @@
           </button>
           <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
             <i class="bi bi-magic"></i> Effects
-          </button>
-          <button class="btn-custom btn-export" @onclick="NavigateToRequests">
-            <i class="bi bi-bug-fill"></i> Features &amp; Bugs
           </button>
         </div>
 
@@ -263,11 +261,6 @@
   private void NavigateToAlerts()
   {
     NavigationManager.NavigateTo("alerts");
-  }
-
-  private void NavigateToRequests()
-  {
-    NavigationManager.NavigateTo("requests");
   }
 
   private void RefreshStatus()
