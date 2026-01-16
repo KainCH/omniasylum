@@ -75,7 +75,11 @@ namespace OmniForge.Tests.Services
             gameChatCommandsRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
 
             gameCustomCountersConfigRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((CustomCounterConfiguration?)null);
-            gameCustomCountersConfigRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<CustomCounterConfiguration>())).Returns(Task.CompletedTask);
+            CustomCounterConfiguration? seededCustomCountersConfig = null;
+            gameCustomCountersConfigRepository
+                .Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<CustomCounterConfiguration>()))
+                .Callback<string, string, CustomCounterConfiguration>((_, __, cfg) => seededCustomCountersConfig = cfg)
+                .Returns(Task.CompletedTask);
 
             gameCoreCountersConfigRepository.Setup(r => r.GetAsync("user1", "newGame")).ReturnsAsync((GameCoreCountersConfig?)null);
             gameCoreCountersConfigRepository.Setup(r => r.SaveAsync("user1", "newGame", It.IsAny<GameCoreCountersConfig>())).Returns(Task.CompletedTask);
@@ -106,6 +110,10 @@ namespace OmniForge.Tests.Services
             Assert.Equal("Old Category", savedPrevious!.LastCategoryName);
             Assert.Equal(5, savedPrevious.CustomCounters["kills"]);
             Assert.Equal(2, savedPrevious.CustomCounters["assists"]);
+
+            Assert.NotNull(seededCustomCountersConfig);
+            Assert.NotNull(seededCustomCountersConfig!.Counters);
+            Assert.Empty(seededCustomCountersConfig.Counters);
         }
 
         [Fact]

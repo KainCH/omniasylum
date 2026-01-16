@@ -134,7 +134,11 @@ namespace OmniForge.Tests.Services
             gameChatCommandsRepository.Setup(r => r.SaveAsync(userId, newGameId, It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
 
             gameCustomCountersConfigRepository.Setup(r => r.GetAsync(userId, newGameId)).ReturnsAsync((CustomCounterConfiguration?)null);
-            gameCustomCountersConfigRepository.Setup(r => r.SaveAsync(userId, newGameId, It.IsAny<CustomCounterConfiguration>())).Returns(Task.CompletedTask);
+            CustomCounterConfiguration? seededCustomCountersConfig = null;
+            gameCustomCountersConfigRepository
+                .Setup(r => r.SaveAsync(userId, newGameId, It.IsAny<CustomCounterConfiguration>()))
+                .Callback<string, string, CustomCounterConfiguration>((_, __, cfg) => seededCustomCountersConfig = cfg)
+                .Returns(Task.CompletedTask);
 
             gameCoreCountersConfigRepository.Setup(r => r.GetAsync(userId, newGameId)).ReturnsAsync((GameCoreCountersConfig?)null);
             GameCoreCountersConfig? seededCoreSelection = null;
@@ -186,6 +190,10 @@ namespace OmniForge.Tests.Services
             Assert.False(seededCoreSelection.SwearsEnabled);
             Assert.True(seededCoreSelection.ScreamsEnabled);
             Assert.False(seededCoreSelection.BitsEnabled);
+
+            Assert.NotNull(seededCustomCountersConfig);
+            Assert.NotNull(seededCustomCountersConfig!.Counters);
+            Assert.Empty(seededCustomCountersConfig.Counters);
 
             Assert.NotNull(appliedCcls);
             Assert.Contains("Gambling", appliedCcls!);
