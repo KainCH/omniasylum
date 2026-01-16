@@ -9,6 +9,7 @@ using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using Microsoft.Extensions.Options;
+using OmniForge.Core.Entities;
 using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
@@ -63,6 +64,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
             var twitchApiService = scope.ServiceProvider.GetService<ITwitchApiService>();
             var gameLibraryRepository = scope.ServiceProvider.GetService<IGameLibraryRepository>();
+            var gameCountersRepository = scope.ServiceProvider.GetService<IGameCountersRepository>();
+            var gameContextRepository = scope.ServiceProvider.GetService<IGameContextRepository>();
 
             var user = await userRepository.GetUserAsync(broadcasterId);
             if (user == null)
@@ -70,26 +73,83 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 return;
             }
 
-            // Update Counter
-            var counters = await counterRepository.GetCountersAsync(broadcasterId);
-            if (counters != null)
+            var now = DateTimeOffset.UtcNow;
+
+            // Load current counters, then (if possible) load the saved per-game snapshot for the detected category.
+            var counters = await counterRepository.GetCountersAsync(broadcasterId) ?? new Counter { TwitchUserId = broadcasterId };
+
+            TwitchChannelCategoryDto? category = null;
+            if (twitchApiService != null)
             {
-                counters.StreamStarted = DateTimeOffset.UtcNow;
-                await counterRepository.SaveCountersAsync(counters);
+                try
+                {
+                    category = await twitchApiService.GetChannelCategoryAsync(broadcasterId);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "⚠️ Failed to fetch channel category on stream online for user {UserId}", LogSanitizer.Sanitize(broadcasterId));
+                }
             }
 
+            if (category != null && !string.IsNullOrWhiteSpace(category.GameId) && gameCountersRepository != null)
+            {
+                try
+                {
+                    var savedForGame = await gameCountersRepository.GetAsync(broadcasterId, category.GameId);
+                    if (savedForGame != null)
+                    {
+                        counters = savedForGame;
+                        counters.TwitchUserId = broadcasterId;
+                        counters.LastCategoryName = category.GameName;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "⚠️ Failed loading saved per-game counters on stream online for user {UserId} game {GameId}", LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(category.GameId));
+                }
+
+                // Best-effort: persist game context for other subsystems.
+                if (gameContextRepository != null)
+                {
+                    try
+                    {
+                        await gameContextRepository.SaveAsync(new GameContext
+                        {
+                            UserId = broadcasterId,
+                            ActiveGameId = category.GameId,
+                            ActiveGameName = category.GameName,
+                            UpdatedAt = now
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        // Best-effort only: log and continue without failing the stream online flow.
+                        Logger.LogWarning(
+                            ex,
+                            "⚠️ Failed to persist game context on stream online for user {UserId} game {GameId}",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            LogSanitizer.Sanitize(category.GameId));
+                    }
+                }
+            }
+
+            // Update Counter
+            counters.StreamStarted = now;
+            counters.LastUpdated = now;
+            counters.Bits = 0;
+            await counterRepository.SaveCountersAsync(counters);
+
             // Notify Overlay
-            if (overlayNotifier != null && counters != null)
+            if (overlayNotifier != null)
             {
                 await overlayNotifier.NotifyStreamStartedAsync(broadcasterId, counters);
             }
 
-            // When the stream goes online, fetch the channel category and apply per-game CCLs from the library.
+            // When the stream goes online, apply per-game CCLs from the library using the fetched category.
             if (twitchApiService != null && gameLibraryRepository != null)
             {
                 try
                 {
-                    var category = await twitchApiService.GetChannelCategoryAsync(broadcasterId);
                     if (category != null && !string.IsNullOrWhiteSpace(category.GameId))
                     {
                         Logger.LogInformation(
@@ -107,7 +167,6 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 LogSanitizer.Sanitize(category.GameId),
                                 LogSanitizer.Sanitize(category.GameName));
 
-                            var now = DateTimeOffset.UtcNow;
                             await gameLibraryRepository.UpsertAsync(new Core.Entities.GameLibraryItem
                             {
                                 // Repository is global; UserId is ignored for partitioning.

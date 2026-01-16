@@ -630,3 +630,12 @@ try {
 6. Are Twitch tokens being refreshed?
 7. Is this accessible via WebSocket and/or REST?
 8. Does the admin need visibility into this?
+
+## Pull Requests (GitHub MCP Required)
+
+When creating or updating Pull Requests for this repo:
+
+1. **MUST** use the GitHub MCP tools (e.g. `mcp_github_*`) for PR creation, updates, and review workflows.
+2. **DO NOT** create PRs via terminal commands (`gh pr create`, `hub`, raw `curl`, etc.) unless the GitHub MCP tools are unavailable.
+3. Before creating a PR, search for a PR template in `.github/` and follow it if present.
+4. Prefer a single PR per logical change-set; keep PR titles and descriptions concise and action-oriented.

@@ -40,7 +40,8 @@ namespace OmniForge.Infrastructure.Repositories
                     Bits = GetInt32SafeCaseInsensitive(entity, "Bits"),
                     LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                     StreamStarted = GetDateTimeOffsetSafe(entity, "StreamStarted") ?? GetDateTimeOffsetSafe(entity, "streamStarted"),
-                    LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId")
+                    LastNotifiedStreamId = entity.GetString("LastNotifiedStreamId") ?? entity.GetString("lastNotifiedStreamId"),
+                    LastCategoryName = entity.GetString("LastCategoryName") ?? entity.GetString("lastCategoryName")
                 };
 
                 // Map custom counters
@@ -53,7 +54,8 @@ namespace OmniForge.Infrastructure.Repositories
                         !string.Equals(key, "Bits", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(key, "LastUpdated", StringComparison.OrdinalIgnoreCase) &&
                         !string.Equals(key, "StreamStarted", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase))
+                        !string.Equals(key, "LastNotifiedStreamId", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, "LastCategoryName", StringComparison.OrdinalIgnoreCase))
                     {
                         // Handle various numeric types that may be stored
                         // Use nullable pattern to properly distinguish "not found" from valid values
@@ -87,7 +89,8 @@ namespace OmniForge.Infrastructure.Repositories
                 ["Bits"] = counter.Bits,
                 ["LastUpdated"] = counter.LastUpdated,
                 ["StreamStarted"] = counter.StreamStarted,
-                ["LastNotifiedStreamId"] = counter.LastNotifiedStreamId
+                ["LastNotifiedStreamId"] = counter.LastNotifiedStreamId,
+                ["LastCategoryName"] = counter.LastCategoryName
             };
 
             foreach (var kvp in counter.CustomCounters)

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 
@@ -12,24 +13,33 @@ namespace OmniForge.Web.Controllers
     [Route("api/stream")]
     public class StreamController : ControllerBase
     {
+        private readonly ILogger<StreamController> _logger;
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly IStreamMonitorService _streamMonitorService;
         private readonly ITwitchClientManager _twitchClientManager;
+        private readonly IGameContextRepository _gameContextRepository;
+        private readonly IGameCountersRepository _gameCountersRepository;
 
         public StreamController(
+            ILogger<StreamController> logger,
             IUserRepository userRepository,
             ICounterRepository counterRepository,
             IOverlayNotifier overlayNotifier,
             IStreamMonitorService streamMonitorService,
-            ITwitchClientManager twitchClientManager)
+            ITwitchClientManager twitchClientManager,
+            IGameContextRepository gameContextRepository,
+            IGameCountersRepository gameCountersRepository)
         {
+            _logger = logger;
             _userRepository = userRepository;
             _counterRepository = counterRepository;
             _overlayNotifier = overlayNotifier;
             _streamMonitorService = streamMonitorService;
             _twitchClientManager = twitchClientManager;
+            _gameContextRepository = gameContextRepository;
+            _gameCountersRepository = gameCountersRepository;
         }
 
         [HttpPost("status")]
@@ -439,14 +449,37 @@ namespace OmniForge.Web.Controllers
 
         private async Task<Counter> StartStreamInternal(string userId)
         {
-            var counters = await _counterRepository.GetCountersAsync(userId);
-            if (counters == null)
+            var now = DateTimeOffset.UtcNow;
+
+            var counters = await _counterRepository.GetCountersAsync(userId) ?? new Counter { TwitchUserId = userId };
+
+            // Best-effort: if we have an active game context and a saved counter snapshot for that game,
+            // load it as the starting state for this stream.
+            try
             {
-                counters = new Counter { TwitchUserId = userId };
+                var ctx = await _gameContextRepository.GetAsync(userId);
+                if (!string.IsNullOrWhiteSpace(ctx?.ActiveGameId))
+                {
+                    var savedForGame = await _gameCountersRepository.GetAsync(userId, ctx.ActiveGameId!);
+                    if (savedForGame != null)
+                    {
+                        counters = savedForGame;
+                        counters.TwitchUserId = userId;
+                        if (!string.IsNullOrWhiteSpace(ctx.ActiveGameName))
+                        {
+                            counters.LastCategoryName = ctx.ActiveGameName;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to load game context/counters on stream start for user {UserId}", userId);
             }
 
             counters.Bits = 0;
-            counters.StreamStarted = DateTimeOffset.UtcNow;
+            counters.StreamStarted = now;
+            counters.LastUpdated = now;
 
             await _counterRepository.SaveCountersAsync(counters);
             await _overlayNotifier.NotifyStreamStartedAsync(userId, counters);
@@ -456,16 +489,46 @@ namespace OmniForge.Web.Controllers
 
         private async Task<Counter> EndStreamInternal(string userId)
         {
+            var now = DateTimeOffset.UtcNow;
+
             var counters = await _counterRepository.GetCountersAsync(userId);
             if (counters == null)
             {
                 counters = new Counter { TwitchUserId = userId };
             }
 
+            GameContext? ctx = null;
+            try
+            {
+                ctx = await _gameContextRepository.GetAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to load game context on stream end for user {UserId}", userId);
+            }
+
             counters.StreamStarted = null;
+            counters.LastUpdated = now;
+            if (!string.IsNullOrWhiteSpace(ctx?.ActiveGameName))
+            {
+                counters.LastCategoryName = ctx.ActiveGameName;
+            }
             // Clear last notified stream ID if we were tracking it (not implemented in Counter entity yet, but logic is in JS)
 
             await _counterRepository.SaveCountersAsync(counters);
+
+            // Best-effort per-game save so the game-detected counter system has an up-to-date snapshot at stream end.
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(ctx?.ActiveGameId))
+                {
+                    await _gameCountersRepository.SaveAsync(userId, ctx.ActiveGameId!, counters);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to save per-game counters on stream end for user {UserId} game {GameId}", userId, ctx?.ActiveGameId);
+            }
             await _overlayNotifier.NotifyStreamEndedAsync(userId, counters);
 
             return counters;

@@ -44,6 +44,7 @@ namespace OmniForge.Infrastructure.Repositories
                     LastUpdated = GetDateTimeOffsetSafe(entity, "LastUpdated") ?? GetDateTimeOffsetSafe(entity, "lastUpdated") ?? DateTimeOffset.UtcNow,
                     StreamStarted = null,
                     LastNotifiedStreamId = null,
+                    LastCategoryName = entity.GetString("LastCategoryName") ?? entity.GetString("lastCategoryName"),
                     CustomCounters = customCounters
                 };
             }
@@ -62,6 +63,7 @@ namespace OmniForge.Infrastructure.Repositories
                 ["Screams"] = counters.Screams,
                 ["Bits"] = counters.Bits,
                 ["LastUpdated"] = counters.LastUpdated,
+                ["LastCategoryName"] = counters.LastCategoryName ?? string.Empty,
                 ["customCounters"] = JsonSerializer.Serialize(counters.CustomCounters ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase))
             };
 

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -18,6 +19,9 @@ namespace OmniForge.Tests
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly Mock<ITwitchClientManager> _mockTwitchClientManager;
+        private readonly Mock<IGameContextRepository> _mockGameContextRepository;
+        private readonly Mock<IGameCountersRepository> _mockGameCountersRepository;
+        private readonly Mock<ILogger<StreamController>> _mockLogger;
         private readonly StreamController _controller;
 
         public StreamControllerTests()
@@ -27,13 +31,19 @@ namespace OmniForge.Tests
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockStreamMonitorService = new Mock<IStreamMonitorService>();
             _mockTwitchClientManager = new Mock<ITwitchClientManager>();
+            _mockGameContextRepository = new Mock<IGameContextRepository>();
+            _mockGameCountersRepository = new Mock<IGameCountersRepository>();
+            _mockLogger = new Mock<ILogger<StreamController>>();
 
             _controller = new StreamController(
+                _mockLogger.Object,
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
                 _mockOverlayNotifier.Object,
                 _mockStreamMonitorService.Object,
-                _mockTwitchClientManager.Object);
+                _mockTwitchClientManager.Object,
+                _mockGameContextRepository.Object,
+                _mockGameCountersRepository.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
             {
@@ -49,11 +59,14 @@ namespace OmniForge.Tests
         private StreamController CreateControllerWithoutUser()
         {
             var controller = new StreamController(
+                _mockLogger.Object,
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
                 _mockOverlayNotifier.Object,
                 _mockStreamMonitorService.Object,
-                _mockTwitchClientManager.Object);
+                _mockTwitchClientManager.Object,
+                _mockGameContextRepository.Object,
+                _mockGameCountersRepository.Object);
 
             var user = new ClaimsPrincipal(new ClaimsIdentity());
             controller.ControllerContext = new ControllerContext
@@ -100,7 +113,18 @@ namespace OmniForge.Tests
         {
             var user = new User { TwitchUserId = "12345", StreamStatus = "live" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345")).ReturnsAsync(new Counter());
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345")).ReturnsAsync(new Counter
+            {
+                TwitchUserId = "12345",
+                CustomCounters = new System.Collections.Generic.Dictionary<string, int> { ["kills"] = 7 }
+            });
+            _mockGameContextRepository.Setup(x => x.GetAsync("12345")).ReturnsAsync(new GameContext
+            {
+                UserId = "12345",
+                ActiveGameId = "game-abc",
+                ActiveGameName = "Test Category"
+            });
+            _mockGameCountersRepository.Setup(x => x.SaveAsync("12345", "game-abc", It.IsAny<Counter>())).Returns(Task.CompletedTask);
 
             var request = new UpdateStatusRequest { Action = "end-stream" };
             var result = await _controller.UpdateStatus(request);
@@ -108,6 +132,14 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.StreamStatus == "offline")), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync("12345", It.IsAny<Counter>()), Times.Once);
+
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
+                c.LastCategoryName == "Test Category" &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7))), Times.Once);
+
+            _mockGameCountersRepository.Verify(x => x.SaveAsync("12345", "game-abc", It.Is<Counter>(c =>
+                c.LastCategoryName == "Test Category" &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7))), Times.Once);
         }
 
         [Fact]
@@ -309,6 +341,38 @@ namespace OmniForge.Tests
             var result = await _controller.StartStream();
 
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.Bits == 0)), Times.Once);
+        }
+
+        [Fact]
+        public async Task StartStream_WhenSavedCountersExistForActiveGame_ShouldLoadCounterStateForGame()
+        {
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345")).ReturnsAsync(new Counter { TwitchUserId = "12345", Deaths = 1 });
+            _mockGameContextRepository.Setup(x => x.GetAsync("12345")).ReturnsAsync(new GameContext
+            {
+                UserId = "12345",
+                ActiveGameId = "game-abc",
+                ActiveGameName = "Test Category"
+            });
+
+            _mockGameCountersRepository.Setup(x => x.GetAsync("12345", "game-abc")).ReturnsAsync(new Counter
+            {
+                TwitchUserId = "12345",
+                Deaths = 42,
+                Swears = 3,
+                CustomCounters = new System.Collections.Generic.Dictionary<string, int> { ["kills"] = 7 }
+            });
+
+            var result = await _controller.StartStream();
+
+            Assert.IsType<OkObjectResult>(result);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
+                c.Deaths == 42 &&
+                c.Swears == 3 &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7) &&
+                c.LastCategoryName == "Test Category" &&
+                c.Bits == 0 &&
+                c.StreamStarted != null
+            )), Times.Once);
         }
 
         #endregion

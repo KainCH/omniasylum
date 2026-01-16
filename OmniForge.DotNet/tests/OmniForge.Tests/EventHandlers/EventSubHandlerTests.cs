@@ -14,6 +14,7 @@ using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api.Helix.Models.Channels.GetChannelInformation;
 using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 using Xunit;
+using OmniForge.Tests;
 
 namespace OmniForge.Tests.EventHandlers
 {
@@ -33,6 +34,8 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<ITwitchAuthService> _mockAuthService;
         private readonly Mock<ITwitchApiService> _mockTwitchApiService;
         private readonly Mock<IGameLibraryRepository> _mockGameLibraryRepository;
+        private readonly Mock<IGameCountersRepository> _mockGameCountersRepository;
+        private readonly Mock<IGameContextRepository> _mockGameContextRepository;
         private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOnlineHandler _handler;
 
@@ -52,6 +55,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockAuthService = new Mock<ITwitchAuthService>();
             _mockTwitchApiService = new Mock<ITwitchApiService>();
             _mockGameLibraryRepository = new Mock<IGameLibraryRepository>();
+            _mockGameCountersRepository = new Mock<IGameCountersRepository>();
+            _mockGameContextRepository = new Mock<IGameContextRepository>();
             _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
@@ -82,6 +87,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(_mockOverlayNotifier.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchApiService))).Returns(_mockTwitchApiService.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IGameLibraryRepository))).Returns(_mockGameLibraryRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameCountersRepository))).Returns(_mockGameCountersRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameContextRepository))).Returns(_mockGameContextRepository.Object);
         }
 
         [Fact]
@@ -166,6 +173,48 @@ namespace OmniForge.Tests.EventHandlers
 
             // Assert
             _mockOverlayNotifier.Verify(x => x.NotifyStreamStartedAsync("123", counters), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenSavedCountersExistForDetectedGame_ShouldLoadCounterStateForGame()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(new Counter { TwitchUserId = "123", Deaths = 1 });
+            _mockTwitchApiService.Setup(x => x.GetChannelCategoryAsync("123")).ReturnsAsync(new TwitchChannelCategoryDto
+            {
+                BroadcasterId = "123",
+                GameId = "game-abc",
+                GameName = "Test Category"
+            });
+
+            _mockGameCountersRepository.Setup(x => x.GetAsync("123", "game-abc")).ReturnsAsync(new Counter
+            {
+                TwitchUserId = "123",
+                Deaths = 42,
+                Swears = 3,
+                CustomCounters = new System.Collections.Generic.Dictionary<string, int> { ["kills"] = 7 }
+            });
+
+            await _handler.HandleAsync(eventData);
+
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
+                c.Deaths == 42 &&
+                c.Swears == 3 &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7) &&
+                c.LastCategoryName == "Test Category" &&
+                c.Bits == 0 &&
+                c.StreamStarted != null
+            )), Times.Once);
+
+            _mockOverlayNotifier.Verify(x => x.NotifyStreamStartedAsync("123", It.Is<Counter>(c => c.Deaths == 42)), Times.Once);
+            _mockGameContextRepository.Verify(x => x.SaveAsync(It.Is<GameContext>(g => g.ActiveGameId == "game-abc" && g.ActiveGameName == "Test Category")), Times.Once);
         }
 
         [Fact]
@@ -423,7 +472,7 @@ namespace OmniForge.Tests.EventHandlers
         }
 
         [Fact]
-        public async Task HandleAsync_WhenCountersNull_ShouldNotNotifyOverlay()
+        public async Task HandleAsync_WhenCountersNotFound_ShouldCreateNewCountersAndNotifyStreamStarted()
         {
             // Arrange
             var eventData = JsonDocument.Parse(@"{
@@ -440,7 +489,8 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             // Assert
-            _mockOverlayNotifier.Verify(x => x.NotifyStreamStartedAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.TwitchUserId == "123" && c.StreamStarted != null)), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyStreamStartedAsync("123", It.IsAny<Counter>()), Times.Once);
         }
 
         [Fact]
@@ -611,6 +661,8 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IUserRepository> _mockUserRepository;
         private readonly Mock<ICounterRepository> _mockCounterRepository;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
+        private readonly Mock<IGameContextRepository> _mockGameContextRepository;
+        private readonly Mock<IGameCountersRepository> _mockGameCountersRepository;
         private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
         private readonly StreamOfflineHandler _handler;
 
@@ -623,6 +675,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockUserRepository = new Mock<IUserRepository>();
             _mockCounterRepository = new Mock<ICounterRepository>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
+            _mockGameContextRepository = new Mock<IGameContextRepository>();
+            _mockGameCountersRepository = new Mock<IGameCountersRepository>();
             _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
 
             SetupDependencyInjection();
@@ -639,6 +693,8 @@ namespace OmniForge.Tests.EventHandlers
             _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IUserRepository))).Returns(_mockUserRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(ICounterRepository))).Returns(_mockCounterRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameContextRepository))).Returns(_mockGameContextRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IGameCountersRepository))).Returns(_mockGameCountersRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(_mockOverlayNotifier.Object);
         }
 
