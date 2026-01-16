@@ -239,7 +239,8 @@ namespace OmniForge.Web.Controllers
         }
 
         /// <summary>
-        /// Overwrite an existing series snapshot with the current counters (no body required)
+        /// Overwrite an existing series snapshot with the current counters (no body required).
+        /// If the series does not exist, a new save is created with the provided seriesId.
         /// </summary>
         [HttpPost("{seriesId}/overwrite")]
         public async Task<IActionResult> OverwriteSeries(string seriesId)
