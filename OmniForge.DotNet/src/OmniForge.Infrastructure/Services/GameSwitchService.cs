@@ -225,7 +225,12 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 var loadedCustom = await _gameCustomCountersConfigRepository.GetAsync(userId, gameId);
-                newCustomCountersConfig = loadedCustom ?? activeCustomCounters ?? new CustomCounterConfiguration();
+
+                // IMPORTANT: Do not seed a newly detected game's custom counters from the currently-active game.
+                // Otherwise, switching/adding a game can cause counters from the previous game to appear as
+                // enabled for the new game.
+                newCustomCountersConfig = loadedCustom ?? new CustomCounterConfiguration();
+
                 if (loadedCustom == null)
                 {
                     await _gameCustomCountersConfigRepository.SaveAsync(userId, gameId, newCustomCountersConfig);
@@ -233,8 +238,8 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed loading game custom counters config for user {UserId} game {GameId}; using active", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
-                newCustomCountersConfig = activeCustomCounters ?? new CustomCounterConfiguration();
+                _logger.LogError(ex, "❌ Failed loading game custom counters config for user {UserId} game {GameId}; using empty config", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                newCustomCountersConfig = new CustomCounterConfiguration();
             }
 
             newCounters.TwitchUserId = userId;
