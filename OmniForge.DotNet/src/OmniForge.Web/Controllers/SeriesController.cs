@@ -248,21 +248,31 @@ namespace OmniForge.Web.Controllers
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var existingSeries = await _seriesRepository.GetSeriesByIdAsync(userId, seriesId);
-            if (existingSeries == null)
-            {
-                return NotFound(new { error = "Series save not found" });
-            }
+            var now = DateTimeOffset.UtcNow;
 
             var currentCounters = await _counterRepository.GetCountersAsync(userId);
-            existingSeries.Snapshot = currentCounters ?? new Counter { TwitchUserId = userId };
-            existingSeries.LastUpdated = DateTimeOffset.UtcNow;
+            var snapshot = currentCounters ?? new Counter { TwitchUserId = userId };
 
-            await _seriesRepository.UpdateSeriesAsync(existingSeries);
+            var isNew = existingSeries == null;
+            var series = existingSeries ?? new Series
+            {
+                Id = seriesId,
+                UserId = userId,
+                Name = seriesId,
+                Description = string.Empty,
+                CreatedAt = now,
+                IsActive = false
+            };
+
+            series.Snapshot = snapshot;
+            series.LastUpdated = now;
+
+            await _seriesRepository.UpdateSeriesAsync(series);
 
             return Ok(new
             {
-                message = "Series overwritten successfully",
-                save = CreateSeriesSaveResponse(existingSeries)
+                message = isNew ? "Series saved successfully" : "Series overwritten successfully",
+                save = CreateSeriesSaveResponse(series)
             });
         }
 

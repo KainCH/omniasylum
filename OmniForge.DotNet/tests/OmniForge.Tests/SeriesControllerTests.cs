@@ -258,18 +258,30 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task OverwriteSeries_ShouldReturnNull_WhenSeriesDoesNotExist_AndNotLoadCounters()
+        public async Task OverwriteSeries_ShouldCreateNewSave_WhenSeriesDoesNotExist()
         {
             var seriesId = "missing";
 
+            var counters = new Counter { Deaths = 30, Swears = 15, Screams = 8 };
+
             _mockSeriesRepository.Setup(x => x.GetSeriesByIdAsync("12345", seriesId))
                 .ReturnsAsync((Series?)null);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
+                .ReturnsAsync(counters);
 
             var result = await _controller.OverwriteSeries(seriesId);
 
-            Assert.IsType<NotFoundObjectResult>(result);
-            _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
-            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.IsAny<Series>()), Times.Never);
+            Assert.IsType<OkObjectResult>(result);
+            _mockCounterRepository.Verify(x => x.GetCountersAsync("12345"), Times.Once);
+            _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.Is<Series>(s =>
+                s.Id == seriesId &&
+                s.UserId == "12345" &&
+                s.Name == seriesId &&
+                s.Description == string.Empty &&
+                s.Snapshot.Deaths == 30 &&
+                s.Snapshot.Swears == 15 &&
+                s.Snapshot.Screams == 8
+            )), Times.Once);
         }
 
         [Fact]
