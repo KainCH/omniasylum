@@ -250,7 +250,7 @@ namespace OmniForge.Web.Controllers
             var existingSeries = await _seriesRepository.GetSeriesByIdAsync(userId, seriesId);
             if (existingSeries == null)
             {
-                return Ok(null);
+                return NotFound(new { error = "Series save not found" });
             }
 
             var currentCounters = await _counterRepository.GetCountersAsync(userId);

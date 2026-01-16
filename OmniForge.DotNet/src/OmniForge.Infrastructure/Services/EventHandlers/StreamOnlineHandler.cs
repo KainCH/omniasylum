@@ -162,15 +162,14 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 LogSanitizer.Sanitize(category.GameId),
                                 LogSanitizer.Sanitize(category.GameName));
 
-                            var addedAt = DateTimeOffset.UtcNow;
                             await gameLibraryRepository.UpsertAsync(new Core.Entities.GameLibraryItem
                             {
                                 // Repository is global; UserId is ignored for partitioning.
                                 UserId = "global",
                                 GameId = category.GameId,
                                 GameName = category.GameName,
-                                CreatedAt = addedAt,
-                                LastSeenAt = addedAt,
+                                CreatedAt = now,
+                                LastSeenAt = now,
                                 BoxArtUrl = string.Empty,
                                 EnabledContentClassificationLabels = null
                             });

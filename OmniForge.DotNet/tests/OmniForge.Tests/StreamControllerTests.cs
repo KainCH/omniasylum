@@ -52,6 +52,13 @@ namespace OmniForge.Tests
             };
         }
 
+        private static bool HasCustomCounterValue(Counter c, string key, int expected)
+        {
+            return c.CustomCounters != null
+                && c.CustomCounters.TryGetValue(key, out var value)
+                && value == expected;
+        }
+
         private StreamController CreateControllerWithoutUser()
         {
             var controller = new StreamController(
@@ -130,13 +137,11 @@ namespace OmniForge.Tests
 
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
                 c.LastCategoryName == "Test Category" &&
-                c.CustomCounters.ContainsKey("kills") &&
-                c.CustomCounters["kills"] == 7)), Times.Once);
+                HasCustomCounterValue(c, "kills", 7))), Times.Once);
 
             _mockGameCountersRepository.Verify(x => x.SaveAsync("12345", "game-abc", It.Is<Counter>(c =>
                 c.LastCategoryName == "Test Category" &&
-                c.CustomCounters.ContainsKey("kills") &&
-                c.CustomCounters["kills"] == 7)), Times.Once);
+                HasCustomCounterValue(c, "kills", 7))), Times.Once);
         }
 
         [Fact]
@@ -365,8 +370,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
                 c.Deaths == 42 &&
                 c.Swears == 3 &&
-                c.CustomCounters.ContainsKey("kills") &&
-                c.CustomCounters["kills"] == 7 &&
+                HasCustomCounterValue(c, "kills", 7) &&
                 c.LastCategoryName == "Test Category" &&
                 c.Bits == 0 &&
                 c.StreamStarted != null

@@ -267,8 +267,7 @@ namespace OmniForge.Tests
 
             var result = await _controller.OverwriteSeries(seriesId);
 
-            var ok = Assert.IsType<OkObjectResult>(result);
-            Assert.Null(ok.Value);
+            Assert.IsType<NotFoundObjectResult>(result);
             _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
             _mockSeriesRepository.Verify(x => x.UpdateSeriesAsync(It.IsAny<Series>()), Times.Never);
         }

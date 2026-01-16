@@ -108,7 +108,7 @@ namespace OmniForge.Infrastructure.Services
             // Twitch chat (especially mobile) can contain non-breaking spaces or other unicode whitespace.
             // Normalize and split on any whitespace so "!cmd+ 5" reliably parses the amount.
             var normalizedMessage = context.Message.Replace('\u00A0', ' ').Trim();
-            var parts = normalizedMessage.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var parts = normalizedMessage.Split(Array.Empty<char>(), StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return;
 
             var commandText = parts[0].ToLowerInvariant();
