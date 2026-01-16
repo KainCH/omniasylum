@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 
@@ -12,6 +13,7 @@ namespace OmniForge.Web.Controllers
     [Route("api/stream")]
     public class StreamController : ControllerBase
     {
+        private readonly ILogger<StreamController> _logger;
         private readonly IUserRepository _userRepository;
         private readonly ICounterRepository _counterRepository;
         private readonly IOverlayNotifier _overlayNotifier;
@@ -21,6 +23,7 @@ namespace OmniForge.Web.Controllers
         private readonly IGameCountersRepository _gameCountersRepository;
 
         public StreamController(
+            ILogger<StreamController> logger,
             IUserRepository userRepository,
             ICounterRepository counterRepository,
             IOverlayNotifier overlayNotifier,
@@ -29,6 +32,7 @@ namespace OmniForge.Web.Controllers
             IGameContextRepository gameContextRepository,
             IGameCountersRepository gameCountersRepository)
         {
+            _logger = logger;
             _userRepository = userRepository;
             _counterRepository = counterRepository;
             _overlayNotifier = overlayNotifier;
@@ -468,9 +472,9 @@ namespace OmniForge.Web.Controllers
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort only; stream start should still proceed.
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to load game context/counters on stream start for user {UserId}", userId);
             }
 
             counters.Bits = 0;
@@ -498,9 +502,9 @@ namespace OmniForge.Web.Controllers
             {
                 ctx = await _gameContextRepository.GetAsync(userId);
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort only; stream end should still proceed.
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to load game context on stream end for user {UserId}", userId);
             }
 
             counters.StreamStarted = null;
@@ -521,9 +525,9 @@ namespace OmniForge.Web.Controllers
                     await _gameCountersRepository.SaveAsync(userId, ctx.ActiveGameId!, counters);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort only; failing to save per-game counters should not break end-stream.
+                _logger.LogWarning(ex, "⚠️ Best-effort: failed to save per-game counters on stream end for user {UserId} game {GameId}", userId, ctx?.ActiveGameId);
             }
             await _overlayNotifier.NotifyStreamEndedAsync(userId, counters);
 

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -20,6 +21,7 @@ namespace OmniForge.Tests
         private readonly Mock<ITwitchClientManager> _mockTwitchClientManager;
         private readonly Mock<IGameContextRepository> _mockGameContextRepository;
         private readonly Mock<IGameCountersRepository> _mockGameCountersRepository;
+        private readonly Mock<ILogger<StreamController>> _mockLogger;
         private readonly StreamController _controller;
 
         public StreamControllerTests()
@@ -31,8 +33,10 @@ namespace OmniForge.Tests
             _mockTwitchClientManager = new Mock<ITwitchClientManager>();
             _mockGameContextRepository = new Mock<IGameContextRepository>();
             _mockGameCountersRepository = new Mock<IGameCountersRepository>();
+            _mockLogger = new Mock<ILogger<StreamController>>();
 
             _controller = new StreamController(
+                _mockLogger.Object,
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
                 _mockOverlayNotifier.Object,
@@ -52,16 +56,10 @@ namespace OmniForge.Tests
             };
         }
 
-        private static bool HasCustomCounterValue(Counter c, string key, int expected)
-        {
-            return c.CustomCounters != null
-                && c.CustomCounters.TryGetValue(key, out var value)
-                && value == expected;
-        }
-
         private StreamController CreateControllerWithoutUser()
         {
             var controller = new StreamController(
+                _mockLogger.Object,
                 _mockUserRepository.Object,
                 _mockCounterRepository.Object,
                 _mockOverlayNotifier.Object,
@@ -137,11 +135,11 @@ namespace OmniForge.Tests
 
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
                 c.LastCategoryName == "Test Category" &&
-                HasCustomCounterValue(c, "kills", 7))), Times.Once);
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7))), Times.Once);
 
             _mockGameCountersRepository.Verify(x => x.SaveAsync("12345", "game-abc", It.Is<Counter>(c =>
                 c.LastCategoryName == "Test Category" &&
-                HasCustomCounterValue(c, "kills", 7))), Times.Once);
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7))), Times.Once);
         }
 
         [Fact]
@@ -370,7 +368,7 @@ namespace OmniForge.Tests
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
                 c.Deaths == 42 &&
                 c.Swears == 3 &&
-                HasCustomCounterValue(c, "kills", 7) &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7) &&
                 c.LastCategoryName == "Test Category" &&
                 c.Bits == 0 &&
                 c.StreamStarted != null

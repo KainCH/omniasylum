@@ -121,9 +121,14 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                             UpdatedAt = now
                         });
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Best-effort only.
+                        // Best-effort only: log and continue without failing the stream online flow.
+                        Logger.LogWarning(
+                            ex,
+                            "⚠️ Failed to persist game context on stream online for user {UserId} game {GameId}",
+                            LogSanitizer.Sanitize(broadcasterId),
+                            LogSanitizer.Sanitize(category.GameId));
                     }
                 }
             }

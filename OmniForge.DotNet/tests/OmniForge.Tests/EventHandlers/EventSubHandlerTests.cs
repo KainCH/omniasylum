@@ -14,18 +14,12 @@ using OmniForge.Infrastructure.Services.EventHandlers;
 using TwitchLib.Api.Helix.Models.Channels.GetChannelInformation;
 using TwitchLib.Api.Helix.Models.Streams.GetStreams;
 using Xunit;
+using OmniForge.Tests;
 
 namespace OmniForge.Tests.EventHandlers
 {
     public class StreamOnlineHandlerTests
     {
-        private static bool HasCustomCounterValue(Counter c, string key, int expected)
-        {
-            return c.CustomCounters != null
-                && c.CustomCounters.TryGetValue(key, out var value)
-                && value == expected;
-        }
-
         private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
         private readonly Mock<IServiceScope> _mockScope;
         private readonly Mock<IServiceProvider> _mockServiceProvider;
@@ -213,7 +207,7 @@ namespace OmniForge.Tests.EventHandlers
             _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c =>
                 c.Deaths == 42 &&
                 c.Swears == 3 &&
-                HasCustomCounterValue(c, "kills", 7) &&
+                CounterTestHelpers.HasCustomCounterValue(c, "kills", 7) &&
                 c.LastCategoryName == "Test Category" &&
                 c.Bits == 0 &&
                 c.StreamStarted != null
@@ -478,7 +472,7 @@ namespace OmniForge.Tests.EventHandlers
         }
 
         [Fact]
-        public async Task HandleAsync_WhenCountersNull_ShouldCreateCountersAndNotifyOverlay()
+        public async Task HandleAsync_WhenCountersNotFound_ShouldCreateNewCountersAndNotifyStreamStarted()
         {
             // Arrange
             var eventData = JsonDocument.Parse(@"{

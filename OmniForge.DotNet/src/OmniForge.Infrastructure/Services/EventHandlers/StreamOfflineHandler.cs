@@ -62,9 +62,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     ctx = await gameContextRepository.GetAsync(broadcasterId);
                 }
-                catch
+                catch (System.Exception ex)
                 {
-                    // Best-effort only.
+                    Logger.LogWarning(ex, "⚠️ Best-effort: failed to load game context on stream offline for user {UserId}", broadcasterId);
                 }
 
                 counters.StreamStarted = null;
@@ -83,9 +83,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         await gameCountersRepository.SaveAsync(broadcasterId, ctx.ActiveGameId!, counters);
                     }
                 }
-                catch
+                catch (System.Exception ex)
                 {
-                    // Best-effort only.
+                    Logger.LogWarning(ex, "⚠️ Best-effort: failed to save per-game counters on stream offline for user {UserId} game {GameId}", broadcasterId, ctx?.ActiveGameId);
                 }
             }
 
