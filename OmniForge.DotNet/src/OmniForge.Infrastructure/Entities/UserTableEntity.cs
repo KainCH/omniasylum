@@ -203,7 +203,14 @@ namespace OmniForge.Infrastructure.Entities
                 discordWebhookUrl = GetStringSafe(entity, "discordWebhookUrl"),
                 discordChannelId = GetStringSafe(entity, "discordChannelId"),
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
-                managedStreamers = GetStringSafe(entity, "managedStreamers", "[]"),
+                // Backward-compat: older records may have used different casing/key names.
+                managedStreamers = entity.TryGetValue("managedStreamers", out var ms) && ms != null
+                    ? ms.ToString()!
+                    : (entity.TryGetValue("ManagedStreamers", out var ms2) && ms2 != null
+                        ? ms2.ToString()!
+                        : (entity.TryGetValue("managed_streamers", out var ms3) && ms3 != null
+                            ? ms3.ToString()!
+                            : "[]")),
                 isActive = GetBoolSafe(entity, "isActive", true),
                 streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
                 createdAt = entity.TryGetValue("createdAt", out var ca) ? ca : null,
