@@ -23,17 +23,14 @@
             <div class="d-flex align-items-center">
               <i class="bi bi-person-workspace me-2"></i>
               <span>Currently viewing as:</span>
-              <select class="form-select form-select-sm ms-2" style="width: auto;" @onchange="OnContextChanged">
-                <option value="@currentUserId" selected="@(activeContextId == currentUserId)">
-                  Myself (@currentUser?.DisplayName)
-                </option>
+              <InputSelect TValue="string" class="form-select form-select-sm ms-2" style="width: auto;"
+                Value="activeContextId" ValueChanged="OnContextChanged" ValueExpression="(() => activeContextId)">
+                <option value="@currentUserId">Myself (@currentUser?.DisplayName)</option>
                 @foreach (var streamer in managedStreamers)
                 {
-                  <option value="@streamer.TwitchUserId" selected="@(activeContextId == streamer.TwitchUserId)">
-                    @streamer.DisplayName's Forge
-                  </option>
+                  <option value="@streamer.TwitchUserId">@streamer.DisplayName's Forge</option>
                 }
-              </select>
+              </InputSelect>
             </div>
             @if (activeContextId != currentUserId)
             {
@@ -351,22 +348,21 @@
     }
   }
 
-  private async Task OnContextChanged(ChangeEventArgs e)
+  private async Task OnContextChanged(string? newContextId)
   {
-    var newContextId = e.Value?.ToString();
-    if (!string.IsNullOrEmpty(newContextId))
+    if (string.IsNullOrWhiteSpace(newContextId)) return;
+
+    activeContextId = newContextId;
+    if (activeContextId == currentUserId)
     {
-      activeContextId = newContextId;
-      if (activeContextId == currentUserId)
-      {
-        activeContextUser = currentUser;
-      }
-      else
-      {
-        activeContextUser = await UserRepository.GetUserAsync(activeContextId);
-      }
-      StateHasChanged();
+      activeContextUser = currentUser;
     }
+    else
+    {
+      activeContextUser = await UserRepository.GetUserAsync(activeContextId);
+    }
+
+    StateHasChanged();
   }
 
   private string GetContextualLink(string basePath)

@@ -170,6 +170,53 @@ namespace OmniForge.Tests.Components.Pages
         }
 
         [Fact]
+        public void RendersTimer_WhenTimerEnabled()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    TimerEnabled = true,
+                    Counters = new OverlayCounters
+                    {
+                        Deaths = false,
+                        Swears = false,
+                        Screams = false,
+                        Bits = false
+                    },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter
+            {
+                TwitchUserId = "testuser",
+                StreamStarted = DateTimeOffset.UtcNow.AddMinutes(-5)
+            };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser"))
+                .ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser"))
+                .ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser"))
+                .ReturnsAsync(new List<Alert>());
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var timer = cut.Find(".overlay-timer .timer-value");
+            Assert.Contains("00:00:00", timer.TextContent);
+        }
+
+        [Fact]
         public void RendersCorrectPosition_TopRight()
         {
             // Arrange

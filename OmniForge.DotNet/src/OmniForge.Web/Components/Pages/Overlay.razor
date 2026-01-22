@@ -28,6 +28,14 @@ else if (!user.Features.StreamOverlay)
 }
 else
 {
+    @if (user.OverlaySettings?.TimerEnabled == true)
+    {
+        <div class="overlay-timer" style="@GetTimerStyle()">
+            <span class="timer-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">TIME</span>
+            <span class="timer-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">00:00:00</span>
+        </div>
+    }
+
     <div class="counter-overlay" style="@GetPositionStyle()">
         @if (user.OverlaySettings?.Counters?.Deaths == true)
         {
@@ -117,6 +125,36 @@ else
         flex-direction: column;
         gap: 15px;
         position: fixed;
+    }
+
+    /* Timer-only element (no box; transparent for OBS/Streamlabs browser sources) */
+    .overlay-timer {
+        position: fixed;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.85);
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum";
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .overlay-timer .timer-label {
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        font-size: 16px;
+        opacity: 0.95;
+    }
+
+    .overlay-timer .timer-value {
+        font-weight: 800;
+        font-size: 28px;
+        line-height: 1;
     }
 
     .counter-item {
@@ -715,6 +753,16 @@ else
         style += StreamStatus == "live" ? " opacity: 1;" : " opacity: 0;";
 
         return style;
+    }
+
+    private string GetTimerStyle()
+    {
+        var scale = user?.OverlaySettings?.Scale ?? 1.0;
+
+        // Requirement: timer is always top-center.
+        // Keep opacity behavior consistent with the main overlay.
+        var opacity = StreamStatus == "live" ? "1" : "0";
+        return $"top: 20px; left: 50%; transform: translateX(-50%) scale({scale}); transform-origin: top center; opacity: {opacity};";
     }
 
     private string GetInteractionBannerPositionStyle()

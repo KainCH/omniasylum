@@ -318,6 +318,65 @@ window.overlayInterop = {
     updateOverlaySettings: function(settings) {
         console.log('Updating overlay settings:', settings);
 
+        // Toggle timer element (no box; transparent). This allows portal toggles to
+        // show/hide the timer without requiring a full overlay reload.
+        const ensureTimer = () => {
+            let timer = document.querySelector('.overlay-timer');
+            if (!timer) {
+                timer = document.createElement('div');
+                timer.className = 'overlay-timer';
+
+                const label = document.createElement('span');
+                label.className = 'timer-label';
+                label.textContent = 'TIME';
+
+                const value = document.createElement('span');
+                value.className = 'timer-value';
+                value.textContent = '00:00:00';
+
+                timer.appendChild(label);
+                timer.appendChild(value);
+                document.body.appendChild(timer);
+            }
+
+            // Apply colors from theme if provided
+            if (settings?.theme?.borderColor) {
+                const labelEl = timer.querySelector('.timer-label');
+                if (labelEl) labelEl.style.color = settings.theme.borderColor;
+            }
+            if (settings?.theme?.textColor) {
+                const valueEl = timer.querySelector('.timer-value');
+                if (valueEl) valueEl.style.color = settings.theme.textColor;
+            }
+
+            // Top-center placement requirement. Scale matches overlay scale.
+            const scale = Number(settings?.scale);
+            const scaleValue = Number.isFinite(scale) && scale > 0 ? scale : 1;
+            timer.style.top = '20px';
+            timer.style.left = '50%';
+            timer.style.right = '';
+            timer.style.bottom = '';
+            timer.style.transform = `translateX(-50%) scale(${scaleValue})`;
+            timer.style.transformOrigin = 'top center';
+
+            // Match current overlay visibility if available
+            const overlay = document.querySelector('.counter-overlay');
+            if (overlay && overlay.style && overlay.style.opacity) {
+                timer.style.opacity = overlay.style.opacity;
+            }
+
+            return timer;
+        };
+
+        if (settings && (settings.timerEnabled === true || settings.TimerEnabled === true)) {
+            ensureTimer();
+        } else {
+            const timer = document.querySelector('.overlay-timer');
+            if (timer && timer.parentNode) {
+                timer.parentNode.removeChild(timer);
+            }
+        }
+
         // Update size styles
         if (settings.size) {
             const sizes = {

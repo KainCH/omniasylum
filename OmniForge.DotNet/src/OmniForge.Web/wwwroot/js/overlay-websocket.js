@@ -1,6 +1,67 @@
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
+    // Stream timer state (client-side; avoids Blazor re-rendering every second)
+    let timerIntervalId = null;
+    let streamStartMs = null;
+
+    const updateTimerDisplay = () => {
+        const element = document.querySelector('.overlay-timer .timer-value');
+        if (!element) return;
+
+        if (!streamStartMs) {
+            element.textContent = '00:00:00';
+            return;
+        }
+
+        const elapsedMs = Math.max(0, Date.now() - streamStartMs);
+        const totalSeconds = Math.floor(elapsedMs / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        const pad2 = (n) => String(n).padStart(2, '0');
+        element.textContent = `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+    };
+
+    const startTimerInterval = () => {
+        if (timerIntervalId) return;
+        timerIntervalId = setInterval(updateTimerDisplay, 1000);
+    };
+
+    const stopTimerInterval = () => {
+        if (!timerIntervalId) return;
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+    };
+
+    const setStreamStarted = (value) => {
+        if (!value) {
+            streamStartMs = null;
+            stopTimerInterval();
+            updateTimerDisplay();
+            return;
+        }
+
+        // Most common: ISO string. Be defensive with alternate shapes.
+        let parsed = null;
+        if (typeof value === 'string') {
+            const ms = Date.parse(value);
+            parsed = Number.isFinite(ms) ? ms : null;
+        } else if (typeof value === 'number') {
+            parsed = Number.isFinite(value) ? value : null;
+        } else if (typeof value === 'object' && value.dateTime) {
+            const ms = Date.parse(value.dateTime);
+            parsed = Number.isFinite(ms) ? ms : null;
+        }
+
+        if (parsed) {
+            streamStartMs = parsed;
+            startTimerInterval();
+            updateTimerDisplay();
+        }
+    };
+
     const normalizeOverlaySettings = (data) => {
         // We have two payload shapes in the wild:
         // 1) WebSocketOverlayNotifier => method: "settingsUpdate", data: OverlaySettings
@@ -27,6 +88,12 @@ export function connect(url, dotNetHelper) {
                 updateCounter("swears", data.swears);
                 updateCounter("screams", data.screams);
                 updateCounter("bits", data.bits);
+
+                // Update stream timer if the payload includes streamStarted (may be null)
+                if (data && (Object.prototype.hasOwnProperty.call(data, 'streamStarted') || Object.prototype.hasOwnProperty.call(data, 'StreamStarted')))
+                {
+                    setStreamStarted(data.streamStarted ?? data.StreamStarted);
+                }
                 // Also update Blazor state if connected, but don't crash if not
                 try { dotNetHelper.invokeMethodAsync("OnCounterUpdate", data); } catch (e) {}
             } else if (method === "streamStatusUpdate") {
@@ -44,7 +111,14 @@ export function connect(url, dotNetHelper) {
                 try { dotNetHelper.invokeMethodAsync("OnMilestoneReached", data); } catch (e) {}
                 if (window.overlayInterop) window.overlayInterop.triggerAlert('milestone', data);
             } else if (method === "streamStarted") {
+                // streamStarted typically includes the full counter payload
+                if (data && (data.streamStarted || data.StreamStarted)) {
+                    setStreamStarted(data.streamStarted ?? data.StreamStarted);
+                }
                 try { dotNetHelper.invokeMethodAsync("OnStreamStarted", data); } catch (e) {}
+            } else if (method === "streamEnded") {
+                // Clear timer on stream end
+                setStreamStarted(null);
             } else if (method === "overlaySettingsUpdate" || method === "settingsUpdate") {
                 const settings = normalizeOverlaySettings(data);
                 if (settings) {
@@ -88,6 +162,11 @@ function updateStreamStatus(status) {
     const overlay = document.querySelector('.counter-overlay');
     if (overlay) {
         overlay.style.opacity = status === 'live' ? '1' : '0';
+    }
+
+    const timer = document.querySelector('.overlay-timer');
+    if (timer) {
+        timer.style.opacity = status === 'live' ? '1' : '0';
     }
 }
 

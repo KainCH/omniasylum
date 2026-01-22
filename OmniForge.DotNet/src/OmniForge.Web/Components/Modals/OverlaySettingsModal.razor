@@ -83,6 +83,12 @@
                       offline)</label>
                   </div>
 
+                  <div class="form-check form-switch mb-3">
+                    <InputCheckbox id="timerEnabled" class="form-check-input" @bind-Value="settings.TimerEnabled" />
+                    <label class="form-check-label" for="timerEnabled">Show Stream Timer</label>
+                    <div class="form-text">Displays elapsed time since stream start on the overlay.</div>
+                  </div>
+
                   <div class="mb-3">
                     <label class="form-label">Position</label>
                     <InputSelect class="form-select" @bind-Value="settings.Position">
