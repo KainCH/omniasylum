@@ -77,6 +77,9 @@ namespace OmniForge.Core.Entities
         public string Position { get; set; } = "top-right";
         public double Scale { get; set; } = 1.0;
         public bool TimerEnabled { get; set; } = false;
+        public int TimerDurationMinutes { get; set; } = 0;
+        public bool TimerManualRunning { get; set; } = false;
+        public DateTimeOffset? TimerManualStartUtc { get; set; }
         public OverlayCounters Counters { get; set; } = new OverlayCounters();
         public BitsGoal BitsGoal { get; set; } = new BitsGoal();
         public OverlayTheme Theme { get; set; } = new OverlayTheme();

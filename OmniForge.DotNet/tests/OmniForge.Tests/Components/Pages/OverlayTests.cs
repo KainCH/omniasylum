@@ -213,7 +213,7 @@ namespace OmniForge.Tests.Components.Pages
 
             // Assert
             var timer = cut.Find(".overlay-timer .timer-value");
-            Assert.Contains("00:00:00", timer.TextContent);
+            Assert.Contains("00:00", timer.TextContent);
         }
 
         [Fact]

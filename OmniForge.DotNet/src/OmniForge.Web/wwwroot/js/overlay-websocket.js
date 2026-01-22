@@ -4,24 +4,68 @@ export function connect(url, dotNetHelper) {
     // Stream timer state (client-side; avoids Blazor re-rendering every second)
     let timerIntervalId = null;
     let streamStartMs = null;
+    let manualStartMs = null;
+    let manualRunning = false;
+    let timerDurationSeconds = 0;
+
+    // Initialize duration from DOM if present (helps on first load before settingsUpdate arrives)
+    try {
+        const timerEl = document.querySelector('.overlay-timer');
+        if (timerEl && timerEl.dataset && timerEl.dataset.durationMinutes) {
+            const minutes = Number(timerEl.dataset.durationMinutes);
+            timerDurationSeconds = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes * 60) : 0;
+        }
+    } catch (e) {}
+
+    const parseToMs = (value) => {
+        // Most common: ISO string. Be defensive with alternate shapes.
+        let parsed = null;
+        if (typeof value === 'string') {
+            const ms = Date.parse(value);
+            parsed = Number.isFinite(ms) ? ms : null;
+        } else if (typeof value === 'number') {
+            parsed = Number.isFinite(value) ? value : null;
+        } else if (typeof value === 'object' && value && value.dateTime) {
+            const ms = Date.parse(value.dateTime);
+            parsed = Number.isFinite(ms) ? ms : null;
+        }
+        return parsed;
+    };
+
+    const isPreviewVisible = () => {
+        try {
+            return window.omniOverlayPreview === true || window.omniOverlayOfflinePreview === true;
+        } catch (e) {
+            return false;
+        }
+    };
 
     const updateTimerDisplay = () => {
         const element = document.querySelector('.overlay-timer .timer-value');
         if (!element) return;
 
-        if (!streamStartMs) {
-            element.textContent = '00:00:00';
+        const effectiveStartMs = (manualRunning && manualStartMs)
+            ? manualStartMs
+            : streamStartMs;
+
+        if (!effectiveStartMs) {
+            element.textContent = '00:00';
             return;
         }
 
-        const elapsedMs = Math.max(0, Date.now() - streamStartMs);
+        const elapsedMs = Math.max(0, Date.now() - effectiveStartMs);
         const totalSeconds = Math.floor(elapsedMs / 1000);
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
+
+        // If a duration is configured, show countdown; otherwise show elapsed.
+        const displaySeconds = timerDurationSeconds > 0
+            ? Math.max(0, timerDurationSeconds - totalSeconds)
+            : totalSeconds;
+
+        const minutes = Math.floor(displaySeconds / 60);
+        const seconds = displaySeconds % 60;
 
         const pad2 = (n) => String(n).padStart(2, '0');
-        element.textContent = `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+        element.textContent = `${pad2(minutes)}:${pad2(seconds)}`;
     };
 
     const startTimerInterval = () => {
@@ -38,28 +82,45 @@ export function connect(url, dotNetHelper) {
     const setStreamStarted = (value) => {
         if (!value) {
             streamStartMs = null;
-            stopTimerInterval();
-            updateTimerDisplay();
+            if (!manualRunning) {
+                stopTimerInterval();
+                updateTimerDisplay();
+            }
             return;
         }
 
-        // Most common: ISO string. Be defensive with alternate shapes.
-        let parsed = null;
-        if (typeof value === 'string') {
-            const ms = Date.parse(value);
-            parsed = Number.isFinite(ms) ? ms : null;
-        } else if (typeof value === 'number') {
-            parsed = Number.isFinite(value) ? value : null;
-        } else if (typeof value === 'object' && value.dateTime) {
-            const ms = Date.parse(value.dateTime);
-            parsed = Number.isFinite(ms) ? ms : null;
-        }
-
+        const parsed = parseToMs(value);
         if (parsed) {
             streamStartMs = parsed;
-            startTimerInterval();
-            updateTimerDisplay();
+            // If manual mode is not running, stream start should drive the timer.
+            if (!manualRunning) {
+                startTimerInterval();
+                updateTimerDisplay();
+            }
         }
+    };
+
+    const setManualTimer = (running, startUtcValue) => {
+        manualRunning = running === true;
+        window.omniOverlayTimerForceVisible = manualRunning;
+
+        if (!manualRunning) {
+            manualStartMs = null;
+            // Resume stream-driven timer if we have stream start.
+            if (streamStartMs) {
+                startTimerInterval();
+                updateTimerDisplay();
+            } else {
+                stopTimerInterval();
+                updateTimerDisplay();
+            }
+            return;
+        }
+
+        const parsed = parseToMs(startUtcValue);
+        manualStartMs = parsed || Date.now();
+        startTimerInterval();
+        updateTimerDisplay();
     };
 
     const normalizeOverlaySettings = (data) => {
@@ -122,6 +183,15 @@ export function connect(url, dotNetHelper) {
             } else if (method === "overlaySettingsUpdate" || method === "settingsUpdate") {
                 const settings = normalizeOverlaySettings(data);
                 if (settings) {
+                    // Update timer duration for countdown mode (minutes -> seconds)
+                    const minutes = Number(settings.timerDurationMinutes ?? settings.TimerDurationMinutes ?? 0);
+                    timerDurationSeconds = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes * 60) : 0;
+
+                    // Manual timer mode (start/stop)
+                    const running = (settings.timerManualRunning ?? settings.TimerManualRunning) === true;
+                    const startUtc = settings.timerManualStartUtc ?? settings.TimerManualStartUtc;
+                    setManualTimer(running, startUtc);
+
                     try { dotNetHelper.invokeMethodAsync("OnOverlaySettingsUpdate", settings); } catch (e) {}
                     if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
                         window.overlayInterop.updateOverlaySettings(settings);
@@ -161,12 +231,17 @@ function updateCounter(type, value) {
 function updateStreamStatus(status) {
     const overlay = document.querySelector('.counter-overlay');
     if (overlay) {
-        overlay.style.opacity = status === 'live' ? '1' : '0';
+        const shouldShow = status === 'live' || (window.omniOverlayPreview === true) || (window.omniOverlayOfflinePreview === true);
+        overlay.style.opacity = shouldShow ? '1' : '0';
     }
 
     const timer = document.querySelector('.overlay-timer');
     if (timer) {
-        timer.style.opacity = status === 'live' ? '1' : '0';
+        const shouldShowTimer = status === 'live'
+            || (window.omniOverlayPreview === true)
+            || (window.omniOverlayOfflinePreview === true)
+            || (window.omniOverlayTimerForceVisible === true);
+        timer.style.opacity = shouldShowTimer ? '1' : '0';
     }
 }
 

@@ -318,6 +318,12 @@ window.overlayInterop = {
     updateOverlaySettings: function(settings) {
         console.log('Updating overlay settings:', settings);
 
+        // Track flags used by overlay-websocket.js visibility logic.
+        try {
+            window.omniOverlayOfflinePreview = (settings?.offlinePreview === true || settings?.OfflinePreview === true);
+            window.omniOverlayTimerForceVisible = (settings?.timerManualRunning === true || settings?.TimerManualRunning === true);
+        } catch (e) {}
+
         // Toggle timer element (no box; transparent). This allows portal toggles to
         // show/hide the timer without requiring a full overlay reload.
         const ensureTimer = () => {
@@ -332,12 +338,16 @@ window.overlayInterop = {
 
                 const value = document.createElement('span');
                 value.className = 'timer-value';
-                value.textContent = '00:00:00';
+                value.textContent = '00:00';
 
                 timer.appendChild(label);
                 timer.appendChild(value);
                 document.body.appendChild(timer);
             }
+
+            // Provide duration to overlay-websocket.js (minutes)
+            const durationMinutes = Number(settings?.timerDurationMinutes ?? settings?.TimerDurationMinutes ?? 0);
+            timer.dataset.durationMinutes = Number.isFinite(durationMinutes) ? String(durationMinutes) : '0';
 
             // Apply colors from theme if provided
             if (settings?.theme?.borderColor) {
@@ -363,6 +373,11 @@ window.overlayInterop = {
             const overlay = document.querySelector('.counter-overlay');
             if (overlay && overlay.style && overlay.style.opacity) {
                 timer.style.opacity = overlay.style.opacity;
+            }
+
+            // Force visible in preview/offline-preview/manual-running modes
+            if (window.omniOverlayPreview === true || window.omniOverlayOfflinePreview === true || window.omniOverlayTimerForceVisible === true) {
+                timer.style.opacity = '1';
             }
 
             return timer;

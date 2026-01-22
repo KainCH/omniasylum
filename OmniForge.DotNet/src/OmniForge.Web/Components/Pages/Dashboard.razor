@@ -90,6 +90,9 @@
           <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
             <i class="bi bi-gear-fill"></i> Settings
           </button>
+          <button class="btn-custom btn-settings" @onclick="() => showTimerSettings = true" title="Timer Settings">
+            <i class="bi bi-stopwatch"></i> Timer
+          </button>
           <button class="btn-custom btn-alerts" @onclick="NavigateToAlerts">
             <i class="bi bi-bell-fill"></i> Alerts
           </button>
@@ -188,6 +191,7 @@
         </div>
 
         <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+        <TimerSettingsModal @bind-Show="showTimerSettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
         <AlertEffectsModal @bind-Show="showAlertEffects" />
       }
     </Authorized>
@@ -206,6 +210,7 @@
   private bool savingOfflinePreview = false;
   private bool resettingCounters = false;
   private bool showOverlaySettings = false;
+  private bool showTimerSettings = false;
   private bool showAlertEffects = false;
   private bool isMonitoring = false;
   private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
@@ -274,7 +279,7 @@
 
   private bool IsAnyModalOpen()
   {
-    return showOverlaySettings || showAlertEffects;
+    return showOverlaySettings || showTimerSettings || showAlertEffects;
   }
 
   public void Dispose()
