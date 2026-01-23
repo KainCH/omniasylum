@@ -1,6 +1,15 @@
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
+    const isDebugEnabled = () => {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('debug') === 'true' || window.omniOverlayDebug === true;
+        } catch (e) {
+            return window.omniOverlayDebug === true;
+        }
+    };
+
     // Stream timer state (client-side; avoids Blazor re-rendering every second)
     let timerIntervalId = null;
     let streamStartMs = null;
@@ -196,6 +205,10 @@ export function connect(url, dotNetHelper) {
                 updateStreamStatus(data.streamStatus);
                 try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", data.streamStatus); } catch (e) {}
             } else if (method === "customAlert") {
+                // Some customAlert types are control-plane updates (e.g. game switch), not user-facing alerts.
+                if (isDebugEnabled()) {
+                    console.log('[WebSocket] customAlert:', data && data.alertType ? data.alertType : '(unknown)', data && data.data ? data.data : {});
+                }
                 // Trigger alert directly via JS
                 triggerAlert(data.alertType, data.data, dotNetHelper);
             } else if (method === "bitsGoalUpdate") {

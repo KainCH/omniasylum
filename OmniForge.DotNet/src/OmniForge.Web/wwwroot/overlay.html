@@ -203,6 +203,10 @@
 
       // Used by overlay-interop.js and overlay-websocket.js (when present)
       window.omniOverlayPreview = preview;
+      // Optional: `&debug=true` enables additional console logging.
+      // Keep default silent to avoid OBS log noise.
+      const debug = urlParams.get('debug') === 'true';
+      window.omniOverlayDebug = debug;
 
       // Store current overlay settings for filtering counters
       let currentSettings = null;
@@ -608,10 +612,16 @@
               if (data.alertType === 'chatCommandsUpdated') {
                 // Overlay does not render chat commands; this message is for backend/bot sync.
                 // Treat as silent to avoid showing a default "ALERT" popup during game switches.
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: chatCommandsUpdated', JSON.stringify(data.data || {}));
+                }
                 return;
               }
 
               if (data.alertType === 'customCountersUpdated') {
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: customCountersUpdated', JSON.stringify(data.data || {}));
+                }
                 customCountersConfig = (data.data && data.data.counters) ? data.data.counters : {};
                 if (lastCounterData) {
                   updateCounters(lastCounterData);
@@ -620,6 +630,9 @@
               }
 
               if (data.alertType === 'customCounterUpdate') {
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: customCounterUpdate', JSON.stringify(data.data || {}));
+                }
                 // Update cached lastCounterData's customCounters if possible
                 const counterId = data.data?.counterId;
                 const value = data.data?.value;
