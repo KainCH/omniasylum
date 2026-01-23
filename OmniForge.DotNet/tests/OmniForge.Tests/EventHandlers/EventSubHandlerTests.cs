@@ -89,6 +89,12 @@ namespace OmniForge.Tests.EventHandlers
             _mockServiceProvider.Setup(x => x.GetService(typeof(IGameLibraryRepository))).Returns(_mockGameLibraryRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IGameCountersRepository))).Returns(_mockGameCountersRepository.Object);
             _mockServiceProvider.Setup(x => x.GetService(typeof(IGameContextRepository))).Returns(_mockGameContextRepository.Object);
+
+            // By default, allow the stream_start Discord notification to send.
+            // Individual tests can override this (e.g., to simulate dedupe suppression).
+            _mockCounterRepository
+                .Setup(x => x.TryClaimStreamStartDiscordNotificationAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
         }
 
         [Fact]
@@ -215,6 +221,36 @@ namespace OmniForge.Tests.EventHandlers
 
             _mockOverlayNotifier.Verify(x => x.NotifyStreamStartedAsync("123", It.Is<Counter>(c => c.Deaths == 42)), Times.Once);
             _mockGameContextRepository.Verify(x => x.SaveAsync(It.Is<GameContext>(g => g.ActiveGameId == "game-abc" && g.ActiveGameName == "Test Category")), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenStreamOnlineRepeatedWithSameStartedAt_ShouldSendDiscordOnlyOnce()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser"",
+                ""started_at"": ""2026-01-01T00:00:00Z""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            _mockCounterRepository
+                .SetupSequence(x => x.TryClaimStreamStartDiscordNotificationAsync("123", It.IsAny<string>()))
+                .ReturnsAsync(true)
+                .ReturnsAsync(false);
+
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()))
+                .Returns(Task.CompletedTask);
+
+            await _handler.HandleAsync(eventData);
+            await _handler.HandleAsync(eventData);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(user, "stream_start", It.IsAny<object>()), Times.Once);
         }
 
         [Fact]

@@ -8,6 +8,7 @@ namespace OmniForge.Core.Interfaces
         Task InitializeAsync();
         Task<Counter?> GetCountersAsync(string userId);
         Task SaveCountersAsync(Counter counter);
+        Task<bool> TryClaimStreamStartDiscordNotificationAsync(string userId, string streamInstanceId);
         Task<Counter> IncrementCounterAsync(string userId, string counterType, int amount = 1);
         Task<Counter> DecrementCounterAsync(string userId, string counterType, int amount = 1);
         Task<Counter> ResetCounterAsync(string userId, string counterType);

@@ -219,6 +219,16 @@
       let manualRunning = false;
       let manualStartMs = null;
       let lastKnownIsLive = false;
+      let lastOnlineSignalAtMs = null;
+
+      // Visibility should be driven by active online signals.
+      // If the monitor stops sending updates, the overlay should auto-hide.
+      const LIVE_SIGNAL_TTL_MS = 120000; // 2 minutes
+
+      const isLiveSignalFresh = () => {
+        if (!lastOnlineSignalAtMs) return false;
+        return (Date.now() - lastOnlineSignalAtMs) < LIVE_SIGNAL_TTL_MS;
+      };
 
       const parseToMs = (value) => {
         if (!value) return null;
@@ -252,7 +262,7 @@
         const timerEl = document.querySelector('.overlay-timer');
         if (!timerEl) return;
 
-        const isVisible = shouldForceVisible() || !!streamStartMs;
+        const isVisible = shouldForceVisible() || isLiveSignalFresh();
         timerEl.style.opacity = isVisible ? '1' : '0';
       };
 
@@ -465,6 +475,32 @@
 
       connect();
 
+      // Watchdog: if the monitor stops sending online heartbeats, auto-hide.
+      // This runs even when no websocket messages are incoming.
+      setInterval(() => {
+        const container = document.getElementById('overlay-container');
+        if (!container) return;
+
+        const offlinePreview = window.omniOverlayOfflinePreview === true;
+        const shouldShow = preview || offlinePreview || manualRunning || isLiveSignalFresh();
+
+        if (shouldShow) {
+          container.classList.add('visible');
+        } else {
+          container.classList.remove('visible');
+        }
+
+        if (!manualRunning) {
+          if (isLiveSignalFresh() && streamStartMs) {
+            startTimerInterval();
+          } else {
+            stopTimerInterval();
+          }
+        }
+
+        updateTimerVisibility();
+      }, 5000);
+
       function handleMessage(msg) {
         console.log("📨 WebSocket message received:", JSON.stringify(msg));
         const { method, data } = msg;
@@ -501,6 +537,8 @@
 
             if (!manualRunning) {
               streamStartMs = null;
+              lastKnownIsLive = false;
+              lastOnlineSignalAtMs = null;
               stopTimerInterval();
               updateTimerVisibility();
               updateTimerDisplay();
@@ -511,13 +549,27 @@
             {
               const status = (data && (data.streamStatus ?? data.StreamStatus)) ?? data;
               if (typeof status === 'string') {
-                lastKnownIsLive = status.toLowerCase() === 'live';
+                const normalized = status.toLowerCase();
+                const isLive = normalized === 'live';
+                lastKnownIsLive = isLive;
+
+                if (isLive) {
+                  lastOnlineSignalAtMs = Date.now();
+                } else if (normalized === 'offline') {
+                  // Explicit offline signal should immediately hide.
+                  lastOnlineSignalAtMs = null;
+                  if (!manualRunning) {
+                    streamStartMs = null;
+                    stopTimerInterval();
+                    updateTimerDisplay();
+                  }
+                }
               }
 
               const container = document.getElementById('overlay-container');
               if (container) {
                 const offlinePreview = window.omniOverlayOfflinePreview === true;
-                const shouldShow = preview || offlinePreview || manualRunning || lastKnownIsLive || !!streamStartMs;
+                const shouldShow = preview || offlinePreview || manualRunning || isLiveSignalFresh();
                 if (shouldShow) {
                   container.classList.add('visible');
                 } else {
@@ -676,9 +728,19 @@
           const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
           const parsedStart = parseToMs(raw);
           streamStartMs = parsedStart;
+
+          // Treat an explicit streamStarted value as an online signal.
+          // If it's null/invalid, treat it as offline.
+          if (parsedStart) {
+            lastKnownIsLive = true;
+            lastOnlineSignalAtMs = Date.now();
+          } else {
+            lastKnownIsLive = false;
+            lastOnlineSignalAtMs = null;
+          }
         }
 
-        const isStreamStarted = preview || offlinePreview || manualRunning || lastKnownIsLive || !!streamStartMs;
+        const isStreamStarted = preview || offlinePreview || manualRunning || isLiveSignalFresh();
 
         if (isStreamStarted) {
           console.log("✅ Adding 'visible' class to container");
@@ -690,7 +752,7 @@
 
         // Stream timer start time (used when not manually running)
         if (!manualRunning) {
-          if (streamStartMs) {
+          if (isLiveSignalFresh() && streamStartMs) {
             startTimerInterval();
           } else {
             stopTimerInterval();
