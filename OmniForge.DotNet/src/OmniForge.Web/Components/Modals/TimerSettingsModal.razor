@@ -33,12 +33,31 @@
           </div>
 
           <div class="mb-3">
+            <label class="form-label">Timer text color</label>
+            <div class="d-flex gap-2 align-items-center">
+              <input type="color" class="form-control form-control-color" @bind="timerTextColor" @bind:event="oninput"
+                title="Choose timer color" />
+              <InputText class="form-control" @bind-Value="timerTextColor" placeholder="#ffffff" />
+            </div>
+            <div class="form-text">Leave blank to inherit the overlay text color.</div>
+          </div>
+
+          <div class="mb-3">
             <div class="form-check form-switch">
               <InputCheckbox id="timerRunningToggle" class="form-check-input" @bind-Value="timerRunning" />
               <label class="form-check-label" for="timerRunningToggle">Start timer (force visible)</label>
             </div>
             <div class="form-text">When enabled, the overlay timer will show even while offline and start counting
               immediately.</div>
+
+            <div class="d-flex gap-2 mt-2">
+              <button class="btn btn-success" @onclick="StartTimerNow" disabled="@isSaving">
+                <i class="bi bi-play-fill me-1"></i> Start / Restart Timer
+              </button>
+              <button class="btn btn-outline-danger" @onclick="StopTimerNow" disabled="@isSaving">
+                <i class="bi bi-stop-fill me-1"></i> Stop Timer
+              </button>
+            </div>
           </div>
 
           <div class="mb-3">
@@ -75,6 +94,7 @@
   [Parameter] public EventCallback OnSaved { get; set; }
 
   private int timerMinutes = 0;
+  private string? timerTextColor;
   private bool timerRunning = false;
   private bool isSaving = false;
   private string? errorMessage;
@@ -97,6 +117,7 @@
     {
       var user = await UserRepository.GetUserAsync(UserId);
       timerMinutes = user?.OverlaySettings?.TimerDurationMinutes ?? 0;
+      timerTextColor = user?.OverlaySettings?.TimerTextColor;
       timerRunning = user?.OverlaySettings?.TimerManualRunning ?? false;
     }
     catch (Exception ex)
@@ -138,6 +159,7 @@
 
       user.OverlaySettings ??= new OverlaySettings();
       user.OverlaySettings.TimerDurationMinutes = timerMinutes;
+      user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
 
       // Manual start/stop also forces timer to be enabled so it's visible on the overlay.
       user.OverlaySettings.TimerManualRunning = timerRunning;
@@ -166,6 +188,98 @@
     catch (Exception ex)
     {
       errorMessage = $"Error saving timer settings: {ex.Message}";
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task StartTimerNow()
+  {
+    errorMessage = null;
+    successMessage = null;
+
+    if (string.IsNullOrWhiteSpace(UserId))
+    {
+      errorMessage = "No user selected.";
+      return;
+    }
+
+    if (timerMinutes < 0) timerMinutes = 0;
+
+    isSaving = true;
+    try
+    {
+      var user = await UserRepository.GetUserAsync(UserId);
+      if (user == null)
+      {
+        errorMessage = "User not found.";
+        return;
+      }
+
+      user.OverlaySettings ??= new OverlaySettings();
+      user.OverlaySettings.TimerDurationMinutes = timerMinutes;
+      user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
+
+      // Force the timer visible and restart from now
+      timerRunning = true;
+      user.OverlaySettings.TimerEnabled = true;
+      user.OverlaySettings.TimerManualRunning = true;
+      user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
+
+      await UserRepository.SaveUserAsync(user);
+      await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
+
+      successMessage = "Timer started.";
+      await OnSaved.InvokeAsync();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Error starting timer: {ex.Message}";
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task StopTimerNow()
+  {
+    errorMessage = null;
+    successMessage = null;
+
+    if (string.IsNullOrWhiteSpace(UserId))
+    {
+      errorMessage = "No user selected.";
+      return;
+    }
+
+    isSaving = true;
+    try
+    {
+      var user = await UserRepository.GetUserAsync(UserId);
+      if (user == null)
+      {
+        errorMessage = "User not found.";
+        return;
+      }
+
+      user.OverlaySettings ??= new OverlaySettings();
+
+      timerRunning = false;
+      user.OverlaySettings.TimerManualRunning = false;
+      user.OverlaySettings.TimerManualStartUtc = null;
+
+      await UserRepository.SaveUserAsync(user);
+      await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
+
+      successMessage = "Timer stopped.";
+      await OnSaved.InvokeAsync();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Error stopping timer: {ex.Message}";
     }
     finally
     {

@@ -332,31 +332,46 @@ window.overlayInterop = {
                 timer = document.createElement('div');
                 timer.className = 'overlay-timer';
 
-                const label = document.createElement('span');
-                label.className = 'timer-label';
-                label.textContent = 'TIME';
+                // Base styling (transparent, OBS-friendly, always top-center)
+                timer.style.position = 'fixed';
+                timer.style.background = 'transparent';
+                timer.style.pointerEvents = 'none';
+                timer.style.zIndex = '1100';
+                timer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+                timer.style.fontWeight = '800';
+                timer.style.fontVariantNumeric = 'tabular-nums';
+                timer.style.letterSpacing = '0.03em';
+                timer.style.textShadow = '0 0 6px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.75)';
 
                 const value = document.createElement('span');
                 value.className = 'timer-value';
                 value.textContent = '00:00';
+                value.style.fontSize = '42px';
 
-                timer.appendChild(label);
                 timer.appendChild(value);
                 document.body.appendChild(timer);
+            }
+
+            // Remove any legacy label element if it exists from older versions
+            const legacyLabel = timer.querySelector('.timer-label');
+            if (legacyLabel && legacyLabel.parentNode) {
+                legacyLabel.parentNode.removeChild(legacyLabel);
             }
 
             // Provide duration to overlay-websocket.js (minutes)
             const durationMinutes = Number(settings?.timerDurationMinutes ?? settings?.TimerDurationMinutes ?? 0);
             timer.dataset.durationMinutes = Number.isFinite(durationMinutes) ? String(durationMinutes) : '0';
 
-            // Apply colors from theme if provided
-            if (settings?.theme?.borderColor) {
-                const labelEl = timer.querySelector('.timer-label');
-                if (labelEl) labelEl.style.color = settings.theme.borderColor;
-            }
-            if (settings?.theme?.textColor) {
+            // Apply colors from dedicated timer color first, then fall back to theme
+            const explicitTimerColor = settings?.timerTextColor ?? settings?.TimerTextColor;
+            const themeColor = settings?.theme?.textColor;
+            const valueColor = (explicitTimerColor && String(explicitTimerColor).trim().length > 0)
+                ? String(explicitTimerColor).trim()
+                : (themeColor ? String(themeColor) : null);
+
+            if (valueColor) {
                 const valueEl = timer.querySelector('.timer-value');
-                if (valueEl) valueEl.style.color = settings.theme.textColor;
+                if (valueEl) valueEl.style.color = valueColor;
             }
 
             // Top-center placement requirement. Scale matches overlay scale.
@@ -383,7 +398,10 @@ window.overlayInterop = {
             return timer;
         };
 
-        if (settings && (settings.timerEnabled === true || settings.TimerEnabled === true)) {
+        // In preview mode, always render the timer element so it can be tested.
+        const isPreview = window.omniOverlayPreview === true;
+
+        if (isPreview || (settings && (settings.timerEnabled === true || settings.TimerEnabled === true))) {
             ensureTimer();
         } else {
             const timer = document.querySelector('.overlay-timer');

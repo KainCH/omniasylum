@@ -31,8 +31,7 @@ else
     @if (user.OverlaySettings?.TimerEnabled == true)
     {
         <div class="overlay-timer" style="@GetTimerStyle()" data-duration-minutes="@user.OverlaySettings!.TimerDurationMinutes">
-            <span class="timer-label" style="color: @(user.OverlaySettings?.Theme?.BorderColor ?? "#d4af37")">TIME</span>
-            <span class="timer-value" style="color: @(user.OverlaySettings?.Theme?.TextColor ?? "white")">00:00</span>
+            <span class="timer-value" style="color: @(user.OverlaySettings?.TimerTextColor ?? user.OverlaySettings?.Theme?.TextColor ?? "white")">00:00</span>
         </div>
     }
 
@@ -142,13 +141,6 @@ else
         font-variant-numeric: tabular-nums;
         font-feature-settings: "tnum";
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-
-    .overlay-timer .timer-label {
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        font-size: 16px;
-        opacity: 0.95;
     }
 
     .overlay-timer .timer-value {

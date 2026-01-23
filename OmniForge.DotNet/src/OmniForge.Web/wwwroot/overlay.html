@@ -218,6 +218,7 @@
       let timerDurationSeconds = 0;
       let manualRunning = false;
       let manualStartMs = null;
+      let lastKnownIsLive = false;
 
       const parseToMs = (value) => {
         if (!value) return null;
@@ -322,6 +323,12 @@
       // Initialize interop early so any incoming messages during startup are suppressed
       if (window.overlayInterop) {
         window.overlayInterop.init();
+
+        // In preview mode, ensure the timer element exists immediately for testing
+        // (even if TimerEnabled is currently off in persisted settings).
+        if (preview && window.overlayInterop.updateOverlaySettings) {
+          window.overlayInterop.updateOverlaySettings(currentSettings || { scale: 1, position: 'top-right' });
+        }
       }
 
       // Initial Data Load
@@ -501,7 +508,24 @@
             break;
           case 'streamStatusUpdate':
             console.log("📺 Stream status update:", JSON.stringify(data));
-            // Toggle visibility based on stream status if needed
+            {
+              const status = (data && (data.streamStatus ?? data.StreamStatus)) ?? data;
+              if (typeof status === 'string') {
+                lastKnownIsLive = status.toLowerCase() === 'live';
+              }
+
+              const container = document.getElementById('overlay-container');
+              if (container) {
+                const offlinePreview = window.omniOverlayOfflinePreview === true;
+                const shouldShow = preview || offlinePreview || manualRunning || lastKnownIsLive || !!streamStartMs;
+                if (shouldShow) {
+                  container.classList.add('visible');
+                } else {
+                  container.classList.remove('visible');
+                }
+              }
+              updateTimerVisibility();
+            }
             break;
           case 'ping':
             // Ignore ping messages
@@ -639,9 +663,22 @@
         // Store last counter data for re-rendering when settings change
         lastCounterData = data;
 
-        // Handle visibility based on stream status
+        // Handle visibility based on stream status.
+        // IMPORTANT: Some WS payloads omit streamStarted after certain events (e.g., game switch).
+        // We only change stream start state when the payload explicitly includes the streamStarted field.
         const offlinePreview = window.omniOverlayOfflinePreview === true;
-        const isStreamStarted = preview || offlinePreview || !!data.streamStarted;
+        const hasStreamStartedField = !!data && (
+          Object.prototype.hasOwnProperty.call(data, 'streamStarted')
+          || Object.prototype.hasOwnProperty.call(data, 'StreamStarted')
+        );
+
+        if (hasStreamStartedField) {
+          const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
+          const parsedStart = parseToMs(raw);
+          streamStartMs = parsedStart;
+        }
+
+        const isStreamStarted = preview || offlinePreview || manualRunning || lastKnownIsLive || !!streamStartMs;
 
         if (isStreamStarted) {
           console.log("✅ Adding 'visible' class to container");
@@ -653,12 +690,9 @@
 
         // Stream timer start time (used when not manually running)
         if (!manualRunning) {
-          const parsedStart = parseToMs(data.streamStarted);
-          if (parsedStart) {
-            streamStartMs = parsedStart;
+          if (streamStartMs) {
             startTimerInterval();
           } else {
-            streamStartMs = null;
             stopTimerInterval();
           }
           updateTimerVisibility();
