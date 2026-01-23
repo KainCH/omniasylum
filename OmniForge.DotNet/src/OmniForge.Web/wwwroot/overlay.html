@@ -605,6 +605,12 @@
             // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
             if (data && data.alertType) {
               // These are control-plane updates, not user-facing alerts.
+              if (data.alertType === 'chatCommandsUpdated') {
+                // Overlay does not render chat commands; this message is for backend/bot sync.
+                // Treat as silent to avoid showing a default "ALERT" popup during game switches.
+                return;
+              }
+
               if (data.alertType === 'customCountersUpdated') {
                 customCountersConfig = (data.data && data.data.counters) ? data.data.counters : {};
                 if (lastCounterData) {
