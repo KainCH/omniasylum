@@ -353,6 +353,11 @@ window.overlayInterop = {
                 document.body.appendChild(timer);
             }
 
+            // Ensure fade is applied even if the timer was server-rendered (Blazor overlay page).
+            if (!timer.style.transition) {
+                timer.style.transition = 'opacity 0.6s ease';
+            }
+
             // Remove any legacy label element if it exists from older versions
             const legacyLabel = timer.querySelector('.timer-label');
             if (legacyLabel && legacyLabel.parentNode) {
