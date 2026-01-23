@@ -337,6 +337,7 @@ window.overlayInterop = {
                 timer.style.background = 'transparent';
                 timer.style.pointerEvents = 'none';
                 timer.style.zIndex = '1100';
+                timer.style.transition = 'opacity 0.6s ease';
                 timer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
                 timer.style.fontWeight = '800';
                 timer.style.fontVariantNumeric = 'tabular-nums';
@@ -393,6 +394,11 @@ window.overlayInterop = {
             // Force visible in preview/offline-preview/manual-running modes
             if (window.omniOverlayPreview === true || window.omniOverlayOfflinePreview === true || window.omniOverlayTimerForceVisible === true) {
                 timer.style.opacity = '1';
+            }
+
+            // If a countdown completed, keep it hidden until restarted.
+            if (window.omniOverlayTimerExpired === true) {
+                timer.style.opacity = '0';
             }
 
             return timer;

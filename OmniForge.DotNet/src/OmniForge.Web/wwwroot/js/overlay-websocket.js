@@ -7,6 +7,7 @@ export function connect(url, dotNetHelper) {
     let manualStartMs = null;
     let manualRunning = false;
     let timerDurationSeconds = 0;
+    let timerExpired = false;
 
     // Initialize duration from DOM if present (helps on first load before settingsUpdate arrives)
     try {
@@ -57,9 +58,37 @@ export function connect(url, dotNetHelper) {
         const totalSeconds = Math.floor(elapsedMs / 1000);
 
         // If a duration is configured, show countdown; otherwise show elapsed.
-        const displaySeconds = timerDurationSeconds > 0
-            ? Math.max(0, timerDurationSeconds - totalSeconds)
-            : totalSeconds;
+        if (timerDurationSeconds > 0) {
+            const remainingSeconds = Math.max(0, timerDurationSeconds - totalSeconds);
+            if (remainingSeconds <= 0) {
+                element.textContent = '00:00';
+
+                // Countdown completed: fade back to hidden.
+                timerExpired = true;
+                window.omniOverlayTimerExpired = true;
+                stopTimerInterval();
+
+                const timerEl = document.querySelector('.overlay-timer');
+                if (timerEl) timerEl.style.opacity = '0';
+                return;
+            }
+
+            // Clear any previous expired state once we have time remaining again.
+            timerExpired = false;
+            window.omniOverlayTimerExpired = false;
+
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            const pad2 = (n) => String(n).padStart(2, '0');
+            element.textContent = `${pad2(minutes)}:${pad2(seconds)}`;
+            return;
+        }
+
+        // Elapsed timer mode
+        timerExpired = false;
+        window.omniOverlayTimerExpired = false;
+
+        const displaySeconds = totalSeconds;
 
         const minutes = Math.floor(displaySeconds / 60);
         const seconds = displaySeconds % 60;
@@ -92,6 +121,8 @@ export function connect(url, dotNetHelper) {
         const parsed = parseToMs(value);
         if (parsed) {
             streamStartMs = parsed;
+            timerExpired = false;
+            window.omniOverlayTimerExpired = false;
             // If manual mode is not running, stream start should drive the timer.
             if (!manualRunning) {
                 startTimerInterval();
@@ -103,6 +134,10 @@ export function connect(url, dotNetHelper) {
     const setManualTimer = (running, startUtcValue) => {
         manualRunning = running === true;
         window.omniOverlayTimerForceVisible = manualRunning;
+
+        // Any manual start/stop resets completion state.
+        timerExpired = false;
+        window.omniOverlayTimerExpired = false;
 
         if (!manualRunning) {
             manualStartMs = null;
@@ -183,6 +218,12 @@ export function connect(url, dotNetHelper) {
             } else if (method === "overlaySettingsUpdate" || method === "settingsUpdate") {
                 const settings = normalizeOverlaySettings(data);
                 if (settings) {
+                    // First: apply overlay settings to ensure the timer element is created/unhidden
+                    // before we start the timer interval (prevents "running while hidden" flashes).
+                    if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+                        window.overlayInterop.updateOverlaySettings(settings);
+                    }
+
                     // Update timer duration for countdown mode (minutes -> seconds)
                     const minutes = Number(settings.timerDurationMinutes ?? settings.TimerDurationMinutes ?? 0);
                     timerDurationSeconds = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes * 60) : 0;
@@ -193,9 +234,6 @@ export function connect(url, dotNetHelper) {
                     setManualTimer(running, startUtc);
 
                     try { dotNetHelper.invokeMethodAsync("OnOverlaySettingsUpdate", settings); } catch (e) {}
-                    if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
-                        window.overlayInterop.updateOverlaySettings(settings);
-                    }
                 }
             } else {
                 // Standard alerts
@@ -241,7 +279,9 @@ function updateStreamStatus(status) {
             || (window.omniOverlayPreview === true)
             || (window.omniOverlayOfflinePreview === true)
             || (window.omniOverlayTimerForceVisible === true);
-        timer.style.opacity = shouldShowTimer ? '1' : '0';
+
+        const expired = window.omniOverlayTimerExpired === true;
+        timer.style.opacity = (!expired && shouldShowTimer) ? '1' : '0';
     }
 }
 
