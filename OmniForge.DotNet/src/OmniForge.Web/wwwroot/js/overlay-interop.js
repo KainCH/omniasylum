@@ -335,7 +335,7 @@ window.overlayInterop = {
                 // Base styling (transparent, OBS-friendly, always top-center)
                 timer.style.position = 'fixed';
                 timer.style.background = 'transparent';
-                timer.style.pointerEvents = 'none';
+                timer.style.pointerEvents = 'none'; // Intentional: keep overlay click-through in OBS/Streamlabs
                 timer.style.zIndex = '1100';
                 timer.style.transition = 'opacity 0.6s ease';
                 timer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";

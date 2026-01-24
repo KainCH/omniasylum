@@ -156,6 +156,7 @@ namespace OmniForge.Web.Controllers
 
             // Preserve current stream state so the overlay doesn't disappear after a series load.
             // The overlay uses `streamStarted` to determine visibility.
+            // NOTE: currentCounters can be null (e.g., first-time user/no counters entity yet); that's OK.
             var currentCounters = await _counterRepository.GetCountersAsync(userId);
 
             // Create a new counter with the snapshot values, ensuring user ID is set

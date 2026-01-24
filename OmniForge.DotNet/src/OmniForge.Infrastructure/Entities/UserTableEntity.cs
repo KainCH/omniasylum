@@ -263,8 +263,9 @@ namespace OmniForge.Infrastructure.Entities
                 using var doc = JsonDocument.Parse(raw);
                 return doc.RootElement.ValueKind == JsonValueKind.Array ? raw : defaultValue;
             }
-            catch
+            catch (JsonException)
             {
+                // Invalid JSON; treat as missing/empty for backward compatibility.
                 return defaultValue;
             }
         }

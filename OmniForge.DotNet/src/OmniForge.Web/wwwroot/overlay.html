@@ -244,7 +244,8 @@
         if (typeof value === 'number') {
           if (!Number.isFinite(value)) return null;
           // Heuristic: treat small epoch values as seconds (common in some APIs) not milliseconds.
-          return value < 1e12 ? (value * 1000) : value;
+          // Use a conservative threshold: epoch seconds are ~1e9; epoch ms are ~1e12+.
+          return value < 1e11 ? (value * 1000) : value;
         }
         if (typeof value === 'object' && value.dateTime) {
           const ms = Date.parse(value.dateTime);
@@ -766,19 +767,24 @@
 
         if (hasStreamStartedField) {
           const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
-          const parsedStart = parseToMs(raw);
-          streamStartMs = parsedStart;
 
-          // Treat an explicit streamStarted value as an online signal.
-          // If it's null/invalid, treat it as offline.
-          if (parsedStart) {
-            lastKnownIsLive = true;
-            lastOnlineSignalAtMs = Date.now();
-            timerExpired = false;
-            window.omniOverlayTimerExpired = false;
-          } else {
+          // Semantics:
+          // - `streamStarted: <valid timestamp>` => online signal (refresh TTL)
+          // - `streamStarted: null` => explicitly offline
+          // - `streamStarted` present but invalid/non-null => ignore (don't spuriously flip offline)
+          if (raw === null) {
+            streamStartMs = null;
             lastKnownIsLive = false;
             lastOnlineSignalAtMs = null;
+          } else {
+            const parsedStart = parseToMs(raw);
+            if (parsedStart) {
+              streamStartMs = parsedStart;
+              lastKnownIsLive = true;
+              lastOnlineSignalAtMs = Date.now();
+              timerExpired = false;
+              window.omniOverlayTimerExpired = false;
+            }
           }
         }
 

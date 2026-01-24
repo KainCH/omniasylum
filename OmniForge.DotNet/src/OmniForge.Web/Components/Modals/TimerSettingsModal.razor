@@ -154,36 +154,37 @@
       if (user == null)
       {
         errorMessage = "User not found.";
-        return;
-      }
-
-      user.OverlaySettings ??= new OverlaySettings();
-      user.OverlaySettings.TimerDurationMinutes = timerMinutes;
-      user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
-
-      // Manual start/stop also forces timer to be enabled so it's visible on the overlay.
-      user.OverlaySettings.TimerManualRunning = timerRunning;
-      if (timerRunning)
-      {
-        user.OverlaySettings.TimerEnabled = true;
-        if (!user.OverlaySettings.TimerManualStartUtc.HasValue)
-        {
-          user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
-        }
       }
       else
       {
-        user.OverlaySettings.TimerManualStartUtc = null;
+        user.OverlaySettings ??= new OverlaySettings();
+        user.OverlaySettings.TimerDurationMinutes = timerMinutes;
+        user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
+
+        // Manual start/stop also forces timer to be enabled so it's visible on the overlay.
+        user.OverlaySettings.TimerManualRunning = timerRunning;
+        if (timerRunning)
+        {
+          user.OverlaySettings.TimerEnabled = true;
+          if (!user.OverlaySettings.TimerManualStartUtc.HasValue)
+          {
+            user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
+          }
+        }
+        else
+        {
+          user.OverlaySettings.TimerManualStartUtc = null;
+        }
+
+        await UserRepository.SaveUserAsync(user);
+        await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
+
+        successMessage = "Timer settings saved.";
+        await OnSaved.InvokeAsync();
+
+        await Task.Delay(400);
+        await Close();
       }
-
-      await UserRepository.SaveUserAsync(user);
-      await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
-
-      successMessage = "Timer settings saved.";
-      await OnSaved.InvokeAsync();
-
-      await Task.Delay(400);
-      await Close();
     }
     catch (Exception ex)
     {
@@ -215,24 +216,25 @@
       if (user == null)
       {
         errorMessage = "User not found.";
-        return;
       }
+      else
+      {
+        user.OverlaySettings ??= new OverlaySettings();
+        user.OverlaySettings.TimerDurationMinutes = timerMinutes;
+        user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
 
-      user.OverlaySettings ??= new OverlaySettings();
-      user.OverlaySettings.TimerDurationMinutes = timerMinutes;
-      user.OverlaySettings.TimerTextColor = string.IsNullOrWhiteSpace(timerTextColor) ? null : timerTextColor;
+        // Force the timer visible and restart from now
+        timerRunning = true;
+        user.OverlaySettings.TimerEnabled = true;
+        user.OverlaySettings.TimerManualRunning = true;
+        user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
 
-      // Force the timer visible and restart from now
-      timerRunning = true;
-      user.OverlaySettings.TimerEnabled = true;
-      user.OverlaySettings.TimerManualRunning = true;
-      user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
+        await UserRepository.SaveUserAsync(user);
+        await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
 
-      await UserRepository.SaveUserAsync(user);
-      await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
-
-      successMessage = "Timer started.";
-      await OnSaved.InvokeAsync();
+        successMessage = "Timer started.";
+        await OnSaved.InvokeAsync();
+      }
     }
     catch (Exception ex)
     {
@@ -262,20 +264,21 @@
       if (user == null)
       {
         errorMessage = "User not found.";
-        return;
       }
+      else
+      {
+        user.OverlaySettings ??= new OverlaySettings();
 
-      user.OverlaySettings ??= new OverlaySettings();
+        timerRunning = false;
+        user.OverlaySettings.TimerManualRunning = false;
+        user.OverlaySettings.TimerManualStartUtc = null;
 
-      timerRunning = false;
-      user.OverlaySettings.TimerManualRunning = false;
-      user.OverlaySettings.TimerManualStartUtc = null;
+        await UserRepository.SaveUserAsync(user);
+        await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
 
-      await UserRepository.SaveUserAsync(user);
-      await OverlayNotifier.NotifySettingsUpdateAsync(UserId, user.OverlaySettings);
-
-      successMessage = "Timer stopped.";
-      await OnSaved.InvokeAsync();
+        successMessage = "Timer stopped.";
+        await OnSaved.InvokeAsync();
+      }
     }
     catch (Exception ex)
     {

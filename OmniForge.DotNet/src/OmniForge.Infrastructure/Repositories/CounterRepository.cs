@@ -162,8 +162,9 @@ namespace OmniForge.Infrastructure.Repositories
 
                 if (attempt < maxAttempts - 1)
                 {
-                    // Small backoff to reduce contention in multi-instance scenarios.
-                    await Task.Delay(50 * (attempt + 1));
+                    // Exponential backoff to reduce contention in multi-instance scenarios.
+                    var delayMs = 50 * (1 << attempt);
+                    await Task.Delay(delayMs);
                 }
             }
 

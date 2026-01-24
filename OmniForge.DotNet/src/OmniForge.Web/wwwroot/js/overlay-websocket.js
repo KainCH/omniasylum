@@ -1,6 +1,8 @@
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
+    const pad2 = (n) => String(n).padStart(2, '0');
+
     const isDebugEnabled = () => {
         try {
             const urlParams = new URLSearchParams(window.location.search);
@@ -80,7 +82,6 @@ export function connect(url, dotNetHelper) {
 
             const minutes = Math.floor(remainingSeconds / 60);
             const seconds = remainingSeconds % 60;
-            const pad2 = (n) => String(n).padStart(2, '0');
             element.textContent = `${pad2(minutes)}:${pad2(seconds)}`;
             return;
         }
@@ -93,8 +94,6 @@ export function connect(url, dotNetHelper) {
 
         const minutes = Math.floor(displaySeconds / 60);
         const seconds = displaySeconds % 60;
-
-        const pad2 = (n) => String(n).padStart(2, '0');
         element.textContent = `${pad2(minutes)}:${pad2(seconds)}`;
     };
 
