@@ -318,6 +318,109 @@ window.overlayInterop = {
     updateOverlaySettings: function(settings) {
         console.log('Updating overlay settings:', settings);
 
+        // Track flags used by overlay-websocket.js visibility logic.
+        try {
+            window.omniOverlayOfflinePreview = (settings?.offlinePreview === true || settings?.OfflinePreview === true);
+            window.omniOverlayTimerForceVisible = (settings?.timerManualRunning === true || settings?.TimerManualRunning === true);
+        } catch (e) {}
+
+        // Toggle timer element (no box; transparent). This allows portal toggles to
+        // show/hide the timer without requiring a full overlay reload.
+        const ensureTimer = () => {
+            let timer = document.querySelector('.overlay-timer');
+            if (!timer) {
+                timer = document.createElement('div');
+                timer.className = 'overlay-timer';
+
+                // Base styling (transparent, OBS-friendly, always top-center)
+                timer.style.position = 'fixed';
+                timer.style.background = 'transparent';
+                timer.style.pointerEvents = 'none'; // Intentional: keep overlay click-through in OBS/Streamlabs
+                timer.style.zIndex = '1100';
+                timer.style.transition = 'opacity 0.6s ease';
+                timer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+                timer.style.fontWeight = '800';
+                timer.style.fontVariantNumeric = 'tabular-nums';
+                timer.style.letterSpacing = '0.03em';
+                timer.style.textShadow = '0 0 6px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.75)';
+
+                const value = document.createElement('span');
+                value.className = 'timer-value';
+                value.textContent = '00:00';
+                value.style.fontSize = '42px';
+
+                timer.appendChild(value);
+                document.body.appendChild(timer);
+            }
+
+            // Ensure fade is applied even if the timer was server-rendered (Blazor overlay page).
+            if (!timer.style.transition) {
+                timer.style.transition = 'opacity 0.6s ease';
+            }
+
+            // Remove any legacy label element if it exists from older versions
+            const legacyLabel = timer.querySelector('.timer-label');
+            if (legacyLabel && legacyLabel.parentNode) {
+                legacyLabel.parentNode.removeChild(legacyLabel);
+            }
+
+            // Provide duration to overlay-websocket.js (minutes)
+            const durationMinutes = Number(settings?.timerDurationMinutes ?? settings?.TimerDurationMinutes ?? 0);
+            timer.dataset.durationMinutes = Number.isFinite(durationMinutes) ? String(durationMinutes) : '0';
+
+            // Apply colors from dedicated timer color first, then fall back to theme
+            const explicitTimerColor = settings?.timerTextColor ?? settings?.TimerTextColor;
+            const themeColor = settings?.theme?.textColor;
+            const valueColor = (explicitTimerColor != null && String(explicitTimerColor).trim().length > 0)
+                ? String(explicitTimerColor).trim()
+                : (themeColor ? String(themeColor) : null);
+
+            if (valueColor) {
+                const valueEl = timer.querySelector('.timer-value');
+                if (valueEl) valueEl.style.color = valueColor;
+            }
+
+            // Top-center placement requirement. Scale matches overlay scale.
+            const scale = Number(settings?.scale);
+            const scaleValue = Number.isFinite(scale) && scale > 0 ? scale : 1;
+            timer.style.top = '20px';
+            timer.style.left = '50%';
+            timer.style.right = '';
+            timer.style.bottom = '';
+            timer.style.transform = `translateX(-50%) scale(${scaleValue})`;
+            timer.style.transformOrigin = 'top center';
+
+            // Match current overlay visibility if available
+            const overlay = document.querySelector('.counter-overlay');
+            if (overlay && overlay.style && overlay.style.opacity) {
+                timer.style.opacity = overlay.style.opacity;
+            }
+
+            // Force visible in preview/offline-preview/manual-running modes
+            if (window.omniOverlayPreview === true || window.omniOverlayOfflinePreview === true || window.omniOverlayTimerForceVisible === true) {
+                timer.style.opacity = '1';
+            }
+
+            // If a countdown completed, keep it hidden until restarted.
+            if (window.omniOverlayTimerExpired === true) {
+                timer.style.opacity = '0';
+            }
+
+            return timer;
+        };
+
+        // In preview mode, always render the timer element so it can be tested.
+        const isPreview = window.omniOverlayPreview === true;
+
+        if (isPreview || (settings && (settings.timerEnabled === true || settings.TimerEnabled === true))) {
+            ensureTimer();
+        } else {
+            const timer = document.querySelector('.overlay-timer');
+            if (timer && timer.parentNode) {
+                timer.parentNode.removeChild(timer);
+            }
+        }
+
         // Update size styles
         if (settings.size) {
             const sizes = {

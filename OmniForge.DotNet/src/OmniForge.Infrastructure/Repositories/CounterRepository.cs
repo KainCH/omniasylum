@@ -101,6 +101,86 @@ namespace OmniForge.Infrastructure.Repositories
             await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
         }
 
+        public async Task<bool> TryClaimStreamStartDiscordNotificationAsync(string userId, string streamInstanceId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return false;
+            }
+
+            // Treat whitespace-only IDs as invalid.
+            if (string.IsNullOrWhiteSpace(streamInstanceId))
+            {
+                return false;
+            }
+
+            // This is an idempotency guard used to suppress duplicate Discord "stream_start" announcements.
+            // Uses optimistic concurrency (ETag) so multiple app instances will not double-send.
+            const int maxAttempts = 5;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    var response = await _tableClient.GetEntityAsync<TableEntity>(userId, "counters");
+                    var existingEntity = response.Value;
+                    var existing = existingEntity.GetString("LastNotifiedStreamId") ?? existingEntity.GetString("lastNotifiedStreamId");
+                    if (string.Equals(existing, streamInstanceId, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    var patch = new TableEntity(userId, "counters")
+                    {
+                        ["LastNotifiedStreamId"] = streamInstanceId,
+                        // Backward compatibility: older builds used camelCase.
+                        ["lastNotifiedStreamId"] = streamInstanceId,
+                        ["LastUpdated"] = DateTimeOffset.UtcNow
+                    };
+
+                    await _tableClient.UpdateEntityAsync(patch, existingEntity.ETag, TableUpdateMode.Merge);
+                    return true;
+                }
+                catch (RequestFailedException ex) when (ex.Status == 404)
+                {
+                    // Entity doesn't exist yet; create a minimal one with the claim.
+                    var newEntity = new TableEntity(userId, "counters")
+                    {
+                        ["Deaths"] = 0,
+                        ["Swears"] = 0,
+                        ["Screams"] = 0,
+                        ["Bits"] = 0,
+                        ["LastUpdated"] = DateTimeOffset.UtcNow,
+                        ["LastNotifiedStreamId"] = streamInstanceId,
+                        // Backward compatibility: older builds used camelCase.
+                        ["lastNotifiedStreamId"] = streamInstanceId
+                    };
+
+                    try
+                    {
+                        await _tableClient.AddEntityAsync(newEntity);
+                        return true;
+                    }
+                    catch (RequestFailedException addEx) when (addEx.Status == 409)
+                    {
+                        // Someone else created it; retry.
+                    }
+                }
+                catch (RequestFailedException ex) when (ex.Status == 412)
+                {
+                    // ETag mismatch (concurrent update). Retry.
+                }
+
+                if (attempt < maxAttempts - 1)
+                {
+                    // Exponential backoff to reduce contention in multi-instance scenarios.
+                    var delayMs = 50 * (1 << attempt);
+                    await Task.Delay(delayMs);
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Gets an int value checking both PascalCase and camelCase key variations.
         /// This handles data that may have been stored with different casing conventions.

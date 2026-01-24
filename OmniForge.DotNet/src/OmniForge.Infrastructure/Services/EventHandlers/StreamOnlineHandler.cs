@@ -43,6 +43,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
         public override async Task HandleAsync(JsonElement eventData)
         {
+            eventData = UnwrapEvent(eventData);
+
             string? broadcasterId = GetStringProperty(eventData, "broadcaster_user_id");
             string broadcasterName = GetStringProperty(eventData, "broadcaster_user_name", "Unknown");
 
@@ -75,8 +77,37 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             var now = DateTimeOffset.UtcNow;
 
-            // Load current counters, then (if possible) load the saved per-game snapshot for the detected category.
+            DateTimeOffset? startedAt = null;
+            var startedAtRaw = GetStringProperty(eventData, "started_at", string.Empty);
+            if (!string.IsNullOrWhiteSpace(startedAtRaw) && DateTimeOffset.TryParse(startedAtRaw, out var parsedStartedAt))
+            {
+                startedAt = parsedStartedAt.ToUniversalTime();
+            }
+
+            // Load current counters, then (if this is a new stream) load the saved per-game snapshot for the detected category.
             var counters = await counterRepository.GetCountersAsync(broadcasterId) ?? new Counter { TwitchUserId = broadcasterId };
+
+            // Determine whether this is a genuine new stream start vs. a repeated "online" heartbeat.
+            // Notes:
+            // - In normal Twitch behavior, stream.online is emitted once per stream.
+            // - In our app, we may treat repeated online signals as a heartbeat.
+            // - Older builds may have written StreamStarted = now on each heartbeat; treat that as the same stream and correct.
+            var isNewStream = counters.StreamStarted == null;
+            if (startedAt != null)
+            {
+                if (counters.StreamStarted == null)
+                {
+                    isNewStream = true;
+                }
+                else
+                {
+                    var stored = counters.StreamStarted.Value.ToUniversalTime();
+                    // Treat this as a new stream only if started_at is clearly after what we have stored.
+                    // If started_at is before stored (migration/heartbeat overwrite or delayed/re-delivered notifications
+                    // with an older started_at), this will evaluate to false.
+                    isNewStream = startedAt.Value > stored.AddMinutes(1);
+                }
+            }
 
             TwitchChannelCategoryDto? category = null;
             if (twitchApiService != null)
@@ -91,7 +122,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
             }
 
-            if (category != null && !string.IsNullOrWhiteSpace(category.GameId) && gameCountersRepository != null)
+            if (isNewStream && category != null && !string.IsNullOrWhiteSpace(category.GameId) && gameCountersRepository != null)
             {
                 try
                 {
@@ -134,9 +165,22 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
 
             // Update Counter
-            counters.StreamStarted = now;
+            if (startedAt != null)
+            {
+                // Keep StreamStarted stable for this stream instance.
+                counters.StreamStarted = startedAt;
+            }
+            else if (counters.StreamStarted == null)
+            {
+                counters.StreamStarted = now;
+            }
             counters.LastUpdated = now;
-            counters.Bits = 0;
+
+            // Only do "stream start" resets on genuine new stream starts.
+            if (isNewStream)
+            {
+                counters.Bits = 0;
+            }
             await counterRepository.SaveCountersAsync(counters);
 
             // Notify Overlay
@@ -146,7 +190,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
 
             // When the stream goes online, apply per-game CCLs from the library using the fetched category.
-            if (twitchApiService != null && gameLibraryRepository != null)
+            if (isNewStream && twitchApiService != null && gameLibraryRepository != null)
             {
                 try
                 {
@@ -259,11 +303,35 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             // Fetch Stream Info
             object notificationData = await GetStreamNotificationDataAsync(user, helixWrapper, broadcasterId);
 
-            // Send Discord Notification
+            // Send Discord Notification (deduped per stream instance)
             try
             {
-                await discordService.SendNotificationAsync(user, "stream_start", notificationData);
-                _discordTracker.RecordNotification(broadcasterId, true);
+                var streamInstanceId = (startedAt ?? counters.StreamStarted ?? now).ToUniversalTime().UtcDateTime.ToString("O");
+
+                var claimed = false;
+                try
+                {
+                    claimed = await counterRepository.TryClaimStreamStartDiscordNotificationAsync(broadcasterId, streamInstanceId);
+                }
+                catch (Exception ex)
+                {
+                    // If we can't safely dedupe, prefer suppressing to avoid spam.
+                    Logger.LogWarning(ex, "⚠️ Failed to claim stream_start Discord notification; suppressing send. user_id={UserId}", LogSanitizer.Sanitize(broadcasterId));
+                    claimed = false;
+                }
+
+                if (!claimed)
+                {
+                    Logger.LogInformation(
+                        "🔁 Suppressed duplicate stream_start Discord announcement. user_id={UserId} stream_instance_id={StreamInstanceId}",
+                        LogSanitizer.Sanitize(broadcasterId),
+                        LogSanitizer.Sanitize(streamInstanceId));
+                }
+                else
+                {
+                    await discordService.SendNotificationAsync(user, "stream_start", notificationData);
+                    _discordTracker.RecordNotification(broadcasterId, true);
+                }
             }
             catch (Exception ex)
             {

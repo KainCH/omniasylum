@@ -34,7 +34,11 @@ namespace OmniForge.Web.Controllers
 
         private string GetCurrentUserId()
         {
-            return User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+            // Prefer our canonical claim used across the app (AuthMiddleware, most controllers, Blazor)
+            // but keep a fallback for legacy/auth-provider differences.
+            return User.FindFirst("userId")?.Value
+                ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? string.Empty;
         }
 
         private string GetCurrentUsername()

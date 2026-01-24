@@ -42,5 +42,35 @@ namespace OmniForge.Tests
 
             Assert.Equal("a", broadcasters);
         }
+
+        [Fact]
+        public void SetState_WhenBroadcasterIdBlank_ShouldDoNothing()
+        {
+            var registry = new MonitoringRegistry();
+            registry.SetState(" ", new MonitoringState(UseBot: true, BotUserId: "bot", UpdatedAtUtc: DateTimeOffset.UtcNow));
+
+            Assert.Empty(registry.GetAllStates());
+        }
+
+        [Fact]
+        public void Remove_WhenBroadcasterIdBlank_ShouldDoNothing()
+        {
+            var registry = new MonitoringRegistry();
+            registry.SetState("a", new MonitoringState(UseBot: true, BotUserId: "bot", UpdatedAtUtc: DateTimeOffset.UtcNow));
+
+            registry.Remove(" ");
+
+            Assert.True(registry.TryGetState("a", out _));
+        }
+
+        [Fact]
+        public void TryGetState_IsCaseInsensitive()
+        {
+            var registry = new MonitoringRegistry();
+            registry.SetState("BroadCaster", new MonitoringState(UseBot: true, BotUserId: "bot", UpdatedAtUtc: DateTimeOffset.UtcNow));
+
+            Assert.True(registry.TryGetState("broadcaster", out var state));
+            Assert.True(state.UseBot);
+        }
     }
 }

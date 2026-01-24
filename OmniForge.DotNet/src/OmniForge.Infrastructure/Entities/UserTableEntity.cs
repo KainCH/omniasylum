@@ -203,7 +203,9 @@ namespace OmniForge.Infrastructure.Entities
                 discordWebhookUrl = GetStringSafe(entity, "discordWebhookUrl"),
                 discordChannelId = GetStringSafe(entity, "discordChannelId"),
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
-                managedStreamers = GetStringSafe(entity, "managedStreamers", "[]"),
+                // Backward-compat: older records may have used different casing/key names.
+                // Defensive: if the value is stored as a non-array JSON value (e.g., "{}"), default to "[]".
+                managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),
                 isActive = GetBoolSafe(entity, "isActive", true),
                 streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
                 createdAt = entity.TryGetValue("createdAt", out var ca) ? ca : null,
@@ -235,6 +237,37 @@ namespace OmniForge.Infrastructure.Entities
                 }
             }
             return defaultValue;
+        }
+
+        private static string GetJsonArrayStringSafe(TableEntity entity, string defaultValue, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                if (entity.TryGetValue(key, out var value) && value != null)
+                {
+                    var raw = value.ToString();
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        return NormalizeJsonArrayString(raw!, defaultValue);
+                    }
+                }
+            }
+
+            return defaultValue;
+        }
+
+        private static string NormalizeJsonArrayString(string raw, string defaultValue)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                return doc.RootElement.ValueKind == JsonValueKind.Array ? raw : defaultValue;
+            }
+            catch (JsonException)
+            {
+                // Invalid JSON; treat as missing/empty for backward compatibility.
+                return defaultValue;
+            }
         }
 
         public static UserTableEntity FromDomain(User user)

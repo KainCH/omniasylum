@@ -154,6 +154,11 @@ namespace OmniForge.Web.Controllers
             var series = await _seriesRepository.GetSeriesByIdAsync(userId, request.SeriesId);
             if (series == null) return NotFound(new { error = "Series save not found" });
 
+            // Preserve current stream state so the overlay doesn't disappear after a series load.
+            // The overlay uses `streamStarted` to determine visibility.
+            // NOTE: currentCounters can be null (e.g., first-time user/no counters entity yet); that's OK.
+            var currentCounters = await _counterRepository.GetCountersAsync(userId);
+
             // Create a new counter with the snapshot values, ensuring user ID is set
             var restoredCounter = new Counter
             {
@@ -165,8 +170,9 @@ namespace OmniForge.Web.Controllers
                 CustomCounters = series.Snapshot.CustomCounters ?? new System.Collections.Generic.Dictionary<string, int>(),
                 LastCategoryName = series.Snapshot.LastCategoryName,
                 LastUpdated = DateTimeOffset.UtcNow,
-                StreamStarted = null, // Don't restore stream state
-                LastNotifiedStreamId = null
+                // Don't restore stream state from the snapshot, but keep the *current* stream state.
+                StreamStarted = currentCounters?.StreamStarted,
+                LastNotifiedStreamId = currentCounters?.LastNotifiedStreamId
             };
 
             // Save the restored counters (this overwrites current values)

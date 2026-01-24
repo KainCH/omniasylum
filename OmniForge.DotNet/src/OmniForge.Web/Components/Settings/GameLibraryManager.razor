@@ -239,25 +239,38 @@ else
               <div class="col-12">
                 <label class="form-label">Enabled Counters</label>
                 <div class="d-flex flex-wrap gap-3">
-                  @if (counterLibrary.Count == 0)
+                  @foreach (var row in GetEnabledCountersForSelectedGame())
                   {
-                    <div class="text-muted small">No counters found in the counter library.</div>
-                  }
-                  else
-                  {
-                    @foreach (var item in counterLibrary.OrderBy(c => c.Name))
-                    {
-                      var id = GetCounterCheckboxId(item.CounterId);
+                    var id = GetCounterCheckboxId(row.CounterId);
+                    <div class="d-flex align-items-center gap-2">
                       <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="@id"
-                          checked="@IsLibraryCounterEnabled(item.CounterId)"
-                          @onchange="e => OnLibraryCounterEnabledChanged(item.CounterId, e)" disabled="@isBusy" />
-                        <label class="form-check-label" for="@id">@item.Name</label>
+                        <input class="form-check-input" type="checkbox" id="@id" checked="@row.Enabled"
+                          @onchange="e => OnLibraryCounterEnabledChanged(row.CounterId, e)" disabled="@isBusy" />
+                        <label class="form-check-label" for="@id">@row.Name</label>
                       </div>
-                    }
+
+                      @if (row.IsCore)
+                      {
+                        <span class="badge bg-secondary">Core</span>
+                      }
+                      else
+                      {
+                        <button class="btn btn-sm btn-outline-danger" title="Remove from this game"
+                          @onclick="() => RemoveLibraryCounterFromSelectedGame(row.CounterId)" disabled="@isBusy">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      }
+                    </div>
                   }
                 </div>
                 <div class="small text-muted mt-1">These control overlay visibility and default chat commands per game.
+                  Add non-core counters via the library.</div>
+
+                <div class="mt-2">
+                  <button class="btn btn-sm btn-outline-primary" @onclick="OpenCounterLibraryModal"
+                    disabled="@(isBusy || selectedGame == null)">
+                    <i class="bi bi-plus-circle me-1"></i>Add Counters
+                  </button>
                 </div>
               </div>
 
@@ -295,48 +308,6 @@ else
 
             <hr />
 
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="fw-semibold"><i class="bi bi-collection me-2"></i>Counter Library</div>
-              <button class="btn btn-sm btn-outline-secondary" @onclick="LoadCounterLibrary" disabled="@isBusy">
-                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-              </button>
-            </div>
-
-            @if (counterLibrary.Count == 0)
-            {
-              <div class="text-muted small">No counters in the library yet.</div>
-            }
-            else
-            {
-              <div class="list-group">
-                @foreach (var item in counterLibrary)
-                {
-                  var alreadyAdded = editCounters.CustomCounters != null &&
-                  editCounters.CustomCounters.ContainsKey(item.CounterId);
-                  var isCore = IsCoreCounterId(item.CounterId);
-                  <div class="list-group-item d-flex align-items-center justify-content-between">
-                    <div>
-                      <div class="fw-semibold">
-                        @item.Name
-                        @if (isCore)
-                        {
-                          <span class="badge bg-secondary ms-2">Core</span>
-                        }
-                      </div>
-                      <div class="small text-muted">Key: @item.CounterId</div>
-                    </div>
-                    <button class="btn btn-sm btn-outline-success"
-                      @onclick="() => AddLibraryCounterToSelectedGame(item.CounterId)"
-                      disabled="@(isBusy || alreadyAdded || isCore)">
-                      <i class="bi bi-plus-circle me-1"></i>@(isCore ? "Core" : (alreadyAdded ? "Added" : "Add"))
-                    </button>
-                  </div>
-                }
-              </div>
-            }
-
-            <hr />
-
             <div class="fw-semibold mb-2"><i class="bi bi-inbox me-2"></i>Request New Counter</div>
             <div class="row g-2">
               <div class="col-6">
@@ -358,6 +329,76 @@ else
               </button>
             </div>
           }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showCounterLibraryModal && selectedGame != null)
+{
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-collection me-2"></i>Add Counters</h5>
+          <button type="button" class="btn-close" @onclick="CloseCounterLibraryModal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="text-muted small">
+              Add non-core counters to <span class="fw-semibold">@selectedGame.GameName</span>
+              (<span class="text-muted">@selectedGame.GameId</span>).
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="LoadCounterLibrary" disabled="@isBusy">
+              <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+          </div>
+
+          <input class="form-control mb-3" placeholder="Filter counters..." @bind="counterLibraryFilter"
+            @bind:event="oninput" disabled="@isBusy" />
+
+          @{
+            var items = GetLibraryCountersForModal().ToList();
+
+            if (items.Count == 0)
+            {
+              <div class="text-muted">No counters found in the library.</div>
+            }
+            else
+            {
+              <div class="list-group">
+                @foreach (var item in items)
+                {
+                  var alreadyAdded = editCounters.CustomCounters != null &&
+                  editCounters.CustomCounters.ContainsKey(item.CounterId);
+                  <div class="list-group-item d-flex align-items-center justify-content-between">
+                    <div>
+                      <div class="fw-semibold">@item.Name</div>
+                      <div class="small text-muted">Key: @item.CounterId</div>
+                    </div>
+                    @if (alreadyAdded)
+                    {
+                      <button class="btn btn-sm btn-outline-danger"
+                        @onclick="() => RemoveLibraryCounterFromSelectedGame(item.CounterId)" disabled="@isBusy">
+                        <i class="bi bi-trash me-1"></i>Remove
+                      </button>
+                    }
+                    else
+                    {
+                      <button class="btn btn-sm btn-outline-success"
+                        @onclick="() => AddLibraryCounterToSelectedGame(item.CounterId)" disabled="@isBusy">
+                        <i class="bi bi-plus-circle me-1"></i>Add
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" @onclick="CloseCounterLibraryModal" disabled="@isBusy">Close</button>
         </div>
       </div>
     </div>
@@ -401,9 +442,91 @@ else
   private bool coreBitsEnabled = false;
 
   private List<CounterLibraryItem> counterLibrary = new();
+  private bool showCounterLibraryModal = false;
+  private string counterLibraryFilter = string.Empty;
   private string counterRequestName = string.Empty;
   private string counterRequestIcon = string.Empty;
   private string counterRequestDescription = string.Empty;
+
+  private sealed class EnabledCounterRow
+  {
+    public string CounterId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+    public bool IsCore { get; set; }
+  }
+
+  private IEnumerable<EnabledCounterRow> GetEnabledCountersForSelectedGame()
+  {
+    // Always show core counters for the game.
+    yield return new EnabledCounterRow { CounterId = "deaths", Name = "Deaths", Enabled = coreDeathsEnabled, IsCore = true };
+    yield return new EnabledCounterRow { CounterId = "swears", Name = "Swears", Enabled = coreSwearsEnabled, IsCore = true };
+    yield return new EnabledCounterRow
+    {
+      CounterId = "screams",
+      Name = "Screams",
+      Enabled = coreScreamsEnabled,
+      IsCore = true
+    };
+    yield return new EnabledCounterRow { CounterId = "bits", Name = "Bits", Enabled = coreBitsEnabled, IsCore = true };
+
+    // Only show non-core counters that are actually part of this game.
+    if (editCounters.CustomCounters == null || editCounters.CustomCounters.Count == 0)
+    {
+      yield break;
+    }
+
+    foreach (var counterId in editCounters.CustomCounters.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+    {
+      var name = counterLibrary.FirstOrDefault(c => string.Equals(c.CounterId, counterId,
+      StringComparison.OrdinalIgnoreCase))?.Name;
+      yield return new EnabledCounterRow
+      {
+        CounterId = counterId,
+        Name = string.IsNullOrWhiteSpace(name) ? counterId : name,
+        Enabled = IsLibraryCounterEnabled(counterId),
+        IsCore = false
+      };
+    }
+  }
+
+  private IEnumerable<CounterLibraryItem> GetLibraryCountersForModal()
+  {
+    if (selectedGame == null)
+    {
+      return Enumerable.Empty<CounterLibraryItem>();
+    }
+
+    var candidates = counterLibrary
+    .Where(IsNonCoreCounter);
+
+    var filter = (counterLibraryFilter ?? string.Empty).Trim();
+    if (!string.IsNullOrWhiteSpace(filter))
+    {
+      candidates = candidates.Where(c =>
+      (!string.IsNullOrWhiteSpace(c.Name) && c.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+      || (!string.IsNullOrWhiteSpace(c.CounterId) && c.CounterId.Contains(filter, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    return candidates.OrderBy(c => c.Name);
+  }
+
+  private bool IsNonCoreCounter(CounterLibraryItem item)
+  {
+    return !IsCoreCounterId(item.CounterId);
+  }
+
+  private void OpenCounterLibraryModal()
+  {
+    if (selectedGame == null) return;
+    counterLibraryFilter = string.Empty;
+    showCounterLibraryModal = true;
+  }
+
+  private void CloseCounterLibraryModal()
+  {
+    showCounterLibraryModal = false;
+  }
 
   protected override async Task OnParametersSetAsync()
   {
@@ -902,7 +1025,10 @@ else
       return;
     }
 
-    var currentlyEnabled = editCounters.CustomCounters != null && editCounters.CustomCounters.ContainsKey(counterId);
+    editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+    int>(StringComparer.OrdinalIgnoreCase);
+
+    var currentlyEnabled = editCounters.CustomCounters.ContainsKey(counterId);
     if (enabled && !currentlyEnabled)
     {
       await AddLibraryCounterToSelectedGame(counterId);

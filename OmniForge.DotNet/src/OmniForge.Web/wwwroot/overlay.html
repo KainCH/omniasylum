@@ -201,6 +201,13 @@
       const userId = urlParams.get('userId');
       const preview = urlParams.get('preview') === 'true';
 
+      // Used by overlay-interop.js and overlay-websocket.js (when present)
+      window.omniOverlayPreview = preview;
+      // Optional: `&debug=true` enables additional console logging.
+      // Keep default silent to avoid OBS log noise.
+      const debug = urlParams.get('debug') === 'true';
+      window.omniOverlayDebug = debug;
+
       // Store current overlay settings for filtering counters
       let currentSettings = null;
       // Store last counter data for re-rendering when settings change
@@ -208,6 +215,156 @@
 
       // Store active custom counters config (per-game), keyed by counterId
       let customCountersConfig = {};
+
+      // Stream timer state (pure client-side; OBS friendly)
+      let timerIntervalId = null;
+      let streamStartMs = null;
+      let timerDurationSeconds = 0;
+      let manualRunning = false;
+      let manualStartMs = null;
+      let timerExpired = false;
+      let lastKnownIsLive = false;
+      let lastOnlineSignalAtMs = null;
+
+      // Visibility should be driven by active online signals.
+      // If the monitor stops sending updates, the overlay should auto-hide.
+      const LIVE_SIGNAL_TTL_MS = 120000; // 2 minutes
+
+      const isLiveSignalFresh = () => {
+        if (!lastOnlineSignalAtMs) return false;
+        return (Date.now() - lastOnlineSignalAtMs) < LIVE_SIGNAL_TTL_MS;
+      };
+
+      const parseToMs = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') {
+          const ms = Date.parse(value);
+          return Number.isFinite(ms) ? ms : null;
+        }
+        if (typeof value === 'number') {
+          if (!Number.isFinite(value)) return null;
+          // Heuristic: interpret numeric values as either milliseconds or seconds since epoch
+          // by choosing the interpretation that is closest to the current time.
+          const now = Date.now();
+          const asMs = value;
+          const asMsFromSeconds = value * 1000;
+          const diffMs = Math.abs(asMs - now);
+          const diffSeconds = Math.abs(asMsFromSeconds - now);
+          return diffSeconds < diffMs ? asMsFromSeconds : asMs;
+        }
+        if (typeof value === 'object' && value.dateTime) {
+          const ms = Date.parse(value.dateTime);
+          return Number.isFinite(ms) ? ms : null;
+        }
+        return null;
+      };
+
+      const updateOverlayContainerVisibility = () => {
+        const container = document.getElementById('overlay-container');
+        if (!container) return;
+
+        const offlinePreview = window.omniOverlayOfflinePreview === true;
+        const shouldShow = preview || offlinePreview || manualRunning || isLiveSignalFresh();
+
+        if (shouldShow) {
+          container.classList.add('visible');
+        } else {
+          container.classList.remove('visible');
+        }
+      };
+
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const formatMmSs = (seconds) => {
+        const safe = Math.max(0, Number(seconds) || 0);
+        const m = Math.floor(safe / 60);
+        const s = safe % 60;
+        return `${pad2(m)}:${pad2(s)}`;
+      };
+
+      const shouldForceVisible = () => {
+        return preview === true || window.omniOverlayOfflinePreview === true || manualRunning === true;
+      };
+
+      const updateTimerVisibility = () => {
+        const timerEl = document.querySelector('.overlay-timer');
+        if (!timerEl) return;
+
+        window.omniOverlayTimerExpired = timerExpired;
+
+        const isVisible = !timerExpired && (shouldForceVisible() || isLiveSignalFresh());
+        timerEl.style.opacity = isVisible ? '1' : '0';
+      };
+
+      const updateTimerDisplay = () => {
+        const valueEl = document.querySelector('.overlay-timer .timer-value');
+        if (!valueEl) return;
+
+        const start = (manualRunning && manualStartMs) ? manualStartMs : streamStartMs;
+        if (!start) {
+          valueEl.textContent = '00:00';
+          return;
+        }
+
+        const elapsedSeconds = Math.floor(Math.max(0, Date.now() - start) / 1000);
+
+        if (timerDurationSeconds > 0) {
+          const remainingSeconds = Math.max(0, timerDurationSeconds - elapsedSeconds);
+          valueEl.textContent = formatMmSs(remainingSeconds);
+
+          if (remainingSeconds <= 0) {
+            // Countdown completed: fade back to hidden.
+            timerExpired = true;
+            window.omniOverlayTimerExpired = true;
+            stopTimerInterval();
+            updateTimerVisibility();
+          }
+          return;
+        }
+
+        // Elapsed timer mode
+        timerExpired = false;
+        window.omniOverlayTimerExpired = false;
+        valueEl.textContent = formatMmSs(elapsedSeconds);
+      };
+
+      const startTimerInterval = () => {
+        if (timerIntervalId) return;
+        // Keep timer display + visibility in lockstep.
+        timerIntervalId = setInterval(() => {
+          updateTimerDisplay();
+          updateTimerVisibility();
+          updateOverlayContainerVisibility();
+        }, 1000);
+      };
+
+      const stopTimerInterval = () => {
+        if (!timerIntervalId) return;
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+      };
+
+      const applyTimerSettings = (settings) => {
+        if (!settings) return;
+
+        const durationMinutes = Number(settings.timerDurationMinutes ?? settings.TimerDurationMinutes ?? 0);
+        timerDurationSeconds = Number.isFinite(durationMinutes) && durationMinutes > 0 ? Math.floor(durationMinutes * 60) : 0;
+
+        manualRunning = (settings.timerManualRunning ?? settings.TimerManualRunning) === true;
+        window.omniOverlayTimerForceVisible = manualRunning;
+
+        if (manualRunning) {
+          timerExpired = false;
+          window.omniOverlayTimerExpired = false;
+          const parsed = parseToMs(settings.timerManualStartUtc ?? settings.TimerManualStartUtc);
+          manualStartMs = parsed || Date.now();
+          startTimerInterval();
+        } else {
+          manualStartMs = null;
+        }
+
+        updateTimerVisibility();
+        updateTimerDisplay();
+      };
 
       // Apply a safe default immediately so we don't rely on inline CSS.
       // This keeps the overlay positioned even if no settings are returned yet.
@@ -226,6 +383,12 @@
       // Initialize interop early so any incoming messages during startup are suppressed
       if (window.overlayInterop) {
         window.overlayInterop.init();
+
+        // In preview mode, ensure the timer element exists immediately for testing
+        // (even if TimerEnabled is currently off in persisted settings).
+        if (preview && window.overlayInterop.updateOverlaySettings) {
+          window.overlayInterop.updateOverlaySettings(currentSettings || { scale: 1, position: 'top-right' });
+        }
       }
 
       // Initial Data Load
@@ -237,6 +400,12 @@
             currentSettings = data.settings;
             console.log("⚙️ Loaded settings:", JSON.stringify(currentSettings));
             applySettings(data.settings);
+
+            if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+              window.overlayInterop.updateOverlaySettings(data.settings);
+            }
+
+            applyTimerSettings(data.settings);
           }
 
           // Load custom counter definitions if present
@@ -356,6 +525,22 @@
 
       connect();
 
+      // Watchdog: if the monitor stops sending online heartbeats, auto-hide.
+      // This runs even when no websocket messages are incoming.
+      setInterval(() => {
+        updateOverlayContainerVisibility();
+
+        if (!manualRunning) {
+          if (isLiveSignalFresh() && streamStartMs) {
+            startTimerInterval();
+          } else {
+            stopTimerInterval();
+          }
+        }
+
+        updateTimerVisibility();
+      }, 5000);
+
       function handleMessage(msg) {
         console.log("📨 WebSocket message received:", JSON.stringify(msg));
         const { method, data } = msg;
@@ -370,6 +555,12 @@
             console.log("⚙️ Settings update via WebSocket:", JSON.stringify(data));
             currentSettings = data;
             applySettings(data);
+
+            if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+              window.overlayInterop.updateOverlaySettings(data);
+            }
+
+            applyTimerSettings(data);
             // Re-render counters with new settings filter
             if (lastCounterData) {
               console.log("🔄 Re-rendering counters with new settings filter");
@@ -383,10 +574,41 @@
           case 'streamEnded':
             console.log("🔴 Stream ended! Data:", JSON.stringify(data));
             updateCounters(data);
+
+            if (!manualRunning) {
+              streamStartMs = null;
+              lastKnownIsLive = false;
+              lastOnlineSignalAtMs = null;
+              stopTimerInterval();
+              updateTimerVisibility();
+              updateTimerDisplay();
+            }
             break;
           case 'streamStatusUpdate':
             console.log("📺 Stream status update:", JSON.stringify(data));
-            // Toggle visibility based on stream status if needed
+            {
+              const status = (data && (data.streamStatus ?? data.StreamStatus)) ?? data;
+              if (typeof status === 'string') {
+                const normalized = status.toLowerCase();
+                const isLive = normalized === 'live';
+                lastKnownIsLive = isLive;
+
+                if (isLive) {
+                  lastOnlineSignalAtMs = Date.now();
+                } else if (normalized === 'offline') {
+                  // Explicit offline signal should immediately hide.
+                  lastOnlineSignalAtMs = null;
+                  if (!manualRunning) {
+                    streamStartMs = null;
+                    stopTimerInterval();
+                    updateTimerDisplay();
+                  }
+                }
+              }
+
+              updateOverlayContainerVisibility();
+              updateTimerVisibility();
+            }
             break;
           case 'ping':
             // Ignore ping messages
@@ -395,7 +617,19 @@
             // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
             if (data && data.alertType) {
               // These are control-plane updates, not user-facing alerts.
+              if (data.alertType === 'chatCommandsUpdated') {
+                // Overlay does not render chat commands; this message is for backend/bot sync.
+                // Treat as silent to avoid showing a default "ALERT" popup during game switches.
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: chatCommandsUpdated', JSON.stringify(data.data || {}));
+                }
+                return;
+              }
+
               if (data.alertType === 'customCountersUpdated') {
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: customCountersUpdated', JSON.stringify(data.data || {}));
+                }
                 customCountersConfig = (data.data && data.data.counters) ? data.data.counters : {};
                 if (lastCounterData) {
                   updateCounters(lastCounterData);
@@ -404,6 +638,9 @@
               }
 
               if (data.alertType === 'customCounterUpdate') {
+                if (window.omniOverlayDebug === true) {
+                  console.log('🛠️ Control-plane: customCounterUpdate', JSON.stringify(data.data || {}));
+                }
                 // Update cached lastCounterData's customCounters if possible
                 const counterId = data.data?.counterId;
                 const value = data.data?.value;
@@ -442,6 +679,9 @@
 
         const scale = (rawScale != null) ? Number(rawScale) : 1;
         const position = rawPosition ? String(rawPosition) : 'top-right';
+
+        // Expose offline-preview flag to other scripts (timer visibility)
+        window.omniOverlayOfflinePreview = settings?.offlinePreview === true || settings?.OfflinePreview === true;
 
         // Reset position styles
         container.style.top = '';
@@ -521,8 +761,39 @@
         // Store last counter data for re-rendering when settings change
         lastCounterData = data;
 
-        // Handle visibility based on stream status
-        const isStreamStarted = preview || !!data.streamStarted;
+        // Handle visibility based on stream status.
+        // IMPORTANT: Some WS payloads omit streamStarted after certain events (e.g., game switch).
+        // We only change stream start state when the payload explicitly includes the streamStarted field.
+        const offlinePreview = window.omniOverlayOfflinePreview === true;
+        const hasStreamStartedField = !!data && (
+          Object.prototype.hasOwnProperty.call(data, 'streamStarted')
+          || Object.prototype.hasOwnProperty.call(data, 'StreamStarted')
+        );
+
+        if (hasStreamStartedField) {
+          const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
+
+          // Semantics:
+          // - `streamStarted: <valid timestamp>` => online signal (refresh TTL)
+          // - `streamStarted: null` => explicitly offline
+          // - `streamStarted` present but invalid/non-null => ignore (don't spuriously flip offline)
+          if (raw === null) {
+            streamStartMs = null;
+            lastKnownIsLive = false;
+            lastOnlineSignalAtMs = null;
+          } else {
+            const parsedStart = parseToMs(raw);
+            if (parsedStart) {
+              streamStartMs = parsedStart;
+              lastKnownIsLive = true;
+              lastOnlineSignalAtMs = Date.now();
+              timerExpired = false;
+              window.omniOverlayTimerExpired = false;
+            }
+          }
+        }
+
+        const isStreamStarted = preview || offlinePreview || manualRunning || isLiveSignalFresh();
 
         if (isStreamStarted) {
           console.log("✅ Adding 'visible' class to container");
@@ -530,6 +801,17 @@
         } else {
           console.log("❌ Removing 'visible' class from container");
           container.classList.remove('visible');
+        }
+
+        // Stream timer start time (used when not manually running)
+        if (!manualRunning) {
+          if (isLiveSignalFresh() && streamStartMs) {
+            startTimerInterval();
+          } else {
+            stopTimerInterval();
+          }
+          updateTimerVisibility();
+          updateTimerDisplay();
         }
 
         // Clear current (avoid innerHTML)

@@ -237,6 +237,38 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task ConnectUserAsync_WhenAlreadyConnected_ShouldReturnEarly()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId)).ReturnsAsync(user);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(new BotCredentials
+            {
+                Username = "forge_bot",
+                AccessToken = "bot_access",
+                RefreshToken = "bot_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            });
+
+            // Act
+            await _twitchClientManager.ConnectUserAsync(userId);
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            // Assert: second call should hit fast-path and avoid creating a new scope.
+            _mockScopeFactory.Verify(x => x.CreateScope(), Times.Once);
+            _mockUserRepository.Verify(x => x.GetUserAsync(userId), Times.Once);
+        }
+
+        [Fact]
         public async Task ConnectUserAsync_ShouldLogWarning_WhenUserNotFound()
         {
             // Arrange
