@@ -1025,7 +1025,8 @@ else
       return;
     }
 
-    editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    editCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string,
+    int>(StringComparer.OrdinalIgnoreCase);
 
     var currentlyEnabled = editCounters.CustomCounters.ContainsKey(counterId);
     if (enabled && !currentlyEnabled)
