@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OmniForge.Core.Entities;
@@ -173,5 +174,34 @@ public class TimerSettingsModalTests : BunitContext
         )), Times.Once);
 
         _mockOverlayNotifier.Verify(n => n.NotifySettingsUpdateAsync("user1", It.IsAny<OverlaySettings>()), Times.Once);
+    }
+
+    [Fact]
+    public void Close_ShouldInvokeShowChanged_WhenClicked()
+    {
+        _mockUserRepository.Setup(r => r.GetUserAsync("user1")).ReturnsAsync(new User { TwitchUserId = "user1" });
+
+        var showChangedCalls = 0;
+        bool? lastShowValue = null;
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<TimerSettingsModal>(0);
+            b.AddAttribute(1, nameof(TimerSettingsModal.Show), true);
+            b.AddAttribute(2, nameof(TimerSettingsModal.UserId), "user1");
+            b.AddAttribute(3, nameof(TimerSettingsModal.ShowChanged), EventCallback.Factory.Create<bool>(this, (val) =>
+            {
+                showChangedCalls++;
+                lastShowValue = val;
+            }));
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.FindAll(".modal-title").Count == 1);
+
+        cut.Find("button.btn-close").Click();
+
+        Assert.Equal(1, showChangedCalls);
+        Assert.Equal(false, lastShowValue);
     }
 }

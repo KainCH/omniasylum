@@ -12,11 +12,12 @@ namespace OmniForge.Web.Services
         // Use ConcurrentDictionary with connection ID as key for proper cleanup
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WebSocket>> _userSockets = new();
         private readonly ILogger<WebSocketOverlayManager> _logger;
-        private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(30); // Keep alive every 30 seconds
+        private readonly TimeSpan _pingInterval;
 
-        public WebSocketOverlayManager(ILogger<WebSocketOverlayManager> logger)
+        public WebSocketOverlayManager(ILogger<WebSocketOverlayManager> logger, TimeSpan? pingInterval = null)
         {
             _logger = logger;
+            _pingInterval = pingInterval ?? TimeSpan.FromSeconds(30); // Keep alive every 30 seconds
         }
 
         public async Task HandleConnectionAsync(string userId, WebSocket webSocket)
@@ -92,7 +93,7 @@ namespace OmniForge.Web.Services
             {
                 while (!cancellationToken.IsCancellationRequested && webSocket.State == WebSocketState.Open)
                 {
-                    await Task.Delay(PingInterval, cancellationToken);
+                    await Task.Delay(_pingInterval, cancellationToken);
 
                     if (webSocket.State == WebSocketState.Open)
                     {

@@ -187,5 +187,26 @@ namespace OmniForge.Tests
 
             await manager.SendToUserAsync("missing", "noop", new { });
         }
+
+        [Fact]
+        public async Task HandleConnectionAsync_ShouldSendPing_WhenIntervalElapses()
+        {
+            var logger = new Mock<ILogger<WebSocketOverlayManager>>();
+            var manager = new WebSocketOverlayManager(logger.Object, pingInterval: TimeSpan.FromMilliseconds(1));
+
+            var socket = new ControlledWebSocket();
+            var connectionTask = manager.HandleConnectionAsync("user1", socket);
+
+            await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            // Allow a short window for the ping loop to send at least once.
+            await Task.Delay(25);
+
+            // Ping payload should have been sent as a text frame.
+            Assert.Contains(socket.SentTextMessages, m => m.Contains("\"method\":\"ping\""));
+
+            socket.RequestClientClose();
+            await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
     }
 }
