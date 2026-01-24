@@ -217,6 +217,111 @@ namespace OmniForge.Tests.Components.Pages
         }
 
         [Fact]
+        public void RendersTimerTextColor_WhenTimerTextColorIsSet()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    TimerEnabled = true,
+                    TimerTextColor = "#00ff00",
+                    Theme = new OverlayTheme { TextColor = "white" },
+                    Counters = new OverlayCounters { Deaths = false, Swears = false, Screams = false, Bits = false }
+                }
+            };
+
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var timerValue = cut.Find(".overlay-timer .timer-value");
+            var style = timerValue.GetAttribute("style") ?? string.Empty;
+            Assert.Contains("#00ff00", style);
+        }
+
+        [Fact]
+        public void RendersTimerDurationMinutesAsDataAttribute_WhenConfigured()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    TimerEnabled = true,
+                    TimerDurationMinutes = 10,
+                    Theme = new OverlayTheme(),
+                    Counters = new OverlayCounters { Deaths = false, Swears = false, Screams = false, Bits = false }
+                }
+            };
+
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Assert
+            var timerEl = cut.Find(".overlay-timer");
+            Assert.Equal("10", timerEl.GetAttribute("data-duration-minutes"));
+        }
+
+        [Fact]
+        public async Task OnAlert_ShouldNotInvokeJs_WhenNoEnabledAlertMatches()
+        {
+            // Arrange
+            var user = new User
+            {
+                TwitchUserId = "testuser",
+                Features = new FeatureFlags { StreamOverlay = true },
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true },
+                    Theme = new OverlayTheme()
+                }
+            };
+            var counter = new Counter { TwitchUserId = "testuser" };
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("testuser")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(r => r.GetCountersAsync("testuser")).ReturnsAsync(counter);
+            _mockAlertRepository.Setup(r => r.GetAlertsAsync("testuser")).ReturnsAsync(new List<Alert>());
+
+            var cut = Render(b =>
+            {
+                b.OpenComponent<Overlay>(0);
+                b.AddAttribute(1, "TwitchUserId", "testuser");
+                b.CloseComponent();
+            });
+
+            // Act/Assert: should not call overlayInterop.triggerAlert (not configured), so no JSInterop setup needed.
+            var overlay = cut.FindComponent<Overlay>();
+            await overlay.Instance.OnAlert("chatCommandsUpdated", new { commands = new object[0] });
+        }
+
+        [Fact]
         public void RendersCorrectPosition_TopRight()
         {
             // Arrange
