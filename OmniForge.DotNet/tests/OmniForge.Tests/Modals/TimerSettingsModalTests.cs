@@ -125,8 +125,8 @@ public class TimerSettingsModalTests : BunitContext
             u.TwitchUserId == "user1"
             && u.OverlaySettings.TimerDurationMinutes == 15
             && u.OverlaySettings.TimerTextColor == "#112233"
-            && u.OverlaySettings.TimerEnabled == true
-            && u.OverlaySettings.TimerManualRunning == true
+            && u.OverlaySettings.TimerEnabled
+            && u.OverlaySettings.TimerManualRunning
             && u.OverlaySettings.TimerManualStartUtc.HasValue
         )), Times.Once);
 
@@ -165,7 +165,7 @@ public class TimerSettingsModalTests : BunitContext
         cut.Find("button.btn.btn-outline-danger").Click();
 
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
-            u.OverlaySettings.TimerManualRunning == false
+            !u.OverlaySettings.TimerManualRunning
             && u.OverlaySettings.TimerManualStartUtc == null
         )), Times.Once);
 

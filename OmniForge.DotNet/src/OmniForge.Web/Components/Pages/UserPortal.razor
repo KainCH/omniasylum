@@ -336,15 +336,17 @@
     var user = await UserRepository.GetUserAsync(currentUserId);
     if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
     {
-      managedStreamers = new List<User>();
+      var streamers = new List<User>();
       foreach (var streamerId in user.ManagedStreamers)
       {
         var streamer = await UserRepository.GetUserAsync(streamerId);
         if (streamer != null)
         {
-          managedStreamers.Add(streamer);
+          streamers.Add(streamer);
         }
       }
+
+      managedStreamers = streamers;
     }
   }
 
@@ -353,14 +355,9 @@
     if (string.IsNullOrWhiteSpace(newContextId)) return;
 
     activeContextId = newContextId;
-    if (activeContextId == currentUserId)
-    {
-      activeContextUser = currentUser;
-    }
-    else
-    {
-      activeContextUser = await UserRepository.GetUserAsync(activeContextId);
-    }
+    activeContextUser = activeContextId == currentUserId
+      ? currentUser
+      : await UserRepository.GetUserAsync(activeContextId);
 
     StateHasChanged();
   }

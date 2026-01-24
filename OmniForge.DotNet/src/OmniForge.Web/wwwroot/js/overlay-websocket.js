@@ -42,14 +42,6 @@ export function connect(url, dotNetHelper) {
         return parsed;
     };
 
-    const isPreviewVisible = () => {
-        try {
-            return window.omniOverlayPreview === true || window.omniOverlayOfflinePreview === true;
-        } catch (e) {
-            return false;
-        }
-    };
-
     const updateTimerDisplay = () => {
         const element = document.querySelector('.overlay-timer .timer-value');
         if (!element) return;

@@ -28,10 +28,10 @@ else if (!user.Features.StreamOverlay)
 }
 else
 {
-    @if (user.OverlaySettings?.TimerEnabled == true)
+    @if (user.OverlaySettings is { TimerEnabled: true } overlaySettings)
     {
-        <div class="overlay-timer" style="@GetTimerStyle()" data-duration-minutes="@user.OverlaySettings!.TimerDurationMinutes">
-            <span class="timer-value" style="color: @(user.OverlaySettings?.TimerTextColor ?? user.OverlaySettings?.Theme?.TextColor ?? "white")">00:00</span>
+        <div class="overlay-timer" style="@GetTimerStyle()" data-duration-minutes="@overlaySettings.TimerDurationMinutes">
+            <span class="timer-value" style="color: @(overlaySettings.TimerTextColor ?? overlaySettings.Theme?.TextColor ?? "white")">00:00</span>
         </div>
     }
 
