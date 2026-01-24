@@ -9,6 +9,7 @@ namespace OmniForge.Infrastructure.Services
         string? SessionId { get; }
         bool IsConnected { get; }
         DateTime LastKeepaliveTime { get; }
+        int? KeepaliveTimeoutSeconds { get; }
 
         event Func<EventSubMessage, Task>? OnNotification;
         event Func<string, Task>? OnSessionWelcome;

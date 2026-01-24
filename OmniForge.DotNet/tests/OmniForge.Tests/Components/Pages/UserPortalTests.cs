@@ -115,6 +115,7 @@ namespace OmniForge.Tests.Components.Pages
             Assert.Contains("template-designer", cut.Markup);
             Assert.Contains("settings/discord", cut.Markup);
             Assert.Contains("settings/alert-effects", cut.Markup);
+            Assert.Contains("settings/games", cut.Markup);
         }
 
         [Fact]

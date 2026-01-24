@@ -37,6 +37,13 @@ namespace OmniForge.Infrastructure.Services
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _monitoringCancellation = new(); // Cancel in-flight subscription/reconnect work per user
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MonitorDiagnostics> _diagnostics = new();
 
+        // Track which broadcasters are currently considered live based on EventSub online/offline.
+        // Used to emit periodic live heartbeats so overlay.html doesn't auto-hide.
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _liveBroadcasters = new();
+
+        // Prevent overlapping watchdog ticks (Timer can re-enter if work exceeds the period).
+        private int _watchdogTickRunning = 0;
+
         private static readonly TimeSpan DiscordPresenceTimeout = TimeSpan.FromSeconds(2);
 
         public StreamMonitorService(
@@ -605,6 +612,29 @@ namespace OmniForge.Infrastructure.Services
                         }
                     }
 
+                    // Best-effort: seed live status immediately on monitor start.
+                    // Important: Twitch does NOT replay stream.online if the stream was already live before we subscribed.
+                    // Without this, _liveBroadcasters may remain empty and the overlay heartbeat loop won't run, causing mid-stream hides.
+                    try
+                    {
+                        if (twitchApiService != null && monitoringRegistry != null)
+                        {
+                            var streamInfo = await twitchApiService.GetStreamInfoAsync(userId).ConfigureAwait(false);
+                            if (streamInfo?.IsLive == true)
+                            {
+                                _liveBroadcasters[userId] = true;
+                                if (scope.ServiceProvider.GetService<IOverlayNotifier>() is IOverlayNotifier overlayNotifier)
+                                {
+                                    await overlayNotifier.NotifyStreamStatusUpdateAsync(userId, "live").ConfigureAwait(false);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Best-effort: failed to seed live status on monitor start for user {UserId}", LogSanitizer.Sanitize(userId));
+                    }
+
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", LogSanitizer.Sanitize(userId));
                     return SubscriptionResult.Success;
                 }
@@ -1120,6 +1150,7 @@ namespace OmniForge.Infrastructure.Services
                 LastDiscordNotificationSuccess = discordStatus?.Success ?? false,
                 IsSubscribed = diag?.IsSubscribed ?? _subscribedUsers.ContainsKey(userId),
                 EventSubSessionId = _eventSubService.SessionId,
+                EventSubKeepaliveTimeoutSeconds = _eventSubService.KeepaliveTimeoutSeconds,
                 LastEventType = diag?.LastEventType,
                 LastEventAt = diag?.LastEventAt,
                 LastEventSummary = diag?.LastEventSummary,
@@ -1187,6 +1218,14 @@ namespace OmniForge.Infrastructure.Services
 
         private async void CheckConnection(object? state)
         {
+            if (Interlocked.Exchange(ref _watchdogTickRunning, 1) == 1)
+            {
+                _logger.LogDebug("Watchdog: previous tick still running, skipping");
+                return;
+            }
+
+            try
+            {
             // Only attempt to maintain connection if we have users wanting monitoring
             if (_usersWantingMonitoring.IsEmpty)
             {
@@ -1233,9 +1272,21 @@ namespace OmniForge.Infrastructure.Services
             {
                 // Check keepalive
                 var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
-                if (timeSinceLastKeepalive.TotalSeconds > 30) // Assuming default keepalive is ~10s
+
+                // Twitch tells us the negotiated keepalive timeout in session_welcome.keepalive_timeout_seconds.
+                // Use a forgiving threshold (3x) so we don't flap on transient latency.
+                var negotiated = _eventSubService.KeepaliveTimeoutSeconds;
+                var thresholdSeconds = negotiated.HasValue
+                    ? Math.Max(30, negotiated.Value * 3)
+                    : 30;
+
+                if (timeSinceLastKeepalive.TotalSeconds > thresholdSeconds)
                 {
-                    _logger.LogWarning("⏱️ No keepalive received for {Seconds:F1}s. Triggering reconnect...", timeSinceLastKeepalive.TotalSeconds);
+                    _logger.LogWarning(
+                        "⏱️ No keepalive received for {Seconds:F1}s (threshold={Threshold}s, negotiated={Negotiated}s). Triggering reconnect...",
+                        timeSinceLastKeepalive.TotalSeconds,
+                        thresholdSeconds,
+                        negotiated.HasValue ? negotiated.Value : -1);
                     try
                     {
                         await _eventSubService.DisconnectAsync().ConfigureAwait(false);
@@ -1263,6 +1314,41 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogError(ex, "🔴 Keepalive reconnection failed.");
                     }
                 }
+            }
+
+            // Overlay live heartbeat: if a broadcaster is live, emit a periodic 'live' status update.
+            // overlay.html treats streamStatusUpdate("live") as an online heartbeat and auto-hides after 2 minutes without it.
+            if (!_liveBroadcasters.IsEmpty)
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                    if (overlayNotifier != null)
+                    {
+                        foreach (var broadcasterId in _liveBroadcasters.Keys)
+                        {
+                            // If monitoring was stopped for this user, don't keep sending heartbeats.
+                            if (!UserStillWantsMonitoring(broadcasterId))
+                            {
+                                _liveBroadcasters.TryRemove(broadcasterId, out _);
+                                continue;
+                            }
+
+                            await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "live").ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Watchdog failed to emit overlay live heartbeats");
+                }
+            }
+
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _watchdogTickRunning, 0);
             }
         }
 
@@ -1296,6 +1382,16 @@ namespace OmniForge.Infrastructure.Services
                 {
                     if (TryGetBroadcasterId(eventData, out var broadcasterId) && !string.IsNullOrEmpty(broadcasterId))
                     {
+                        // Maintain a simple live/offline view for overlay heartbeat support.
+                        if (string.Equals(subscriptionType, "stream.online", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _liveBroadcasters[broadcasterId!] = true;
+                        }
+                        else if (string.Equals(subscriptionType, "stream.offline", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _liveBroadcasters.TryRemove(broadcasterId!, out _);
+                        }
+
                         var diag = _diagnostics.GetOrAdd(broadcasterId!, _ => new MonitorDiagnostics());
                         diag.LastEventType = subscriptionType;
                         diag.LastEventAt = DateTimeOffset.UtcNow;

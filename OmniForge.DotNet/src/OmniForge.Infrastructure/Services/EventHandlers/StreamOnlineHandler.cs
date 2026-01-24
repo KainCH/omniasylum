@@ -187,6 +187,10 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (overlayNotifier != null)
             {
                 await overlayNotifier.NotifyStreamStartedAsync(broadcasterId, counters);
+
+                // Keep the overlay visible: streamStarted is not treated as a heartbeat by overlay.html.
+                // Emit an explicit status update so clients can mark the stream as live immediately.
+                await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "live");
             }
 
             // When the stream goes online, apply per-game CCLs from the library using the fetched category.

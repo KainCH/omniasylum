@@ -30,6 +30,7 @@ namespace OmniForge.Core.Interfaces
         public bool LastDiscordNotificationSuccess { get; set; }
         public bool IsSubscribed { get; set; }
         public string? EventSubSessionId { get; set; }
+        public int? EventSubKeepaliveTimeoutSeconds { get; set; }
         public string? LastEventType { get; set; }
         public DateTimeOffset? LastEventAt { get; set; }
         public string? LastEventSummary { get; set; }

@@ -92,6 +92,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             // Notify Overlay
             if (overlayNotifier != null && counters != null)
             {
+                await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "offline");
                 await overlayNotifier.NotifyStreamEndedAsync(broadcasterId, counters);
             }
         }

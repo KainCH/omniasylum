@@ -101,6 +101,10 @@
                                             <strong><i class="bi bi-stopwatch me-2"></i>Keepalive Age:</strong>
                                             @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s
                                         </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-hourglass-split me-2"></i>Keepalive Timeout:</strong>
+                                            @(status.EventSubKeepaliveTimeoutSeconds?.ToString() ?? "-") s
+                                        </li>
                                     </ul>
                                 </div>
                                 <div class="col-md-6">

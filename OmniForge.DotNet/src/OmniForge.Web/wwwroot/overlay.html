@@ -570,6 +570,13 @@
           case 'streamStarted':
             console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
             updateCounters(data);
+
+            // Treat streamStarted as an initial live heartbeat.
+            // Twitch may not re-send stream.online on reconnect, and the server may not yet have sent streamStatusUpdate.
+            lastKnownIsLive = true;
+            lastOnlineSignalAtMs = Date.now();
+            updateOverlayContainerVisibility();
+            updateTimerVisibility();
             break;
           case 'streamEnded':
             console.log("🔴 Stream ended! Data:", JSON.stringify(data));
