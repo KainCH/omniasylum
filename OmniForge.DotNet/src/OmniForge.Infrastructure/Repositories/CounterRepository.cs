@@ -159,6 +159,12 @@ namespace OmniForge.Infrastructure.Repositories
                 {
                     // ETag mismatch (concurrent update). Retry.
                 }
+
+                if (attempt < maxAttempts - 1)
+                {
+                    // Small backoff to reduce contention in multi-instance scenarios.
+                    await Task.Delay(50 * (attempt + 1));
+                }
             }
 
             return false;

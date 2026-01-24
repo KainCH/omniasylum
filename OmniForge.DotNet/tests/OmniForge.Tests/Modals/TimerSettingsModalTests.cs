@@ -116,6 +116,7 @@ public class TimerSettingsModalTests : BunitContext
         colorHexInput.Change("#112233");
 
         // Enable running (forces timer enabled and sets start time)
+        var beforeToggle = DateTimeOffset.UtcNow;
         cut.Find("#timerRunningToggle").Change(true);
 
         // Click Save
@@ -128,6 +129,8 @@ public class TimerSettingsModalTests : BunitContext
             && u.OverlaySettings.TimerEnabled
             && u.OverlaySettings.TimerManualRunning
             && u.OverlaySettings.TimerManualStartUtc.HasValue
+            && u.OverlaySettings.TimerManualStartUtc.Value >= beforeToggle.AddSeconds(-1)
+            && u.OverlaySettings.TimerManualStartUtc.Value <= beforeToggle.AddSeconds(10)
         )), Times.Once);
 
         _mockOverlayNotifier.Verify(n => n.NotifySettingsUpdateAsync("user1", It.IsAny<OverlaySettings>()), Times.Once);

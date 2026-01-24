@@ -498,7 +498,7 @@ else
     }
 
     var candidates = counterLibrary
-    .Where(c => !IsCoreCounterId(c.CounterId));
+    .Where(IsNonCoreCounter);
 
     var filter = (counterLibraryFilter ?? string.Empty).Trim();
     if (!string.IsNullOrWhiteSpace(filter))
@@ -509,6 +509,11 @@ else
     }
 
     return candidates.OrderBy(c => c.Name);
+  }
+
+  private bool IsNonCoreCounter(CounterLibraryItem item)
+  {
+    return !IsCoreCounterId(item.CounterId);
   }
 
   private void OpenCounterLibraryModal()
@@ -1026,14 +1031,10 @@ else
     var currentlyEnabled = editCounters.CustomCounters.ContainsKey(counterId);
     if (enabled && !currentlyEnabled)
     {
-      // Optimistic UI: mark present immediately so checkbox reflects the user action.
-      editCounters.CustomCounters[counterId] = 0;
       await AddLibraryCounterToSelectedGame(counterId);
     }
     else if (!enabled && currentlyEnabled)
     {
-      // Optimistic UI: remove immediately so checkbox/list reflects the user action.
-      editCounters.CustomCounters.Remove(counterId);
       await RemoveLibraryCounterFromSelectedGame(counterId);
     }
   }

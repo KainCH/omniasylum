@@ -498,6 +498,39 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public void UserTableEntity_FromTableEntitySafe_ShouldDefaultManagedStreamers_WhenNonArrayJson()
+        {
+            var entity = new Azure.Data.Tables.TableEntity("user", "123")
+            {
+                ["twitchUserId"] = "123",
+                ["username"] = "testuser",
+                ["managedStreamers"] = "{}"
+            };
+
+            var domain = UserTableEntity.FromTableEntitySafe(entity);
+
+            Assert.NotNull(domain.ManagedStreamers);
+            Assert.Empty(domain.ManagedStreamers);
+        }
+
+        [Fact]
+        public void UserTableEntity_FromTableEntitySafe_ShouldParseManagedStreamers_WhenArrayJson()
+        {
+            var entity = new Azure.Data.Tables.TableEntity("user", "123")
+            {
+                ["twitchUserId"] = "123",
+                ["username"] = "testuser",
+                ["managedStreamers"] = "[\"a\",\"b\"]"
+            };
+
+            var domain = UserTableEntity.FromTableEntitySafe(entity);
+
+            Assert.Equal(2, domain.ManagedStreamers.Count);
+            Assert.Contains("a", domain.ManagedStreamers);
+            Assert.Contains("b", domain.ManagedStreamers);
+        }
+
+        [Fact]
         public void CounterTableEntity_ToDomain_ShouldHandleNullStreamStarted()
         {
             var entity = new CounterTableEntity

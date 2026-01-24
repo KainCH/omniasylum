@@ -91,7 +91,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             // Notes:
             // - In normal Twitch behavior, stream.online is emitted once per stream.
             // - In our app, we may treat repeated online signals as a heartbeat.
-            // - Older builds may have written StreamStarted = now on each heartbeat; treat that as same stream and just correct.
+            // - Older builds may have written StreamStarted = now on each heartbeat; treat that as the same stream and correct.
             var isNewStream = counters.StreamStarted == null;
             if (startedAt != null)
             {
@@ -102,9 +102,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 else
                 {
                     var stored = counters.StreamStarted.Value.ToUniversalTime();
-                    // If the stored value is significantly before started_at, this is a new stream.
+                    // Treat this as a new stream only if started_at is clearly after what we have stored.
                     // If stored is after started_at (migration/heartbeat), treat as same stream.
-                    isNewStream = stored < startedAt.Value.AddMinutes(-1);
+                    isNewStream = startedAt.Value > stored.AddMinutes(1);
                 }
             }
 

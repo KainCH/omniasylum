@@ -339,20 +339,21 @@
       var streamerTasks = user.ManagedStreamers.Select(UserRepository.GetUserAsync);
       var streamers = await Task.WhenAll(streamerTasks);
       managedStreamers = streamers
-        .Where(streamer => streamer != null)
-        .Select(streamer => streamer!)
-        .ToList();
+      .Where(streamer => streamer != null)
+      .Select(streamer => streamer!)
+      .ToList();
     }
   }
 
   private async Task OnContextChanged(string? newContextId)
   {
     if (string.IsNullOrWhiteSpace(newContextId)) return;
+    if (string.Equals(newContextId, activeContextId, StringComparison.Ordinal)) return;
 
     activeContextId = newContextId;
     activeContextUser = activeContextId == currentUserId
-      ? currentUser
-      : await UserRepository.GetUserAsync(activeContextId);
+    ? currentUser
+    : await UserRepository.GetUserAsync(activeContextId);
 
     StateHasChanged();
   }

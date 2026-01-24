@@ -371,7 +371,7 @@ window.overlayInterop = {
             // Apply colors from dedicated timer color first, then fall back to theme
             const explicitTimerColor = settings?.timerTextColor ?? settings?.TimerTextColor;
             const themeColor = settings?.theme?.textColor;
-            const valueColor = (explicitTimerColor && String(explicitTimerColor).trim().length > 0)
+            const valueColor = (explicitTimerColor != null && String(explicitTimerColor).trim().length > 0)
                 ? String(explicitTimerColor).trim()
                 : (themeColor ? String(themeColor) : null);
 
