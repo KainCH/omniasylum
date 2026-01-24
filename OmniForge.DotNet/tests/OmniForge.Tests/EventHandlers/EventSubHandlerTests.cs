@@ -788,6 +788,74 @@ namespace OmniForge.Tests.EventHandlers
             _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync("123", counters), Times.Once);
             _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
         }
+
+        [Fact]
+        public async Task HandleAsync_WhenCountersMissing_ShouldNotSaveOrNotifyOverlay_ButStopsScheduler()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync((Counter?)null);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.IsAny<Counter>()), Times.Never);
+            _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenGameContextHasActiveGameId_SavesPerGameSnapshot()
+        {
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123" };
+            var counters = new Counter { TwitchUserId = "123", StreamStarted = DateTimeOffset.UtcNow };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockGameContextRepository.Setup(x => x.GetAsync("123")).ReturnsAsync(new GameContext
+            {
+                UserId = "123",
+                ActiveGameId = "game1",
+                ActiveGameName = "Test Game"
+            });
+
+            await _handler.HandleAsync(eventData);
+
+            _mockGameCountersRepository.Verify(x => x.SaveAsync("123", "game1", It.IsAny<Counter>()), Times.Once);
+            _mockCounterRepository.Verify(x => x.SaveCountersAsync(It.Is<Counter>(c => c.StreamStarted == null && c.LastCategoryName == "Test Game")), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenOverlayNotifierIsNull_ShouldNotNotify()
+        {
+            // Override overlay notifier to simulate it not being registered.
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(null);
+
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockOverlayNotifier.Verify(x => x.NotifyStreamEndedAsync(It.IsAny<string>(), It.IsAny<Counter>()), Times.Never);
+            _mockDiscordInviteBroadcastScheduler.Verify(x => x.StopAsync("123"), Times.Once);
+        }
     }
 
     public class FollowHandlerTests

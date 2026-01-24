@@ -742,5 +742,133 @@ namespace OmniForge.Tests
             Assert.True(result.CustomCounters.ContainsKey("newcustom"));
             Assert.Equal(5, result.CustomCounters["newcustom"]);
         }
+
+        [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenUserIdMissing_ReturnsFalse()
+        {
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync("", "stream-1");
+            Assert.False(result);
+        }
+
+        [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenAlreadyClaimed_ReturnsFalse_AndDoesNotUpdate()
+        {
+            var userId = "123";
+            var streamInstanceId = "stream-1";
+
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["LastNotifiedStreamId"] = streamInstanceId
+            };
+            tableEntity.ETag = new ETag("etag");
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync(userId, streamInstanceId);
+
+            Assert.False(result);
+            _mockTableClient.Verify(
+                x => x.UpdateEntityAsync(It.IsAny<TableEntity>(), It.IsAny<ETag>(), TableUpdateMode.Merge, It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenNewStream_UpdatesEntity_AndReturnsTrue()
+        {
+            var userId = "123";
+            var streamInstanceId = "stream-2";
+
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["LastNotifiedStreamId"] = "stream-1"
+            };
+            tableEntity.ETag = new ETag("etag");
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            _mockTableClient
+                .Setup(x => x.UpdateEntityAsync(It.IsAny<TableEntity>(), It.IsAny<ETag>(), TableUpdateMode.Merge, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Mock.Of<Response>());
+
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync(userId, streamInstanceId);
+
+            Assert.True(result);
+            _mockTableClient.Verify(
+                x => x.UpdateEntityAsync(
+                    It.Is<TableEntity>(e => e.PartitionKey == userId && e.RowKey == "counters" && (string)e["LastNotifiedStreamId"] == streamInstanceId),
+                    It.IsAny<ETag>(),
+                    TableUpdateMode.Merge,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenEntityMissing_AddsEntity_AndReturnsTrue()
+        {
+            var userId = "123";
+            var streamInstanceId = "stream-1";
+
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", null, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new RequestFailedException(404, "Not Found"));
+
+            _mockTableClient
+                .Setup(x => x.AddEntityAsync(It.IsAny<TableEntity>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Mock.Of<Response>());
+
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync(userId, streamInstanceId);
+
+            Assert.True(result);
+            _mockTableClient.Verify(
+                x => x.AddEntityAsync(
+                    It.Is<TableEntity>(e => e.PartitionKey == userId && e.RowKey == "counters" && (string)e["LastNotifiedStreamId"] == streamInstanceId),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenAddConflicts_RetriesAndUpdates_AndReturnsTrue()
+        {
+            var userId = "123";
+            var streamInstanceId = "stream-2";
+
+            var existing = new TableEntity(userId, "counters")
+            {
+                ["LastNotifiedStreamId"] = "stream-1"
+            };
+            existing.ETag = new ETag("etag");
+
+            var response = Mock.Of<Response<TableEntity>>(r => r.Value == existing);
+
+            _mockTableClient
+                .SetupSequence(x => x.GetEntityAsync<TableEntity>(userId, "counters", null, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new RequestFailedException(404, "Not Found"))
+                .ReturnsAsync(response);
+
+            _mockTableClient
+                .Setup(x => x.AddEntityAsync(It.IsAny<TableEntity>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new RequestFailedException(409, "Conflict"));
+
+            _mockTableClient
+                .Setup(x => x.UpdateEntityAsync(It.IsAny<TableEntity>(), It.IsAny<ETag>(), TableUpdateMode.Merge, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Mock.Of<Response>());
+
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync(userId, streamInstanceId);
+
+            Assert.True(result);
+            _mockTableClient.Verify(
+                x => x.UpdateEntityAsync(
+                    It.Is<TableEntity>(e => (string)e["LastNotifiedStreamId"] == streamInstanceId),
+                    It.IsAny<ETag>(),
+                    TableUpdateMode.Merge,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
     }
 }
