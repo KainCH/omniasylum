@@ -63,11 +63,13 @@ namespace OmniForge.Tests
             private string? _closeStatusDescription;
             private readonly TaskCompletionSource _receiveStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TaskCompletionSource<WebSocketReceiveResult> _nextReceive = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            private readonly TaskCompletionSource _pingSent = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
             public List<string> SentTextMessages { get; } = new();
             public bool ThrowOnSend { get; set; }
 
             public Task ReceiveStarted => _receiveStarted.Task;
+            public Task PingSent => _pingSent.Task;
 
             public override WebSocketCloseStatus? CloseStatus => _closeStatus;
             public override string? CloseStatusDescription => _closeStatusDescription;
@@ -122,7 +124,12 @@ namespace OmniForge.Tests
 
                 if (messageType == WebSocketMessageType.Text)
                 {
-                    SentTextMessages.Add(Encoding.UTF8.GetString(buffer));
+                    var text = Encoding.UTF8.GetString(buffer);
+                    SentTextMessages.Add(text);
+                    if (text.Contains("\"method\":\"ping\"", StringComparison.Ordinal))
+                    {
+                        _pingSent.TrySetResult();
+                    }
                 }
                 return Task.CompletedTask;
             }
@@ -199,8 +206,8 @@ namespace OmniForge.Tests
 
             await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
 
-            // Allow a short window for the ping loop to send at least once.
-            await Task.Delay(25);
+            // Wait deterministically for the ping loop to send at least once.
+            await socket.PingSent.WaitAsync(TimeSpan.FromSeconds(2));
 
             // Ping payload should have been sent as a text frame.
             Assert.Contains(socket.SentTextMessages, m => m.Contains("\"method\":\"ping\""));

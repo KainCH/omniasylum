@@ -753,10 +753,8 @@ else
         var scale = user?.OverlaySettings?.Scale ?? 1.0;
 
         // Requirement: timer is always top-center.
-        // Keep opacity behavior consistent with the main overlay.
-        var timerShouldBeVisible = StreamStatus == "live" || user?.OverlaySettings?.TimerManualRunning == true;
-        var opacity = timerShouldBeVisible ? "1" : "0";
-        return $"top: 20px; left: 50%; transform: translateX(-50%) scale({scale}); transform-origin: top center; opacity: {opacity};";
+        // Visibility (including expired/manual states) is controlled by JavaScript.
+        return $"top: 20px; left: 50%; transform: translateX(-50%) scale({scale}); transform-origin: top center;";
     }
 
     private string GetInteractionBannerPositionStyle()

@@ -126,6 +126,8 @@ namespace OmniForge.Infrastructure.Repositories
                     var patch = new TableEntity(userId, "counters")
                     {
                         ["LastNotifiedStreamId"] = streamInstanceId,
+                        // Backward compatibility: older builds used camelCase.
+                        ["lastNotifiedStreamId"] = streamInstanceId,
                         ["LastUpdated"] = DateTimeOffset.UtcNow
                     };
 
@@ -142,7 +144,9 @@ namespace OmniForge.Infrastructure.Repositories
                         ["Screams"] = 0,
                         ["Bits"] = 0,
                         ["LastUpdated"] = DateTimeOffset.UtcNow,
-                        ["LastNotifiedStreamId"] = streamInstanceId
+                        ["LastNotifiedStreamId"] = streamInstanceId,
+                        // Backward compatibility: older builds used camelCase.
+                        ["lastNotifiedStreamId"] = streamInstanceId
                     };
 
                     try

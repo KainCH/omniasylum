@@ -243,9 +243,14 @@
         }
         if (typeof value === 'number') {
           if (!Number.isFinite(value)) return null;
-          // Heuristic: treat small epoch values as seconds (common in some APIs) not milliseconds.
-          // Use a conservative threshold: epoch seconds are ~1e9; epoch ms are ~1e12+.
-          return value < 1e11 ? (value * 1000) : value;
+          // Heuristic: interpret numeric values as either milliseconds or seconds since epoch
+          // by choosing the interpretation that is closest to the current time.
+          const now = Date.now();
+          const asMs = value;
+          const asMsFromSeconds = value * 1000;
+          const diffMs = Math.abs(asMs - now);
+          const diffSeconds = Math.abs(asMsFromSeconds - now);
+          return diffSeconds < diffMs ? asMsFromSeconds : asMs;
         }
         if (typeof value === 'object' && value.dateTime) {
           const ms = Date.parse(value.dateTime);

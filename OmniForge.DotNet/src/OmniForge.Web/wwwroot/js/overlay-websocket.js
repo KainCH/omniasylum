@@ -200,8 +200,21 @@ export function connect(url, dotNetHelper) {
                 if (isDebugEnabled()) {
                     console.log('[WebSocket] customAlert:', data && data.alertType ? data.alertType : '(unknown)', data && data.data ? data.data : {});
                 }
+                const alertType = data && data.alertType;
+                const alertPayload = data && data.data ? data.data : {};
+
+                // Suppress control-plane customAlert types (e.g. chatCommandsUpdated), matching static overlay.html behavior.
+                if (alertType === 'chatCommandsUpdated') {
+                    if (isDebugEnabled()) {
+                        console.log('[WebSocket] Suppressing control-plane customAlert:', alertType);
+                    }
+                    return;
+                }
+
                 // Trigger alert directly via JS
-                triggerAlert(data.alertType, data.data, dotNetHelper);
+                if (alertType) {
+                    triggerAlert(alertType, alertPayload, dotNetHelper);
+                }
             } else if (method === "bitsGoalUpdate") {
                 try { dotNetHelper.invokeMethodAsync("OnBitsGoalUpdate", data); } catch (e) {}
             } else if (method === "bitsGoalComplete") {
