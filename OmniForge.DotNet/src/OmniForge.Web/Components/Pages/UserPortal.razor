@@ -24,7 +24,7 @@
               <i class="bi bi-person-workspace me-2"></i>
               <span>Currently viewing as:</span>
               <InputSelect TValue="string" class="form-select form-select-sm ms-2" style="width: auto;"
-                Value="activeContextId" ValueChanged="OnContextChanged" ValueExpression="(() => activeContextId)">
+                Value="@activeContextId" ValueChanged="@OnContextChanged" ValueExpression="@(() => activeContextId)">
                 <option value="@currentUserId">Myself (@currentUser?.DisplayName)</option>
                 @foreach (var streamer in managedStreamers)
                 {
