@@ -336,17 +336,12 @@
     var user = await UserRepository.GetUserAsync(currentUserId);
     if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
     {
-      var streamers = new List<User>();
-      foreach (var streamerId in user.ManagedStreamers)
-      {
-        var streamer = await UserRepository.GetUserAsync(streamerId);
-        if (streamer != null)
-        {
-          streamers.Add(streamer);
-        }
-      }
-
-      managedStreamers = streamers;
+      var streamerTasks = user.ManagedStreamers.Select(UserRepository.GetUserAsync);
+      var streamers = await Task.WhenAll(streamerTasks);
+      managedStreamers = streamers
+        .Where(streamer => streamer != null)
+        .Select(streamer => streamer!)
+        .ToList();
     }
   }
 
