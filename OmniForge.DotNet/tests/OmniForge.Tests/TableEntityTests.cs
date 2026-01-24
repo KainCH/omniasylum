@@ -514,6 +514,22 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public void UserTableEntity_FromTableEntitySafe_ShouldDefaultManagedStreamers_WhenMalformedJson()
+        {
+            var entity = new Azure.Data.Tables.TableEntity("user", "123")
+            {
+                ["twitchUserId"] = "123",
+                ["username"] = "testuser",
+                ["managedStreamers"] = "invalid-json{{{"
+            };
+
+            var domain = UserTableEntity.FromTableEntitySafe(entity);
+
+            Assert.NotNull(domain.ManagedStreamers);
+            Assert.Empty(domain.ManagedStreamers);
+        }
+
+        [Fact]
         public void UserTableEntity_FromTableEntitySafe_ShouldParseManagedStreamers_WhenArrayJson()
         {
             var entity = new Azure.Data.Tables.TableEntity("user", "123")

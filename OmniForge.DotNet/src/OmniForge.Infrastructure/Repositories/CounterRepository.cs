@@ -103,7 +103,13 @@ namespace OmniForge.Infrastructure.Repositories
 
         public async Task<bool> TryClaimStreamStartDiscordNotificationAsync(string userId, string streamInstanceId)
         {
-            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(streamInstanceId))
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return false;
+            }
+
+            // Treat whitespace-only IDs as invalid.
+            if (string.IsNullOrWhiteSpace(streamInstanceId))
             {
                 return false;
             }

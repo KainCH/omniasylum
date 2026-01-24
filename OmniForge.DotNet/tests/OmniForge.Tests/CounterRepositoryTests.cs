@@ -751,6 +751,13 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task TryClaimStreamStartDiscordNotificationAsync_WhenStreamInstanceIdWhitespace_ReturnsFalse()
+        {
+            var result = await _repository.TryClaimStreamStartDiscordNotificationAsync("123", " ");
+            Assert.False(result);
+        }
+
+        [Fact]
         public async Task TryClaimStreamStartDiscordNotificationAsync_WhenAlreadyClaimed_ReturnsFalse_AndDoesNotUpdate()
         {
             var userId = "123";

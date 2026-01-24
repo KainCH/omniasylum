@@ -103,16 +103,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     var stored = counters.StreamStarted.Value.ToUniversalTime();
                     // Treat this as a new stream only if started_at is clearly after what we have stored.
-                    // If started_at is before stored, treat as the same stream (migration/heartbeat overwrite
-                    // or delayed/re-delivered notifications with an older started_at).
-                    if (startedAt.Value <= stored)
-                    {
-                        isNewStream = false;
-                    }
-                    else
-                    {
-                        isNewStream = startedAt.Value > stored.AddMinutes(1);
-                    }
+                    // If started_at is before stored (migration/heartbeat overwrite or delayed/re-delivered notifications
+                    // with an older started_at), this will evaluate to false.
+                    isNewStream = startedAt.Value > stored.AddMinutes(1);
                 }
             }
 
