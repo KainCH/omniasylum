@@ -617,7 +617,7 @@ namespace OmniForge.Infrastructure.Services
                     // Without this, _liveBroadcasters may remain empty and the overlay heartbeat loop won't run, causing mid-stream hides.
                     try
                     {
-                        if (twitchApiService != null && monitoringRegistry != null)
+                        if (!isAdminActing && twitchApiService != null)
                         {
                             var streamInfo = await twitchApiService.GetStreamInfoAsync(userId).ConfigureAwait(false);
                             if (streamInfo?.IsLive == true)
@@ -626,6 +626,13 @@ namespace OmniForge.Infrastructure.Services
                                 if (scope.ServiceProvider.GetService<IOverlayNotifier>() is IOverlayNotifier overlayNotifier)
                                 {
                                     await overlayNotifier.NotifyStreamStatusUpdateAsync(userId, "live").ConfigureAwait(false);
+                                }
+
+                                // Restart Discord invite broadcasts when we attach mid-stream after a restart.
+                                // This normally happens in StreamOnlineHandler, but Twitch won't replay stream.online.
+                                if (scope.ServiceProvider.GetService<OmniForge.Infrastructure.Services.EventHandlers.IDiscordInviteBroadcastScheduler>() is { } inviteScheduler)
+                                {
+                                    await inviteScheduler.StartAsync(userId).ConfigureAwait(false);
                                 }
                             }
                         }
@@ -674,9 +681,16 @@ namespace OmniForge.Infrastructure.Services
             {
                 using var scope = _scopeFactory.CreateScope();
                 var monitoringRegistry = scope.ServiceProvider.GetService<IMonitoringRegistry>();
+                var inviteScheduler = scope.ServiceProvider.GetService<OmniForge.Infrastructure.Services.EventHandlers.IDiscordInviteBroadcastScheduler>();
                 var discordBotClient = scope.ServiceProvider.GetService<IDiscordBotClient>();
                 var discordBotSettings = scope.ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<OmniForge.Infrastructure.Configuration.DiscordBotSettings>>()?.Value;
                 monitoringRegistry?.Remove(userId);
+
+                // If monitoring is stopped, stop periodic invite broadcasts to avoid posting while "offline" in Forge.
+                if (inviteScheduler != null)
+                {
+                    await inviteScheduler.StopAsync(userId).ConfigureAwait(false);
+                }
 
                 if (monitoringRegistry != null
                     && discordBotClient != null
