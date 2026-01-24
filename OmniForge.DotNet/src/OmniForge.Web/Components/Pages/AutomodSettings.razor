@@ -1,4 +1,5 @@
 @page "/automod"
+@page "/manage/{StreamerId}/automod"
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Exceptions
 @using OmniForge.Core.Utilities
@@ -7,11 +8,20 @@
 @inject OmniForge.Core.Interfaces.ITwitchApiService TwitchApiService
 @inject Microsoft.Extensions.Logging.ILogger<AutomodSettings> Logger
 @inject Microsoft.AspNetCore.Components.NavigationManager Navigation
+@inject OmniForge.Core.Interfaces.IUserRepository UserRepository
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>AutoMod Settings</PageTitle>
 
 <h3>AutoMod Settings</h3>
+
+@if (!hasAccess)
+{
+    <div class="alert alert-danger">
+        @(accessDeniedMessage ?? "Access denied.")
+    </div>
+}
+else
 
 @if (loading)
 {
@@ -93,12 +103,20 @@ else if (settings != null)
 }
 
 @code {
+    [Parameter]
+    public string? StreamerId { get; set; }
+
     private AutomodSettingsDto? settings;
     private bool loading = true;
     private bool saving = false;
     private bool refreshing = false;
     private string? errorMessage;
     private string? statusMessage;
+
+    private string? actingUserId;
+    private string? targetUserId;
+    private bool hasAccess = true;
+    private string? accessDeniedMessage;
 
     private bool IsOverallLevelSet => settings?.OverallLevel != null;
 
@@ -118,6 +136,13 @@ else if (settings != null)
     {
         try
         {
+            targetUserId = await ResolveTargetUserIdAsync();
+            if (!hasAccess)
+            {
+                errorMessage = accessDeniedMessage ?? "Access denied.";
+                return;
+            }
+
             await LoadFromTwitchAsync("initial-load");
         }
         catch (ReauthRequiredException ex)
@@ -253,9 +278,57 @@ else if (settings != null)
     }
     private async Task<string?> GetUserIdAsync()
     {
+        if (!string.IsNullOrWhiteSpace(targetUserId))
+        {
+            return targetUserId;
+        }
+
         if (authenticationStateTask == null) return null;
         var authState = await authenticationStateTask;
         var user = authState.User;
-        return user.FindFirst("userId")?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return user.FindFirst("userId")?.Value
+            ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.FindFirst("sub")?.Value;
+    }
+
+    private async Task<string?> ResolveTargetUserIdAsync()
+    {
+        if (authenticationStateTask == null)
+        {
+            hasAccess = false;
+            accessDeniedMessage = "Not authenticated";
+            return null;
+        }
+
+        var authState = await authenticationStateTask;
+        var user = authState.User;
+        actingUserId = user.FindFirst("userId")?.Value
+            ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.FindFirst("sub")?.Value;
+
+        if (string.IsNullOrWhiteSpace(actingUserId))
+        {
+            hasAccess = false;
+            accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+            return null;
+        }
+
+        var resolvedTarget = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+        if (!string.Equals(resolvedTarget, actingUserId, StringComparison.Ordinal))
+        {
+            var actingUserEntity = await UserRepository.GetUserAsync(actingUserId);
+            hasAccess = actingUserEntity != null &&
+                (string.Equals(actingUserEntity.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+                 (actingUserEntity.ManagedStreamers?.Contains(resolvedTarget) == true));
+
+            if (!hasAccess)
+            {
+                accessDeniedMessage = "You do not have permission to manage this streamer.";
+                return null;
+            }
+        }
+
+        return resolvedTarget;
     }
 }

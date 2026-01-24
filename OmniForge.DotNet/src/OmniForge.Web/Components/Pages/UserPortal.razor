@@ -333,15 +333,35 @@
   {
     if (string.IsNullOrEmpty(currentUserId)) return;
 
-    var user = await UserRepository.GetUserAsync(currentUserId);
-    if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
+    var user = currentUser ?? await UserRepository.GetUserAsync(currentUserId);
+
+    // Admins should be able to access the "mod view" for any active streamer.
+    if (string.Equals(user?.Role, "admin", StringComparison.OrdinalIgnoreCase))
     {
-      var streamerTasks = user.ManagedStreamers.Select(UserRepository.GetUserAsync);
+      var allUsers = await UserRepository.GetAllUsersAsync();
+      managedStreamers = allUsers
+        .Where(u => u != null)
+        .Where(u => u.IsActive)
+        .Where(u => !string.Equals(u.Role, "admin", StringComparison.OrdinalIgnoreCase))
+        .Where(u => !string.Equals(u.TwitchUserId, currentUserId, StringComparison.Ordinal))
+        .OrderBy(u => string.IsNullOrWhiteSpace(u.DisplayName) ? u.Username : u.DisplayName)
+        .ToList();
+      return;
+    }
+
+    var managedIds = user?.ManagedStreamers
+      ?.Where(id => !string.IsNullOrWhiteSpace(id))
+      ?.Distinct(StringComparer.Ordinal)
+      ?.ToList();
+
+    if (managedIds?.Any() == true)
+    {
+      var streamerTasks = managedIds.Select(UserRepository.GetUserAsync);
       var streamers = await Task.WhenAll(streamerTasks);
       managedStreamers = streamers
-      .Where(streamer => streamer != null)
-      .Select(streamer => streamer!)
-      .ToList();
+        .Where(streamer => streamer != null)
+        .Select(streamer => streamer!)
+        .ToList();
     }
   }
 

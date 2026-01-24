@@ -84,6 +84,21 @@ namespace OmniForge.Tests.Components.Pages
             });
             return cut.FindComponent<Dashboard>();
         }
+        private IRenderedComponent<Dashboard> RenderDashboard(string streamerId)
+        {
+            var cut = Render(b =>
+            {
+                b.OpenComponent<CascadingAuthenticationState>(0);
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<Dashboard>(2);
+                    builder.AddAttribute(3, "StreamerId", streamerId);
+                    builder.CloseComponent();
+                }));
+                b.CloseComponent();
+            });
+            return cut.FindComponent<Dashboard>();
+        }
 
         [Fact]
         public void Dashboard_ShouldRenderLoading_WhenCounterIsNull()
@@ -460,6 +475,53 @@ namespace OmniForge.Tests.Components.Pages
 
             // Assert
             _mockStreamMonitorService.Verify(x => x.UnsubscribeFromUserAsync("12345"), Times.Once);
+        }
+
+        [Fact]
+        public void Dashboard_ManagedStreamer_AsModerator_LoadsCountersForTargetUser()
+        {
+            // Arrange
+            var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "mod123")
+            }, "mock"));
+            _authProvider.SetUser(user);
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("mod123"))
+                .ReturnsAsync(new User { TwitchUserId = "mod123", Role = "streamer", ManagedStreamers = new List<string> { "streamer456" } });
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("streamer456"))
+                .ReturnsAsync(new User { TwitchUserId = "streamer456", OverlaySettings = new OverlaySettings() });
+
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("streamer456"))
+                .ReturnsAsync(new Counter { Deaths = 1, Swears = 2, LastUpdated = DateTime.UtcNow });
+
+            // Act
+            var cut = RenderDashboard("streamer456");
+
+            // Assert
+            _mockCounterRepository.Verify(x => x.GetCountersAsync("streamer456"), Times.Once);
+            Assert.Contains("overlay.html?userId=streamer456", cut.Markup);
+        }
+
+        [Fact]
+        public void Dashboard_ManagedStreamer_WhenUnauthorized_ShowsAccessDenied()
+        {
+            // Arrange
+            var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
+                new Claim(ClaimTypes.NameIdentifier, "mod123")
+            }, "mock"));
+            _authProvider.SetUser(user);
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("mod123"))
+                .ReturnsAsync(new User { TwitchUserId = "mod123", Role = "streamer", ManagedStreamers = new List<string>() });
+
+            // Act
+            var cut = RenderDashboard("streamer456");
+
+            // Assert
+            cut.WaitForState(() => cut.FindAll(".alert-danger").Count > 0);
+            Assert.Contains("You do not have permission", cut.Find(".alert-danger").TextContent);
+            _mockCounterRepository.Verify(x => x.GetCountersAsync(It.IsAny<string>()), Times.Never);
         }
     }
 

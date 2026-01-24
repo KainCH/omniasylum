@@ -1,4 +1,7 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+﻿@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<div class="top-row ps-3 navbar navbar-dark">
   <div class="container-fluid">
     <a class="navbar-brand" href="/portal">OmniForge</a>
   </div>
@@ -17,42 +20,42 @@
     <AuthorizeView>
       <Authorized>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="dashboard">
+          <NavLink class="nav-link" href="@GetUserHref("dashboard")">
             <i class="bi bi-speedometer2 me-2" aria-hidden="true"></i> Dashboard
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="alerts">
+          <NavLink class="nav-link" href="@GetUserHref("alerts")">
             <i class="bi bi-bell-fill me-2" aria-hidden="true"></i> Manage Alerts
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="requests">
+          <NavLink class="nav-link" href="@GetUserHref("requests")">
             <i class="bi bi-bug-fill me-2" aria-hidden="true"></i> Features &amp; Bugs
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="automod">
+          <NavLink class="nav-link" href="@GetUserHref("automod")">
             <i class="bi bi-shield-lock me-2" aria-hidden="true"></i> AutoMod
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="settings/series">
+          <NavLink class="nav-link" href="@GetUserHref("settings/series")">
             <span class="bi bi-collection-play" aria-hidden="true"></span> Series Manager
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="settings/alert-effects">
+          <NavLink class="nav-link" href="@GetUserHref("settings/alert-effects")">
             <span class="bi bi-magic" aria-hidden="true"></span> Alert Effects
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="settings/discord">
+          <NavLink class="nav-link" href="@GetUserHref("settings/discord")">
             <span class="bi bi-discord" aria-hidden="true"></span> Discord
           </NavLink>
         </div>
         <div class="nav-item px-3">
-          <NavLink class="nav-link" href="settings/games">
+          <NavLink class="nav-link" href="@GetUserHref("settings/games")">
             <span class="bi bi-controller" aria-hidden="true"></span> Games
           </NavLink>
         </div>
@@ -106,3 +109,54 @@
     </AuthorizeView>
   </nav>
 </div>
+
+@code {
+  private string? managedStreamerId;
+
+  protected override void OnInitialized()
+  {
+    TryResolveManagedStreamerFromUrl();
+    NavigationManager.LocationChanged += OnLocationChanged;
+  }
+
+  private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+  {
+    TryResolveManagedStreamerFromUrl();
+    InvokeAsync(StateHasChanged);
+  }
+
+  private void TryResolveManagedStreamerFromUrl()
+  {
+    var relativePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+    if (string.IsNullOrWhiteSpace(relativePath))
+    {
+      managedStreamerId = null;
+      return;
+    }
+
+    // Expected: manage/{streamerId}/...
+    if (!relativePath.StartsWith("manage/", StringComparison.OrdinalIgnoreCase))
+    {
+      managedStreamerId = null;
+      return;
+    }
+
+    var parts = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    managedStreamerId = parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[1]) ? parts[1] : null;
+  }
+
+  private string GetUserHref(string path)
+  {
+    if (string.IsNullOrWhiteSpace(managedStreamerId))
+    {
+      return path;
+    }
+
+    return $"manage/{managedStreamerId}/{path}";
+  }
+
+  public void Dispose()
+  {
+    NavigationManager.LocationChanged -= OnLocationChanged;
+  }
+}

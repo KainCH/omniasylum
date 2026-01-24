@@ -161,6 +161,73 @@ namespace OmniForge.Tests.Components.Pages.Settings
         }
 
         [Fact]
+        public void AlertEffects_ManagedStreamer_AsAdmin_LoadsTargetUser()
+        {
+            // Arrange
+            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "AdminUser"),
+                new Claim("userId", "admin123")
+            }, "TestAuthType")));
+
+            _mockUserRepo.Setup(x => x.GetUserAsync("admin123"))
+                .ReturnsAsync(new User { TwitchUserId = "admin123", Role = "admin" });
+
+            _mockUserRepo.Setup(x => x.GetUserAsync("streamer456"))
+                .ReturnsAsync(new User { TwitchUserId = "streamer456", Username = "StreamerTwo" });
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<CascadingAuthenticationState>(0);
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<AlertEffects>(2);
+                    builder.AddAttribute(3, "StreamerId", "streamer456");
+                    builder.CloseComponent();
+                }));
+                b.CloseComponent();
+            });
+
+            // Assert
+            cut.WaitForState(() => cut.Markup.Contains("Visual & Audio Settings"));
+            _mockUserRepo.Verify(x => x.GetUserAsync("streamer456"), Times.Once);
+        }
+
+        [Fact]
+        public void AlertEffects_ManagedStreamer_WhenUnauthorized_ShowsAccessDenied()
+        {
+            // Arrange
+            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "ModUser"),
+                new Claim("userId", "mod123")
+            }, "TestAuthType")));
+
+            _mockUserRepo.Setup(x => x.GetUserAsync("mod123"))
+                .ReturnsAsync(new User { TwitchUserId = "mod123", Role = "streamer", ManagedStreamers = new List<string>() });
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<CascadingAuthenticationState>(0);
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<AlertEffects>(2);
+                    builder.AddAttribute(3, "StreamerId", "streamer456");
+                    builder.CloseComponent();
+                }));
+                b.CloseComponent();
+            });
+
+            // Assert
+            cut.WaitForState(() => cut.FindAll(".alert-danger").Count > 0);
+            Assert.Contains("You do not have permission", cut.Find(".alert-danger").TextContent);
+
+            _mockUserRepo.Verify(x => x.GetUserAsync("streamer456"), Times.Never);
+        }
+
+        [Fact]
         public void AlertEffects_LoadError_ShowsErrorMessage()
         {
             // Arrange

@@ -1,4 +1,5 @@
 @page "/dashboard"
+@page "/manage/{StreamerId}/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web
@@ -22,6 +23,13 @@
 
   <AuthorizeView>
     <Authorized>
+        @if (!hasAccess)
+        {
+          <div class="alert alert-danger mt-3" role="alert">
+            @(accessDeniedMessage ?? "Access denied.")
+          </div>
+        }
+        else
       @if (counter == null)
       {
         <p><em>Loading counters...</em></p>
@@ -202,6 +210,9 @@
   [CascadingParameter]
   private Task<AuthenticationState>? authenticationStateTask { get; set; }
 
+  [Parameter]
+  public string? StreamerId { get; set; }
+
   private OmniForge.Core.Entities.Counter? counter;
   private OmniForge.Core.Entities.OverlaySettings? overlaySettings;
   private string? TwitchUserId;
@@ -217,6 +228,8 @@
   private Timer? _refreshTimer;
   private string? errorMessage;
   private string? overlaySaveError;
+  private bool hasAccess = true;
+  private string? accessDeniedMessage;
 
   protected override async Task OnInitializedAsync()
   {
@@ -227,8 +240,35 @@
 
       if (user.Identity?.IsAuthenticated == true)
       {
-        // Twitch OAuth maps the ID to NameIdentifier by default
-        TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var actingUserId = user.FindFirst("userId")?.Value
+          ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+          ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+          ?? user.FindFirst("sub")?.Value;
+
+        if (string.IsNullOrWhiteSpace(actingUserId))
+        {
+          hasAccess = false;
+          accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+          return;
+        }
+
+        var targetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+        if (!string.Equals(targetUserId, actingUserId, StringComparison.Ordinal))
+        {
+          var actingUser = await UserRepository.GetUserAsync(actingUserId);
+          hasAccess = actingUser != null &&
+            (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+             (actingUser.ManagedStreamers?.Contains(targetUserId) == true));
+
+          if (!hasAccess)
+          {
+            accessDeniedMessage = "You do not have permission to manage this streamer.";
+            return;
+          }
+        }
+
+        TwitchUserId = targetUserId;
 
         if (!string.IsNullOrEmpty(TwitchUserId))
         {
@@ -265,6 +305,11 @@
 
   private void NavigateToAlerts()
   {
+    if (!string.IsNullOrWhiteSpace(StreamerId))
+    {
+      NavigationManager.NavigateTo($"manage/{StreamerId}/alerts");
+      return;
+    }
     NavigationManager.NavigateTo("alerts");
   }
 
