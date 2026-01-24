@@ -838,7 +838,7 @@ namespace OmniForge.Tests.EventHandlers
         public async Task HandleAsync_WhenOverlayNotifierIsNull_ShouldNotNotify()
         {
             // Override overlay notifier to simulate it not being registered.
-            _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns(null);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IOverlayNotifier))).Returns((object?)null);
 
             var eventData = JsonDocument.Parse(@"{
                 ""broadcaster_user_id"": ""123"",
