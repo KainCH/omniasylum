@@ -56,12 +56,101 @@ namespace OmniForge.Infrastructure.Services
             }
 
             var current = await _gameContextRepository.GetAsync(userId);
+            var now = DateTimeOffset.UtcNow;
+
+            GameLibraryItem? existingLibraryItem = null;
+            GameLibraryItem? upsertedLibraryItem = null;
+
+            // If the detected game matches the current active game, we still want to ensure it exists
+            // in the game library and that a per-game core counter selection exists. This helps recover
+            // from restart/seed scenarios where the context exists but configs/library entries do not.
             if (current != null && string.Equals(current.ActiveGameId, gameId, StringComparison.OrdinalIgnoreCase))
             {
+                try
+                {
+                    existingLibraryItem = await _gameLibraryRepository.GetAsync(userId, gameId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed reading existing game library item for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                }
+
+                GameCoreCountersConfig? existingSelection = null;
+                try
+                {
+                    existingSelection = await _gameCoreCountersConfigRepository.GetAsync(userId, gameId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed reading core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                }
+
+                // Everything is already set; keep the original early-return behavior.
+                if (existingLibraryItem != null && existingSelection != null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    if (existingLibraryItem == null)
+                    {
+                        upsertedLibraryItem = new GameLibraryItem
+                        {
+                            UserId = userId,
+                            GameId = gameId,
+                            GameName = gameName ?? current.ActiveGameName ?? string.Empty,
+                            BoxArtUrl = boxArtUrl ?? string.Empty,
+                            CreatedAt = existingLibraryItem?.CreatedAt ?? now,
+                            LastSeenAt = now,
+                            EnabledContentClassificationLabels = existingLibraryItem?.EnabledContentClassificationLabels
+                        };
+
+                        await _gameLibraryRepository.UpsertAsync(upsertedLibraryItem);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed upserting game library item for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                }
+
+                try
+                {
+                    if (existingSelection == null)
+                    {
+                        User? userForSeed = null;
+                        try
+                        {
+                            userForSeed = await _userRepository.GetUserAsync(userId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "❌ Failed reading user for {UserId}", LogSanitizer.Sanitize(userId));
+                        }
+
+                        var overlayCounters = userForSeed?.OverlaySettings?.Counters;
+                        var selection = new GameCoreCountersConfig(
+                            UserId: userId,
+                            GameId: gameId,
+                            DeathsEnabled: overlayCounters?.Deaths ?? true,
+                            SwearsEnabled: overlayCounters?.Swears ?? true,
+                            ScreamsEnabled: overlayCounters?.Screams ?? true,
+                            BitsEnabled: overlayCounters?.Bits ?? false,
+                            UpdatedAt: now);
+
+                        await _gameCoreCountersConfigRepository.SaveAsync(userId, gameId, selection);
+
+                        // Apply once so overlay/chat pick it up immediately.
+                        await ApplyActiveCoreCountersSelectionAsync(userId, gameId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed seeding core counter selection for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                }
+
                 return;
             }
-
-            var now = DateTimeOffset.UtcNow;
 
             User? user = null;
             try
@@ -152,7 +241,6 @@ namespace OmniForge.Infrastructure.Services
             }
 
             // Ensure game exists in library
-            GameLibraryItem? existingLibraryItem = null;
             try
             {
                 existingLibraryItem = await _gameLibraryRepository.GetAsync(userId, gameId);
@@ -162,7 +250,6 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(ex, "❌ Failed reading existing game library item for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
             }
 
-            GameLibraryItem? upsertedLibraryItem = null;
             try
             {
                 upsertedLibraryItem = new GameLibraryItem

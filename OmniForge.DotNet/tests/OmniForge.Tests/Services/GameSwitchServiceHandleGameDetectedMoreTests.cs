@@ -117,7 +117,7 @@ namespace OmniForge.Tests.Services
         }
 
         [Fact]
-        public async Task HandleGameDetectedAsync_WhenSameGameAlreadyActive_ShouldNoOp()
+        public async Task HandleGameDetectedAsync_WhenSameGameAlreadyActive_ShouldEnsureLibraryAndSeedCoreSelectionIfMissing()
         {
             var gameContextRepository = new Mock<IGameContextRepository>(MockBehavior.Strict);
             var gameCountersRepository = new Mock<IGameCountersRepository>(MockBehavior.Strict);
@@ -133,7 +133,102 @@ namespace OmniForge.Tests.Services
 
             gameContextRepository
                 .Setup(r => r.GetAsync("user1"))
-                .ReturnsAsync(new GameContext { UserId = "user1", ActiveGameId = "GAME1" });
+                .ReturnsAsync(new GameContext { UserId = "user1", ActiveGameId = "GAME1", ActiveGameName = "Test Game" });
+
+            gameLibraryRepository
+                .Setup(r => r.GetAsync("user1", "game1"))
+                .ReturnsAsync((GameLibraryItem?)null);
+
+            gameLibraryRepository
+                .Setup(r => r.UpsertAsync(It.IsAny<GameLibraryItem>()))
+                .Returns(Task.CompletedTask);
+
+            GameCoreCountersConfig? seededSelection = null;
+            gameCoreCountersConfigRepository
+                .SetupSequence(r => r.GetAsync("user1", "game1"))
+                .ReturnsAsync((GameCoreCountersConfig?)null)
+                .ReturnsAsync(() => seededSelection);
+
+            gameCoreCountersConfigRepository
+                .Setup(r => r.SaveAsync("user1", "game1", It.IsAny<GameCoreCountersConfig>()))
+                .Callback<string, string, GameCoreCountersConfig>((_, __, cfg) => seededSelection = cfg)
+                .Returns(Task.CompletedTask);
+
+            var user = new User
+            {
+                TwitchUserId = "user1",
+                Username = "user1",
+                DisplayName = "User1",
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true, Swears = true, Screams = true, Bits = false }
+                }
+            };
+
+            userRepository.Setup(r => r.GetUserAsync("user1")).ReturnsAsync(user);
+            userRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            userRepository.Setup(r => r.GetChatCommandsConfigAsync("user1")).ReturnsAsync(new ChatCommandConfiguration());
+            userRepository.Setup(r => r.SaveChatCommandsConfigAsync("user1", It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
+
+            overlayNotifier.Setup(n => n.NotifySettingsUpdateAsync("user1", It.IsAny<OverlaySettings>())).Returns(Task.CompletedTask);
+            overlayNotifier.Setup(n => n.NotifyCustomAlertAsync("user1", It.IsAny<string>(), It.IsAny<object>())).Returns(Task.CompletedTask);
+
+            var service = new GameSwitchService(
+                gameContextRepository.Object,
+                gameCountersRepository.Object,
+                gameLibraryRepository.Object,
+                gameChatCommandsRepository.Object,
+                gameCustomCountersConfigRepository.Object,
+                gameCoreCountersConfigRepository.Object,
+                counterRepository.Object,
+                userRepository.Object,
+                twitchApiService.Object,
+                overlayNotifier.Object,
+                logger.Object);
+
+            await service.HandleGameDetectedAsync("user1", "game1", "Test Game");
+
+            gameContextRepository.Verify(r => r.GetAsync("user1"), Times.Exactly(2));
+            gameLibraryRepository.Verify(r => r.UpsertAsync(It.IsAny<GameLibraryItem>()), Times.Once);
+            gameCoreCountersConfigRepository.Verify(r => r.SaveAsync("user1", "game1", It.IsAny<GameCoreCountersConfig>()), Times.Once);
+            overlayNotifier.Verify(n => n.NotifySettingsUpdateAsync("user1", It.IsAny<OverlaySettings>()), Times.Once);
+            overlayNotifier.Verify(n => n.NotifyCustomAlertAsync("user1", "chatCommandsUpdated", It.IsAny<object>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleGameDetectedAsync_WhenSameGameAlreadyActiveAndAlreadyConfigured_ShouldNoOp()
+        {
+            var gameContextRepository = new Mock<IGameContextRepository>(MockBehavior.Strict);
+            var gameCountersRepository = new Mock<IGameCountersRepository>(MockBehavior.Strict);
+            var gameLibraryRepository = new Mock<IGameLibraryRepository>(MockBehavior.Strict);
+            var gameChatCommandsRepository = new Mock<IGameChatCommandsRepository>(MockBehavior.Strict);
+            var gameCustomCountersConfigRepository = new Mock<IGameCustomCountersConfigRepository>(MockBehavior.Strict);
+            var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>(MockBehavior.Strict);
+            var counterRepository = new Mock<ICounterRepository>(MockBehavior.Strict);
+            var userRepository = new Mock<IUserRepository>(MockBehavior.Strict);
+            var twitchApiService = new Mock<ITwitchApiService>(MockBehavior.Strict);
+            var overlayNotifier = new Mock<IOverlayNotifier>(MockBehavior.Strict);
+            var logger = new Mock<ILogger<GameSwitchService>>();
+
+            gameContextRepository
+                .Setup(r => r.GetAsync("user1"))
+                .ReturnsAsync(new GameContext { UserId = "user1", ActiveGameId = "GAME1", ActiveGameName = "Test Game" });
+
+            gameLibraryRepository
+                .Setup(r => r.GetAsync("user1", "game1"))
+                .ReturnsAsync(new GameLibraryItem { UserId = "global", GameId = "game1", GameName = "Test Game" });
+
+            gameCoreCountersConfigRepository
+                .Setup(r => r.GetAsync("user1", "game1"))
+                .ReturnsAsync(new GameCoreCountersConfig(
+                    UserId: "user1",
+                    GameId: "game1",
+                    DeathsEnabled: true,
+                    SwearsEnabled: true,
+                    ScreamsEnabled: true,
+                    BitsEnabled: false,
+                    UpdatedAt: DateTimeOffset.UtcNow));
 
             var service = new GameSwitchService(
                 gameContextRepository.Object,
@@ -151,6 +246,8 @@ namespace OmniForge.Tests.Services
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");
 
             gameContextRepository.Verify(r => r.GetAsync("user1"), Times.Once);
+            gameLibraryRepository.Verify(r => r.GetAsync("user1", "game1"), Times.Once);
+            gameCoreCountersConfigRepository.Verify(r => r.GetAsync("user1", "game1"), Times.Once);
         }
 
         [Fact]

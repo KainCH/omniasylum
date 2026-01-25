@@ -20,6 +20,7 @@ public class GameLibraryManagerTests : BunitContext
     private readonly Mock<IGameCounterSetupService> _mockGameCounterSetupService;
     private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
     private readonly Mock<IUserRepository> _mockUserRepository;
+    private readonly Mock<ICounterRepository> _mockCounterRepository;
 
     public GameLibraryManagerTests()
     {
@@ -33,6 +34,7 @@ public class GameLibraryManagerTests : BunitContext
         _mockGameCounterSetupService = new Mock<IGameCounterSetupService>();
         _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
         _mockUserRepository = new Mock<IUserRepository>();
+        _mockCounterRepository = new Mock<ICounterRepository>();
 
         Services.AddSingleton(_mockGameLibraryRepository.Object);
         Services.AddSingleton(_mockGameCountersRepository.Object);
@@ -44,6 +46,7 @@ public class GameLibraryManagerTests : BunitContext
         Services.AddSingleton(_mockGameCounterSetupService.Object);
         Services.AddSingleton(_mockGameCoreCountersConfigRepository.Object);
         Services.AddSingleton(_mockUserRepository.Object);
+        Services.AddSingleton(_mockCounterRepository.Object);
 
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -69,6 +72,20 @@ public class GameLibraryManagerTests : BunitContext
         });
 
         _mockGameContextRepository.Setup(r => r.GetAsync(userId)).ReturnsAsync(new GameContext { UserId = userId, ActiveGameId = gameId });
+
+        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
+        {
+            TwitchUserId = userId,
+            Deaths = 10,
+            Swears = 20,
+            Screams = 30,
+            Bits = 40,
+            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wins"] = 99
+            },
+            LastUpdated = DateTimeOffset.UtcNow
+        });
 
         // Library includes core + non-core. Core should be filtered from the modal.
         _mockCounterLibraryRepository.Setup(r => r.ListAsync()).ReturnsAsync(new[]
@@ -142,6 +159,16 @@ public class GameLibraryManagerTests : BunitContext
         });
 
         _mockGameContextRepository.Setup(r => r.GetAsync(userId)).ReturnsAsync(new GameContext { UserId = userId, ActiveGameId = gameId });
+
+        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
+        {
+            TwitchUserId = userId,
+            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wins"] = 5
+            },
+            LastUpdated = DateTimeOffset.UtcNow
+        });
 
         _mockCounterLibraryRepository.Setup(r => r.ListAsync()).ReturnsAsync(new[]
         {
