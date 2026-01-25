@@ -73,20 +73,6 @@ public class GameLibraryManagerTests : BunitContext
 
         _mockGameContextRepository.Setup(r => r.GetAsync(userId)).ReturnsAsync(new GameContext { UserId = userId, ActiveGameId = gameId });
 
-        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
-        {
-            TwitchUserId = userId,
-            Deaths = 10,
-            Swears = 20,
-            Screams = 30,
-            Bits = 40,
-            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["wins"] = 99
-            },
-            LastUpdated = DateTimeOffset.UtcNow
-        });
-
         // Library includes core + non-core. Core should be filtered from the modal.
         _mockCounterLibraryRepository.Setup(r => r.ListAsync()).ReturnsAsync(new[]
         {
@@ -136,6 +122,9 @@ public class GameLibraryManagerTests : BunitContext
 
         Assert.Contains("Wins", cut.Markup);
         Assert.DoesNotContain("Losses", cut.Markup);
+
+        // Selected game should show editable custom counter values
+        Assert.Contains("Custom Counter Values", cut.Markup);
     }
 
     [Fact]
@@ -159,16 +148,6 @@ public class GameLibraryManagerTests : BunitContext
         });
 
         _mockGameContextRepository.Setup(r => r.GetAsync(userId)).ReturnsAsync(new GameContext { UserId = userId, ActiveGameId = gameId });
-
-        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
-        {
-            TwitchUserId = userId,
-            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["wins"] = 5
-            },
-            LastUpdated = DateTimeOffset.UtcNow
-        });
 
         _mockCounterLibraryRepository.Setup(r => r.ListAsync()).ReturnsAsync(new[]
         {

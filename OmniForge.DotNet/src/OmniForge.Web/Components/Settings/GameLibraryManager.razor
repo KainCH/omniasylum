@@ -234,54 +234,32 @@ else
 
             @if (currentCounters == null)
             {
-              <div class="text-muted">Counters not loaded yet.</div>
+              <div class="text-muted">No active game counters loaded yet.</div>
             }
             else
             {
-              <div class="row g-2">
-                <div class="col-6">
-                  <div class="border rounded p-2">
-                    <div class="small text-muted">Deaths</div>
-                    <div class="fw-semibold">@currentCounters.Deaths</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded p-2">
-                    <div class="small text-muted">Swears</div>
-                    <div class="fw-semibold">@currentCounters.Swears</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded p-2">
-                    <div class="small text-muted">Screams</div>
-                    <div class="fw-semibold">@currentCounters.Screams</div>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="border rounded p-2">
-                    <div class="small text-muted">Bits</div>
-                    <div class="fw-semibold">@currentCounters.Bits</div>
-                  </div>
-                </div>
-              </div>
-
-              @if (currentCounters.CustomCounters != null && currentCounters.CustomCounters.Count > 0)
+              @if (!string.IsNullOrWhiteSpace(currentCountersGameName))
               {
-                <div class="mt-3">
-                  <div class="small text-muted mb-1">Custom counters</div>
-                  <div class="list-group">
-                    @foreach (var kvp in currentCounters.CustomCounters.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-                    {
-                      var name = counterLibrary.FirstOrDefault(c => string.Equals(c.CounterId, kvp.Key, StringComparison.OrdinalIgnoreCase))?.Name;
-                      <div class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                          <div class="fw-semibold">@(string.IsNullOrWhiteSpace(name) ? kvp.Key : name)</div>
-                          <div class="small text-muted">Key: @kvp.Key</div>
-                        </div>
-                        <span class="badge bg-secondary">@kvp.Value</span>
+                <div class="small text-muted mb-2">Active game: <span class="fw-semibold">@currentCountersGameName</span></div>
+              }
+
+              var rows = GetCurrentLiveCounterRows().ToList();
+              if (rows.Count == 0)
+              {
+                <div class="text-muted">No enabled counters for the active game.</div>
+              }
+              else
+              {
+                <div class="row g-2">
+                  @foreach (var row in rows)
+                  {
+                    <div class="col-6">
+                      <div class="border rounded p-2">
+                        <div class="small text-muted">@row.Name</div>
+                        <div class="fw-semibold">@row.Value</div>
                       </div>
-                    }
-                  </div>
+                    </div>
+                  }
                 </div>
               }
 
@@ -360,6 +338,24 @@ else
                 <label class="form-label">Bits</label>
                 <input class="form-control" type="number" @bind="editCounters.Bits" disabled="@(!coreBitsEnabled)" />
               </div>
+
+              @if (editCounters.CustomCounters != null && editCounters.CustomCounters.Count > 0)
+              {
+                <div class="col-12 mt-2">
+                  <div class="fw-semibold">Custom Counter Values</div>
+                  <div class="small text-muted">These are the per-game numbers for your non-core counters.</div>
+                </div>
+
+                @foreach (var counterId in editCounters.CustomCounters.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+                {
+                  var name = counterLibrary.FirstOrDefault(c => string.Equals(c.CounterId, counterId, StringComparison.OrdinalIgnoreCase))?.Name;
+                  <div class="col-6">
+                    <label class="form-label">@(string.IsNullOrWhiteSpace(name) ? counterId : name)</label>
+                    <input class="form-control" type="number" min="0" value="@GetEditCustomCounterValue(counterId)"
+                      @onchange="e => OnEditCustomCounterValueChanged(counterId, e)" disabled="@isBusy" />
+                  </div>
+                }
+              }
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-3">
@@ -514,6 +510,10 @@ else
   private Counter? currentCounters;
   private bool isRefreshingCurrentCounters;
 
+  private string? currentCountersGameId;
+  private string? currentCountersGameName;
+  private GameCoreCountersConfig? currentCountersCoreSelection;
+
   private List<CounterLibraryItem> counterLibrary = new();
   private bool showCounterLibraryModal = false;
   private string counterLibraryFilter = string.Empty;
@@ -527,6 +527,63 @@ else
     public string Name { get; set; } = string.Empty;
     public bool Enabled { get; set; }
     public bool IsCore { get; set; }
+  }
+
+  private sealed class LiveCounterRow
+  {
+    public string CounterId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int Value { get; set; }
+    public bool IsCore { get; set; }
+  }
+
+  private IEnumerable<LiveCounterRow> GetCurrentLiveCounterRows()
+  {
+    if (currentCounters == null)
+    {
+      yield break;
+    }
+
+    var selection = currentCountersCoreSelection;
+    if (selection == null)
+    {
+      // Default selection (matches existing seeding behavior).
+      selection = new GameCoreCountersConfig(UserId, currentCountersGameId ?? string.Empty, true, true, true, false, DateTimeOffset.UtcNow);
+    }
+
+    if (selection.DeathsEnabled)
+    {
+      yield return new LiveCounterRow { CounterId = "deaths", Name = "Deaths", Value = currentCounters.Deaths, IsCore = true };
+    }
+    if (selection.SwearsEnabled)
+    {
+      yield return new LiveCounterRow { CounterId = "swears", Name = "Swears", Value = currentCounters.Swears, IsCore = true };
+    }
+    if (selection.ScreamsEnabled)
+    {
+      yield return new LiveCounterRow { CounterId = "screams", Name = "Screams", Value = currentCounters.Screams, IsCore = true };
+    }
+    if (selection.BitsEnabled)
+    {
+      yield return new LiveCounterRow { CounterId = "bits", Name = "Bits", Value = currentCounters.Bits, IsCore = true };
+    }
+
+    if (currentCounters.CustomCounters == null || currentCounters.CustomCounters.Count == 0)
+    {
+      yield break;
+    }
+
+    foreach (var kvp in currentCounters.CustomCounters.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+    {
+      var name = counterLibrary.FirstOrDefault(c => string.Equals(c.CounterId, kvp.Key, StringComparison.OrdinalIgnoreCase))?.Name;
+      yield return new LiveCounterRow
+      {
+        CounterId = kvp.Key,
+        Name = string.IsNullOrWhiteSpace(name) ? kvp.Key : name,
+        Value = kvp.Value,
+        IsCore = false
+      };
+    }
   }
 
   private IEnumerable<EnabledCounterRow> GetEnabledCountersForSelectedGame()
@@ -628,13 +685,13 @@ else
       loadedUser = await UserRepository.GetUserAsync(UserId);
       LoadDefaultCclsFromUser(loadedUser);
 
-      await LoadCurrentCountersAsync();
-
       library = (await GameLibraryRepository.ListAsync(UserId)).ToList();
       var ctx = await GameContextRepository.GetAsync(UserId);
       activeGameId = ctx?.ActiveGameId;
 
       counterLibrary = (await CounterLibraryRepository.ListAsync()).ToList();
+
+      await LoadCurrentCountersAsync();
 
       // If current selection disappeared, clear it.
       if (!string.IsNullOrWhiteSpace(selectedGameId) && library.All(g => !string.Equals(g.GameId, selectedGameId,
@@ -669,18 +726,61 @@ else
     isRefreshingCurrentCounters = true;
     try
     {
-      currentCounters = await CounterRepository.GetCountersAsync(UserId);
+      // Always refresh active game context so this panel tracks what's actually live.
+      var ctx = await GameContextRepository.GetAsync(UserId);
+      activeGameId = ctx?.ActiveGameId;
+
+      currentCountersGameId = activeGameId;
+      currentCountersGameName = library.FirstOrDefault(g => string.Equals(g.GameId, activeGameId, StringComparison.Ordinal))?.GameName;
+      currentCountersCoreSelection = null;
+
+      if (string.IsNullOrWhiteSpace(activeGameId))
+      {
+        currentCounters = null;
+        return;
+      }
+
+      currentCounters = await GameCountersRepository.GetAsync(UserId, activeGameId);
       currentCounters ??= new Counter { TwitchUserId = UserId, LastUpdated = DateTimeOffset.UtcNow };
+      currentCounters.CustomCounters ??= new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+      currentCountersCoreSelection = await GameCoreCountersConfigRepository.GetAsync(UserId, activeGameId);
     }
     catch (Exception ex)
     {
       errorMessage = $"Failed to load current counters: {ex.Message}";
       currentCounters = null;
+      currentCountersGameId = null;
+      currentCountersGameName = null;
+      currentCountersCoreSelection = null;
     }
     finally
     {
       isRefreshingCurrentCounters = false;
     }
+  }
+
+  private int GetEditCustomCounterValue(string counterId)
+  {
+    if (editCounters.CustomCounters == null) return 0;
+    if (editCounters.CustomCounters.TryGetValue(counterId, out var value)) return value;
+    return 0;
+  }
+
+  private void OnEditCustomCounterValueChanged(string counterId, ChangeEventArgs e)
+  {
+    if (editCounters.CustomCounters == null) return;
+
+    var value = e.Value switch
+    {
+      int i => i,
+      long l => l > int.MaxValue ? int.MaxValue : (int)l,
+      string s when int.TryParse(s, out var i) => i,
+      _ => 0
+    };
+
+    if (value < 0) value = 0;
+    editCounters.CustomCounters[counterId] = value;
   }
 
   private void LoadDefaultCclsFromUser(User? user)
