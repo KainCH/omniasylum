@@ -240,6 +240,24 @@
       </div>
     </div>
 
+    <!-- Channel Points Card -->
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm hover-card">
+        <div class="card-body text-center p-5">
+          <div class="mb-4">
+            <i class="bi bi-stars text-warning" style="font-size: 4rem;"></i>
+          </div>
+          <h3 class="card-title">Channel Points</h3>
+          <p class="card-text text-muted">
+            Create and manage channel point rewards mapped to OmniForge actions.
+          </p>
+          <a href="@GetContextualLink("settings/channel-points")" class="btn btn-warning text-dark btn-lg mt-3 stretched-link">
+            Manage Rewards
+          </a>
+        </div>
+      </div>
+    </div>
+
     <!-- Mod Team Manager Card (Always visible for own context) -->
     @if (activeContextId == currentUserId)
     {

@@ -313,6 +313,13 @@
 
           if (remainingSeconds <= 0) {
             // Countdown completed: fade back to hidden.
+            if (!timerExpired) {
+              try {
+                if (window.notificationAudio && typeof window.notificationAudio.playNotification === 'function') {
+                  window.notificationAudio.playNotification('timerFinished');
+                }
+              } catch (e) { }
+            }
             timerExpired = true;
             window.omniOverlayTimerExpired = true;
             stopTimerInterval();

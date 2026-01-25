@@ -517,6 +517,30 @@ namespace OmniForge.Infrastructure.Services
                         _logger.LogWarning(ex, "⚠️ Failed to subscribe to channel.update for user {UserId}. Game auto-switch will be disabled.", LogSanitizer.Sanitize(userId));
                     }
 
+                    // Channel Points redemptions (used for jump scares + other reward actions).
+                    // Subscribe only when feature is enabled and the broadcaster token has the required scope.
+                    if (!isAdminActing && user.Features.ChannelPoints)
+                    {
+                        if (tokenScopes?.Contains("channel:read:redemptions") == true)
+                        {
+                            var redemptionCondition = new Dictionary<string, string>
+                            {
+                                { "broadcaster_user_id", broadcasterId }
+                            };
+
+                            if (await SubscribeWithRetryAsync(context, "channel.channel_points_custom_reward_redemption.add", "1", redemptionCondition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.channel_points_custom_reward_redemption.add");
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "🔒 Skipping channel points redemption EventSub subscription (missing scope: channel:read:redemptions). user {UserId} must re-login to enable channel point consumption.",
+                                LogSanitizer.Sanitize(userId));
+                        }
+                    }
+
                     // User may have pressed Stop during reconnect/resubscribe. Don't re-add them.
                     if (!UserStillWantsMonitoring(userId))
                     {

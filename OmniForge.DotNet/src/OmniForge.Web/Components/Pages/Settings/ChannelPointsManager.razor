@@ -1,0 +1,364 @@
+@page "/settings/channel-points"
+@page "/manage/{StreamerId}/settings/channel-points"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserRepository UserRepository
+@inject IChannelPointRepository ChannelPointRepository
+@inject ITwitchApiService TwitchApiService
+
+<PageTitle>Channel Points - OmniForge</PageTitle>
+
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-stars text-warning"></i> Channel Points</h2>
+    <a href="/portal" class="btn btn-outline-secondary">Back to Portal</a>
+  </div>
+
+  @if (isLoading)
+  {
+    <div class="text-center">
+      <div class="spinner-border text-warning" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  }
+  else if (!hasAccess)
+  {
+    <div class="alert alert-danger" role="alert">@(accessDeniedMessage ?? "Access denied.")</div>
+  }
+  else if (targetUser == null)
+  {
+    <div class="alert alert-danger" role="alert">User not found.</div>
+  }
+  else if (!targetUser.Features.ChannelPoints)
+  {
+    <div class="alert alert-warning" role="alert">
+      <div class="d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <div>
+          <div class="fw-bold">Channel Points feature is not enabled.</div>
+          <div class="small text-muted">
+            Ask an admin to enable <span class="fw-semibold">Channel Points</span> on this user.
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+  else
+  {
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+      <div class="alert alert-@messageType alert-dismissible fade show" role="alert">
+        @message
+        <button type="button" class="btn-close" @onclick="ClearMessage"></button>
+      </div>
+    }
+
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="fw-bold">Configured Rewards</div>
+            <button class="btn btn-outline-warning btn-sm" @onclick="LoadRewards" disabled="@isRefreshing">
+              @(isRefreshing ? "Refreshing..." : "Refresh")
+            </button>
+          </div>
+          <div class="card-body">
+            @if (rewards == null)
+            {
+              <div class="text-muted">No rewards loaded.</div>
+            }
+            else if (!rewards.Any())
+            {
+              <div class="text-muted">No channel point rewards configured yet.</div>
+            }
+            else
+            {
+              <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Cost</th>
+                      <th>Action</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @foreach (var reward in rewards)
+                    {
+                      <tr>
+                        <td>
+                          <div class="fw-semibold">@reward.RewardTitle</div>
+                          <div class="small text-muted">@reward.RewardId</div>
+                        </td>
+                        <td>@reward.Cost</td>
+                        <td><span class="badge bg-secondary">@FormatAction(reward.Action)</span></td>
+                        <td class="text-end">
+                          <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteReward(reward)" disabled="@isSaving">
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+            <div class="alert alert-info mt-3 mb-0">
+              <div class="small">
+                Rewards are created/deleted on Twitch and stored in OmniForge for mapping to actions (like <span class="fw-semibold">Jump Scare</span>).
+                If you hit permission errors, re-login so your token has the required scopes.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="card shadow-sm">
+          <div class="card-header fw-bold">Create Reward</div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Title</label>
+              <input class="form-control" @bind="createModel.Title" placeholder="e.g. Jump Scare" />
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Cost</label>
+              <input class="form-control" type="number" min="1" max="1000000" @bind="createModel.Cost" />
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Prompt (optional)</label>
+              <input class="form-control" @bind="createModel.Prompt" placeholder="Shown to viewers in the reward description" />
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Action</label>
+              <select class="form-select" @bind="createModel.Action">
+                <option value="">Select an action...</option>
+                <option value="jump_scare">Jump Scare</option>
+                <option value="increment_deaths">Increment Deaths</option>
+                <option value="decrement_deaths">Decrement Deaths</option>
+                <option value="increment_swears">Increment Swears</option>
+                <option value="decrement_swears">Decrement Swears</option>
+              </select>
+            </div>
+
+            <button class="btn btn-warning text-dark" @onclick="CreateReward" disabled="@isSaving">
+              @(isSaving ? "Creating..." : "Create Reward")
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+@code {
+  [Parameter]
+  public string? StreamerId { get; set; }
+
+  private bool isLoading = true;
+  private bool isSaving;
+  private bool isRefreshing;
+
+  private bool hasAccess = true;
+  private string? accessDeniedMessage;
+
+  private string? targetUserId;
+  private User? targetUser;
+  private List<ChannelPointReward>? rewards;
+
+  private string? message;
+  private string messageType = "info";
+
+  private CreateRewardRequest createModel = new()
+  {
+    Title = string.Empty,
+    Cost = 1000,
+    Prompt = string.Empty,
+    Action = string.Empty,
+    IsEnabled = true
+  };
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+      var actingUserId = authState.User.FindFirst("userId")?.Value
+        ?? authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? authState.User.FindFirst("sub")?.Value;
+
+      if (string.IsNullOrWhiteSpace(actingUserId))
+      {
+        hasAccess = false;
+        accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+        return;
+      }
+
+      var requestedTargetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+      if (!string.Equals(requestedTargetUserId, actingUserId, StringComparison.Ordinal))
+      {
+        var actingUser = await UserRepository.GetUserAsync(actingUserId);
+        hasAccess = actingUser != null &&
+          (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+           (actingUser.ManagedStreamers?.Contains(requestedTargetUserId) == true));
+
+        if (!hasAccess)
+        {
+          accessDeniedMessage = "You do not have permission to manage this streamer.";
+          return;
+        }
+      }
+
+      targetUserId = requestedTargetUserId;
+      targetUser = await UserRepository.GetUserAsync(targetUserId);
+      await LoadRewards();
+    }
+    catch (Exception ex)
+    {
+      ShowMessage($"Error loading channel points page: {ex.Message}", "danger");
+    }
+    finally
+    {
+      isLoading = false;
+    }
+  }
+
+  private async Task LoadRewards()
+  {
+    if (string.IsNullOrWhiteSpace(targetUserId)) return;
+
+    isRefreshing = true;
+    try
+    {
+      var loaded = await ChannelPointRepository.GetRewardsAsync(targetUserId);
+      rewards = loaded.OrderBy(r => r.RewardTitle).ToList();
+    }
+    catch (Exception ex)
+    {
+      ShowMessage($"Failed to load rewards: {ex.Message}", "danger");
+    }
+    finally
+    {
+      isRefreshing = false;
+    }
+  }
+
+  private async Task CreateReward()
+  {
+    if (string.IsNullOrWhiteSpace(targetUserId)) return;
+    if (targetUser == null) return;
+    if (!targetUser.Features.ChannelPoints)
+    {
+      ShowMessage("Channel points feature is not enabled for this user.", "warning");
+      return;
+    }
+
+    if (string.IsNullOrWhiteSpace(createModel.Title) || createModel.Cost < 1 || string.IsNullOrWhiteSpace(createModel.Action))
+    {
+      ShowMessage("Title, valid cost, and action are required.", "warning");
+      return;
+    }
+
+    if (createModel.Cost > 1000000)
+    {
+      ShowMessage("Cost must be between 1 and 1,000,000.", "warning");
+      return;
+    }
+
+    isSaving = true;
+    try
+    {
+      var twitchReward = await TwitchApiService.CreateCustomRewardAsync(targetUserId, createModel);
+
+      var rewardEntity = new ChannelPointReward
+      {
+        UserId = targetUserId,
+        RewardId = twitchReward.Id,
+        RewardTitle = twitchReward.Title,
+        Cost = twitchReward.Cost,
+        Action = createModel.Action,
+        IsEnabled = twitchReward.IsEnabled,
+        CreatedAt = DateTimeOffset.UtcNow
+      };
+
+      await ChannelPointRepository.SaveRewardAsync(rewardEntity);
+
+      createModel.Title = string.Empty;
+      createModel.Prompt = string.Empty;
+      createModel.Action = string.Empty;
+      createModel.Cost = 1000;
+
+      ShowMessage("Reward created successfully.", "success");
+      await LoadRewards();
+    }
+    catch (Exception ex)
+    {
+      ShowMessage($"Failed to create reward: {ex.Message}", "danger");
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task DeleteReward(ChannelPointReward reward)
+  {
+    if (string.IsNullOrWhiteSpace(targetUserId)) return;
+    if (reward == null) return;
+
+    isSaving = true;
+    try
+    {
+      await TwitchApiService.DeleteCustomRewardAsync(targetUserId, reward.RewardId);
+      await ChannelPointRepository.DeleteRewardAsync(targetUserId, reward.RewardId);
+      ShowMessage("Reward deleted successfully.", "success");
+      await LoadRewards();
+    }
+    catch (Exception ex)
+    {
+      ShowMessage($"Failed to delete reward: {ex.Message}", "danger");
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private void ShowMessage(string msg, string type)
+  {
+    message = msg;
+    messageType = type;
+    StateHasChanged();
+  }
+
+  private void ClearMessage()
+  {
+    message = null;
+  }
+
+  private static string FormatAction(string? action)
+  {
+    if (string.IsNullOrWhiteSpace(action)) return "(none)";
+
+    return action.ToLowerInvariant() switch
+    {
+      "jump_scare" => "Jump Scare",
+      "increment_deaths" => "Increment Deaths",
+      "decrement_deaths" => "Decrement Deaths",
+      "increment_swears" => "Increment Swears",
+      "decrement_swears" => "Decrement Swears",
+      _ => action
+    };
+  }
+}

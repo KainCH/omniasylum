@@ -61,6 +61,7 @@ public class NavMenuTests : BunitContext
         Assert.Contains("manage/streamer456/automod", cut.Markup);
         Assert.Contains("manage/streamer456/settings/series", cut.Markup);
         Assert.Contains("manage/streamer456/settings/games", cut.Markup);
+        Assert.Contains("manage/streamer456/settings/channel-points", cut.Markup);
     }
 
     [Fact]

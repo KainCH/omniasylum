@@ -67,6 +67,13 @@ export function connect(url, dotNetHelper) {
                 element.textContent = '00:00';
 
                 // Countdown completed: fade back to hidden.
+                if (!timerExpired) {
+                    try {
+                        if (window.notificationAudio && typeof window.notificationAudio.playNotification === 'function') {
+                            window.notificationAudio.playNotification('timerFinished');
+                        }
+                    } catch (e) {}
+                }
                 timerExpired = true;
                 window.omniOverlayTimerExpired = true;
                 stopTimerInterval();

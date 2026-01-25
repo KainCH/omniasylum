@@ -124,6 +124,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IEventSubHandler, ChatMessageHandler>();
             services.AddScoped<IEventSubHandler, ChatNotificationHandler>();
             services.AddScoped<IEventSubHandler, ChannelUpdateHandler>();
+            services.AddScoped<IEventSubHandler, ChannelPointRedemptionHandler>();
             services.AddScoped<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
 
             // Twitch EventSub
