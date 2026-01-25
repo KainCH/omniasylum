@@ -1406,11 +1406,48 @@ namespace OmniForge.Infrastructure.Services
                 var isChatEvent = subscriptionType.StartsWith("channel.chat", StringComparison.OrdinalIgnoreCase);
                 if (isChatEvent)
                 {
-                    _logger.LogDebug("💬 EventSub notification received: {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                    _logger.LogDebug(
+                        "💬 EventSub notification received: type={SubscriptionType}, message_id={MessageId}",
+                        LogSanitizer.Sanitize(subscriptionType),
+                        LogSanitizer.Sanitize(message.Metadata.MessageId));
                 }
                 else
                 {
-                    _logger.LogInformation("📨 EventSub notification received: {SubscriptionType}", LogSanitizer.Sanitize(subscriptionType));
+                    _logger.LogInformation(
+                        "📨 EventSub notification received: type={SubscriptionType}, message_id={MessageId}",
+                        LogSanitizer.Sanitize(subscriptionType),
+                        LogSanitizer.Sanitize(message.Metadata.MessageId));
+                }
+
+                // Optional verbose logging (useful for debugging new EventSub types).
+                // Opt-in via env var to avoid flooding logs and to avoid logging chat message contents.
+                if (!isChatEvent && IsEventSubPayloadLoggingEnabled())
+                {
+                    var summary = TrySummarizeEvent(eventData);
+                    _logger.LogInformation(
+                        "🔎 EventSub payload summary: type={SubscriptionType}, message_id={MessageId}, summary={Summary}",
+                        LogSanitizer.Sanitize(subscriptionType),
+                        LogSanitizer.Sanitize(message.Metadata.MessageId),
+                        LogSanitizer.Sanitize(summary ?? string.Empty));
+
+                    try
+                    {
+                        var raw = eventData.GetRawText();
+                        if (raw.Length > 4000)
+                        {
+                            raw = raw.Substring(0, 4000) + "…";
+                        }
+
+                        _logger.LogInformation(
+                            "🧾 EventSub payload raw: type={SubscriptionType}, message_id={MessageId}, json={Json}",
+                            LogSanitizer.Sanitize(subscriptionType),
+                            LogSanitizer.Sanitize(message.Metadata.MessageId),
+                            raw);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed to capture raw EventSub payload.");
+                    }
                 }
 
                 using var scope = _scopeFactory.CreateScope();
@@ -1448,10 +1485,31 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        private static bool IsEventSubPayloadLoggingEnabled()
+        {
+            var raw = Environment.GetEnvironmentVariable("OMNIFORGE_LOG_EVENTSUB_PAYLOADS");
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string? TrySummarizeEvent(System.Text.Json.JsonElement eventData)
         {
             try
             {
+                // Channel points redemption summary
+                if (eventData.TryGetProperty("reward", out var rewardObj) && rewardObj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var rewardId = rewardObj.TryGetProperty("id", out var rid) ? rid.GetString() : null;
+                    var rewardTitle = rewardObj.TryGetProperty("title", out var rtitle) ? rtitle.GetString() : null;
+                    var user = eventData.TryGetProperty("user_login", out var loginProp) ? loginProp.GetString() : null;
+
+                    if (!string.IsNullOrWhiteSpace(rewardId) || !string.IsNullOrWhiteSpace(rewardTitle))
+                    {
+                        return $"reward_id={rewardId}, title={rewardTitle}, user={user}";
+                    }
+                }
+
                 // Provide a concise summary (id + optional user/login if present)
                 if (eventData.TryGetProperty("id", out var idProp))
                 {

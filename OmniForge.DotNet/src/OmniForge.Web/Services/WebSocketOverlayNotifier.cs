@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Services
 {
@@ -28,36 +29,50 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyCounterUpdateAsync(string userId, Counter counter)
         {
-            await _webSocketManager.SendToUserAsync(userId, "counterUpdate", counter);
+            LogOverlayAction(userId, "counterUpdate");
+
+            await _webSocketManager.SendToUserAsync(userId, "counterUpdate", counter ?? new Counter { TwitchUserId = userId });
         }
 
         public async Task NotifyMilestoneReachedAsync(string userId, string counterType, int milestone, int newValue, int previousMilestone)
         {
+            LogOverlayAction(userId, "milestoneReached");
+
             await _webSocketManager.SendToUserAsync(userId, "milestoneReached", new { counterType, milestone, newValue, previousMilestone });
         }
 
         public async Task NotifySettingsUpdateAsync(string userId, OverlaySettings settings)
         {
+            LogOverlayAction(userId, "settingsUpdate");
+
             await _webSocketManager.SendToUserAsync(userId, "settingsUpdate", settings);
         }
 
         public async Task NotifyStreamStatusUpdateAsync(string userId, string status)
         {
+            LogOverlayAction(userId, "streamStatusUpdate");
+
             await _webSocketManager.SendToUserAsync(userId, "streamStatusUpdate", new { streamStatus = status });
         }
 
         public async Task NotifyStreamStartedAsync(string userId, Counter counter)
         {
+            LogOverlayAction(userId, "streamStarted");
+
             await _webSocketManager.SendToUserAsync(userId, "streamStarted", counter);
         }
 
         public async Task NotifyStreamEndedAsync(string userId, Counter counter)
         {
+            LogOverlayAction(userId, "streamEnded");
+
             await _webSocketManager.SendToUserAsync(userId, "streamEnded", counter);
         }
 
         public async Task NotifyFollowerAsync(string userId, string displayName)
         {
+            LogOverlayAction(userId, "follow");
+
             var data = new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" };
             var payload = await EnrichPayloadAsync(userId, "follow", data);
             await _webSocketManager.SendToUserAsync(userId, "follow", payload);
@@ -65,6 +80,8 @@ namespace OmniForge.Web.Services
 
         public async Task NotifySubscriberAsync(string userId, string displayName, string tier, bool isGift)
         {
+            LogOverlayAction(userId, "subscription");
+
             var data = new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" };
             var payload = await EnrichPayloadAsync(userId, "subscription", data);
             await _webSocketManager.SendToUserAsync(userId, "subscription", payload);
@@ -72,6 +89,8 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
         {
+            LogOverlayAction(userId, "resub");
+
             var data = new { name = displayName, displayName, months, tier, message, textPrompt = $"{displayName} Resubscribed x{months}" };
             var payload = await EnrichPayloadAsync(userId, "resub", data);
             await _webSocketManager.SendToUserAsync(userId, "resub", payload);
@@ -79,6 +98,8 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
         {
+            LogOverlayAction(userId, "giftsub");
+
             var data = new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" };
             var payload = await EnrichPayloadAsync(userId, "giftsub", data);
             await _webSocketManager.SendToUserAsync(userId, "giftsub", payload);
@@ -86,6 +107,8 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
         {
+            LogOverlayAction(userId, "bits");
+
             var data = new { name = displayName, displayName, amount, message, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
             var payload = await EnrichPayloadAsync(userId, "bits", data);
             await _webSocketManager.SendToUserAsync(userId, "bits", payload);
@@ -93,6 +116,8 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)
         {
+            LogOverlayAction(userId, "raid");
+
             var data = new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" };
             var payload = await EnrichPayloadAsync(userId, "raid", data);
             await _webSocketManager.SendToUserAsync(userId, "raid", payload);
@@ -100,8 +125,70 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
         {
+            LogOverlayAction(userId, "customAlert", alertType);
+
+            if (IsOverlayNotificationPayloadLoggingEnabled())
+            {
+                try
+                {
+                    var json = JsonSerializer.Serialize(data);
+                    if (json.Length > 2000)
+                    {
+                        json = json.Substring(0, 2000) + "…";
+                    }
+                    _logger.LogInformation(
+                        "📦 Overlay payload: user_id={UserId}, alert_type={AlertType}, data={Data}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(alertType),
+                        json);
+                }
+                catch
+                {
+                    // Ignore serialization issues for logging.
+                }
+            }
+
             var payload = await EnrichPayloadAsync(userId, alertType, data);
             await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data = payload });
+        }
+
+        private void LogOverlayAction(string userId, string action, string? alertType = null)
+        {
+            if (IsOverlayNotificationLoggingDisabled())
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(alertType))
+            {
+                _logger.LogInformation(
+                    "📣 Overlay send: user_id={UserId}, action={Action}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(action));
+                return;
+            }
+
+            _logger.LogInformation(
+                "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
+                LogSanitizer.Sanitize(userId),
+                LogSanitizer.Sanitize(action),
+                LogSanitizer.Sanitize(alertType));
+        }
+
+        private static bool IsOverlayNotificationLoggingDisabled()
+        {
+            var raw = Environment.GetEnvironmentVariable("OMNIFORGE_DISABLE_OVERLAY_NOTIFICATION_LOGS");
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsOverlayNotificationPayloadLoggingEnabled()
+        {
+            var raw = Environment.GetEnvironmentVariable("OMNIFORGE_LOG_OVERLAY_NOTIFICATION_PAYLOADS");
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<object> EnrichPayloadAsync(string userId, string alertType, object baseData)
