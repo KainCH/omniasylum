@@ -168,8 +168,17 @@ namespace OmniForge.Web.Services
 
                 if (sentCount > 0 || closedCount > 0)
                 {
-                    _logger.LogInformation("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
-                        LogSanitizer.Sanitize(method), sentCount, LogSanitizer.Sanitize(userId), closedCount);
+                    // streamStatusUpdate is a periodic live heartbeat; keep it out of Info logs to avoid noise.
+                    if (string.Equals(method, "streamStatusUpdate", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogDebug("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
+                            LogSanitizer.Sanitize(method), sentCount, LogSanitizer.Sanitize(userId), closedCount);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
+                            LogSanitizer.Sanitize(method), sentCount, LogSanitizer.Sanitize(userId), closedCount);
+                    }
                 }
             }
             else

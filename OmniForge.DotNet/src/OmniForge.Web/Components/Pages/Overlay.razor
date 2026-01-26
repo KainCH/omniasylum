@@ -687,9 +687,19 @@ else
         return Regex.Replace(template, "\\[(?<token>[A-Za-z]+)\\]", match =>
         {
             var token = match.Groups["token"].Value;
-            if (tokens.TryGetValue(token, out var replacement) && !string.IsNullOrEmpty(replacement))
+            if (tokens.TryGetValue(token, out var replacement))
             {
-                return replacement;
+                // Special-case Message: we never want chat content rendered on the overlay.
+                // If there's no message (or we strip it upstream), remove the token entirely.
+                if (string.Equals(token, "Message", StringComparison.OrdinalIgnoreCase))
+                {
+                    return replacement ?? string.Empty;
+                }
+
+                if (!string.IsNullOrEmpty(replacement))
+                {
+                    return replacement;
+                }
             }
             return match.Value;
         });

@@ -91,7 +91,9 @@ namespace OmniForge.Web.Services
         {
             LogOverlayAction(userId, "resub");
 
-            var data = new { name = displayName, displayName, months, tier, message, textPrompt = $"{displayName} Resubscribed x{months}" };
+            // Do not include raw chat message content in overlay payloads.
+            // We only act on commands; we don't display chat.
+            var data = new { name = displayName, displayName, months, tier, textPrompt = $"{displayName} Resubscribed x{months}" };
             var payload = await EnrichPayloadAsync(userId, "resub", data);
             await _webSocketManager.SendToUserAsync(userId, "resub", payload);
         }
@@ -109,7 +111,9 @@ namespace OmniForge.Web.Services
         {
             LogOverlayAction(userId, "bits");
 
-            var data = new { name = displayName, displayName, amount, message, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
+            // Do not include raw chat message content in overlay payloads.
+            // We only act on commands; we don't display chat.
+            var data = new { name = displayName, displayName, amount, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
             var payload = await EnrichPayloadAsync(userId, "bits", data);
             await _webSocketManager.SendToUserAsync(userId, "bits", payload);
         }
@@ -159,20 +163,45 @@ namespace OmniForge.Web.Services
                 return;
             }
 
+            // streamStatusUpdate is used as a periodic live heartbeat; logging it at Info is very noisy
+            // and can be misinterpreted as "chat forwarding". Keep detailed heartbeat logs at Debug.
+            var isHeartbeat = string.Equals(action, "streamStatusUpdate", StringComparison.OrdinalIgnoreCase);
+
             if (string.IsNullOrWhiteSpace(alertType))
             {
-                _logger.LogInformation(
-                    "📣 Overlay send: user_id={UserId}, action={Action}",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(action));
+                if (isHeartbeat)
+                {
+                    _logger.LogDebug(
+                        "💓 Overlay heartbeat: user_id={UserId}, action={Action}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(action));
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "📣 Overlay send: user_id={UserId}, action={Action}",
+                        LogSanitizer.Sanitize(userId),
+                        LogSanitizer.Sanitize(action));
+                }
                 return;
             }
 
-            _logger.LogInformation(
-                "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
-                LogSanitizer.Sanitize(userId),
-                LogSanitizer.Sanitize(action),
-                LogSanitizer.Sanitize(alertType));
+            if (isHeartbeat)
+            {
+                _logger.LogDebug(
+                    "💓 Overlay heartbeat: user_id={UserId}, action={Action}, alert_type={AlertType}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(action),
+                    LogSanitizer.Sanitize(alertType));
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
+                    LogSanitizer.Sanitize(userId),
+                    LogSanitizer.Sanitize(action),
+                    LogSanitizer.Sanitize(alertType));
+            }
         }
 
         private static bool IsOverlayNotificationLoggingDisabled()
