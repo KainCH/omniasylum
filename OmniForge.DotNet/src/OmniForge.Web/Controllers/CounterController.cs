@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -83,14 +84,16 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("{type}/increment")]
-        public async Task<IActionResult> Increment(string type)
+        public async Task<IActionResult> Increment(string type, [FromQuery] string? amount = null)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             try
             {
-                var counters = await _counterRepository.IncrementCounterAsync(userId, type);
+            var incrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
+
+            var counters = await _counterRepository.IncrementCounterAsync(userId, type, incrementAmount);
 
                 // Notify via SignalR
                 await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
@@ -100,7 +103,7 @@ namespace OmniForge.Web.Controllers
                 if (user != null)
                 {
                     int newValue = GetValueByType(counters, type);
-                    int previousValue = newValue - 1;
+                    int previousValue = newValue - incrementAmount;
 
                     await _notificationService.CheckAndSendMilestoneNotificationsAsync(user, type, previousValue, newValue);
                 }
@@ -114,14 +117,15 @@ namespace OmniForge.Web.Controllers
         }
 
         [HttpPost("{type}/decrement")]
-        public async Task<IActionResult> Decrement(string type)
+        public async Task<IActionResult> Decrement(string type, [FromQuery] string? amount = null)
         {
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             try
             {
-                var counters = await _counterRepository.DecrementCounterAsync(userId, type);
+            var decrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
+            var counters = await _counterRepository.DecrementCounterAsync(userId, type, decrementAmount);
 
                 // Notify via SignalR
                 await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
@@ -132,6 +136,22 @@ namespace OmniForge.Web.Controllers
             {
                 return BadRequest("Invalid counter type");
             }
+        }
+
+        private static int ParsePositiveAmountOrDefault(string? raw, int defaultValue)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return defaultValue;
+            }
+
+            if (int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                && parsed > 0)
+            {
+                return parsed;
+            }
+
+            return defaultValue;
         }
 
         [HttpPost("reset")]
