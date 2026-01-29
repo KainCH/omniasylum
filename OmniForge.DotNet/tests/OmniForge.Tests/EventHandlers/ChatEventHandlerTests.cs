@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using Xunit;
@@ -37,6 +39,7 @@ namespace OmniForge.Tests.EventHandlers
             _handler = new ChatMessageHandler(
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
+                Options.Create(new TwitchSettings()),
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
                 _mockTwitchApiService.Object,

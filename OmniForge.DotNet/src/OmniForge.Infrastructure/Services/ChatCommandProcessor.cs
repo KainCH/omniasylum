@@ -140,7 +140,14 @@ namespace OmniForge.Infrastructure.Services
                     var user = await userRepository.GetUserAsync(context.UserId);
 
                     var chatCommands = await userRepository.GetChatCommandsConfigAsync(context.UserId) ?? new ChatCommandConfiguration();
-                    var maxIncrement = Math.Clamp(chatCommands.MaxIncrementAmount, 1, 10);
+                    var configuredMaxIncrement = chatCommands.MaxIncrementAmount;
+                    // Inline amounts are 2-10. Older configs/defaults used 1, which would clamp all inline amounts down to 1.
+                    // Treat values < 2 as legacy/unset and default to 10.
+                    if (configuredMaxIncrement < 2)
+                    {
+                        configuredMaxIncrement = 10;
+                    }
+                    var maxIncrement = Math.Clamp(configuredMaxIncrement, 1, 10);
 
                     var previousDeaths = counters.Deaths;
                     var previousSwears = counters.Swears;

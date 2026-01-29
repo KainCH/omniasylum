@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Utilities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
@@ -14,6 +17,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
     /// </summary>
     public class ChatMessageHandler : BaseEventSubHandler
     {
+        private readonly TwitchSettings _twitchSettings;
         private readonly IDiscordInviteSender _discordInviteSender;
         private readonly IChatCommandProcessor _chatCommandProcessor;
         private readonly ITwitchApiService _twitchApiService;
@@ -24,6 +28,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<ChatMessageHandler> logger,
+            IOptions<TwitchSettings> twitchSettings,
             IDiscordInviteSender discordInviteSender,
             IChatCommandProcessor chatCommandProcessor,
             ITwitchApiService twitchApiService,
@@ -32,6 +37,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             IUserRepository userRepository)
             : base(scopeFactory, logger)
         {
+            _twitchSettings = twitchSettings.Value;
             _discordInviteSender = discordInviteSender;
             _chatCommandProcessor = chatCommandProcessor;
             _twitchApiService = twitchApiService;
@@ -46,6 +52,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         {
             try
             {
+                eventData = UnwrapEvent(eventData);
+
                 if (!TryGetBroadcasterId(eventData, out var broadcasterId) || broadcasterId == null)
                 {
                     return;
@@ -57,13 +65,51 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     return;
                 }
 
+                // Normalize unicode whitespace and trim; EventSub provides message.text, but we want consistent parsing.
+                messageText = messageText.Replace('\u00A0', ' ').Trim();
+
                 var messageId = GetMessageId(eventData);
 
-                // Process chat commands via shared processor (EventSub path)
                 var chatterId = GetStringProperty(eventData, "chatter_user_id", string.Empty);
+                var chatterLogin = GetStringProperty(eventData, "chatter_user_login", string.Empty);
+                var broadcasterLogin = GetStringProperty(eventData, "broadcaster_user_login", string.Empty);
+                var messageType = GetStringProperty(eventData, "message_type", string.Empty);
+
+                // Process chat commands via shared processor (EventSub path)
                 var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == broadcasterId;
                 var isModerator = isBroadcaster || HasBadge(eventData, "moderator");
                 var isSubscriber = HasBadge(eventData, "subscriber") || HasBadge(eventData, "founder");
+
+                if (_twitchSettings.LogChatMessages)
+                {
+                    Logger.LogInformation(
+                        "💬 EventSub chat: broadcaster={BroadcasterLogin}({BroadcasterId}) chatter={ChatterLogin}({ChatterId}) type={MessageType} mod={IsMod} sub={IsSub} msgId={MessageId} text=\"{Text}\"",
+                        LogSanitizer.Sanitize(broadcasterLogin),
+                        LogSanitizer.Sanitize(broadcasterId),
+                        LogSanitizer.Sanitize(chatterLogin),
+                        LogSanitizer.Sanitize(chatterId),
+                        LogSanitizer.Sanitize(messageType),
+                        isModerator,
+                        isSubscriber,
+                        LogSanitizer.Sanitize(messageId),
+                        LogSanitizer.Sanitize(messageText));
+
+                    if (messageText.StartsWith("!"))
+                    {
+                        var firstToken = messageText.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? messageText;
+                        Logger.LogInformation(
+                            "🧩 Chat command candidate: {Token} full=\"{Text}\"",
+                            LogSanitizer.Sanitize(firstToken),
+                            LogSanitizer.Sanitize(messageText));
+                    }
+                }
+
+                if (_twitchSettings.LogChatMessagePayload)
+                {
+                    Logger.LogDebug(
+                        "📦 EventSub chat payload (event): {Payload}",
+                        LogSanitizer.Sanitize(eventData.GetRawText()));
+                }
 
                 if (!string.IsNullOrEmpty(messageText) && messageText.StartsWith("!"))
                 {
