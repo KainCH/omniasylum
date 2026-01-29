@@ -35,7 +35,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             if (string.IsNullOrWhiteSpace(categoryId))
             {
-                Logger.LogDebug("channel.update received for user {UserId} but category_id missing", LogSanitizer.Sanitize(broadcasterId));
+                Logger.LogDebug("channel.update received for user {UserId} but category_id missing", broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
@@ -44,7 +44,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             await gameSwitch.HandleGameDetectedAsync(broadcasterId, categoryId, categoryName);
 
             Logger.LogInformation("🎮 channel.update detected game change for {UserId}: {GameId} ({GameName})",
-                LogSanitizer.Sanitize(broadcasterId), LogSanitizer.Sanitize(categoryId), LogSanitizer.Sanitize(categoryName));
+                broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                categoryId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                categoryName.Replace("\r", "\\r").Replace("\n", "\\n"));
         }
     }
 }

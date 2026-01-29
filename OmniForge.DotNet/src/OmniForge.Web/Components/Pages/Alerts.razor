@@ -1,4 +1,5 @@
 @page "/alerts"
+@page "/manage/{StreamerId}/alerts"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web
@@ -7,127 +8,143 @@
 @using OmniForge.Core.Constants
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
+@using OmniForge.Core.Utilities
 @attribute [Authorize]
 
 @inject IAlertRepository AlertRepository
 @inject IUserRepository UserRepository
 @inject ILogger<Alerts> Logger
+@inject ILogValueSanitizer LogValueSanitizer
 
 <div class="container py-4">
   <h1 class="h3 mb-3"><i class="bi bi-bell-fill me-2"></i>Manage Alerts</h1>
 
-  @if (isLoading)
-  {
-    <div class="text-center p-5">
-      <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-    </div>
-  }
-  else if (!streamAlertsEnabled)
-  {
-    <div class="alert alert-warning">
-      Stream alerts feature not enabled.
-    </div>
-  }
-  else if (alerts == null || !alerts.Any())
+  @if (!hasAccess)
   {
     <div class="alert alert-danger">
-      Failed to load alerts.
+      @(accessDeniedMessage ?? "Access denied.")
     </div>
   }
   else
-  {
-    <div class="table-responsive">
-      <table class="table table-hover">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Visual Cue</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @foreach (var alert in alerts)
-          {
-            <tr>
-              <td>@alert.Name</td>
-              <td><span class="badge bg-secondary">@alert.Type</span></td>
-              <td>@alert.VisualCue</td>
-              <td>
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled"
-                    @onchange="@(e => ToggleAlert(alert, e))" />
-                  <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
-                </div>
-              </td>
-              <td>
-                <!-- Future: Edit/Delete buttons -->
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
 
-    <hr />
-
-    <div class="d-flex align-items-center justify-content-between">
-      <h2 class="h6 mb-2"><i class="bi bi-diagram-3-fill me-2"></i>Event Mappings</h2>
-      <div class="d-flex gap-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ResetMappings"
-          disabled="@isSavingMappings">Reset to Defaults</button>
-        <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMappings" disabled="@isSavingMappings">Save
-          Mappings</button>
-      </div>
-    </div>
-
-    @if (!string.IsNullOrWhiteSpace(mappingsStatusMessage))
+    @if (isLoading)
     {
-      <div class="alert @(mappingsStatusIsError ? "alert-danger" : "alert-success") py-2 mb-2">
-        @mappingsStatusMessage
+      <div class="text-center p-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
       </div>
     }
-
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr>
-            <th style="width: 55%;">Event</th>
-            <th style="width: 45%;">Alert Type</th>
-          </tr>
-        </thead>
-        <tbody>
-          @foreach (var eventKey in availableEvents)
-          {
+    else if (!streamAlertsEnabled)
+    {
+      <div class="alert alert-warning">
+        Stream alerts feature not enabled.
+      </div>
+    }
+    else if (alerts == null || !alerts.Any())
+    {
+      <div class="alert alert-danger">
+        Failed to load alerts.
+      </div>
+    }
+    else
+    {
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
             <tr>
-              <td><code>@eventKey</code></td>
-              <td>
-                <select class="form-select form-select-sm" value="@GetMappingValue(eventKey)"
-                  @onchange="(e => OnMappingChanged(eventKey, e))">
-                  @foreach (var alertType in availableAlertTypes)
-                  {
-                    <option value="@alertType">@alertType</option>
-                  }
-                </select>
-              </td>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Visual Cue</th>
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  }
+          </thead>
+          <tbody>
+            @foreach (var alert in alerts)
+            {
+              <tr>
+                <td>@alert.Name</td>
+                <td><span class="badge bg-secondary">@alert.Type</span></td>
+                <td>@alert.VisualCue</td>
+                <td>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" checked="@alert.IsEnabled"
+                      @onchange="@(e => ToggleAlert(alert, e))" />
+                    <label class="form-check-label">@(alert.IsEnabled ? "Enabled" : "Disabled")</label>
+                  </div>
+                </td>
+                <td>
+                  <!-- Future: Edit/Delete buttons -->
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <hr />
+
+      <div class="d-flex align-items-center justify-content-between">
+        <h2 class="h6 mb-2"><i class="bi bi-diagram-3-fill me-2"></i>Event Mappings</h2>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ResetMappings"
+            disabled="@isSavingMappings">Reset to Defaults</button>
+          <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMappings" disabled="@isSavingMappings">Save
+            Mappings</button>
+        </div>
+      </div>
+
+      @if (!string.IsNullOrWhiteSpace(mappingsStatusMessage))
+      {
+        <div class="alert @(mappingsStatusIsError ? "alert-danger" : "alert-success") py-2 mb-2">
+          @mappingsStatusMessage
+        </div>
+      }
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width: 55%;">Event</th>
+              <th style="width: 45%;">Alert Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach (var eventKey in availableEvents)
+            {
+              <tr>
+                <td><code>@eventKey</code></td>
+                <td>
+                  <select class="form-select form-select-sm" value="@GetMappingValue(eventKey)"
+                    @onchange="(e => OnMappingChanged(eventKey, e))">
+                    @foreach (var alertType in availableAlertTypes)
+                    {
+                      <option value="@alertType">@alertType</option>
+                    }
+                  </select>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
 </div>
 
 @code {
   [CascadingParameter]
   private Task<AuthenticationState>? authenticationStateTask { get; set; }
 
+  [Parameter]
+  public string? StreamerId { get; set; }
+
   private string? TwitchUserId;
   private bool isLoading = true;
   private bool streamAlertsEnabled = true;
+
+  private bool hasAccess = true;
+  private string? accessDeniedMessage;
 
   private List<Alert> alerts = new();
 
@@ -160,35 +177,67 @@
       return;
     }
 
-    TwitchUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-    if (string.IsNullOrWhiteSpace(TwitchUserId))
+    var actingUserId = user.FindFirst("userId")?.Value
+    ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+    ?? user.FindFirst("sub")?.Value;
+
+    if (string.IsNullOrWhiteSpace(actingUserId))
     {
-      Logger.LogWarning("⚠️ TwitchUserId claim not found");
+      Logger.LogWarning("⚠️ Unable to resolve acting user id");
+      hasAccess = false;
+      accessDeniedMessage = "Unable to determine user identity. Please re-login.";
       isLoading = false;
       return;
     }
 
-    Logger.LogDebug("📥 Loading user {UserId} for alerts page", TwitchUserId);
-    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    var targetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+    if (!string.Equals(targetUserId, actingUserId, StringComparison.Ordinal))
+    {
+      var actingUser = await UserRepository.GetUserAsync(actingUserId);
+      hasAccess = actingUser != null &&
+      (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+      (actingUser.ManagedStreamers?.Contains(targetUserId) == true));
+
+      if (!hasAccess)
+      {
+        accessDeniedMessage = "You do not have permission to manage this streamer.";
+        isLoading = false;
+        return;
+      }
+    }
+
+    TwitchUserId = targetUserId;
+
+    if (string.IsNullOrWhiteSpace(TwitchUserId))
+    {
+      accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+      isLoading = false;
+      return;
+    }
+
+    var resolvedUserId = TwitchUserId!;
+
+    Logger.LogDebug("📥 Loading user {UserId} for alerts page", LogValueSanitizer.Safe(resolvedUserId));
+    var userEntity = await UserRepository.GetUserAsync(resolvedUserId!);
     if (userEntity == null)
     {
-      Logger.LogWarning("⚠️ User entity not found for {UserId}", TwitchUserId);
+      Logger.LogWarning("⚠️ User entity not found for {UserId}", LogValueSanitizer.Safe(TwitchUserId));
       streamAlertsEnabled = false;
       isLoading = false;
       return;
     }
 
-    Logger.LogDebug("📋 User {UserId} Features.StreamAlerts = {StreamAlerts}", TwitchUserId,
+    Logger.LogDebug("📋 User {UserId} Features.StreamAlerts = {StreamAlerts}", LogValueSanitizer.Safe(resolvedUserId),
     userEntity.Features.StreamAlerts);
     if (!userEntity.Features.StreamAlerts)
     {
-      Logger.LogWarning("⚠️ StreamAlerts feature disabled for user {UserId}", TwitchUserId);
+      Logger.LogWarning("⚠️ StreamAlerts feature disabled for user {UserId}", LogValueSanitizer.Safe(TwitchUserId));
       streamAlertsEnabled = false;
       isLoading = false;
       return;
     }
 
-    Logger.LogDebug("✅ StreamAlerts enabled, loading alerts for user {UserId}", TwitchUserId);
+    Logger.LogDebug("✅ StreamAlerts enabled, loading alerts for user {UserId}", LogValueSanitizer.Safe(resolvedUserId));
     await LoadAlertsAndMappings();
   }
 
@@ -197,13 +246,13 @@
     isLoading = true;
     try
     {
-      Logger.LogDebug("📥 Fetching alerts from repository for user {UserId}", TwitchUserId);
+      Logger.LogDebug("📥 Fetching alerts from repository for user {UserId}", LogValueSanitizer.Safe(TwitchUserId));
       var loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
       Logger.LogDebug("📋 Loaded {Count} alerts from repository", loadedAlerts?.Count() ?? 0);
 
       if (loadedAlerts == null || !loadedAlerts.Any())
       {
-        Logger.LogInformation("🌱 No alerts found, seeding defaults for user {UserId}", TwitchUserId);
+        Logger.LogInformation("🌱 No alerts found, seeding defaults for user {UserId}", LogValueSanitizer.Safe(TwitchUserId));
         await SeedDefaultAlertsAsync(TwitchUserId!);
         loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
       }
@@ -235,7 +284,8 @@
     }
     catch (Exception ex)
     {
-      Logger.LogError(ex, "❌ Error loading alerts for user {UserId}", TwitchUserId);
+      Logger.LogError(ex, "❌ Error loading alerts for user {UserId}", (TwitchUserId ?? string.Empty).Replace("\r",
+      "\\r").Replace("\n", "\\n"));
       alerts = new();
     }
     finally

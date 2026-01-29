@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Infrastructure.Models.EventSub;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -28,6 +29,7 @@ namespace OmniForge.Infrastructure.Services
         public string? SessionId { get; private set; }
         public bool IsConnected => _webSocket?.State == WebSocketState.Open;
         public DateTime LastKeepaliveTime { get; private set; }
+        public int? KeepaliveTimeoutSeconds { get; private set; }
 
         public event Func<EventSubMessage, Task>? OnNotification;
         public event Func<string, Task>? OnSessionWelcome;
@@ -170,6 +172,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 case EventSubMessageType.SessionWelcome:
                     SessionId = result.SessionId;
+                    KeepaliveTimeoutSeconds = result.Message?.Payload.Session?.KeepaliveTimeoutSeconds;
                     if (SessionId != null)
                     {
                         OnSessionWelcome?.Invoke(SessionId);

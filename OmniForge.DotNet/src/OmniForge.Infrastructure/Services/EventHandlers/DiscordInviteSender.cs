@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -81,7 +82,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     _logger.LogWarning(
                         "⚠️ Skipping Discord invite chat send (must use app/bot token only). broadcaster_id={BroadcasterId}",
-                        LogSanitizer.Sanitize(broadcasterId));
+                        (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     return;
                 }
 

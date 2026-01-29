@@ -8,7 +8,8 @@ class NotificationAudioManager {
             resub: 'typewriter.wav',
             giftsub: 'pillRattle.mp3',
             bits: 'electroshock.wav',
-            milestone: 'alarm.wav'
+            milestone: 'alarm.wav',
+            timerFinished: 'hypeTrain.wav'
         };
         // Auto-init ONLY if we are on the overlay page
         if (window.location.pathname.startsWith('/overlay')) {

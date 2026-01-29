@@ -77,7 +77,7 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Cost must be between 1 and 1,000,000");
             }
 
-            var validActions = new[] { "increment_deaths", "increment_swears", "decrement_deaths", "decrement_swears" };
+            var validActions = new[] { "increment_deaths", "increment_swears", "decrement_deaths", "decrement_swears", "jump_scare" };
             if (!validActions.Contains(request.Action.ToLower()))
             {
                 return BadRequest("Invalid action type");

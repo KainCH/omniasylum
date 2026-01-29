@@ -16,14 +16,17 @@ namespace OmniForge.Infrastructure.Repositories
     {
         private readonly TableClient _tableClient;
         private readonly ILogger<BotCredentialRepository> _logger;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         public BotCredentialRepository(
             TableServiceClient tableServiceClient,
             IOptions<AzureTableConfiguration> tableConfig,
-            ILogger<BotCredentialRepository> logger)
+            ILogger<BotCredentialRepository> logger,
+            ILogValueSanitizer logValueSanitizer)
         {
             _tableClient = tableServiceClient.GetTableClient(tableConfig.Value.UsersTable);
             _logger = logger;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task<BotCredentials?> GetAsync()
@@ -83,7 +86,7 @@ namespace OmniForge.Infrastructure.Repositories
                 };
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
-                _logger.LogInformation("✅ Saved Forge bot credentials for {Username}", LogSanitizer.Sanitize(credentials.Username));
+                _logger.LogInformation("✅ Saved Forge bot credentials for {Username}", _logValueSanitizer.Safe(credentials.Username));
             }
             catch (Exception ex)
             {

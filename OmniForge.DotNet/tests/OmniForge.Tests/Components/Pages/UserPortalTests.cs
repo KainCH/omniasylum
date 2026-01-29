@@ -115,6 +115,8 @@ namespace OmniForge.Tests.Components.Pages
             Assert.Contains("template-designer", cut.Markup);
             Assert.Contains("settings/discord", cut.Markup);
             Assert.Contains("settings/alert-effects", cut.Markup);
+            Assert.Contains("settings/games", cut.Markup);
+            Assert.Contains("settings/channel-points", cut.Markup);
         }
 
         [Fact]
@@ -195,6 +197,56 @@ namespace OmniForge.Tests.Components.Pages
             cut.WaitForState(() => cut.Markup.Contains("Currently viewing as"));
             Assert.Contains("Currently viewing as", cut.Markup);
             Assert.Contains("StreamerTwo's Forge", cut.Markup);
+        }
+
+        [Fact]
+        public void Admin_LoadsAllActiveStreamers_ForContextSwitcher()
+        {
+            // Arrange
+            _mockAuthenticationStateProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "AdminUser"),
+                new Claim("userId", "admin1"),
+                new Claim(ClaimTypes.Role, "admin")
+            }, "TestAuthType")));
+
+            _mockUserRepository.Setup(r => r.GetUserAsync("admin1")).ReturnsAsync(new User
+            {
+                TwitchUserId = "admin1",
+                DisplayName = "AdminUser",
+                Username = "adminuser",
+                Role = "admin",
+                ManagedStreamers = new List<string>()
+            });
+
+            _mockUserRepository.Setup(r => r.GetAllUsersAsync()).ReturnsAsync(new List<User>
+            {
+                new User { TwitchUserId = "s1", DisplayName = "StreamerOne", Username = "streamerone", Role = "streamer", IsActive = true },
+                new User { TwitchUserId = "s2", DisplayName = "StreamerTwo", Username = "streamertwo", Role = "streamer", IsActive = true },
+                new User { TwitchUserId = "disabled", DisplayName = "DisabledUser", Username = "disabled", Role = "streamer", IsActive = false },
+                new User { TwitchUserId = "admin2", DisplayName = "OtherAdmin", Username = "otheradmin", Role = "admin", IsActive = true }
+            });
+
+            // Act
+            var cut = Render(b =>
+            {
+                b.OpenComponent<CascadingAuthenticationState>(0);
+                b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+                {
+                    builder.OpenComponent<UserPortal>(2);
+                    builder.CloseComponent();
+                }));
+                b.CloseComponent();
+            });
+
+            // Assert
+            cut.WaitForState(() => cut.Markup.Contains("Currently viewing as"));
+            Assert.Contains("StreamerOne's Forge", cut.Markup);
+            Assert.Contains("StreamerTwo's Forge", cut.Markup);
+            Assert.DoesNotContain("DisabledUser's Forge", cut.Markup);
+            Assert.DoesNotContain("OtherAdmin's Forge", cut.Markup);
+
+            _mockUserRepository.Verify(r => r.GetAllUsersAsync(), Times.Once);
         }
     }
 }

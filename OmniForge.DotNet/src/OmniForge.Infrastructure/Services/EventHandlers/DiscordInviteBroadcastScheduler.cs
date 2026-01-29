@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -75,8 +76,10 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         {
             try
             {
+                var safeBroadcasterId = broadcasterId!;
+
                 // Fire immediately on stream start.
-                await _inviteSender.SendDiscordInviteAsync(broadcasterId);
+                await _inviteSender.SendDiscordInviteAsync(safeBroadcasterId);
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -84,7 +87,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                     _logger.LogInformation(
                         "⏱️ Next Discord invite broadcast scheduled for broadcaster_id={BroadcasterId} in {DelayMinutes} minutes",
-                        LogSanitizer.Sanitize(broadcasterId),
+                        (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
                         delay.TotalMinutes);
 
                     await Task.Delay(delay, cancellationToken);
@@ -94,7 +97,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         break;
                     }
 
-                    await _inviteSender.SendDiscordInviteAsync(broadcasterId);
+                    await _inviteSender.SendDiscordInviteAsync(safeBroadcasterId!);
                 }
             }
             catch (OperationCanceledException)
@@ -103,12 +106,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Discord invite broadcast loop crashed for broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                _logger.LogError(ex, "❌ Discord invite broadcast loop crashed for broadcaster_id={BroadcasterId}", (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             finally
             {
                 // Ensure cleanup if the loop ends unexpectedly.
-                await StopAsync(broadcasterId);
+                await StopAsync(broadcasterId ?? string.Empty);
             }
         }
 

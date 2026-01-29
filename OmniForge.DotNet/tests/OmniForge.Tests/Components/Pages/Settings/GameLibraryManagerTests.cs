@@ -20,6 +20,7 @@ public class GameLibraryManagerTests : BunitContext
     private readonly Mock<IGameCounterSetupService> _mockGameCounterSetupService;
     private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
     private readonly Mock<IUserRepository> _mockUserRepository;
+    private readonly Mock<ICounterRepository> _mockCounterRepository;
 
     public GameLibraryManagerTests()
     {
@@ -33,6 +34,7 @@ public class GameLibraryManagerTests : BunitContext
         _mockGameCounterSetupService = new Mock<IGameCounterSetupService>();
         _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
         _mockUserRepository = new Mock<IUserRepository>();
+        _mockCounterRepository = new Mock<ICounterRepository>();
 
         Services.AddSingleton(_mockGameLibraryRepository.Object);
         Services.AddSingleton(_mockGameCountersRepository.Object);
@@ -44,6 +46,7 @@ public class GameLibraryManagerTests : BunitContext
         Services.AddSingleton(_mockGameCounterSetupService.Object);
         Services.AddSingleton(_mockGameCoreCountersConfigRepository.Object);
         Services.AddSingleton(_mockUserRepository.Object);
+        Services.AddSingleton(_mockCounterRepository.Object);
 
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -119,6 +122,9 @@ public class GameLibraryManagerTests : BunitContext
 
         Assert.Contains("Wins", cut.Markup);
         Assert.DoesNotContain("Losses", cut.Markup);
+
+        // Selected game should show editable custom counter values
+        Assert.Contains("Custom Counter Values", cut.Markup);
     }
 
     [Fact]

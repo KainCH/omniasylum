@@ -12,6 +12,7 @@
 @inject NavigationManager NavigationManager
 @inject ILogger<StreamerMonitor> Logger
 @using System.Threading
+@using System.Security.Claims
 @implements IAsyncDisposable
 
 <PageTitle>Stream Monitor - @(streamer?.DisplayName ?? "Loading...")</PageTitle>
@@ -99,6 +100,10 @@
                                         <li class="mb-2">
                                             <strong><i class="bi bi-stopwatch me-2"></i>Keepalive Age:</strong>
                                             @(status.KeepaliveAgeSeconds?.ToString("F1") ?? "-") s
+                                        </li>
+                                        <li class="mb-2">
+                                            <strong><i class="bi bi-hourglass-split me-2"></i>Keepalive Timeout:</strong>
+                                            @(status.EventSubKeepaliveTimeoutSeconds?.ToString() ?? "-") s
                                         </li>
                                     </ul>
                                 </div>
@@ -245,7 +250,9 @@
     private async Task LoadCurrentUser()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var userId = authState.User.FindFirst("userId")?.Value;
+        var userId = authState.User.FindFirst("userId")?.Value
+            ?? authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? authState.User.FindFirst("sub")?.Value;
         if (!string.IsNullOrEmpty(userId))
         {
             currentUser = await UserRepository.GetUserAsync(userId);
@@ -261,9 +268,9 @@
         }
 
         // Check if user has moderator access to this streamer
-        hasAccess = currentUser.ManagedStreamers.Contains(StreamerId) ||
-                    currentUser.Role == "admin" ||
-                    currentUser.TwitchUserId == StreamerId;
+        hasAccess = (currentUser.ManagedStreamers?.Contains(StreamerId) == true) ||
+                string.Equals(currentUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentUser.TwitchUserId, StreamerId, StringComparison.Ordinal);
 
         if (hasAccess)
         {

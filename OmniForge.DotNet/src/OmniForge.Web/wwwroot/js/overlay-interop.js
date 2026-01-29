@@ -1,5 +1,7 @@
 window.overlayInterop = {
     init: function() {
+        const isDebugEnabled = () => window.omniOverlayDebug === true;
+
         // If OBS scene switching causes the browser source to be hidden/throttled,
         // WebSocket messages and timers can effectively "catch up" when visible again.
         // That can replay old alert audio. We add a short suppression window on resume.
@@ -19,7 +21,9 @@ window.overlayInterop = {
                 window.omniSilenceUntil = until;
             }
 
-            console.log(`🔇 Resume suppression active for ${ms}ms (${reason})`);
+            if (isDebugEnabled()) {
+                console.log(`🔇 Resume suppression active for ${ms}ms (${reason})`);
+            }
         };
 
         if (!window.__omniOverlayVisibilityHandlerRegistered) {
@@ -33,13 +37,15 @@ window.overlayInterop = {
         }
 
         if (window.asylumEffects) {
-            console.log("AsylumEffects initialized via Interop");
+            if (isDebugEnabled()) {
+                console.log("AsylumEffects initialized via Interop");
+            }
         } else {
             console.error("AsylumEffects not found!");
         }
 
         // Initialize audio if not already done
-        if (!window.notificationAudio) {
+        if (!window.notificationAudio && isDebugEnabled()) {
             console.warn("NotificationAudio not found! Audio will not play.");
         }
 
@@ -55,28 +61,38 @@ window.overlayInterop = {
     },
 
     triggerAlert: function(type, payload) {
+        const isDebugEnabled = () => window.omniOverlayDebug === true;
+
         // If the page is not visible, ignore alerts (prevents backlog replay on resume).
         if (document.visibilityState !== 'visible') {
-            console.log("🔇 Alert suppressed because overlay is not visible:", type);
+            if (isDebugEnabled()) {
+                console.log("🔇 Alert suppressed because overlay is not visible:", type);
+            }
             return;
         }
 
         // Suppress alerts briefly after resume to avoid playing buffered messages.
         if (window.omniOverlayResumeSuppressUntil && Date.now() < window.omniOverlayResumeSuppressUntil) {
-            console.log("🔇 Alert suppressed during resume window:", type);
+            if (isDebugEnabled()) {
+                console.log("🔇 Alert suppressed during resume window:", type);
+            }
             return;
         }
 
         // Skip playing alerts if we're still in the initial silence window
         if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
-            console.log("🔇 Alert suppressed during initial silence window:", type);
+            if (isDebugEnabled()) {
+                console.log("🔇 Alert suppressed during initial silence window:", type);
+            }
             return;
         }
-        console.log("Triggering alert:", type, payload);
+        if (isDebugEnabled()) {
+            console.log("Triggering alert:", type, payload);
+        }
 
         // Interaction banners are UI-only and should not require an alert definition.
         if (type === 'interactionBanner') {
-            const text = payload?.textPrompt || payload?.text || payload?.message;
+            const text = payload?.textPrompt || payload?.text;
             if (text) {
                 this.showInteractionBanner(text, payload?.duration || 5000);
             }
@@ -135,7 +151,9 @@ window.overlayInterop = {
 
         // Update text content
         title.textContent = payload.name || 'ALERT'; // Or use type?
-        message.textContent = payload.textPrompt || payload.message || '';
+        // Intentionally do NOT fall back to payload.message.
+        // payload.message often contains raw Twitch chat/resub text and we do not want to render chat on the overlay.
+        message.textContent = payload.textPrompt || '';
 
         // Update visual cue (image)
         if (image) {
@@ -151,7 +169,9 @@ window.overlayInterop = {
                 image.classList.add('show');
             } else {
                 if (visualCue) {
-                    console.warn('Skipping invalid visualCue (looks like text/description):', visualCue);
+                    if (isDebugEnabled()) {
+                        console.warn('Skipping invalid visualCue (looks like text/description):', visualCue);
+                    }
                 }
                 image.classList.remove('show');
                 image.src = '';
@@ -316,7 +336,9 @@ window.overlayInterop = {
     },
 
     updateOverlaySettings: function(settings) {
-        console.log('Updating overlay settings:', settings);
+        if (window.omniOverlayDebug === true) {
+            console.log('Updating overlay settings:', settings);
+        }
 
         // Track flags used by overlay-websocket.js visibility logic.
         try {

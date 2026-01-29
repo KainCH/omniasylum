@@ -109,7 +109,7 @@ namespace OmniForge.Web.Controllers
             var configWrapper = new ChatCommandConfiguration
             {
                 Commands = commands,
-                MaxIncrementAmount = request.MaxIncrementAmount ?? 1
+                MaxIncrementAmount = request.MaxIncrementAmount ?? 10
             };
 
             // If MaxIncrementAmount was not provided, try to preserve existing value

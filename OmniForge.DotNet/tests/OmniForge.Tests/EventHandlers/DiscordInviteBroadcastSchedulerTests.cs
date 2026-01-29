@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using Xunit;
 

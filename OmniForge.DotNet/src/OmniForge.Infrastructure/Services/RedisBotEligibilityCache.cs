@@ -152,12 +152,12 @@ namespace OmniForge.Infrastructure.Services
                 {
                     // Proactively validate connectivity; if this fails, treat Redis as unavailable.
                     await mux.GetDatabase().PingAsync().ConfigureAwait(false);
-                    _logger.LogInformation("✅ Connected to Redis for caching. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
+                    _logger.LogInformation("✅ Connected to Redis for caching. host={Host}", LogValue.Safe(_settings.HostName));
                     return mux;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ Redis connected but not ready; disabling cache. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
+                    _logger.LogWarning(ex, "⚠️ Redis connected but not ready; disabling cache. host={Host}", LogValue.Safe(_settings.HostName));
                     try
                     {
                         mux.Dispose();
@@ -171,7 +171,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "⚠️ Failed to connect to Redis. host={Host}", LogSanitizer.Sanitize(_settings.HostName));
+                _logger.LogWarning(ex, "⚠️ Failed to connect to Redis. host={Host}", LogValue.Safe(_settings.HostName));
                 return null;
             }
         }

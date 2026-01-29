@@ -19,7 +19,7 @@ namespace OmniForge.Tests.Entities
 
             Assert.NotNull(config);
             Assert.Empty(config.Commands);
-            Assert.Equal(1, config.MaxIncrementAmount);
+            Assert.Equal(10, config.MaxIncrementAmount);
         }
 
         [Fact]
@@ -34,7 +34,7 @@ namespace OmniForge.Tests.Entities
 
             Assert.NotNull(config);
             Assert.Empty(config.Commands);
-            Assert.Equal(1, config.MaxIncrementAmount);
+            Assert.Equal(10, config.MaxIncrementAmount);
         }
 
         [Fact]

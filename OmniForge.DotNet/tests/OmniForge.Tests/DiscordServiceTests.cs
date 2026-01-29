@@ -9,6 +9,7 @@ using Moq;
 using Moq.Protected;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Core.Entities;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
 using Xunit;
@@ -35,7 +36,7 @@ namespace OmniForge.Tests
                 BotToken = "test-bot-token",
                 ApiBaseUrl = "https://discord.com/api/v10"
             });
-            _service = new DiscordService(_httpClient, _mockLogger.Object, botSettings, _mockDiscordBotClient.Object);
+            _service = new DiscordService(_httpClient, _mockLogger.Object, botSettings, _mockDiscordBotClient.Object, new LogValueSanitizer());
         }
 
         [Fact]

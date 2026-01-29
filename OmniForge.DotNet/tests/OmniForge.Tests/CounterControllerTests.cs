@@ -124,6 +124,25 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task Increment_ShouldUseProvidedAmount_WhenAmountQueryProvided()
+        {
+            var counter = new Counter { Deaths = 15 };
+            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("12345", "deaths", 5))
+                .ReturnsAsync(counter);
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
+                .ReturnsAsync(new User { TwitchUserId = "12345" });
+
+            var result = await _controller.Increment("deaths", amount: "5");
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(counter, okResult.Value);
+
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", counter), Times.Once);
+            _mockNotificationService.Verify(x => x.CheckAndSendMilestoneNotificationsAsync(It.IsAny<User>(), "deaths", 10, 15), Times.Once);
+        }
+
+        [Fact]
         public async Task Increment_ShouldReturnUnauthorized_WhenNoUserId()
         {
             var controller = CreateControllerWithoutUser();
@@ -198,6 +217,21 @@ namespace OmniForge.Tests
                 .ReturnsAsync(counter);
 
             var result = await _controller.Decrement("deaths");
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(counter, okResult.Value);
+
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("12345", counter), Times.Once);
+        }
+
+        [Fact]
+        public async Task Decrement_ShouldUseProvidedAmount_WhenAmountQueryProvided()
+        {
+            var counter = new Counter { Deaths = 4 };
+            _mockCounterRepository.Setup(x => x.DecrementCounterAsync("12345", "deaths", 5))
+                .ReturnsAsync(counter);
+
+            var result = await _controller.Decrement("deaths", amount: "5");
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.Equal(counter, okResult.Value);

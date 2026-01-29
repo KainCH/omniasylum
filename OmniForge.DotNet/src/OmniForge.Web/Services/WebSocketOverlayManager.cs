@@ -22,19 +22,25 @@ namespace OmniForge.Web.Services
 
         public async Task HandleConnectionAsync(string userId, WebSocket webSocket)
         {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return;
+            }
+
+            var safeUserId = userId!;
             var connectionId = Guid.NewGuid().ToString("N")[..8]; // Short ID for tracking
-            var userConnections = _userSockets.GetOrAdd(userId, _ => new ConcurrentDictionary<string, WebSocket>());
+            var userConnections = _userSockets.GetOrAdd(safeUserId, _ => new ConcurrentDictionary<string, WebSocket>());
             userConnections.TryAdd(connectionId, webSocket);
 
             var activeCount = userConnections.Count(kvp => kvp.Value.State == WebSocketState.Open);
             _logger.LogInformation("🟢 Overlay WebSocket connected for user {UserId} (conn: {ConnectionId}). Active connections: {Count}",
-                LogSanitizer.Sanitize(userId), connectionId, activeCount);
+                (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, activeCount);
 
             var buffer = new byte[1024 * 4];
             using var pingCts = new CancellationTokenSource();
 
             // Start ping task to keep connection alive
-            var pingTask = SendPingsAsync(webSocket, connectionId, userId, pingCts.Token);
+            var pingTask = SendPingsAsync(webSocket, connectionId, safeUserId!, pingCts.Token);
 
             try
             {
@@ -44,27 +50,27 @@ namespace OmniForge.Web.Services
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         _logger.LogInformation("🔵 Overlay WebSocket close requested by client for user {UserId} (conn: {ConnectionId}). CloseStatus: {Status}, Description: {Description}",
-                            LogSanitizer.Sanitize(userId), connectionId, result.CloseStatus, LogSanitizer.Sanitize(result.CloseStatusDescription));
+                            (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, result.CloseStatus, (result.CloseStatusDescription ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
                     }
                     // Pong responses are handled automatically by the WebSocket protocol
                 }
                 _logger.LogInformation("🔵 Overlay WebSocket loop ended for user {UserId} (conn: {ConnectionId}). Final state: {State}",
-                    LogSanitizer.Sanitize(userId), connectionId, webSocket.State);
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, webSocket.State);
             }
             catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
             {
                 _logger.LogWarning("⚠️ Overlay WebSocket closed prematurely for user {UserId} (conn: {ConnectionId}). Error: {Error}",
-                    LogSanitizer.Sanitize(userId), connectionId, ex.WebSocketErrorCode);
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, ex.WebSocketErrorCode);
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("🔵 Overlay WebSocket cancelled for user {UserId} (conn: {ConnectionId})", LogSanitizer.Sanitize(userId), connectionId);
+                _logger.LogInformation("🔵 Overlay WebSocket cancelled for user {UserId} (conn: {ConnectionId})", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "🔴 Overlay WebSocket error for user {UserId} (conn: {ConnectionId}). State: {State}",
-                    LogSanitizer.Sanitize(userId), connectionId, webSocket.State);
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, webSocket.State);
             }
             finally
             {
@@ -77,12 +83,12 @@ namespace OmniForge.Web.Services
                 var remainingActive = userConnections.Count(kvp => kvp.Value.State == WebSocketState.Open);
 
                 _logger.LogInformation("🔴 Overlay WebSocket disconnected for user {UserId} (conn: {ConnectionId}). Final state: {State}. Remaining active: {Count}",
-                    LogSanitizer.Sanitize(userId), connectionId, webSocket.State, remainingActive);
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId, webSocket.State, remainingActive);
 
                 // Clean up empty user entries
                 if (userConnections.IsEmpty)
                 {
-                    _userSockets.TryRemove(userId, out _);
+                    _userSockets.TryRemove(safeUserId!, out _);
                 }
             }
         }
@@ -102,11 +108,11 @@ namespace OmniForge.Web.Services
                             // Send a ping message to keep connection alive
                             var pingData = Encoding.UTF8.GetBytes("{\"method\":\"ping\",\"data\":{}}");
                             await webSocket.SendAsync(new ArraySegment<byte>(pingData), WebSocketMessageType.Text, true, cancellationToken);
-                            _logger.LogDebug("📡 Sent ping to overlay for user {UserId} (conn: {ConnectionId})", LogSanitizer.Sanitize(userId), connectionId);
+                            _logger.LogDebug("📡 Sent ping to overlay for user {UserId} (conn: {ConnectionId})", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "⚠️ Failed to send ping to overlay for user {UserId} (conn: {ConnectionId})", LogSanitizer.Sanitize(userId), connectionId);
+                            _logger.LogWarning(ex, "⚠️ Failed to send ping to overlay for user {UserId} (conn: {ConnectionId})", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
                             break;
                         }
                     }
@@ -118,7 +124,7 @@ namespace OmniForge.Web.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "⚠️ Ping task error for user {UserId} (conn: {ConnectionId})", LogSanitizer.Sanitize(userId), connectionId);
+                _logger.LogWarning(ex, "⚠️ Ping task error for user {UserId} (conn: {ConnectionId})", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
             }
         }
 
@@ -149,7 +155,7 @@ namespace OmniForge.Web.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "🔴 Error sending '{Method}' to overlay WebSocket for user {UserId} (conn: {ConnId})", LogSanitizer.Sanitize(method), LogSanitizer.Sanitize(userId), connId);
+                            _logger.LogError(ex, "🔴 Error sending '{Method}' to overlay WebSocket for user {UserId} (conn: {ConnId})", (method ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connId);
                             toRemove.Add(connId);
                         }
                     }
@@ -168,13 +174,22 @@ namespace OmniForge.Web.Services
 
                 if (sentCount > 0 || closedCount > 0)
                 {
-                    _logger.LogInformation("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
-                        LogSanitizer.Sanitize(method), sentCount, LogSanitizer.Sanitize(userId), closedCount);
+                    // streamStatusUpdate is a periodic live heartbeat; keep it out of Info logs to avoid noise.
+                    if (string.Equals(method, "streamStatusUpdate", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogDebug("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
+                            (method ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), sentCount, (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), closedCount);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("📤 Sent '{Method}' to {SentCount} overlay sockets for user {UserId} (cleaned up {ClosedCount} closed)",
+                            (method ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), sentCount, (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), closedCount);
+                    }
                 }
             }
             else
             {
-                _logger.LogDebug("📤 No overlay sockets registered for user {UserId} to send '{Method}'", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(method));
+                _logger.LogDebug("📤 No overlay sockets registered for user {UserId} to send '{Method}'", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (method ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
     }

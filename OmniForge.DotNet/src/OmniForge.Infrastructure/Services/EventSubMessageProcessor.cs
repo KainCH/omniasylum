@@ -3,6 +3,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Infrastructure.Models.EventSub;
+using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -29,24 +31,18 @@ namespace OmniForge.Infrastructure.Services
     }
 
     /// <summary>
-    /// Interface for processing EventSub WebSocket messages.
-    /// </summary>
-    public interface IEventSubMessageProcessor
-    {
-        EventSubProcessResult Process(string json);
-    }
-
-    /// <summary>
     /// Processes EventSub WebSocket messages and extracts relevant information.
     /// This class is separated from the WebSocket handling to enable unit testing.
     /// </summary>
     public class EventSubMessageProcessor : IEventSubMessageProcessor
     {
         private readonly ILogger<EventSubMessageProcessor> _logger;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
-        public EventSubMessageProcessor(ILogger<EventSubMessageProcessor> logger)
+        public EventSubMessageProcessor(ILogger<EventSubMessageProcessor> logger, ILogValueSanitizer logValueSanitizer)
         {
             _logger = logger;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public EventSubProcessResult Process(string json)
@@ -79,7 +75,38 @@ namespace OmniForge.Infrastructure.Services
 
                     case "notification":
                         result.MessageType = EventSubMessageType.Notification;
-                        _logger.LogInformation("Notification received: {MessageId}", message.Metadata.MessageId);
+
+                        var subscriptionType = message.Payload.Subscription?.Type;
+                        var subscriptionId = message.Payload.Subscription?.Id;
+                        var broadcasterId = TryGetBroadcasterId(message.Payload.Event);
+
+                        // Chat events can be extremely noisy; keep those at Debug.
+                        var isChatEvent = !string.IsNullOrWhiteSpace(subscriptionType)
+                            && subscriptionType.StartsWith("channel.chat", StringComparison.OrdinalIgnoreCase);
+
+                        var safeMessageId = _logValueSanitizer.Safe(message.Metadata.MessageId);
+                        var safeSubscriptionType = _logValueSanitizer.Safe(subscriptionType);
+                        var safeSubscriptionId = _logValueSanitizer.Safe(subscriptionId);
+                        var safeBroadcasterId = _logValueSanitizer.Safe(broadcasterId);
+
+                        if (isChatEvent)
+                        {
+                            _logger.LogDebug(
+                                "💬 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
+                                safeMessageId,
+                                safeSubscriptionType,
+                                safeSubscriptionId,
+                                safeBroadcasterId);
+                        }
+                        else
+                        {
+                            _logger.LogInformation(
+                                "📨 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
+                                safeMessageId,
+                                safeSubscriptionType,
+                                safeSubscriptionId,
+                                safeBroadcasterId);
+                        }
                         break;
 
                     case "reconnect":
@@ -113,6 +140,33 @@ namespace OmniForge.Infrastructure.Services
             }
 
             return result;
+        }
+
+        private static string? TryGetBroadcasterId(JsonElement eventData)
+        {
+            try
+            {
+                // Notifications may be unwrapped (event object) or wrapped ({ subscription, event }).
+                if (eventData.ValueKind == JsonValueKind.Object
+                    && eventData.TryGetProperty("event", out var inner)
+                    && inner.ValueKind == JsonValueKind.Object)
+                {
+                    eventData = inner;
+                }
+
+                if (eventData.ValueKind == JsonValueKind.Object
+                    && eventData.TryGetProperty("broadcaster_user_id", out var idProp)
+                    && idProp.ValueKind == JsonValueKind.String)
+                {
+                    return idProp.GetString();
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            return null;
         }
     }
 }

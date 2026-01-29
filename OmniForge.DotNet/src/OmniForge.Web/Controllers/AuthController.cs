@@ -145,8 +145,8 @@ namespace OmniForge.Web.Controllers
             {
                 _logger.LogWarning(
                     "⚠️ Bot OAuth token appears to be missing required scopes. missing={Missing} scopes={Scopes}",
-                    string.Join(", ", missingBotScopes.Select(LogSanitizer.Sanitize)),
-                    string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                    LogValue.JoinSafe(missingBotScopes),
+                    LogValue.JoinSafe(botScopes));
             }
 
             var userInfo = await _twitchAuthService.GetUserInfoAsync(tokenResponse.AccessToken, _twitchSettings.ClientId);
@@ -161,8 +161,8 @@ namespace OmniForge.Web.Controllers
             {
                 _logger.LogWarning(
                     "⚠️ Bot OAuth completed for {Login}, but configured BotUsername is {Configured}. Rejecting.",
-                    LogSanitizer.Sanitize(userInfo.Login),
-                    LogSanitizer.Sanitize(_twitchSettings.BotUsername));
+                    LogValue.Safe(userInfo.Login),
+                    LogValue.Safe(_twitchSettings.BotUsername));
 
                 return BadRequest($"Authorized account '{userInfo.Login}' does not match configured bot username.");
             }
@@ -175,7 +175,7 @@ namespace OmniForge.Web.Controllers
                 TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn)
             });
 
-            _logger.LogInformation("✅ Forge bot authorized as {Login}", LogSanitizer.Sanitize(userInfo.Login));
+            _logger.LogInformation("✅ Forge bot authorized as {Login}", LogValue.Safe(userInfo.Login));
             return Redirect("/portal");
         }
 
@@ -201,7 +201,7 @@ namespace OmniForge.Web.Controllers
             {
                 _logger.LogWarning(
                     "⚠️ User OAuth token appears to be missing required scope channel:manage:broadcast. user_scopes={Scopes}",
-                    string.Join(", ", userScopes.Select(LogSanitizer.Sanitize)));
+                    string.Join(", ", userScopes.Select(scope => (scope ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"))));
             }
 
             TwitchUserInfo? userInfo = null;
@@ -440,7 +440,7 @@ namespace OmniForge.Web.Controllers
 
             _logger.LogCritical(
                 "Twitch:RedirectUri was set to '{RedirectUri}', but it was not a valid URL and could not be resolved from configuration.",
-                LogSanitizer.Sanitize(redirectUri));
+                LogValue.Safe(redirectUri));
             throw new ConfigurationException(
                 "Invalid configuration for Twitch:RedirectUri. Provide an absolute http(s) URL or a configuration key whose value is an absolute http(s) URL.");
         }
@@ -468,7 +468,7 @@ namespace OmniForge.Web.Controllers
 
                 _logger.LogCritical(
                     "Twitch:BotRedirectUri was set to '{BotRedirect}', but it was not a valid URL and could not be resolved from configuration.",
-                    LogSanitizer.Sanitize(botRedirect));
+                    LogValue.Safe(botRedirect));
                 throw new ConfigurationException(
                     "Invalid configuration for Twitch:BotRedirectUri. Provide an absolute http(s) URL or a configuration key whose value is an absolute http(s) URL.");
             }

@@ -1,16 +1,24 @@
+const isDebugEnabled = () => {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('debug') === 'true' || window.omniOverlayDebug === true;
+    } catch (e) {
+        return window.omniOverlayDebug === true;
+    }
+};
+
+const log = (...args) => {
+    if (isDebugEnabled()) console.log(...args);
+};
+
+const warn = (...args) => {
+    if (isDebugEnabled()) console.warn(...args);
+};
+
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
     const pad2 = (n) => String(n).padStart(2, '0');
-
-    const isDebugEnabled = () => {
-        try {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('debug') === 'true' || window.omniOverlayDebug === true;
-        } catch (e) {
-            return window.omniOverlayDebug === true;
-        }
-    };
 
     // Stream timer state (client-side; avoids Blazor re-rendering every second)
     let timerIntervalId = null;
@@ -67,6 +75,13 @@ export function connect(url, dotNetHelper) {
                 element.textContent = '00:00';
 
                 // Countdown completed: fade back to hidden.
+                if (!timerExpired) {
+                    try {
+                        if (window.notificationAudio && typeof window.notificationAudio.playNotification === 'function') {
+                            window.notificationAudio.playNotification('timerFinished');
+                        }
+                    } catch (e) {}
+                }
                 timerExpired = true;
                 window.omniOverlayTimerExpired = true;
                 stopTimerInterval();
@@ -169,7 +184,7 @@ export function connect(url, dotNetHelper) {
     };
 
     socket.onopen = function(e) {
-        console.log("[WebSocket] Connection established");
+        log("[WebSocket] Connection established");
     };
 
     socket.onmessage = function(event) {
@@ -198,7 +213,7 @@ export function connect(url, dotNetHelper) {
             } else if (method === "customAlert") {
                 // Some customAlert types are control-plane updates (e.g. game switch), not user-facing alerts.
                 if (isDebugEnabled()) {
-                    console.log('[WebSocket] customAlert:', data && data.alertType ? data.alertType : '(unknown)', data && data.data ? data.data : {});
+                    log('[WebSocket] customAlert:', data && data.alertType ? data.alertType : '(unknown)', data && data.data ? data.data : {});
                 }
                 const alertType = data && data.alertType;
                 const alertPayload = data && data.data ? data.data : {};
@@ -206,7 +221,7 @@ export function connect(url, dotNetHelper) {
                 // Suppress control-plane customAlert types (e.g. chatCommandsUpdated), matching static overlay.html behavior.
                 if (alertType === 'chatCommandsUpdated') {
                     if (isDebugEnabled()) {
-                        console.log('[WebSocket] Suppressing control-plane customAlert:', alertType);
+                        log('[WebSocket] Suppressing control-plane customAlert:', alertType);
                     }
                     return;
                 }
@@ -263,16 +278,16 @@ export function connect(url, dotNetHelper) {
 
     socket.onclose = function(event) {
         if (event.wasClean) {
-            console.log(`[WebSocket] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+            log(`[WebSocket] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
         } else {
-            console.log('[WebSocket] Connection died');
+            log('[WebSocket] Connection died');
             // Optional: Implement reconnect logic here
             setTimeout(() => connect(url, dotNetHelper), 5000);
         }
     };
 
     socket.onerror = function(error) {
-        console.log(`[WebSocket] Error: ${error.message}`);
+        log(`[WebSocket] Error: ${error.message}`);
     };
 }
 
@@ -307,7 +322,7 @@ async function triggerAlert(type, data, dotNetHelper) {
     try {
         await dotNetHelper.invokeMethodAsync("OnAlert", type, data);
     } catch (e) {
-        console.warn("[WebSocket] Blazor circuit disconnected, cannot trigger complex alert via server. Fallback needed if we want offline alerts.");
+        warn("[WebSocket] Blazor circuit disconnected, cannot trigger complex alert via server. Fallback needed if we want offline alerts.");
         // If we wanted fully offline alerts, we'd need to pass the full alert config in the WebSocket message
         // or cache it on the client side. For now, we rely on Blazor for the config lookup.
     }

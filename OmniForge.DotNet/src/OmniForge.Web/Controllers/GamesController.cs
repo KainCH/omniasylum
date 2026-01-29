@@ -49,7 +49,7 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error searching Twitch categories for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "❌ Error searching Twitch categories for user {UserId}", LogValue.Safe(userId));
                 return StatusCode(500, new { error = "Failed to search Twitch categories" });
             }
         }

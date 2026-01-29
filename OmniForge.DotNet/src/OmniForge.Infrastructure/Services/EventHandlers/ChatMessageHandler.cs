@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OmniForge.Core.Utilities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
@@ -14,30 +17,36 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
     /// </summary>
     public class ChatMessageHandler : BaseEventSubHandler
     {
+        private readonly TwitchSettings _twitchSettings;
         private readonly IDiscordInviteSender _discordInviteSender;
         private readonly IChatCommandProcessor _chatCommandProcessor;
         private readonly ITwitchApiService _twitchApiService;
         private readonly IMonitoringRegistry _monitoringRegistry;
         private readonly ITwitchBotEligibilityService _botEligibilityService;
         private readonly IUserRepository _userRepository;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
             ILogger<ChatMessageHandler> logger,
+            IOptions<TwitchSettings> twitchSettings,
             IDiscordInviteSender discordInviteSender,
             IChatCommandProcessor chatCommandProcessor,
             ITwitchApiService twitchApiService,
             IMonitoringRegistry monitoringRegistry,
             ITwitchBotEligibilityService botEligibilityService,
-            IUserRepository userRepository)
+            IUserRepository userRepository,
+            ILogValueSanitizer logValueSanitizer)
             : base(scopeFactory, logger)
         {
+            _twitchSettings = twitchSettings.Value;
             _discordInviteSender = discordInviteSender;
             _chatCommandProcessor = chatCommandProcessor;
             _twitchApiService = twitchApiService;
             _monitoringRegistry = monitoringRegistry;
             _botEligibilityService = botEligibilityService;
             _userRepository = userRepository;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -46,31 +55,73 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         {
             try
             {
+                eventData = UnwrapEvent(eventData);
+
                 if (!TryGetBroadcasterId(eventData, out var broadcasterId) || broadcasterId == null)
                 {
                     return;
                 }
 
-                var messageText = GetMessageText(eventData);
+                var messageText = GetMessageText(eventData) ?? string.Empty;
                 if (string.IsNullOrEmpty(messageText))
                 {
                     return;
                 }
 
+                // Normalize unicode whitespace and trim; EventSub provides message.text, but we want consistent parsing.
+                messageText = messageText.Replace('\u00A0', ' ').Trim();
+                var safeMessageText = messageText!;
+
                 var messageId = GetMessageId(eventData);
 
-                // Process chat commands via shared processor (EventSub path)
                 var chatterId = GetStringProperty(eventData, "chatter_user_id", string.Empty);
-                var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == broadcasterId;
+                var chatterLogin = GetStringProperty(eventData, "chatter_user_login", string.Empty);
+                var broadcasterLogin = GetStringProperty(eventData, "broadcaster_user_login", string.Empty);
+                var messageType = GetStringProperty(eventData, "message_type", string.Empty);
+
+                // Process chat commands via shared processor (EventSub path)
+                var safeBroadcasterId = broadcasterId;
+                var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == safeBroadcasterId;
                 var isModerator = isBroadcaster || HasBadge(eventData, "moderator");
                 var isSubscriber = HasBadge(eventData, "subscriber") || HasBadge(eventData, "founder");
 
-                if (!string.IsNullOrEmpty(messageText) && messageText.StartsWith("!"))
+                if (_twitchSettings.LogChatMessages)
+                {
+                    Logger.LogInformation(
+                        "💬 EventSub chat: broadcaster={BroadcasterLogin}({BroadcasterId}) chatter={ChatterLogin}({ChatterId}) type={MessageType} mod={IsMod} sub={IsSub} msgId={MessageId} text=\"{Text}\"",
+                        _logValueSanitizer.Safe(broadcasterLogin),
+                        _logValueSanitizer.Safe(broadcasterId),
+                        _logValueSanitizer.Safe(chatterLogin),
+                        _logValueSanitizer.Safe(chatterId),
+                        _logValueSanitizer.Safe(messageType),
+                        isModerator,
+                        isSubscriber,
+                        _logValueSanitizer.Safe(messageId),
+                        _logValueSanitizer.Safe(safeMessageText));
+
+                    if (safeMessageText!.StartsWith("!"))
+                    {
+                        var firstToken = safeMessageText!.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? safeMessageText;
+                        Logger.LogInformation(
+                            "🧩 Chat command candidate: {Token} full=\"{Text}\"",
+                            _logValueSanitizer.Safe(firstToken),
+                            _logValueSanitizer.Safe(safeMessageText));
+                    }
+                }
+
+                if (_twitchSettings.LogChatMessagePayload)
+                {
+                    Logger.LogDebug(
+                        "📦 EventSub chat payload (event): {Payload}",
+                        eventData.GetRawText().Replace("\r", "\\r").Replace("\n", "\\n"));
+                }
+
+                if (!string.IsNullOrEmpty(safeMessageText) && safeMessageText!.StartsWith("!"))
                 {
                     var context = new ChatCommandContext
                     {
-                        UserId = broadcasterId,
-                        Message = messageText,
+                        UserId = safeBroadcasterId,
+                        Message = safeMessageText,
                         IsModerator = isModerator,
                         IsBroadcaster = isBroadcaster,
                         IsSubscriber = isSubscriber
@@ -108,7 +159,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                             Logger.LogWarning(
                                 "⚠️ Skipping chat reply (must use app/bot token only). broadcaster_user_id={BroadcasterUserId}",
-                                OmniForge.Core.Utilities.LogSanitizer.Sanitize(uid));
+                                (uid ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         catch (Exception ex)
                         {
@@ -119,9 +170,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
 
                 // Check for Discord keywords
-                if (ContainsDiscordKeyword(messageText))
+                if (ContainsDiscordKeyword(safeMessageText!))
                 {
-                    await _discordInviteSender.SendDiscordInviteAsync(broadcasterId);
+                    await _discordInviteSender.SendDiscordInviteAsync(safeBroadcasterId);
                 }
             }
             catch (Exception ex)

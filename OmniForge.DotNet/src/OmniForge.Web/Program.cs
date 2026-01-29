@@ -21,6 +21,7 @@ using OmniForge.Web.Middleware;
 using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using OmniForge.Infrastructure.Services;
+using OmniForge.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -184,7 +185,7 @@ using (var scope = app.Services.CreateScope())
     var gameChatCommandsRepository = scope.ServiceProvider.GetRequiredService<IGameChatCommandsRepository>();
     var gameCustomCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCustomCountersConfigRepository>();
     var gameCoreCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCoreCountersConfigRepository>();
-    var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<CoreCounterLibrarySeeder>();
+    var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<ICoreCounterLibrarySeeder>();
 
     try
     {

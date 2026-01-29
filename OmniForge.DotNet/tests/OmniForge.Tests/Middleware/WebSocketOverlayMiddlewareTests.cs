@@ -119,6 +119,35 @@ namespace OmniForge.Tests.Middleware
             Assert.Equal(400, context.Response.StatusCode);
         }
 
+        [Fact]
+        public async Task InvokeAsync_WebSocketWithUserId_ShouldHandleConnection()
+        {
+            // Arrange
+            WebSocket? capturedSocket = null;
+            string? capturedUserId = null;
+
+            _mockWebSocketManager
+                .Setup(x => x.HandleConnectionAsync(It.IsAny<string>(), It.IsAny<WebSocket>()))
+                .Callback<string, WebSocket>((u, s) =>
+                {
+                    capturedUserId = u;
+                    capturedSocket = s;
+                })
+                .Returns(Task.CompletedTask);
+
+            var middleware = new WebSocketOverlayMiddleware(_mockNext.Object, _mockWebSocketManager.Object);
+            var context = CreateHttpContext("/ws/overlay", isWebSocket: true, userId: "user123");
+
+            // Act
+            await middleware.InvokeAsync(context);
+
+            // Assert
+            Assert.Equal("user123", capturedUserId);
+            Assert.NotNull(capturedSocket);
+            _mockWebSocketManager.Verify(x => x.HandleConnectionAsync("user123", It.IsAny<WebSocket>()), Times.Once);
+            _mockNext.Verify(x => x(context), Times.Never);
+        }
+
         [Theory]
         [InlineData("/")]
         [InlineData("/api/counters")]

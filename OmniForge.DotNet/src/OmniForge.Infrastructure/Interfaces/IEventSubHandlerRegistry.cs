@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using OmniForge.Infrastructure.Interfaces;
 
-namespace OmniForge.Infrastructure.Services.EventHandlers
+namespace OmniForge.Infrastructure.Interfaces
 {
     /// <summary>
     /// Interface for looking up event handlers by subscription type.

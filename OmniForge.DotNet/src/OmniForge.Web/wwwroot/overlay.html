@@ -208,6 +208,19 @@
       const debug = urlParams.get('debug') === 'true';
       window.omniOverlayDebug = debug;
 
+      // OBS captures browser source console output; keep overlay quiet by default.
+      // When debug is off, silence log/info/debug while keeping warn/error intact.
+      if (!debug && !window.__omniOverlayConsoleSilenced) {
+        window.__omniOverlayConsoleSilenced = true;
+        try {
+          console.log = function () { };
+          console.info = function () { };
+          console.debug = function () { };
+        } catch (e) {
+          // Ignore if console is not writable
+        }
+      }
+
       // Store current overlay settings for filtering counters
       let currentSettings = null;
       // Store last counter data for re-rendering when settings change
@@ -313,6 +326,13 @@
 
           if (remainingSeconds <= 0) {
             // Countdown completed: fade back to hidden.
+            if (!timerExpired) {
+              try {
+                if (window.notificationAudio && typeof window.notificationAudio.playNotification === 'function') {
+                  window.notificationAudio.playNotification('timerFinished');
+                }
+              } catch (e) { }
+            }
             timerExpired = true;
             window.omniOverlayTimerExpired = true;
             stopTimerInterval();
@@ -570,6 +590,13 @@
           case 'streamStarted':
             console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
             updateCounters(data);
+
+            // Treat streamStarted as an initial live heartbeat.
+            // Twitch may not re-send stream.online on reconnect, and the server may not yet have sent streamStatusUpdate.
+            lastKnownIsLive = true;
+            lastOnlineSignalAtMs = Date.now();
+            updateOverlayContainerVisibility();
+            updateTimerVisibility();
             break;
           case 'streamEnded':
             console.log("🔴 Stream ended! Data:", JSON.stringify(data));
@@ -784,11 +811,16 @@
           } else {
             const parsedStart = parseToMs(raw);
             if (parsedStart) {
+              const isNewStreamStart = !streamStartMs || Math.abs(parsedStart - streamStartMs) > 1000;
               streamStartMs = parsedStart;
               lastKnownIsLive = true;
               lastOnlineSignalAtMs = Date.now();
-              timerExpired = false;
-              window.omniOverlayTimerExpired = false;
+              // Only reset completion state if the stream start timestamp actually changed.
+              // Otherwise, counterUpdate payloads can repeatedly clear timerExpired and re-trigger timerFinished audio.
+              if (isNewStreamStart) {
+                timerExpired = false;
+                window.omniOverlayTimerExpired = false;
+              }
             }
           }
         }

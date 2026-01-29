@@ -14,7 +14,6 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Exceptions;
 using OmniForge.Core.Interfaces;
-using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using TwitchLib.Api;
@@ -34,6 +33,9 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchHelixWrapper _helixWrapper;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<TwitchApiService> _logger;
+
+        private static string EscapeLogValue(string? value)
+            => (value ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n");
 
         public TwitchApiService(
             IUserRepository userRepository,
@@ -64,7 +66,7 @@ namespace OmniForge.Infrastructure.Services
             // Check if token needs refresh (buffer of 5 minutes)
             if (user.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
             {
-                _logger.LogInformation("Refreshing token for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogInformation("Refreshing token for user {UserId}", EscapeLogValue(userId));
                 var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
                 if (newToken != null)
                 {
@@ -76,7 +78,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Failed to refresh token for user {UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning("Failed to refresh token for user {UserId}", EscapeLogValue(userId));
                     throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
                 }
             }
@@ -88,12 +90,12 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
-                _logger.LogInformation("🔎 Looking up channel moderators via Helix: broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                _logger.LogInformation("🔎 Looking up channel moderators via Helix: broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
 
                 var clientId = _twitchSettings.ClientId;
                 if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
 
-                _logger.LogInformation("🪪 Helix Get Moderators using client_id={ClientId}", LogSanitizer.Sanitize(clientId));
+                _logger.LogInformation("🪪 Helix Get Moderators using client_id={ClientId}", EscapeLogValue(clientId));
 
                 var client = _httpClientFactory.CreateClient();
 
@@ -120,13 +122,13 @@ namespace OmniForge.Infrastructure.Services
                         var helixError = TryParseHelixError(errorBody);
 
                         _logger.LogWarning("❌ Helix Get Moderators returned non-success: broadcaster_id={BroadcasterId}, status={Status}, moderators_collected_so_far={Count}",
-                            LogSanitizer.Sanitize(broadcasterId),
+                            EscapeLogValue(broadcasterId),
                             (int)response.StatusCode,
                             allModerators.Count);
 
                         if (!string.IsNullOrWhiteSpace(helixError?.Message))
                         {
-                            _logger.LogWarning("🧾 Helix Get Moderators error message: {Message}", LogSanitizer.Sanitize(helixError.Message));
+                            _logger.LogWarning("🧾 Helix Get Moderators error message: {Message}", EscapeLogValue(helixError.Message));
                         }
 
                         return new TwitchModeratorsResponse
@@ -163,7 +165,7 @@ namespace OmniForge.Infrastructure.Services
                 }
 
                 _logger.LogInformation("📋 Helix Get Moderators completed: broadcaster_id={BroadcasterId}, moderators_count={Count}",
-                    LogSanitizer.Sanitize(broadcasterId),
+                    EscapeLogValue(broadcasterId),
                     allModerators.Count);
 
                 return new TwitchModeratorsResponse
@@ -174,7 +176,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error calling Helix Get Moderators for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                _logger.LogError(ex, "❌ Error calling Helix Get Moderators for broadcaster {BroadcasterId}", EscapeLogValue(broadcasterId));
                 return new TwitchModeratorsResponse
                 {
                     StatusCode = HttpStatusCode.InternalServerError,
@@ -474,7 +476,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating clip for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "Error creating clip for user {UserId}", EscapeLogValue(userId));
                 return null;
             }
         }
@@ -509,8 +511,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogWarning(
                         "❌ Helix Search Categories failed. Status={StatusCode} Error={Error} Message={Message}",
                         (int)response.StatusCode,
-                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
-                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                        EscapeLogValue(helixError?.Error ?? ""),
+                        EscapeLogValue(helixError?.Message ?? ""));
                     throw new Exception($"Twitch Search Categories failed: {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
@@ -539,7 +541,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ SearchCategories with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning(ex, "⚠️ SearchCategories with app token failed; falling back to user token. user_id={UserId}", EscapeLogValue(userId));
                 }
             }
 
@@ -569,8 +571,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogWarning(
                         "❌ Helix Get Channel Category failed. Status={StatusCode} Error={Error} Message={Message}",
                         (int)response.StatusCode,
-                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
-                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                        EscapeLogValue(helixError?.Error ?? ""),
+                        EscapeLogValue(helixError?.Message ?? ""));
                     throw new Exception($"Twitch Get Channel Category failed: {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
@@ -602,7 +604,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ GetChannelCategory with app token failed; falling back to user token. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning(ex, "⚠️ GetChannelCategory with app token failed; falling back to user token. user_id={UserId}", EscapeLogValue(userId));
                 }
             }
 
@@ -650,8 +652,8 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogWarning(
                             "⚠️ Unknown CCL ids requested; they will be ignored. user_id={UserId} unknown={Unknown}",
-                            LogSanitizer.Sanitize(userId),
-                            string.Join(", ", unknown.Select(LogSanitizer.Sanitize)));
+                            EscapeLogValue(userId),
+                            string.Join(", ", unknown.Select(EscapeLogValue)));
                     }
                 }
 
@@ -711,9 +713,9 @@ namespace OmniForge.Infrastructure.Services
 
                         _logger.LogInformation(
                             "✅ Retrieved channel info for user {UserId}: current_game_id={CurrentGameId}, current_enabled_ccls={CurrentCcls}",
-                            LogSanitizer.Sanitize(userId),
-                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
-                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                            EscapeLogValue(userId),
+                            EscapeLogValue(current?.GameId ?? string.Empty),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(EscapeLogValue)));
 
                         var gameSame = string.Equals(current?.GameId ?? string.Empty, gameId, StringComparison.OrdinalIgnoreCase);
                         var cclsSame = labels == null || currentEnabled.SetEquals(enabled);
@@ -722,34 +724,34 @@ namespace OmniForge.Infrastructure.Services
                         {
                             _logger.LogInformation(
                                 "✅ Channel already up to date; skipping update. user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
-                                LogSanitizer.Sanitize(userId),
-                                LogSanitizer.Sanitize(gameId),
-                                string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                                EscapeLogValue(userId),
+                                EscapeLogValue(gameId),
+                                string.Join(", ", enabled.OrderBy(s => s).Select(EscapeLogValue)));
                             return;
                         }
 
                         _logger.LogInformation(
                             "🔄 Updating channel info for user {UserId}: game_id {OldGameId} -> {NewGameId}, enabled_ccls {OldCcls} -> {NewCcls}",
-                            LogSanitizer.Sanitize(userId),
-                            LogSanitizer.Sanitize(current?.GameId ?? string.Empty),
-                            LogSanitizer.Sanitize(gameId),
-                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)),
-                            string.Join(", ", enabled.OrderBy(s => s).Select(LogSanitizer.Sanitize)));
+                            EscapeLogValue(userId),
+                            EscapeLogValue(current?.GameId ?? string.Empty),
+                            EscapeLogValue(gameId),
+                            string.Join(", ", currentEnabled.OrderBy(s => s).Select(EscapeLogValue)),
+                            string.Join(", ", enabled.OrderBy(s => s).Select(EscapeLogValue)));
                     }
                     else
                     {
                         var helixError = TryParseHelixError(getBody);
                         _logger.LogWarning(
                             "⚠️ Helix Get Channel Information failed before update attempt. user_id={UserId} status={StatusCode} error={Error} message={Message}",
-                            LogSanitizer.Sanitize(userId),
+                            EscapeLogValue(userId),
                             (int)getResponse.StatusCode,
-                            LogSanitizer.Sanitize(helixError?.Error ?? ""),
-                            LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                            EscapeLogValue(helixError?.Error ?? ""),
+                            EscapeLogValue(helixError?.Message ?? ""));
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ Failed retrieving channel info before update attempt. user_id={UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning(ex, "⚠️ Failed retrieving channel info before update attempt. user_id={UserId}", EscapeLogValue(userId));
                 }
 
                 var payload = new ModifyChannelInformationRequest
@@ -776,18 +778,18 @@ namespace OmniForge.Infrastructure.Services
                     var helixError = TryParseHelixError(body);
                     _logger.LogWarning(
                         "❌ Helix Modify Channel Information failed. user_id={UserId} status={StatusCode} error={Error} message={Message}",
-                        LogSanitizer.Sanitize(userId),
+                        EscapeLogValue(userId),
                         (int)response.StatusCode,
-                        LogSanitizer.Sanitize(helixError?.Error ?? ""),
-                        LogSanitizer.Sanitize(helixError?.Message ?? ""));
+                        EscapeLogValue(helixError?.Error ?? ""),
+                        EscapeLogValue(helixError?.Message ?? ""));
 
                     throw new Exception($"Twitch Modify Channel Information failed: {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
                 _logger.LogInformation(
                     "✅ Updated channel information for user {UserId}: game_id={GameId}, enabled_ccls={CclCount}",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(gameId),
+                    EscapeLogValue(userId),
+                    EscapeLogValue(gameId),
                     enabled.Count);
             });
         }
@@ -802,7 +804,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending chat message for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                _logger.LogError(ex, "Error sending chat message for broadcaster {BroadcasterId}", EscapeLogValue(broadcasterId));
             }
         }
 
@@ -813,18 +815,18 @@ namespace OmniForge.Infrastructure.Services
                 var botCreds = await _botCredentialRepository.GetAsync();
                 if (botCreds == null || string.IsNullOrEmpty(botCreds.RefreshToken))
                 {
-                    _logger.LogWarning("⚠️ Cannot send as bot: bot credentials missing. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                    _logger.LogWarning("⚠️ Cannot send as bot: bot credentials missing. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
                     return;
                 }
 
                 // Refresh if expiring (buffer 5 min)
                 if (botCreds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
                 {
-                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(botCreds.Username));
+                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", EscapeLogValue(botCreds.Username));
                     var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
                     if (refreshed == null)
                     {
-                        _logger.LogError("❌ Failed to refresh Forge bot token; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                        _logger.LogError("❌ Failed to refresh Forge bot token; cannot send chat reply. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
                         return;
                     }
 
@@ -836,7 +838,7 @@ namespace OmniForge.Infrastructure.Services
 
                 if (string.IsNullOrEmpty(botCreds.AccessToken))
                 {
-                    _logger.LogWarning("⚠️ Bot access token missing; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                    _logger.LogWarning("⚠️ Bot access token missing; cannot send chat reply. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
                     return;
                 }
 
@@ -851,7 +853,7 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogWarning(
                             "⚠️ Bot token appears to be missing user:bot. App-token chat send may fail. bot_scopes={Scopes}",
-                            string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                            string.Join(", ", botScopes.Select(EscapeLogValue)));
                     }
 
                     var appSendOk = await SendChatMessageWithTokenAsync(appChatToken, botUserId, broadcasterId, message, replyParentMessageId);
@@ -870,20 +872,20 @@ namespace OmniForge.Infrastructure.Services
                 {
                     _logger.LogWarning(
                         "⚠️ Bot token missing required chat scopes. missing={Missing} scopes={Scopes}. Cannot send chat reply.",
-                        string.Join(", ", missingBotChatScopes.Select(LogSanitizer.Sanitize)),
-                        string.Join(", ", botScopes.Select(LogSanitizer.Sanitize)));
+                        string.Join(", ", missingBotChatScopes.Select(EscapeLogValue)),
+                        string.Join(", ", botScopes.Select(EscapeLogValue)));
                     return;
                 }
 
                 var botSendOk = await SendChatMessageWithTokenAsync(botCreds.AccessToken, botUserId, broadcasterId, message, replyParentMessageId);
                 if (!botSendOk)
                 {
-                    _logger.LogWarning("⚠️ Bot-token chat send failed; cannot send chat reply. broadcaster_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                    _logger.LogWarning("⚠️ Bot-token chat send failed; cannot send chat reply. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error sending chat message as bot for broadcaster {BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                _logger.LogError(ex, "❌ Error sending chat message as bot for broadcaster {BroadcasterId}", EscapeLogValue(broadcasterId));
             }
         }
 
@@ -912,7 +914,7 @@ namespace OmniForge.Infrastructure.Services
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+                _logger.LogWarning("Failed to send chat message via API. Status: {StatusCode}, Error: {Error}", response.StatusCode, EscapeLogValue(errorContent));
                 return false;
             }
 
@@ -929,10 +931,10 @@ namespace OmniForge.Infrastructure.Services
             {
                 ["AutoModOperationId"] = operationId,
                 ["AutoModOperation"] = "GET",
-                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+                ["AutoModUserId"] = EscapeLogValue(userId)
             });
 
-            _logger.LogInformation("AutoMod GET requested for user {UserId}", LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("AutoMod GET requested for user {UserId}", EscapeLogValue(userId));
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
             {
@@ -943,7 +945,7 @@ namespace OmniForge.Infrastructure.Services
 
                     _logger.LogInformation(
                         "AutoMod GET token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
-                        LogSanitizer.Sanitize(validation.UserId),
+                        EscapeLogValue(validation.UserId),
                         validation.Scopes?.Count ?? 0,
                         validation.ExpiresIn);
 
@@ -951,7 +953,7 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogInformation(
                             "AutoMod GET token scopes: {Scopes}",
-                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                            string.Join(", ", validation.Scopes.Select(EscapeLogValue)));
                     }
 
                     await EnsureScopesAsync(validation.Scopes ?? Array.Empty<string>(), new[] { "moderator:read:automod_settings" });
@@ -960,8 +962,8 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogWarning(
                             "AutoMod GET token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
-                            LogSanitizer.Sanitize(userId),
-                            LogSanitizer.Sanitize(validation.UserId));
+                            EscapeLogValue(userId),
+                            EscapeLogValue(validation.UserId));
                         throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
                     }
 
@@ -969,34 +971,34 @@ namespace OmniForge.Infrastructure.Services
 
                     _logger.LogInformation(
                         "AutoMod GET calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
-                        LogSanitizer.Sanitize(userId),
-                        LogSanitizer.Sanitize(moderatorId));
+                        EscapeLogValue(userId),
+                        EscapeLogValue(moderatorId));
 
                     var response = await _helixWrapper.GetAutomodSettingsAsync(clientId, accessToken, userId, moderatorId);
                     var settings = response.Data.FirstOrDefault();
                     if (settings == null) throw new Exception("Failed to retrieve AutoMod settings");
 
-                    _logger.LogInformation("AutoMod GET succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogInformation("AutoMod GET succeeded for user {UserId}", EscapeLogValue(userId));
                     return MapAutomodToDto(settings);
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
                 {
-                    _logger.LogError(ex, "Twitch AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogError(ex, "Twitch AutoMod GET failed for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (InvalidOperationException ex)
                 {
-                    _logger.LogWarning(ex, "AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogWarning(ex, "AutoMod GET blocked for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (ReauthRequiredException ex)
                 {
-                    _logger.LogWarning(ex, "AutoMod GET requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogWarning(ex, "AutoMod GET requires reauth for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogError(ex, "AutoMod GET failed for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
             });
@@ -1012,12 +1014,12 @@ namespace OmniForge.Infrastructure.Services
             {
                 ["AutoModOperationId"] = operationId,
                 ["AutoModOperation"] = "UPDATE",
-                ["AutoModUserId"] = LogSanitizer.Sanitize(userId)
+                ["AutoModUserId"] = EscapeLogValue(userId)
             });
 
             _logger.LogInformation(
                 "AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}",
-                LogSanitizer.Sanitize(userId),
+                EscapeLogValue(userId),
                 settings.OverallLevel);
 
             return await ExecuteWithRetryAsync(userId, async (accessToken) =>
@@ -1029,7 +1031,7 @@ namespace OmniForge.Infrastructure.Services
 
                     _logger.LogInformation(
                         "AutoMod UPDATE token validated. ValidationUserId={ValidationUserId} ScopesCount={ScopesCount} ExpiresIn={ExpiresIn}",
-                        LogSanitizer.Sanitize(validation.UserId),
+                        EscapeLogValue(validation.UserId),
                         validation.Scopes?.Count ?? 0,
                         validation.ExpiresIn);
 
@@ -1037,7 +1039,7 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogInformation(
                             "AutoMod UPDATE token scopes: {Scopes}",
-                            string.Join(", ", validation.Scopes.Select(LogSanitizer.Sanitize)));
+                            string.Join(", ", validation.Scopes.Select(EscapeLogValue)));
                     }
 
                     await EnsureAnyScopeAsync(
@@ -1047,8 +1049,8 @@ namespace OmniForge.Infrastructure.Services
                     {
                         _logger.LogWarning(
                             "AutoMod UPDATE token user mismatch. RequestedUserId={RequestedUserId} TokenUserId={TokenUserId}",
-                            LogSanitizer.Sanitize(userId),
-                            LogSanitizer.Sanitize(validation.UserId));
+                            EscapeLogValue(userId),
+                            EscapeLogValue(validation.UserId));
                         throw new ReauthRequiredException("Twitch session mismatch. Please sign in again.");
                     }
 
@@ -1057,34 +1059,34 @@ namespace OmniForge.Infrastructure.Services
 
                     _logger.LogInformation(
                         "AutoMod UPDATE calling Helix. BroadcasterId={BroadcasterId} ModeratorId={ModeratorId}",
-                        LogSanitizer.Sanitize(userId),
-                        LogSanitizer.Sanitize(moderatorId));
+                        EscapeLogValue(userId),
+                        EscapeLogValue(moderatorId));
 
                     var response = await _helixWrapper.UpdateAutomodSettingsAsync(clientId, accessToken, userId, moderatorId, automod);
                     var updated = response.Data.FirstOrDefault();
                     if (updated == null) throw new Exception("Failed to update AutoMod settings");
 
-                    _logger.LogInformation("AutoMod UPDATE succeeded for user {UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogInformation("AutoMod UPDATE succeeded for user {UserId}", EscapeLogValue(userId));
                     return MapAutomodToDto(updated);
                 }
                 catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
                 {
-                    _logger.LogError(ex, "Twitch AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogError(ex, "Twitch AutoMod UPDATE failed for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (InvalidOperationException ex)
                 {
-                    _logger.LogWarning(ex, "AutoMod UPDATE blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogWarning(ex, "AutoMod UPDATE blocked for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (ReauthRequiredException ex)
                 {
-                    _logger.LogWarning(ex, "AutoMod UPDATE requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogWarning(ex, "AutoMod UPDATE requires reauth for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                    _logger.LogError(ex, "AutoMod UPDATE failed for user {UserId}: {Message}", EscapeLogValue(userId), EscapeLogValue(ex.Message));
                     throw;
                 }
             });
@@ -1200,7 +1202,7 @@ namespace OmniForge.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "⚠️ GetUserByLogin with app token failed; falling back to user token. acting_user_id={UserId}", LogSanitizer.Sanitize(actingUserId));
+                    _logger.LogWarning(ex, "⚠️ GetUserByLogin with app token failed; falling back to user token. acting_user_id={UserId}", EscapeLogValue(actingUserId));
                 }
             }
 
@@ -1249,7 +1251,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "Missing required Twitch scopes: {MissingScopes}",
-                    string.Join(", ", missing.Select(LogSanitizer.Sanitize)));
+                    string.Join(", ", missing.Select(EscapeLogValue)));
                 throw new ReauthRequiredException($"Missing required Twitch scopes for {string.Join(", ", missing)}. Please sign in again.");
             }
             return Task.CompletedTask;
@@ -1263,7 +1265,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "Missing required Twitch scope (any-of). AcceptedScopes={AcceptedScopes}",
-                    string.Join(", ", accepted.Select(LogSanitizer.Sanitize)));
+                    string.Join(", ", accepted.Select(EscapeLogValue)));
                 throw new ReauthRequiredException(
                     $"Missing required Twitch scope. Need one of: {string.Join(", ", accepted)}. Please sign in again.");
             }
@@ -1304,22 +1306,22 @@ namespace OmniForge.Infrastructure.Services
 
             if (wasRefreshed)
             {
-                _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+                _logger.LogWarning(ex, "Twitch API call failed with 401 immediately after refresh for user {UserId}. Aborting retry.", EscapeLogValue(user.TwitchUserId));
                 throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
             }
 
-            _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", LogSanitizer.Sanitize(user.TwitchUserId));
+            _logger.LogWarning(ex, "Twitch API call failed with 401 for user {UserId}. Attempting token refresh and retry.", EscapeLogValue(user.TwitchUserId));
 
             if (string.IsNullOrEmpty(user.RefreshToken))
             {
-                _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", LogSanitizer.Sanitize(user.TwitchUserId));
+                _logger.LogError("Cannot retry Twitch API call for user {UserId}: refresh token is missing", EscapeLogValue(user.TwitchUserId));
                 throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.");
             }
 
             var newToken = await _authService.RefreshTokenAsync(user.RefreshToken);
             if (newToken == null)
             {
-                _logger.LogWarning(ex, "Twitch token refresh failed for user {UserId}", LogSanitizer.Sanitize(user.TwitchUserId));
+                _logger.LogWarning(ex, "Twitch token refresh failed for user {UserId}", EscapeLogValue(user.TwitchUserId));
                 throw new ReauthRequiredException("Twitch authentication expired. Please sign in again.", ex);
             }
 

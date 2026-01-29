@@ -24,24 +24,26 @@ namespace OmniForge.Infrastructure.Services
         private readonly ILogger<DiscordService> _logger;
         private readonly DiscordBotSettings _discordBotSettings;
         private readonly IDiscordBotClient _discordBotClient;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
-        public DiscordService(HttpClient httpClient, ILogger<DiscordService> logger, IOptions<DiscordBotSettings> discordBotSettings, IDiscordBotClient discordBotClient)
+        public DiscordService(HttpClient httpClient, ILogger<DiscordService> logger, IOptions<DiscordBotSettings> discordBotSettings, IDiscordBotClient discordBotClient, ILogValueSanitizer logValueSanitizer)
         {
             _httpClient = httpClient;
             _logger = logger;
             _discordBotSettings = discordBotSettings.Value;
             _discordBotClient = discordBotClient;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task SendTestNotificationAsync(User user)
         {
             if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                _logger.LogWarning("Attempted to send test notification but no Discord destination is configured for user {Username}", LogSanitizer.Sanitize(user.Username));
+                _logger.LogWarning("Attempted to send test notification but no Discord destination is configured for user {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
-            _logger.LogInformation("Sending Discord test notification for {Username}", LogSanitizer.Sanitize(user.Username));
+            _logger.LogInformation("Sending Discord test notification for {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             var options = new DiscordEmbedOptions { Color = 0x00FF00 };
             var payload = CreateDiscordPayload(
@@ -57,25 +59,29 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task SendNotificationAsync(User user, string eventType, object data)
         {
-            var template = GetMessageTemplate(user, eventType);
+            var safeEventType = eventType!;
+            var safeUsername = user.Username ?? string.Empty;
+            var template = GetMessageTemplate(user, safeEventType);
             var effectiveChannelId = GetEffectiveChannelId(user, template);
 
             _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, ChannelId={ChannelId}, LegacyWebhookConfigured={LegacyWebhook}",
-                LogSanitizer.Sanitize(user.Username),
-                LogSanitizer.Sanitize(eventType),
-                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : LogSanitizer.Sanitize(effectiveChannelId),
+                _logValueSanitizer.Safe(user.Username),
+                _logValueSanitizer.Safe(safeEventType),
+                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : _logValueSanitizer.Safe(effectiveChannelId),
                 !string.IsNullOrEmpty(user.DiscordWebhookUrl));
 
             if (string.IsNullOrEmpty(effectiveChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
             {
-                _logger.LogWarning("⚠️ No Discord destination configured for user {Username}", LogSanitizer.Sanitize(user.Username));
+                _logger.LogWarning("⚠️ No Discord destination configured for user {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
             // Check if notification is enabled
-            if (!IsNotificationEnabled(user, eventType))
+            if (!IsNotificationEnabled(user, safeEventType!))
             {
-                _logger.LogInformation("Discord notification disabled for {EventType} by user {Username}", LogSanitizer.Sanitize(eventType), LogSanitizer.Sanitize(user.Username));
+                _logger.LogInformation("Discord notification disabled for {EventType} by user {Username}",
+                    _logValueSanitizer.Safe(safeEventType),
+                    _logValueSanitizer.Safe(user.Username));
                 return;
             }
 
@@ -88,10 +94,10 @@ namespace OmniForge.Infrastructure.Services
             dynamic eventData = data;
 
             // Build the token map once per event and apply templates (if set)
-            var (streamStartMentions, streamStartAllowedMentions) = eventType == "stream_start" ? BuildStreamStartMentions(user) : (null, AllowedMentions.None);
-            var tokens = BuildTemplateTokens(user, eventType, eventData, streamStartMentions);
+            var (streamStartMentions, streamStartAllowedMentions) = safeEventType == "stream_start" ? BuildStreamStartMentions(user) : (null, AllowedMentions.None);
+            var tokens = BuildTemplateTokens(user, safeEventType, eventData, streamStartMentions);
 
-            switch (eventType)
+            switch (safeEventType)
             {
                 case "death_milestone":
                     title = $"💀 Death Milestone: {GetProperty(eventData, "count")}";
@@ -135,16 +141,16 @@ namespace OmniForge.Infrastructure.Services
                     }
                     else
                     {
-                        options.ImageUrl = $"https://static-cdn.jtvnw.net/previews-ttv/live_user_{user.Username.ToLower()}-640x360.jpg?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+                        options.ImageUrl = $"https://static-cdn.jtvnw.net/previews-ttv/live_user_{safeUsername.ToLowerInvariant()}-640x360.jpg?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
                     }
 
-                    options.Url = $"https://twitch.tv/{user.Username}";
+                    options.Url = $"https://twitch.tv/{safeUsername}";
                     options.Buttons = new List<DiscordButton>
                     {
                         new DiscordButton
                         {
                             Label = "🎮 **READY TO WATCH? CLICK HERE!**",
-                            Url = $"https://twitch.tv/{user.Username}",
+                            Url = $"https://twitch.tv/{safeUsername}",
                             Style = 5
                         }
                     };
@@ -158,7 +164,7 @@ namespace OmniForge.Infrastructure.Services
 
                 default:
                     title = (string?)GetProperty(eventData, "title") ?? "📢 OmniForge Notification";
-                    description = (string?)GetProperty(eventData, "description") ?? $"Event: {eventType}";
+                    description = (string?)GetProperty(eventData, "description") ?? $"Event: {safeEventType}";
                     color = (int?)GetProperty(eventData, "color") ?? 0x5865F2; // Discord blurple
                     break;
             }
@@ -388,7 +394,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", LogSanitizer.Sanitize(webhookUrl));
+                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", _logValueSanitizer.Safe(webhookUrl));
                 return false;
             }
         }
@@ -419,7 +425,7 @@ namespace OmniForge.Infrastructure.Services
             // Legacy fallback: webhook
             if (!string.IsNullOrWhiteSpace(user.DiscordWebhookUrl))
             {
-                _logger.LogWarning("⚠️ Sending Discord notification via legacy webhook for {Username}. Migrate to channelId for better security.", LogSanitizer.Sanitize(user.Username));
+                _logger.LogWarning("⚠️ Sending Discord notification via legacy webhook for {Username}. Migrate to channelId for better security.", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 var webhookUrl = user.DiscordWebhookUrl;
                 if (options.Buttons != null && options.Buttons.Count > 0)
                 {
@@ -436,14 +442,14 @@ namespace OmniForge.Infrastructure.Services
                 var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                _logger.LogInformation("Sending Discord webhook to {Url}", LogSanitizer.Sanitize(url));
+                _logger.LogInformation("Sending Discord webhook to {Url}", (url ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 var response = await _httpClient.PostAsync(url, content);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorText = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, LogSanitizer.Sanitize(errorText));
+                    _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, (errorText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {

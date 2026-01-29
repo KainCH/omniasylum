@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
-using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -84,7 +83,13 @@ namespace OmniForge.Infrastructure.Services
                         .OrderByDescending(t => t)
                         .FirstOrDefault();
 
-                    _logger.LogInformation("Milestone reached: {CounterType} {Milestone} for user {Username}", LogSanitizer.Sanitize(counterType), milestone, LogSanitizer.Sanitize(user.Username));
+                    var safeCounterType = string.IsNullOrWhiteSpace(counterType) ? "unknown" : counterType;
+
+                    _logger.LogInformation(
+                        "Milestone reached: {CounterType} {Milestone} for user {Username}",
+                        safeCounterType.Replace("\r", "\\r").Replace("\n", "\\n"),
+                        milestone,
+                        (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                     // 4. Send Discord Notification
                     if (discordEnabledForType && (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl)))
@@ -106,7 +111,7 @@ namespace OmniForge.Infrastructure.Services
                     // 5. Send Twitch Chat Notification
                     if (channelEnabledForType)
                     {
-                        string emoji = counterType.ToLower() switch
+                        string emoji = safeCounterType.ToLower() switch
                         {
                             "deaths" => "💀",
                             "swears" => "🤬",
@@ -114,17 +119,20 @@ namespace OmniForge.Infrastructure.Services
                             _ => "🎉"
                         };
 
-                        string message = $"{emoji} MILESTONE REACHED! {milestone} {counterType.ToUpper()}! Current count: {newValue} {emoji}";
+                        string message = $"{emoji} MILESTONE REACHED! {milestone} {safeCounterType.ToUpper()}! Current count: {newValue} {emoji}";
                         await _twitchClientManager.SendMessageAsync(user.TwitchUserId, message);
                     }
 
                     // 6. Emit Overlay Event
-                    await _overlayNotifier.NotifyMilestoneReachedAsync(user.TwitchUserId, counterType, milestone, newValue, previousMilestone);
+                    await _overlayNotifier.NotifyMilestoneReachedAsync(user.TwitchUserId, safeCounterType, milestone, newValue, previousMilestone);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking milestones for user {Username}", LogSanitizer.Sanitize(user.Username));
+                _logger.LogError(
+                    ex,
+                    "Error checking milestones for user {Username}",
+                    (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
     }

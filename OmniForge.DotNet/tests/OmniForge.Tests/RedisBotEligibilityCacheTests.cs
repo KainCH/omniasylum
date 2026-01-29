@@ -76,6 +76,45 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task TryGetAsync_WhenValueIsInvalidJson_ReturnsNull()
+        {
+            var db = new Mock<IDatabase>(MockBehavior.Strict);
+            db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .ReturnsAsync((RedisValue)"{ invalid json }");
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "dev" });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(db.Object));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task TryGetAsync_WhenNamespaceMissing_UsesDefaultNamespaceInKey()
+        {
+            RedisKey? capturedKey = null;
+
+            var db = new Mock<IDatabase>(MockBehavior.Strict);
+            db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .Callback<RedisKey, CommandFlags>((k, _) => capturedKey = k)
+                .ReturnsAsync(RedisValue.Null);
+
+            var settings = Options.Create(new RedisSettings { HostName = "example:10000", KeyNamespace = "  " });
+            var logger = Mock.Of<ILogger<RedisBotEligibilityCache>>();
+
+            var cache = new RedisBotEligibilityCache(settings, logger, databaseFactory: () => Task.FromResult<IDatabase?>(db.Object));
+
+            var result = await cache.TryGetAsync("broadcaster", "bot", CancellationToken.None);
+
+            Assert.Null(result);
+            Assert.NotNull(capturedKey);
+            Assert.Equal("botEligibility:v1:default:broadcaster:bot", (string)capturedKey!);
+        }
+
+        [Fact]
         public async Task SetAsync_ThenTryGetAsync_ReturnsCachedValue()
         {
             var expected = new BotEligibilityResult(true, "botUserId", "ok");

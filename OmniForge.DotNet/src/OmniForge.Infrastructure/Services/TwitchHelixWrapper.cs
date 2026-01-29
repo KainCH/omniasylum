@@ -60,13 +60,19 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 _logger.LogInformation("Creating EventSub Subscription: Type={Type}, Version={Version}, SessionId={SessionId}, ClientId={ClientId}, TokenLength={TokenLength}",
-                    LogSanitizer.Sanitize(type), LogSanitizer.Sanitize(version), LogSanitizer.Sanitize(sessionId), LogSanitizer.Sanitize(clientId), accessToken?.Length ?? 0);
+                    (type ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (version ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (sessionId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (clientId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    accessToken?.Length ?? 0);
 
                 if (condition != null)
                 {
                     foreach (var kvp in condition)
                     {
-                        _logger.LogInformation("EventSub Condition: {Key}={Value}", LogSanitizer.Sanitize(kvp.Key), LogSanitizer.Sanitize(kvp.Value));
+                        _logger.LogInformation("EventSub Condition: {Key}={Value}",
+                            (kvp.Key ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                            (kvp.Value ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     }
                 }
 
@@ -78,7 +84,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (TwitchLib.Api.Core.Exceptions.BadRequestException ex)
             {
-                _logger.LogError(ex, "BadRequestException in CreateEventSubSubscriptionAsync: {Message}", LogSanitizer.Sanitize(ex.Message));
+                _logger.LogError(ex, "BadRequestException in CreateEventSubSubscriptionAsync: {Message}", (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 // Log the raw response body if possible, or at least the parameters again
                 throw;
             }

@@ -73,7 +73,9 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
         {
-            await _hubContext.Clients.Group($"user:{userId}").SendAsync("resub", new { displayName, months, tier, message });
+            // Do not include raw chat message content in overlay payloads.
+            // We only act on commands; we don't display chat.
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("resub", new { displayName, months, tier });
         }
 
         public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
@@ -83,7 +85,9 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
         {
-            await _hubContext.Clients.Group($"user:{userId}").SendAsync("bitsReceived", new { displayName, amount, message, totalBits });
+            // Do not include raw chat message content in overlay payloads.
+            // We only act on commands; we don't display chat.
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("bitsReceived", new { displayName, amount, totalBits });
         }
 
         public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)

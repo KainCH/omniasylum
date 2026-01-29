@@ -29,7 +29,7 @@ namespace OmniForge.Web.Controllers
         public IActionResult GetStatus()
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("📊 Log status requested by {UserId}", LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("📊 Log status requested by {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             var process = Process.GetCurrentProcess();
             var status = new
@@ -64,7 +64,7 @@ namespace OmniForge.Web.Controllers
             var username = User.FindFirst("username")?.Value ?? "Unknown";
             var testId = Guid.NewGuid().ToString().Substring(0, 8);
 
-            _logger.LogInformation("🧪 Log test initiated by {Username} ({UserId}) - TestId: {TestId}", LogSanitizer.Sanitize(username), LogSanitizer.Sanitize(userId), testId);
+            _logger.LogInformation("🧪 Log test initiated by {Username} ({UserId}) - TestId: {TestId}", (username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), testId);
 
             // Test different log levels
             _logger.LogError("Test error log [TestId: {TestId}]", testId);
@@ -73,8 +73,8 @@ namespace OmniForge.Web.Controllers
             _logger.LogDebug("Test debug log [TestId: {TestId}]", testId);
 
             // Simulate specialized logging
-            _logger.LogInformation("🔐 AUTH: test-login for {UserId} [Success: True] [TestId: {TestId}]", LogSanitizer.Sanitize(userId), testId);
-            _logger.LogInformation("📺 TWITCH: test-event for {UserId} [Type: follow] [TestId: {TestId}]", LogSanitizer.Sanitize(userId), testId);
+            _logger.LogInformation("🔐 AUTH: test-login for {UserId} [Success: True] [TestId: {TestId}]", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), testId);
+            _logger.LogInformation("📺 TWITCH: test-event for {UserId} [Type: follow] [TestId: {TestId}]", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), testId);
             _logger.LogInformation("💾 DATABASE: test-query on users [Success: True] [Duration: 42ms] [TestId: {TestId}]", testId);
             _logger.LogInformation("⏱️ PERFORMANCE: test-operation [Duration: 1500ms] [TestId: {TestId}]", testId);
 
@@ -104,7 +104,7 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             var username = User.FindFirst("username")?.Value ?? "Unknown";
 
-            _logger.LogInformation("📋 KQL queries requested by {UserId}", LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("📋 KQL queries requested by {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             var queries = new Dictionary<string, object>
             {
@@ -169,7 +169,7 @@ namespace OmniForge.Web.Controllers
         public IActionResult GetStats()
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("📈 Admin log statistics requested by {UserId}", LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("📈 Admin log statistics requested by {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             var process = Process.GetCurrentProcess();
             var stats = new

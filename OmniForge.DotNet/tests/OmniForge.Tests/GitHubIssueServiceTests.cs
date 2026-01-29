@@ -90,6 +90,156 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task CreateIssueAsync_ShouldUseBearerScheme_ForFineGrainedToken()
+        {
+            var handler = new Mock<HttpMessageHandler>();
+
+            var response = new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.Created,
+                Content = new StringContent("{\"number\": 1, \"html_url\": \"https://github.com/KainCH/omniasylum/issues/1\"}", Encoding.UTF8, "application/json")
+            };
+
+            handler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req =>
+                        req.Method == HttpMethod.Post &&
+                        req.Headers.Authorization != null &&
+                        req.Headers.Authorization.Scheme == "Bearer"),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(response)
+                .Verifiable();
+
+            var httpClient = new HttpClient(handler.Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "github_pat_abc",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            var result = await service.CreateIssueAsync("t", "b", new List<string>(), CancellationToken.None);
+            Assert.Equal(1, result.Number);
+
+            handler.Protected().Verify(
+                "SendAsync",
+                Times.Once(),
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>());
+
+            response.Dispose();
+        }
+
+        [Theory]
+        [InlineData(" ")]
+        [InlineData("")]
+        public async Task CreateIssueAsync_ShouldThrow_WhenTitleMissing(string title)
+        {
+            var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "test-token",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                service.CreateIssueAsync(title, "body", new List<string>(), CancellationToken.None));
+        }
+
+        [Theory]
+        [InlineData(" ")]
+        [InlineData("")]
+        public async Task CreateIssueAsync_ShouldThrow_WhenBodyMissing(string body)
+        {
+            var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "test-token",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                service.CreateIssueAsync("title", body, new List<string>(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task CreateIssueAsync_ShouldThrow_WhenRepoNotConfigured()
+        {
+            var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "test-token",
+                    RepoOwner = "",
+                    RepoName = ""
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateIssueAsync("t", "b", new List<string>(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task CreateIssueAsync_ShouldThrow_WhenApiBaseUrlInvalid()
+        {
+            var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "not-a-url",
+                    IssuesToken = "test-token",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateIssueAsync("t", "b", new List<string>(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task CreateIssueAsync_ShouldThrow_WhenTokenIsPlaceholder()
+        {
+            var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "DO_NOT_STORE_GITHUB_PAT_HERE_USE_KEY_VAULT_OR_ENVIRONMENT_VARIABLE",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            var logger = Mock.Of<ILogger<GitHubIssueService>>();
+            var service = new GitHubIssueService(httpClient, settings, logger);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateIssueAsync("t", "b", new List<string>(), CancellationToken.None));
+        }
+
+        [Fact]
         public async Task CreateIssueAsync_ShouldThrow_WhenGitHubReturnsNonSuccess()
         {
             var handler = new Mock<HttpMessageHandler>();

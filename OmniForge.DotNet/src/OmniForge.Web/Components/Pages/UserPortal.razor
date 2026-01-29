@@ -222,6 +222,42 @@
       </div>
     </div>
 
+    <!-- Games Card -->
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm hover-card">
+        <div class="card-body text-center p-5">
+          <div class="mb-4">
+            <i class="bi bi-controller text-info" style="font-size: 4rem;"></i>
+          </div>
+          <h3 class="card-title">Games</h3>
+          <p class="card-text text-muted">
+            Manage game history, active game context, and per-game counters.
+          </p>
+          <a href="@GetContextualLink("settings/games")" class="btn btn-info text-white btn-lg mt-3 stretched-link">
+            Manage Games
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Channel Points Card -->
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm hover-card">
+        <div class="card-body text-center p-5">
+          <div class="mb-4">
+            <i class="bi bi-stars text-warning" style="font-size: 4rem;"></i>
+          </div>
+          <h3 class="card-title">Channel Points</h3>
+          <p class="card-text text-muted">
+            Create and manage channel point rewards mapped to OmniForge actions.
+          </p>
+          <a href="@GetContextualLink("settings/channel-points")" class="btn btn-warning text-dark btn-lg mt-3 stretched-link">
+            Manage Rewards
+          </a>
+        </div>
+      </div>
+    </div>
+
     <!-- Mod Team Manager Card (Always visible for own context) -->
     @if (activeContextId == currentUserId)
     {
@@ -333,15 +369,35 @@
   {
     if (string.IsNullOrEmpty(currentUserId)) return;
 
-    var user = await UserRepository.GetUserAsync(currentUserId);
-    if (user?.ManagedStreamers != null && user.ManagedStreamers.Any())
+    var user = currentUser ?? await UserRepository.GetUserAsync(currentUserId);
+
+    // Admins should be able to access the "mod view" for any active streamer.
+    if (string.Equals(user?.Role, "admin", StringComparison.OrdinalIgnoreCase))
     {
-      var streamerTasks = user.ManagedStreamers.Select(UserRepository.GetUserAsync);
+      var allUsers = await UserRepository.GetAllUsersAsync();
+      managedStreamers = allUsers
+        .Where(u => u != null)
+        .Where(u => u.IsActive)
+        .Where(u => !string.Equals(u.Role, "admin", StringComparison.OrdinalIgnoreCase))
+        .Where(u => !string.Equals(u.TwitchUserId, currentUserId, StringComparison.Ordinal))
+        .OrderBy(u => string.IsNullOrWhiteSpace(u.DisplayName) ? u.Username : u.DisplayName)
+        .ToList();
+      return;
+    }
+
+    var managedIds = user?.ManagedStreamers
+      ?.Where(id => !string.IsNullOrWhiteSpace(id))
+      ?.Distinct(StringComparer.Ordinal)
+      ?.ToList();
+
+    if (managedIds?.Any() == true)
+    {
+      var streamerTasks = managedIds.Select(UserRepository.GetUserAsync);
       var streamers = await Task.WhenAll(streamerTasks);
       managedStreamers = streamers
-      .Where(streamer => streamer != null)
-      .Select(streamer => streamer!)
-      .ToList();
+        .Where(streamer => streamer != null)
+        .Select(streamer => streamer!)
+        .ToList();
     }
   }
 

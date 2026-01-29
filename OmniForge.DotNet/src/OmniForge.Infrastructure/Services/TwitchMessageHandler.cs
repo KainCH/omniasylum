@@ -1,15 +1,10 @@
-using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using TwitchLib.Client.Models;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
-    public interface ITwitchMessageHandler
-    {
-        Task HandleMessageAsync(string userId, ChatMessage chatMessage, Func<string, string, Task> sendMessage);
-    }
-
     public class TwitchMessageHandler : ITwitchMessageHandler
     {
         private readonly IChatCommandProcessor _chatCommandProcessor;

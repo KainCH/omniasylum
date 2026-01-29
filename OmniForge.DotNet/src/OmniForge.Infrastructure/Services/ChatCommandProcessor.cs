@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
@@ -25,16 +26,12 @@ namespace OmniForge.Infrastructure.Services
         public bool IsSubscriber { get; init; }
     }
 
-    public interface IChatCommandProcessor
-    {
-        Task ProcessAsync(ChatCommandContext context, Func<string, string, Task>? sendMessage = null);
-    }
-
     public class ChatCommandProcessor : IChatCommandProcessor
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<ChatCommandProcessor> _logger;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         // Cooldown tracking: UserId -> Command -> LastUsedTime
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
@@ -53,12 +50,19 @@ namespace OmniForge.Infrastructure.Services
 
         private static readonly ConditionalWeakTable<ICounterLibraryRepository, CounterLibraryCacheEntry> CounterLibraryCache = new();
 
-        private static readonly Regex AttachedAmountRegex = new(
-            @"^(.+[\+\-]):(\d+)$",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        // Inline amount between command base and operation, e.g. !d5+ or !death10-
+        // We only treat the digits as an amount if the derived base command exists.
+        private static readonly Regex InlineAmountBeforeOpRegex = new(
+            @"^(![^\d\s\+\-:]+?)((?:[2-9]|10))([\+\-])$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         private static readonly Regex CustomCounterCommandRegex = new(
-            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?:(?<op>[\+\-])(?::(?<num>\d+))?)?$",
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*)(?:(?<op>[\+\-]))?$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+        // Inline amount right before + / - for custom counters too, e.g. !pulls5+ or !boss10-
+        private static readonly Regex InlineAmountCustomCounterRegex = new(
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*?)(?<num>(?:[2-9]|10))(?<op>[\+\-])$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         // Custom counter trigger cache expiration.
@@ -94,11 +98,13 @@ namespace OmniForge.Infrastructure.Services
         public ChatCommandProcessor(
             IServiceScopeFactory scopeFactory,
             IOverlayNotifier overlayNotifier,
-            ILogger<ChatCommandProcessor> logger)
+            ILogger<ChatCommandProcessor> logger,
+            ILogValueSanitizer logValueSanitizer)
         {
             _scopeFactory = scopeFactory;
             _overlayNotifier = overlayNotifier;
             _logger = logger;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task ProcessAsync(ChatCommandContext context, Func<string, string, Task>? sendMessage = null)
@@ -106,17 +112,18 @@ namespace OmniForge.Infrastructure.Services
             if (!context.Message.StartsWith("!")) return;
 
             // Twitch chat (especially mobile) can contain non-breaking spaces or other unicode whitespace.
-            // Normalize and split on any whitespace so "!cmd+ 5" reliably parses the amount.
+            // Normalize and split on any whitespace for consistent parsing (e.g. action commands like "!both 2").
             var normalizedMessage = context.Message.Replace('\u00A0', ' ').Trim();
             var parts = normalizedMessage.Split(Array.Empty<char>(), StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return;
 
             var commandText = parts[0].ToLowerInvariant();
-            int? requestedAmount = null;
-            if (parts.Length > 1 && int.TryParse(parts[1], out var parsedAmount) && parsedAmount > 0)
+            int? trailingAmount = null;
+            if (parts.Length > 1 && int.TryParse(parts[1], out var parsedTrailing) && parsedTrailing > 0)
             {
-                requestedAmount = parsedAmount;
+                trailingAmount = parsedTrailing;
             }
+            var hasTrailingNumericArgument = trailingAmount.HasValue;
 
             var isMod = context.IsModerator || context.IsBroadcaster;
             var isSubscriber = context.IsSubscriber;
@@ -132,7 +139,14 @@ namespace OmniForge.Infrastructure.Services
                     var user = await userRepository.GetUserAsync(context.UserId);
 
                     var chatCommands = await userRepository.GetChatCommandsConfigAsync(context.UserId) ?? new ChatCommandConfiguration();
-                    var maxIncrement = Math.Clamp(chatCommands.MaxIncrementAmount, 1, 10);
+                    var configuredMaxIncrement = chatCommands.MaxIncrementAmount;
+                    // Inline amounts are 2-10. Older configs/defaults used 1, which would clamp all inline amounts down to 1.
+                    // Treat values < 2 as legacy/unset and default to 10.
+                    if (configuredMaxIncrement < 2)
+                    {
+                        configuredMaxIncrement = 10;
+                    }
+                    var maxIncrement = Math.Clamp(configuredMaxIncrement, 1, 10);
 
                     var previousDeaths = counters.Deaths;
                     var previousSwears = counters.Swears;
@@ -140,15 +154,15 @@ namespace OmniForge.Infrastructure.Services
 
                     bool changed = false;
 
-                    // Resolve command (exact match or attached amount like !sw+:5)
-                    var (cmdConfig, attachedAmount) = ResolveCommand(commandText, chatCommands);
+                    // Resolve command (exact match or inline amount like !d5+)
+                    var (cmdConfig, inlineAmount) = ResolveCommand(commandText, chatCommands);
 
                     if (cmdConfig == null)
                     {
                         var handledCustom = await TryHandleCustomCounterCommandAsync(
                             context,
                             commandText,
-                            requestedAmount,
+                            hasTrailingNumericArgument,
                             maxIncrement,
                             isMod,
                             sendMessage,
@@ -178,7 +192,7 @@ namespace OmniForge.Infrastructure.Services
                             var handledCustom = await TryHandleCustomCounterCommandAsync(
                                 context,
                                 commandText,
-                                requestedAmount,
+                                hasTrailingNumericArgument,
                                 maxIncrement,
                                 isMod,
                                 sendMessage,
@@ -192,8 +206,23 @@ namespace OmniForge.Infrastructure.Services
                             }
                         }
 
-                        // Determine amount: Attached > Requested > Default(1)
-                        var amountToUse = attachedAmount ?? requestedAmount ?? 1;
+                        // Old formats like "!cmd+ 5" are no longer supported. Avoid silently applying +1.
+                        var isDirectMutationCommand = commandText.EndsWith('+') || commandText.EndsWith('-');
+                        if (hasTrailingNumericArgument && isDirectMutationCommand && (actionForRouting == "increment" || actionForRouting == "decrement"))
+                        {
+                            return;
+                        }
+
+                        // Determine amount:
+                        // - Inline amounts apply to direct mutation commands only (e.g. !d5+).
+                        // - Trailing numeric args apply to action commands without +/- suffix (e.g. !both 2).
+                        // - Otherwise default to 1.
+                        var amountToUse = inlineAmount
+                            ?? (!isDirectMutationCommand
+                                && trailingAmount.HasValue
+                                && (actionForRouting == "increment" || actionForRouting == "decrement")
+                                    ? trailingAmount.Value
+                                    : 1);
                         var amount = Math.Clamp(amountToUse, 1, maxIncrement);
 
                         // Check Permission
@@ -223,18 +252,13 @@ namespace OmniForge.Infrastructure.Services
                             var userCooldowns = _cooldowns.GetOrAdd(context.UserId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
                             var now = DateTimeOffset.UtcNow;
 
-                            // Use the base command name for cooldown key, not the full text (so !sw+:5 shares cooldown with !sw+)
-                            // We don't have the base command name easily here unless we return it from ResolveCommand.
-                            // For now, use commandText which might be !sw+:5. Ideally should be !sw+.
-                            // Let's improve ResolveCommand to return the base key.
-
-                            // Re-resolving key for cooldown consistency
+                            // Cooldown key: prefer base command so !d5+ shares cooldown with !d+
                             var cooldownKey = commandText;
-                            if (attachedAmount.HasValue)
+                            var cooldownInline = InlineAmountBeforeOpRegex.Match(commandText);
+                            if (cooldownInline.Success)
                             {
-                                // If attached amount, strip digits to get base key
-                                var match = AttachedAmountRegex.Match(commandText);
-                                if (match.Success) cooldownKey = match.Groups[1].Value;
+                                var baseCmd = $"{cooldownInline.Groups[1].Value.ToLowerInvariant()}{cooldownInline.Groups[3].Value}";
+                                cooldownKey = baseCmd;
                             }
 
                             var onCooldown = userCooldowns.TryGetValue(cooldownKey, out var lastUsed)
@@ -327,21 +351,21 @@ namespace OmniForge.Infrastructure.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", LogSanitizer.Sanitize(context.UserId));
+                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing chat command for {UserId}", LogSanitizer.Sanitize(context.UserId));
+                _logger.LogError(ex, "Error processing chat command for {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
 
         private async Task<bool> TryHandleCustomCounterCommandAsync(
             ChatCommandContext context,
             string commandText,
-            int? requestedAmount,
+            bool hasTrailingNumericArgument,
             int maxIncrement,
             bool isMod,
             Func<string, string, Task>? sendMessage,
@@ -353,8 +377,27 @@ namespace OmniForge.Infrastructure.Services
             // - !<counterId>      (show current value)
             // - !<counterId>+     (increment, mod/broadcaster)
             // - !<counterId>-     (decrement, mod/broadcaster)
-            // - !<counterId>+:5   (attached amount)
-            // - !<counterId>+ 5   (space amount - parsed upstream into requestedAmount)
+            // - !<counterId>5+    (inline amount 2-10 before operator)
+
+            // Old formats like "!counter+ 5" are no longer supported. Avoid silently applying +1.
+            if (hasTrailingNumericArgument)
+            {
+                return true;
+            }
+
+            // Inline amount (e.g. !pulls5+): strip the digits out of the command token.
+            var inline = InlineAmountCustomCounterRegex.Match(commandText);
+            int? inlineAmount = null;
+            if (inline.Success
+                && int.TryParse(inline.Groups["num"].Value, out var parsedInlineAmount)
+                && parsedInlineAmount >= 2
+                && parsedInlineAmount <= 10)
+            {
+                var baseId = inline.Groups["id"].Value;
+                var inlineOp = inline.Groups["op"].Value;
+                commandText = $"!{baseId}{inlineOp}";
+                inlineAmount = parsedInlineAmount;
+            }
 
             // NOTE: Counter IDs may include '-' but a trailing '-' is interpreted as the decrement operator.
             // This pattern allows internal hyphens but prevents the trailing operator from being consumed by the id.
@@ -367,12 +410,6 @@ namespace OmniForge.Infrastructure.Services
             var requestedId = match.Groups["id"].Value;
             var op = match.Groups["op"].Success ? match.Groups["op"].Value : null;
 
-            int? attachedAmount = null;
-            if (match.Groups["num"].Success && int.TryParse(match.Groups["num"].Value, out var parsed) && parsed > 0)
-            {
-                attachedAmount = parsed;
-            }
-
             CustomCounterConfiguration? customConfig;
             try
             {
@@ -380,7 +417,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", LogSanitizer.Sanitize(context.UserId));
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return false;
             }
 
@@ -406,8 +443,8 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "⚠️ Rejected custom counter command with invalid counterId '{CounterId}' for user {UserId}",
-                    LogSanitizer.Sanitize(actualCounterId),
-                    LogSanitizer.Sanitize(context.UserId));
+                    (actualCounterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return false;
             }
 
@@ -453,13 +490,13 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogDebug(
                     "Ignoring custom counter mutation from non-mod/broadcaster. user_id={UserId} counter_id={CounterId} op={Op}",
-                    LogSanitizer.Sanitize(context.UserId),
-                    LogSanitizer.Sanitize(actualCounterId),
-                    LogSanitizer.Sanitize(op));
+                    _logValueSanitizer.Safe(context.UserId),
+                    _logValueSanitizer.Safe(actualCounterId),
+                    _logValueSanitizer.Safe(op));
                 return true;
             }
 
-            var amountToUse = attachedAmount ?? requestedAmount ?? 1;
+            var amountToUse = inlineAmount ?? 1;
             var amount = Math.Clamp(amountToUse, 1, maxIncrement);
 
             var incrementBy = Math.Max(1, def.IncrementBy);
@@ -641,17 +678,17 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "⚠️ Custom counter trigger collision for user {UserId}: trigger '{Trigger}' maps to both '{Existing}' and '{Incoming}'. Keeping existing mapping.",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(triggerToken),
-                    LogSanitizer.Sanitize(existing),
-                    LogSanitizer.Sanitize(counterId));
+                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (triggerToken ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (existing ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
             triggerToCounterId[triggerToken] = counterId;
         }
 
-        private (ChatCommandDefinition? Config, int? AttachedAmount) ResolveCommand(
+        private (ChatCommandDefinition? Config, int? InlineAmount) ResolveCommand(
             string commandText,
             ChatCommandConfiguration userConfig)
         {
@@ -659,13 +696,16 @@ namespace OmniForge.Infrastructure.Services
             if (userConfig.Commands.TryGetValue(commandText, out var userCmd)) return (userCmd, null);
             if (_defaultCommands.TryGetValue(commandText, out var defCmd)) return (defCmd, null);
 
-            // 2. Try parsing attached amount (e.g. !sw+:5)
-            // Regex: ^(.+[\+\-]):(\d+)$
-            var match = AttachedAmountRegex.Match(commandText);
-            if (match.Success)
+            // 2. Try parsing inline amount like !d5+ or !death10-
+            // Format: !<base><num><op> => resolve base command as !<base><op> with amount = <num>
+            var inline = InlineAmountBeforeOpRegex.Match(commandText);
+            if (inline.Success)
             {
-                var baseCmd = match.Groups[1].Value;
-                if (int.TryParse(match.Groups[2].Value, out var amount))
+                var basePart = inline.Groups[1].Value.ToLowerInvariant();
+                var op = inline.Groups[3].Value;
+                var baseCmd = $"{basePart}{op}";
+
+                if (int.TryParse(inline.Groups[2].Value, out var amount) && amount >= 2 && amount <= 10)
                 {
                     if (userConfig.Commands.TryGetValue(baseCmd, out userCmd)) return (userCmd, amount);
                     if (_defaultCommands.TryGetValue(baseCmd, out defCmd)) return (defCmd, amount);

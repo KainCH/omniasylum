@@ -93,6 +93,34 @@
         "reveal": "always",
         "panel": "shared"
       }
+    },
+    {
+      "label": "Cleanup Container App Revisions (Dev)",
+      "type": "shell",
+      "command": ".\\cleanup-revisions.ps1 -Environment \"dev\" -MaxInactiveRevisions 5",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Cleanup Container App Revisions (Prod)",
+      "type": "shell",
+      "command": ".\\cleanup-revisions.ps1 -Environment \"prod\" -MaxInactiveRevisions 5",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
     }
   ],
   "inputs": [

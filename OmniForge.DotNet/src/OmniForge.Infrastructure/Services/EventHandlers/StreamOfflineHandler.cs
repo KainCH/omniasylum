@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {
@@ -92,6 +93,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             // Notify Overlay
             if (overlayNotifier != null && counters != null)
             {
+                await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "offline");
                 await overlayNotifier.NotifyStreamEndedAsync(broadcasterId, counters);
             }
         }
