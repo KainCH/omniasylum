@@ -252,7 +252,7 @@ namespace OmniForge.Web.Controllers
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
-            var effective = await GetEffectiveOverlaySettingsAsync(userId ?? string.Empty, user);
+            var effective = await GetEffectiveOverlaySettingsAsync(userId, user);
 
             _logger.LogDebug("📋 Returning overlay settings (effective): Position={Position}, Scale={Scale}",
                 LogValue.Safe(effective?.Position), effective?.Scale);
@@ -339,7 +339,7 @@ namespace OmniForge.Web.Controllers
                 return BadRequest(new { error = "userId is required" });
             }
 
-            var safeUserId = userId ?? string.Empty;
+            var safeUserId = userId;
 
             _logger.LogInformation("📊 GetPublicCounters called for userId: {UserId}", LogValue.Safe(safeUserId));
 

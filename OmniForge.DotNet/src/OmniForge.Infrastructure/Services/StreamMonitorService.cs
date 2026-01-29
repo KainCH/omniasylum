@@ -521,7 +521,7 @@ namespace OmniForge.Infrastructure.Services
 
                     // Channel Points redemptions (used for jump scares + other reward actions).
                     // Subscribe only when feature is enabled and the broadcaster token has the required scope.
-                    if (!isAdminActing && user.Features.ChannelPoints)
+                    if (user.Features.ChannelPoints)
                     {
                         if (tokenScopes != null && tokenScopes.Contains("channel:read:redemptions"))
                         {

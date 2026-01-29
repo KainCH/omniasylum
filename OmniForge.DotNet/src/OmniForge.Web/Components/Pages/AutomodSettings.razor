@@ -265,7 +265,7 @@ new Slider { Label = "Swearing", GetValue = () => settings.Swearing, SetValue = 
         return;
       }
 
-      var safeUserId = userId ?? string.Empty;
+      var safeUserId = userId;
 
       Logger.LogInformation("AutoMod save requested. UserId={UserId}", LogValueSanitizer.Safe(userId));
 

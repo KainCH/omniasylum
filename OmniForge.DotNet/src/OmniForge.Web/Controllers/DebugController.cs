@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
-using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Controllers
 {
@@ -43,7 +42,7 @@ namespace OmniForge.Web.Controllers
             {
                 return BadRequest(new { success = false, error = "TwitchUserId is required" });
             }
-            string targetUserId = request.TwitchUserId ?? string.Empty;
+            string targetUserId = request.TwitchUserId;
 
             if (string.IsNullOrWhiteSpace(request.TextPrompt))
             {
@@ -77,7 +76,7 @@ namespace OmniForge.Web.Controllers
                 return BadRequest("Counters are required");
             }
 
-            var targetUserId = request.TwitchUserId!;
+            var targetUserId = request.TwitchUserId;
             _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", LogValue.Safe(targetUserId));
 
             // Validate request
@@ -91,13 +90,13 @@ namespace OmniForge.Web.Controllers
 
             var series = new Series
             {
-                UserId = targetUserId!,
+                UserId = targetUserId,
                 Id = seriesId,
                 Name = request.SeriesName ?? string.Empty,
                 Description = request.Description ?? "Restored via Admin Debug",
                 Snapshot = new Counter
                 {
-                    TwitchUserId = targetUserId!,
+                    TwitchUserId = targetUserId,
                     Deaths = request.Counters.Deaths,
                     Swears = request.Counters.Swears,
                     Screams = request.Counters.Screams,
