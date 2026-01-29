@@ -9,7 +9,6 @@ using Microsoft.Extensions.Options;
 using OmniForge.Core.Configuration;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
-using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Entities;
 
 namespace OmniForge.Infrastructure.Repositories
@@ -37,20 +36,26 @@ namespace OmniForge.Infrastructure.Repositories
         {
             try
             {
-                _logger.LogDebug("📥 Getting alert {AlertId} for user {UserId}", LogSanitizer.Sanitize(alertId), LogSanitizer.Sanitize(userId));
+                _logger.LogDebug(
+                    "📥 Getting alert {AlertId} for user {UserId}",
+                    alertId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                    userId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 var response = await _alertsClient.GetEntityAsync<AlertTableEntity>(userId, alertId);
                 return response.Value.ToAlert();
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
             {
-                _logger.LogDebug("⚠️ Alert {AlertId} not found for user {UserId}", LogSanitizer.Sanitize(alertId), LogSanitizer.Sanitize(userId));
+                _logger.LogDebug(
+                    "⚠️ Alert {AlertId} not found for user {UserId}",
+                    alertId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                    userId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 return null;
             }
         }
 
         public async Task<IEnumerable<Alert>> GetAlertsAsync(string userId)
         {
-            _logger.LogDebug("📥 Getting all alerts for user {UserId}", LogSanitizer.Sanitize(userId));
+            _logger.LogDebug("📥 Getting all alerts for user {UserId}", userId.Replace("\r", "\\r").Replace("\n", "\\n"));
             var alerts = new List<Alert>();
             var query = _alertsClient.QueryAsync<AlertTableEntity>(filter: $"PartitionKey eq '{userId}'");
 
@@ -59,16 +64,22 @@ namespace OmniForge.Infrastructure.Repositories
                 alerts.Add(entity.ToAlert());
             }
 
-            _logger.LogDebug("✅ Retrieved {Count} alerts for user {UserId}", alerts.Count, LogSanitizer.Sanitize(userId));
+            _logger.LogDebug(
+                "✅ Retrieved {Count} alerts for user {UserId}",
+                alerts.Count,
+                userId.Replace("\r", "\\r").Replace("\n", "\\n"));
             return alerts;
         }
 
         public async Task SaveAlertAsync(Alert alert)
         {
-            _logger.LogDebug("💾 Saving alert {AlertId} for user {UserId}", LogSanitizer.Sanitize(alert.Id), LogSanitizer.Sanitize(alert.UserId));
+            _logger.LogDebug(
+                "💾 Saving alert {AlertId} for user {UserId}",
+                (alert.Id ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (alert.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             var entity = AlertTableEntity.FromAlert(alert);
             await _alertsClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
-            _logger.LogDebug("✅ Saved alert {AlertId}", LogSanitizer.Sanitize(alert.Id));
+            _logger.LogDebug("✅ Saved alert {AlertId}", (alert.Id ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
         }
 
         public async Task DeleteAlertAsync(string userId, string alertId)

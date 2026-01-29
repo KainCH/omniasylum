@@ -129,7 +129,10 @@ namespace OmniForge.Web.Services
 
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
         {
-            LogOverlayAction(userId, "customAlert", alertType);
+            var safeUserId = userId ?? string.Empty;
+            var safeAlertType = alertType ?? string.Empty;
+
+            LogOverlayAction(safeUserId, "customAlert", safeAlertType);
 
             if (IsOverlayNotificationPayloadLoggingEnabled())
             {
@@ -142,8 +145,8 @@ namespace OmniForge.Web.Services
                     }
                     _logger.LogInformation(
                         "📦 Overlay payload: user_id={UserId}, alert_type={AlertType}, data={Data}",
-                        LogSanitizer.Sanitize(userId),
-                        LogSanitizer.Sanitize(alertType),
+                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
                         json);
                 }
                 catch
@@ -152,8 +155,8 @@ namespace OmniForge.Web.Services
                 }
             }
 
-            var payload = await EnrichPayloadAsync(userId, alertType, data);
-            await _webSocketManager.SendToUserAsync(userId, "customAlert", new { alertType, data = payload });
+            var payload = await EnrichPayloadAsync(safeUserId, safeAlertType, data);
+            await _webSocketManager.SendToUserAsync(safeUserId, "customAlert", new { alertType = safeAlertType, data = payload });
         }
 
         private void LogOverlayAction(string userId, string action, string? alertType = null)
@@ -173,15 +176,15 @@ namespace OmniForge.Web.Services
                 {
                     _logger.LogDebug(
                         "💓 Overlay heartbeat: user_id={UserId}, action={Action}",
-                        LogSanitizer.Sanitize(userId),
-                        LogSanitizer.Sanitize(action));
+                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 }
                 else
                 {
                     _logger.LogInformation(
                         "📣 Overlay send: user_id={UserId}, action={Action}",
-                        LogSanitizer.Sanitize(userId),
-                        LogSanitizer.Sanitize(action));
+                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 }
                 return;
             }
@@ -190,17 +193,17 @@ namespace OmniForge.Web.Services
             {
                 _logger.LogDebug(
                     "💓 Overlay heartbeat: user_id={UserId}, action={Action}, alert_type={AlertType}",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(action),
-                    LogSanitizer.Sanitize(alertType));
+                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             else
             {
                 _logger.LogInformation(
                     "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(action),
-                    LogSanitizer.Sanitize(alertType));
+                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
 

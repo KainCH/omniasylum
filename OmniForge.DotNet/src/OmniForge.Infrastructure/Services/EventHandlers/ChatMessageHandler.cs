@@ -59,7 +59,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     return;
                 }
 
-                var messageText = GetMessageText(eventData);
+                var messageText = GetMessageText(eventData) ?? string.Empty;
                 if (string.IsNullOrEmpty(messageText))
                 {
                     return;
@@ -67,6 +67,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                 // Normalize unicode whitespace and trim; EventSub provides message.text, but we want consistent parsing.
                 messageText = messageText.Replace('\u00A0', ' ').Trim();
+                var safeMessageText = messageText!;
 
                 var messageId = GetMessageId(eventData);
 
@@ -76,7 +77,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 var messageType = GetStringProperty(eventData, "message_type", string.Empty);
 
                 // Process chat commands via shared processor (EventSub path)
-                var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == broadcasterId;
+                var safeBroadcasterId = broadcasterId ?? string.Empty;
+                var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == safeBroadcasterId;
                 var isModerator = isBroadcaster || HasBadge(eventData, "moderator");
                 var isSubscriber = HasBadge(eventData, "subscriber") || HasBadge(eventData, "founder");
 
@@ -84,23 +86,23 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     Logger.LogInformation(
                         "💬 EventSub chat: broadcaster={BroadcasterLogin}({BroadcasterId}) chatter={ChatterLogin}({ChatterId}) type={MessageType} mod={IsMod} sub={IsSub} msgId={MessageId} text=\"{Text}\"",
-                        LogSanitizer.Sanitize(broadcasterLogin),
-                        LogSanitizer.Sanitize(broadcasterId),
-                        LogSanitizer.Sanitize(chatterLogin),
-                        LogSanitizer.Sanitize(chatterId),
-                        LogSanitizer.Sanitize(messageType),
+                        (broadcasterLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (chatterLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (chatterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (messageType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
                         isModerator,
                         isSubscriber,
-                        LogSanitizer.Sanitize(messageId),
-                        LogSanitizer.Sanitize(messageText));
+                        (messageId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (safeMessageText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
-                    if (messageText.StartsWith("!"))
+                    if (safeMessageText!.StartsWith("!"))
                     {
-                        var firstToken = messageText.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? messageText;
+                        var firstToken = safeMessageText!.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? safeMessageText;
                         Logger.LogInformation(
                             "🧩 Chat command candidate: {Token} full=\"{Text}\"",
-                            LogSanitizer.Sanitize(firstToken),
-                            LogSanitizer.Sanitize(messageText));
+                            (firstToken ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                            (safeMessageText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     }
                 }
 
@@ -108,15 +110,15 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     Logger.LogDebug(
                         "📦 EventSub chat payload (event): {Payload}",
-                        LogSanitizer.Sanitize(eventData.GetRawText()));
+                        eventData.GetRawText().Replace("\r", "\\r").Replace("\n", "\\n"));
                 }
 
-                if (!string.IsNullOrEmpty(messageText) && messageText.StartsWith("!"))
+                if (!string.IsNullOrEmpty(safeMessageText) && safeMessageText!.StartsWith("!"))
                 {
                     var context = new ChatCommandContext
                     {
-                        UserId = broadcasterId,
-                        Message = messageText,
+                        UserId = safeBroadcasterId,
+                        Message = safeMessageText,
                         IsModerator = isModerator,
                         IsBroadcaster = isBroadcaster,
                         IsSubscriber = isSubscriber
@@ -154,7 +156,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                             Logger.LogWarning(
                                 "⚠️ Skipping chat reply (must use app/bot token only). broadcaster_user_id={BroadcasterUserId}",
-                                OmniForge.Core.Utilities.LogSanitizer.Sanitize(uid));
+                                (uid ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         catch (Exception ex)
                         {
@@ -165,9 +167,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
 
                 // Check for Discord keywords
-                if (ContainsDiscordKeyword(messageText))
+                if (ContainsDiscordKeyword(safeMessageText!))
                 {
-                    await _discordInviteSender.SendDiscordInviteAsync(broadcasterId);
+                    await _discordInviteSender.SendDiscordInviteAsync(safeBroadcasterId);
                 }
             }
             catch (Exception ex)

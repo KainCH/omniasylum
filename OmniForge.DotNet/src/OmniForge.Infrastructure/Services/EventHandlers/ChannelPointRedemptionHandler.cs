@@ -31,7 +31,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var rewardId = TryGetRewardId(eventData);
             if (string.IsNullOrWhiteSpace(rewardId))
             {
-                Logger.LogDebug("Channel point redemption missing reward id. broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                Logger.LogDebug("Channel point redemption missing reward id. broadcaster_user_id={BroadcasterId}", broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
@@ -44,7 +44,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             if (channelPointRepository == null)
             {
-                Logger.LogWarning("⚠️ ChannelPointRepository missing; cannot process redemption. broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                Logger.LogWarning("⚠️ ChannelPointRepository missing; cannot process redemption. broadcaster_user_id={BroadcasterId}", broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
@@ -53,8 +53,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (reward == null)
             {
                 Logger.LogDebug("⏭️ Ignoring channel point redemption for unmanaged reward. broadcaster_user_id={BroadcasterId}, reward_id={RewardId}",
-                    LogSanitizer.Sanitize(broadcasterId),
-                    LogSanitizer.Sanitize(rewardId));
+                    broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                    rewardId.Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
@@ -68,10 +68,10 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             Logger.LogInformation(
                 "🎟️ Channel point redemption: broadcaster_user_id={BroadcasterId}, reward_id={RewardId}, action={Action}, user={User}",
-                LogSanitizer.Sanitize(broadcasterId),
-                LogSanitizer.Sanitize(rewardId),
-                LogSanitizer.Sanitize(reward.Action),
-                LogSanitizer.Sanitize(!string.IsNullOrWhiteSpace(redeemerLogin) ? redeemerLogin : redeemerName));
+                broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                rewardId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                (reward.Action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (!string.IsNullOrWhiteSpace(redeemerLogin) ? redeemerLogin : redeemerName ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             // Optional Discord notification
             try
@@ -106,7 +106,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "⚠️ Failed sending Discord channel point redemption notification. broadcaster_user_id={BroadcasterId}", LogSanitizer.Sanitize(broadcasterId));
+                Logger.LogWarning(ex, "⚠️ Failed sending Discord channel point redemption notification. broadcaster_user_id={BroadcasterId}", broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
             // Execute action
@@ -169,26 +169,26 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                 Logger.LogInformation(
                     "⏭️ Channel point action not implemented. broadcaster_user_id={BroadcasterId}, action={Action}",
-                    LogSanitizer.Sanitize(broadcasterId),
-                    LogSanitizer.Sanitize(reward.Action));
+                    broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (reward.Action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex,
                     "❌ Failed processing channel point redemption. broadcaster_user_id={BroadcasterId}, reward_id={RewardId}",
-                    LogSanitizer.Sanitize(broadcasterId),
-                    LogSanitizer.Sanitize(rewardId));
+                    broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                    rewardId.Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
 
         private static string? TryGetRewardId(JsonElement eventData)
         {
-            if (eventData.TryGetProperty("reward", out var rewardObj) && rewardObj.ValueKind == JsonValueKind.Object)
+            if (eventData.TryGetProperty("reward", out var rewardObj)
+                && rewardObj.ValueKind == JsonValueKind.Object
+                && rewardObj.TryGetProperty("id", out var idProp)
+                && idProp.ValueKind == JsonValueKind.String)
             {
-                if (rewardObj.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
-                {
-                    return idProp.GetString();
-                }
+                return idProp.GetString();
             }
 
             return null;
@@ -196,12 +196,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
         private static string? TryGetRewardTitle(JsonElement eventData)
         {
-            if (eventData.TryGetProperty("reward", out var rewardObj) && rewardObj.ValueKind == JsonValueKind.Object)
+            if (eventData.TryGetProperty("reward", out var rewardObj)
+                && rewardObj.ValueKind == JsonValueKind.Object
+                && rewardObj.TryGetProperty("title", out var titleProp)
+                && titleProp.ValueKind == JsonValueKind.String)
             {
-                if (rewardObj.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String)
-                {
-                    return titleProp.GetString();
-                }
+                return titleProp.GetString();
             }
 
             return null;

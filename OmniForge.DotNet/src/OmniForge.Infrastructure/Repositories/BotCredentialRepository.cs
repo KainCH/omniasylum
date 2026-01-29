@@ -83,7 +83,7 @@ namespace OmniForge.Infrastructure.Repositories
                 };
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
-                _logger.LogInformation("✅ Saved Forge bot credentials for {Username}", LogSanitizer.Sanitize(credentials.Username));
+                _logger.LogInformation("✅ Saved Forge bot credentials for {Username}", (credentials.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             catch (Exception ex)
             {

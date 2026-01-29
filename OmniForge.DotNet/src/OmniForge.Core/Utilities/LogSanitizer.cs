@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace OmniForge.Core.Utilities
 {
@@ -16,12 +17,9 @@ namespace OmniForge.Core.Utilities
             var buffer = new char[input.Length];
             var length = 0;
 
-            foreach (var ch in input)
+            foreach (var ch in input.Where(ch => !char.IsControl(ch)))
             {
-                if (!char.IsControl(ch))
-                {
-                    buffer[length++] = ch;
-                }
+                buffer[length++] = ch;
             }
 
             return length == input.Length

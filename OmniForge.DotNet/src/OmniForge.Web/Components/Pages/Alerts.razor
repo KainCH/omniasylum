@@ -207,27 +207,43 @@
 
     TwitchUserId = targetUserId;
 
-    Logger.LogDebug("📥 Loading user {UserId} for alerts page", LogSanitizer.Sanitize(TwitchUserId));
-    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    if (string.IsNullOrWhiteSpace(TwitchUserId))
+    {
+      accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+      isLoading = false;
+      return;
+    }
+
+    var resolvedUserId = TwitchUserId!;
+
+    Logger.LogDebug("📥 Loading user {UserId} for alerts page", (resolvedUserId ?? string.Empty).Replace("\r",
+    "\\r").Replace("\n", "\\n"));
+    var userEntity = await UserRepository.GetUserAsync(resolvedUserId!);
     if (userEntity == null)
     {
-      Logger.LogWarning("⚠️ User entity not found for {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+      Logger.LogWarning("⚠️ User entity not found for {UserId}", (TwitchUserId ?? string.Empty).Replace("\r",
+      "\\r").Replace("\n", "\\n"));
       streamAlertsEnabled = false;
       isLoading = false;
       return;
     }
 
-    Logger.LogDebug("📋 User {UserId} Features.StreamAlerts = {StreamAlerts}", LogSanitizer.Sanitize(TwitchUserId),
+    Logger.LogDebug("📋 User {UserId} Features.StreamAlerts = {StreamAlerts}", (resolvedUserId ??
+    string.Empty).Replace("\r",
+    "\\r").Replace("\n", "\\n"),
     userEntity.Features.StreamAlerts);
     if (!userEntity.Features.StreamAlerts)
     {
-      Logger.LogWarning("⚠️ StreamAlerts feature disabled for user {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+      Logger.LogWarning("⚠️ StreamAlerts feature disabled for user {UserId}", (TwitchUserId ?? string.Empty).Replace("\r",
+      "\\r").Replace("\n", "\\n"));
       streamAlertsEnabled = false;
       isLoading = false;
       return;
     }
 
-    Logger.LogDebug("✅ StreamAlerts enabled, loading alerts for user {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+    Logger.LogDebug("✅ StreamAlerts enabled, loading alerts for user {UserId}", (resolvedUserId ??
+    string.Empty).Replace("\r",
+    "\\r").Replace("\n", "\\n"));
     await LoadAlertsAndMappings();
   }
 
@@ -236,13 +252,15 @@
     isLoading = true;
     try
     {
-      Logger.LogDebug("📥 Fetching alerts from repository for user {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+      Logger.LogDebug("📥 Fetching alerts from repository for user {UserId}", (TwitchUserId ?? string.Empty).Replace("\r",
+      "\\r").Replace("\n", "\\n"));
       var loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
       Logger.LogDebug("📋 Loaded {Count} alerts from repository", loadedAlerts?.Count() ?? 0);
 
       if (loadedAlerts == null || !loadedAlerts.Any())
       {
-        Logger.LogInformation("🌱 No alerts found, seeding defaults for user {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+        Logger.LogInformation("🌱 No alerts found, seeding defaults for user {UserId}", (TwitchUserId ??
+        string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
         await SeedDefaultAlertsAsync(TwitchUserId!);
         loadedAlerts = await AlertRepository.GetAlertsAsync(TwitchUserId!);
       }
@@ -274,7 +292,8 @@
     }
     catch (Exception ex)
     {
-      Logger.LogError(ex, "❌ Error loading alerts for user {UserId}", LogSanitizer.Sanitize(TwitchUserId));
+      Logger.LogError(ex, "❌ Error loading alerts for user {UserId}", (TwitchUserId ?? string.Empty).Replace("\r",
+      "\\r").Replace("\n", "\\n"));
       alerts = new();
     }
     finally

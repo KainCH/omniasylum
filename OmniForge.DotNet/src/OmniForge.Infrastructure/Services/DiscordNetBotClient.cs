@@ -84,7 +84,7 @@ namespace OmniForge.Infrastructure.Services
                 throw new InvalidOperationException("Discord channel is not a message channel or was not found");
             }
 
-            _logger.LogInformation("Sending Discord bot message to channelId={ChannelId}", LogSanitizer.Sanitize(channelId));
+            _logger.LogInformation("Sending Discord bot message to channelId={ChannelId}", (channelId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
             await messageChannel.SendMessageAsync(
                 text: content,
@@ -213,7 +213,7 @@ namespace OmniForge.Infrastructure.Services
                             var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
                             await socketClient.SetStatusAsync(desiredStatus);
                             await socketClient.SetGameAsync(activity);
-                            _logger.LogInformation("✅ Discord bot is online with activity: {Activity}", LogSanitizer.Sanitize(activity));
+                            _logger.LogInformation("✅ Discord bot is online with activity: {Activity}", (activity ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         catch (Exception ex)
                         {
@@ -308,7 +308,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogInformation(
                     "✅ Discord bot presence updated: Status={Status}, Activity={Activity}",
                     desiredStatus,
-                    LogSanitizer.Sanitize(activity));
+                    (activity ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             catch (Exception ex)
             {

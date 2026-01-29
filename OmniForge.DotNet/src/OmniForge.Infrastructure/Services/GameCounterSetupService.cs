@@ -51,6 +51,8 @@ namespace OmniForge.Infrastructure.Services
                 return;
             }
 
+            var safeUserId = userId!;
+
             var libraryItem = await _counterLibraryRepository.GetAsync(counterId);
             if (libraryItem == null)
             {
@@ -58,7 +60,7 @@ namespace OmniForge.Infrastructure.Services
             }
 
             // Ensure per-game custom counter definition exists
-            var gameCustomConfig = await _gameCustomCountersConfigRepository.GetAsync(userId, gameId) ?? new CustomCounterConfiguration();
+            var gameCustomConfig = await _gameCustomCountersConfigRepository.GetAsync(safeUserId, gameId) ?? new CustomCounterConfiguration();
             gameCustomConfig.Counters ??= new Dictionary<string, CustomCounterDefinition>();
 
             if (!gameCustomConfig.Counters.ContainsKey(libraryItem.CounterId))
@@ -72,11 +74,11 @@ namespace OmniForge.Infrastructure.Services
                     Milestones = (libraryItem.Milestones ?? Array.Empty<int>()).ToList()
                 };
 
-                await _gameCustomCountersConfigRepository.SaveAsync(userId, gameId, gameCustomConfig);
+                await _gameCustomCountersConfigRepository.SaveAsync(safeUserId, gameId, gameCustomConfig);
             }
 
             // Ensure per-game chat commands exist for this counter
-            var gameChatConfig = await _gameChatCommandsRepository.GetAsync(userId, gameId) ?? new ChatCommandConfiguration();
+            var gameChatConfig = await _gameChatCommandsRepository.GetAsync(safeUserId, gameId) ?? new ChatCommandConfiguration();
             gameChatConfig.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
 
             var defaultBase = $"!{libraryItem.CounterId}";
@@ -135,45 +137,50 @@ namespace OmniForge.Infrastructure.Services
                 }
             }
 
-            await _gameChatCommandsRepository.SaveAsync(userId, gameId, gameChatConfig);
+            await _gameChatCommandsRepository.SaveAsync(safeUserId, gameId, gameChatConfig);
 
             // Ensure per-game counter values include the key
             try
             {
-                var counters = await _gameCountersRepository.GetAsync(userId, gameId) ?? new Counter { TwitchUserId = userId };
+                var counters = await _gameCountersRepository.GetAsync(safeUserId, gameId) ?? new Counter { TwitchUserId = safeUserId };
                 counters.CustomCounters ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 if (!counters.CustomCounters.ContainsKey(libraryItem.CounterId))
                 {
                     counters.CustomCounters[libraryItem.CounterId] = 0;
                     counters.LastUpdated = DateTimeOffset.UtcNow;
-                    await _gameCountersRepository.SaveAsync(userId, gameId, counters);
+                    await _gameCountersRepository.SaveAsync(safeUserId, gameId, counters);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed ensuring per-game counter value for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                _logger.LogError(ex, "❌ Failed ensuring per-game counter value for user {UserId} game {GameId}",
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
             // If this game is active, also update active configs so bot/overlay pick it up immediately
             try
             {
-                var ctx = await _gameContextRepository.GetAsync(userId);
+                var ctx = await _gameContextRepository.GetAsync(safeUserId!);
                 var isActive = ctx != null && string.Equals(ctx.ActiveGameId, gameId, StringComparison.OrdinalIgnoreCase);
                 if (isActive)
                 {
-                    await _counterRepository.SaveCustomCountersConfigAsync(userId, gameCustomConfig);
-                    await _userRepository.SaveChatCommandsConfigAsync(userId, gameChatConfig);
+                    await _counterRepository.SaveCustomCountersConfigAsync(safeUserId!, gameCustomConfig);
+                    await _userRepository.SaveChatCommandsConfigAsync(safeUserId!, gameChatConfig);
 
-                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCountersUpdated", new { counters = gameCustomConfig.Counters });
-                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "chatCommandsUpdated", new { commands = gameChatConfig.Commands });
+                    await _overlayNotifier.NotifyCustomAlertAsync(safeUserId!, "customCountersUpdated", new { counters = gameCustomConfig.Counters });
+                    await _overlayNotifier.NotifyCustomAlertAsync(safeUserId!, "chatCommandsUpdated", new { commands = gameChatConfig.Commands });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed updating active config for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "❌ Failed updating active config for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
-            _logger.LogInformation("✅ Added library counter {CounterId} to game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("✅ Added library counter {CounterId} to game {GameId} for user {UserId}",
+                (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
         }
 
         public async Task RemoveLibraryCounterFromGameAsync(string userId, string gameId, string counterId)
@@ -183,21 +190,23 @@ namespace OmniForge.Infrastructure.Services
                 return;
             }
 
+            var safeUserId = userId!;
+
             var normalizedCounterId = counterId.Trim();
             var libraryItem = await _counterLibraryRepository.GetAsync(normalizedCounterId);
 
             // Remove from per-game custom counter definitions
-            var gameCustomConfig = await _gameCustomCountersConfigRepository.GetAsync(userId, gameId) ?? new CustomCounterConfiguration();
+            var gameCustomConfig = await _gameCustomCountersConfigRepository.GetAsync(safeUserId, gameId) ?? new CustomCounterConfiguration();
             gameCustomConfig.Counters ??= new Dictionary<string, CustomCounterDefinition>();
 
             var hadCustomCounter = gameCustomConfig.Counters.Remove(normalizedCounterId);
             if (hadCustomCounter)
             {
-                await _gameCustomCountersConfigRepository.SaveAsync(userId, gameId, gameCustomConfig);
+                await _gameCustomCountersConfigRepository.SaveAsync(safeUserId, gameId, gameCustomConfig);
             }
 
             // Remove from per-game chat commands
-            var gameChatConfig = await _gameChatCommandsRepository.GetAsync(userId, gameId) ?? new ChatCommandConfiguration();
+            var gameChatConfig = await _gameChatCommandsRepository.GetAsync(safeUserId, gameId) ?? new ChatCommandConfiguration();
             gameChatConfig.Commands ??= new Dictionary<string, ChatCommandDefinition>(StringComparer.OrdinalIgnoreCase);
 
             // Prefer removal based on the library's configured commands if available.
@@ -243,43 +252,48 @@ namespace OmniForge.Infrastructure.Services
                 gameChatConfig.Commands.Remove(key);
             }
 
-            await _gameChatCommandsRepository.SaveAsync(userId, gameId, gameChatConfig);
+            await _gameChatCommandsRepository.SaveAsync(safeUserId, gameId, gameChatConfig);
 
             // Remove counter value key from per-game counters
             try
             {
-                var counters = await _gameCountersRepository.GetAsync(userId, gameId);
+                var counters = await _gameCountersRepository.GetAsync(safeUserId, gameId);
                 if (counters?.CustomCounters != null && counters.CustomCounters.Remove(normalizedCounterId))
                 {
                     counters.LastUpdated = DateTimeOffset.UtcNow;
-                    await _gameCountersRepository.SaveAsync(userId, gameId, counters);
+                    await _gameCountersRepository.SaveAsync(safeUserId, gameId, counters);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed removing per-game counter value for user {UserId} game {GameId}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(gameId));
+                _logger.LogError(ex, "❌ Failed removing per-game counter value for user {UserId} game {GameId}",
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
             // If this game is active, also update active configs so bot/overlay pick it up immediately
             try
             {
-                var ctx = await _gameContextRepository.GetAsync(userId);
+                var ctx = await _gameContextRepository.GetAsync(safeUserId!);
                 var isActive = ctx != null && string.Equals(ctx.ActiveGameId, gameId, StringComparison.OrdinalIgnoreCase);
                 if (isActive)
                 {
-                    await _counterRepository.SaveCustomCountersConfigAsync(userId, gameCustomConfig);
-                    await _userRepository.SaveChatCommandsConfigAsync(userId, gameChatConfig);
+                    await _counterRepository.SaveCustomCountersConfigAsync(safeUserId!, gameCustomConfig);
+                    await _userRepository.SaveChatCommandsConfigAsync(safeUserId!, gameChatConfig);
 
-                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "customCountersUpdated", new { counters = gameCustomConfig.Counters });
-                    await _overlayNotifier.NotifyCustomAlertAsync(userId, "chatCommandsUpdated", new { commands = gameChatConfig.Commands });
+                    await _overlayNotifier.NotifyCustomAlertAsync(safeUserId!, "customCountersUpdated", new { counters = gameCustomConfig.Counters });
+                    await _overlayNotifier.NotifyCustomAlertAsync(safeUserId!, "chatCommandsUpdated", new { commands = gameChatConfig.Commands });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed updating active config after removing counter for user {UserId}", LogSanitizer.Sanitize(userId));
+                _logger.LogError(ex, "❌ Failed updating active config after removing counter for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
-            _logger.LogInformation("✅ Removed library counter {CounterId} from game {GameId} for user {UserId}", LogSanitizer.Sanitize(counterId), LogSanitizer.Sanitize(gameId), LogSanitizer.Sanitize(userId));
+            _logger.LogInformation("✅ Removed library counter {CounterId} from game {GameId} for user {UserId}",
+                (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
         }
 
     }

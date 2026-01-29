@@ -38,7 +38,7 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                _logger.LogInformation("🔄 Starting Discord bot presence (activity: {Activity})", LogSanitizer.Sanitize(DefaultActivityText));
+                _logger.LogInformation("🔄 Starting Discord bot presence (activity: {Activity})", DefaultActivityText.Replace("\r", "\\r").Replace("\n", "\\n"));
                 await _discordBotClient.EnsureOnlineAsync(_settings.BotToken, DefaultActivityText);
             }
             catch (Exception ex)

@@ -71,7 +71,7 @@ namespace OmniForge.Web.Controllers
                     })
                     .ToList();
 
-                _logger.LogInformation("📋 User {Username} listed their moderators", LogSanitizer.Sanitize(GetCurrentUsername()));
+                _logger.LogInformation("📋 User {Username} listed their moderators", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new { moderators });
             }
@@ -112,7 +112,7 @@ namespace OmniForge.Web.Controllers
                     await _userRepository.SaveUserAsync(moderator);
                 }
 
-                _logger.LogInformation("✅ User {Username} granted moderator access to {ModeratorUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(moderator.Username));
+                _logger.LogInformation("✅ User {Username} granted moderator access to {ModeratorUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (moderator.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -158,7 +158,7 @@ namespace OmniForge.Web.Controllers
                     await _userRepository.SaveUserAsync(moderator);
                 }
 
-                _logger.LogInformation("🚫 User {Username} revoked moderator access from {ModeratorUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(moderator.Username));
+                _logger.LogInformation("🚫 User {Username} revoked moderator access from {ModeratorUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (moderator.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new { message = "Moderator access revoked" });
             }
@@ -232,7 +232,7 @@ namespace OmniForge.Web.Controllers
                     }
                 }
 
-                _logger.LogInformation("📋 Moderator {Username} listed managed streamers", LogSanitizer.Sanitize(GetCurrentUsername()));
+                _logger.LogInformation("📋 Moderator {Username} listed managed streamers", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new { streamers = managedStreamers });
             }
@@ -260,7 +260,7 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Streamer not found" });
                 }
 
-                _logger.LogInformation("👀 Moderator {Username} viewed features for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("👀 Moderator {Username} viewed features for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -295,7 +295,7 @@ namespace OmniForge.Web.Controllers
                 streamer.Features = features;
                 await _userRepository.SaveUserAsync(streamer);
 
-                _logger.LogInformation("✅ Moderator {Username} updated features for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("✅ Moderator {Username} updated features for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -329,7 +329,7 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Streamer not found" });
                 }
 
-                _logger.LogInformation("👀 Moderator {Username} viewed overlay settings for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("👀 Moderator {Username} viewed overlay settings for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -367,7 +367,7 @@ namespace OmniForge.Web.Controllers
                 // Notify overlay clients
                 await _overlayNotifier.NotifySettingsUpdateAsync(streamerId, overlay);
 
-                _logger.LogInformation("✅ Moderator {Username} updated overlay settings for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("✅ Moderator {Username} updated overlay settings for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -401,7 +401,7 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Streamer not found" });
                 }
 
-                _logger.LogInformation("👀 Moderator {Username} viewed Discord webhook for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("👀 Moderator {Username} viewed Discord webhook for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -441,7 +441,7 @@ namespace OmniForge.Web.Controllers
                 streamer.Features.DiscordNotifications = request.Enabled;
                 await _userRepository.SaveUserAsync(streamer);
 
-                _logger.LogInformation("✅ Moderator {Username} updated Discord webhook for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("✅ Moderator {Username} updated Discord webhook for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -479,7 +479,7 @@ namespace OmniForge.Web.Controllers
 
                 var seriesSaves = (await _seriesRepository.GetSeriesAsync(streamerId)).ToList();
 
-                _logger.LogInformation("📋 Moderator {Username} listed {Count} series saves for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), seriesSaves.Count, LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("📋 Moderator {Username} listed {Count} series saves for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), seriesSaves.Count, (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -537,7 +537,7 @@ namespace OmniForge.Web.Controllers
 
                 await _seriesRepository.CreateSeriesAsync(series);
 
-                _logger.LogInformation("✅ Moderator {Username} created series save \"{SeriesName}\" for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(series.Name), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("✅ Moderator {Username} created series save \"{SeriesName}\" for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (series.Name ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -591,7 +591,7 @@ namespace OmniForge.Web.Controllers
                 // Broadcast update
                 await _overlayNotifier.NotifyCounterUpdateAsync(streamerId, counters);
 
-                _logger.LogInformation("🔄 Moderator {Username} loaded series save {SeriesId} for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(seriesId), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("🔄 Moderator {Username} loaded series save {SeriesId} for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (seriesId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {
@@ -628,7 +628,7 @@ namespace OmniForge.Web.Controllers
 
                 await _seriesRepository.DeleteSeriesAsync(streamerId, seriesId);
 
-                _logger.LogInformation("🗑️ Moderator {Username} deleted series save {SeriesId} for streamer {StreamerUsername}", LogSanitizer.Sanitize(GetCurrentUsername()), LogSanitizer.Sanitize(seriesId), LogSanitizer.Sanitize(streamer.Username));
+                _logger.LogInformation("🗑️ Moderator {Username} deleted series save {SeriesId} for streamer {StreamerUsername}", (GetCurrentUsername() ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (seriesId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (streamer.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 return Ok(new
                 {

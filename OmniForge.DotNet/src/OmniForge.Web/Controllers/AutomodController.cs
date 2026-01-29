@@ -31,25 +31,27 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            var safeUserId = userId!;
+
             try
             {
-                _logger.LogInformation("API AutoMod GET requested for user {UserId}", LogSanitizer.Sanitize(userId));
-                var settings = await _twitchApiService.GetAutomodSettingsAsync(userId);
+                _logger.LogInformation("API AutoMod GET requested for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                var settings = await _twitchApiService.GetAutomodSettingsAsync(safeUserId!);
                 return Ok(settings);
             }
             catch (ReauthRequiredException ex)
             {
-                _logger.LogWarning(ex, "API AutoMod GET requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogWarning(ex, "API AutoMod GET requires reauth for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return Unauthorized(new { error = "Authentication expired", requireReauth = true, authUrl = "/auth/twitch", logoutUrl = "/auth/logout?reauth=1" });
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning(ex, "API AutoMod GET blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogWarning(ex, "API AutoMod GET blocked for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return StatusCode(403, new { error = ex.Message, reauthUrl = "/auth/twitch" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "API AutoMod GET failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogError(ex, "API AutoMod GET failed for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return StatusCode(500, new { error = "Failed to get AutoMod settings", details = ex.Message });
             }
         }
@@ -60,25 +62,27 @@ namespace OmniForge.Web.Controllers
             var userId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            var safeUserId = userId!;
+
             try
             {
-                _logger.LogInformation("API AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}", LogSanitizer.Sanitize(userId), settings.OverallLevel);
-                var updated = await _twitchApiService.UpdateAutomodSettingsAsync(userId, settings);
+                _logger.LogInformation("API AutoMod UPDATE requested for user {UserId}. OverallLevel={OverallLevel}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), settings.OverallLevel);
+                var updated = await _twitchApiService.UpdateAutomodSettingsAsync(safeUserId!, settings);
                 return Ok(updated);
             }
             catch (ReauthRequiredException ex)
             {
-                _logger.LogWarning(ex, "API AutoMod UPDATE requires reauth for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogWarning(ex, "API AutoMod UPDATE requires reauth for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return Unauthorized(new { error = "Authentication expired", requireReauth = true, authUrl = "/auth/twitch", logoutUrl = "/auth/logout?reauth=1" });
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning(ex, "API AutoMod UPDATE blocked for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogWarning(ex, "API AutoMod UPDATE blocked for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return StatusCode(403, new { error = ex.Message, reauthUrl = "/auth/twitch" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "API AutoMod UPDATE failed for user {UserId}: {Message}", LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(ex.Message));
+                _logger.LogError(ex, "API AutoMod UPDATE failed for user {UserId}: {Message}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return StatusCode(500, new { error = "Failed to update AutoMod settings", details = ex.Message });
             }
         }

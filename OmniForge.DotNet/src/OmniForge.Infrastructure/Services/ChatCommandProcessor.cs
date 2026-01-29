@@ -352,14 +352,14 @@ namespace OmniForge.Infrastructure.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", LogSanitizer.Sanitize(context.UserId));
+                            _logger.LogError(ex, "Error sending Discord notification for {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing chat command for {UserId}", LogSanitizer.Sanitize(context.UserId));
+                _logger.LogError(ex, "Error processing chat command for {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
 
@@ -418,7 +418,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", LogSanitizer.Sanitize(context.UserId));
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for chat command user {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return false;
             }
 
@@ -444,8 +444,8 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "⚠️ Rejected custom counter command with invalid counterId '{CounterId}' for user {UserId}",
-                    LogSanitizer.Sanitize(actualCounterId),
-                    LogSanitizer.Sanitize(context.UserId));
+                    (actualCounterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return false;
             }
 
@@ -491,9 +491,9 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogDebug(
                     "Ignoring custom counter mutation from non-mod/broadcaster. user_id={UserId} counter_id={CounterId} op={Op}",
-                    LogSanitizer.Sanitize(context.UserId),
-                    LogSanitizer.Sanitize(actualCounterId),
-                    LogSanitizer.Sanitize(op));
+                    (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (actualCounterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (op ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return true;
             }
 
@@ -679,10 +679,10 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogWarning(
                     "⚠️ Custom counter trigger collision for user {UserId}: trigger '{Trigger}' maps to both '{Existing}' and '{Incoming}'. Keeping existing mapping.",
-                    LogSanitizer.Sanitize(userId),
-                    LogSanitizer.Sanitize(triggerToken),
-                    LogSanitizer.Sanitize(existing),
-                    LogSanitizer.Sanitize(counterId));
+                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (triggerToken ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (existing ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 

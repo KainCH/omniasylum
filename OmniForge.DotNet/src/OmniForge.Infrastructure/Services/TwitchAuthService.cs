@@ -180,7 +180,7 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogWarning(
                         "❌ Failed to get Twitch app access token. Status: {StatusCode}, Response: {Response}",
                         response.StatusCode,
-                        LogSanitizer.Sanitize(errorContent));
+                        (errorContent ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     return null;
                 }
 
@@ -300,7 +300,9 @@ namespace OmniForge.Infrastructure.Services
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("Failed to refresh Twitch token. Status: {StatusCode}, Response: {Response}", response.StatusCode, LogSanitizer.Sanitize(errorContent));
+                _logger.LogWarning("Failed to refresh Twitch token. Status: {StatusCode}, Response: {Response}",
+                    response.StatusCode,
+                    (errorContent ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return null;
             }
 

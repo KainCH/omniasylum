@@ -51,7 +51,7 @@ namespace OmniForge.Web.Middleware
 
                         if (user == null)
                         {
-                            _logger.LogWarning("[AuthMiddleware] User {UserId} not found in database.", LogSanitizer.Sanitize(userIdClaim.Value));
+                            _logger.LogWarning("[AuthMiddleware] User {UserId} not found in database.", (userIdClaim.Value ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                             context.Response.StatusCode = 401;
                             await context.Response.WriteAsJsonAsync(new { error = "User not found" });
                             return;
@@ -74,7 +74,7 @@ namespace OmniForge.Web.Middleware
             }
             catch (ReauthRequiredException ex)
             {
-                _logger.LogWarning(ex, "[AuthMiddleware] Reauth required: {Message}", LogSanitizer.Sanitize(ex.Message));
+                _logger.LogWarning(ex, "[AuthMiddleware] Reauth required: {Message}", (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                 if (!context.Response.HasStarted)
                 {

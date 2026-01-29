@@ -17,6 +17,7 @@ namespace OmniForge.Tests
             Assert.Equal(string.Empty, entity.AccessToken);
             Assert.Equal(string.Empty, entity.RefreshToken);
             Assert.Equal(DateTimeOffset.MinValue, entity.TokenExpiry);
+            Assert.Null(entity.Timestamp);
         }
 
         [Fact]
@@ -27,6 +28,8 @@ namespace OmniForge.Tests
             {
                 PartitionKey = "p",
                 RowKey = "r",
+                Timestamp = now,
+                ETag = new Azure.ETag("tag"),
                 Username = "bot",
                 AccessToken = "access",
                 RefreshToken = "refresh",
@@ -39,6 +42,8 @@ namespace OmniForge.Tests
             Assert.Equal("access", entity.AccessToken);
             Assert.Equal("refresh", entity.RefreshToken);
             Assert.Equal(now, entity.TokenExpiry);
+            Assert.Equal(now, entity.Timestamp);
+            Assert.Equal(new Azure.ETag("tag"), entity.ETag);
         }
     }
 }

@@ -49,7 +49,7 @@ namespace OmniForge.Infrastructure.Services
 
                         if (user.IsActive && !string.IsNullOrEmpty(user.Username))
                         {
-                            _logger.LogInformation("Connecting Twitch bot for user: {Username}", LogSanitizer.Sanitize(user.Username));
+                            _logger.LogInformation("Connecting Twitch bot for user: {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                             await _twitchClientManager.ConnectUserAsync(user.TwitchUserId);
                         }
                     }

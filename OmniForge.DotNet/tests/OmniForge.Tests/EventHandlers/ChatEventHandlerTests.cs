@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Services;
@@ -39,7 +40,7 @@ namespace OmniForge.Tests.EventHandlers
             _handler = new ChatMessageHandler(
                 _mockScopeFactory.Object,
                 _mockLogger.Object,
-                Options.Create(new TwitchSettings()),
+                Options.Create(new TwitchSettings { LogChatMessages = true, LogChatMessagePayload = true }),
                 _mockDiscordInviteSender.Object,
                 _mockChatCommandProcessor.Object,
                 _mockTwitchApiService.Object,
@@ -112,6 +113,104 @@ namespace OmniForge.Tests.EventHandlers
             await _handler.HandleAsync(eventData);
 
             _mockDiscordInviteSender.Verify(x => x.SendDiscordInviteAsync(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenChatCommand_ShouldInvokeChatCommandProcessor_WithExpectedContext()
+        {
+            ChatCommandContext? captured = null;
+
+            _mockChatCommandProcessor
+                .Setup(x => x.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<Func<string, string, Task>>()))
+                .Callback<ChatCommandContext, Func<string, string, Task>>((ctx, _) => captured = ctx)
+                .Returns(Task.CompletedTask);
+
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_login"": ""streamer"",
+                ""chatter_user_id"": ""999"",
+                ""chatter_user_login"": ""viewer"",
+                ""message_type"": ""text"",
+                ""message_id"": ""m1"",
+                ""message"": { ""text"": ""!deaths"" },
+                ""badges"": [ { ""set_id"": ""subscriber"" } ]
+            }").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            Assert.NotNull(captured);
+            Assert.Equal("123", captured!.UserId);
+            Assert.Equal("!deaths", captured.Message);
+            Assert.False(captured.IsBroadcaster);
+            Assert.False(captured.IsModerator);
+            Assert.True(captured.IsSubscriber);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenSendMessage_UsesMonitoringStateBot()
+        {
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out It.Ref<MonitoringState>.IsAny))
+                .Returns((string _, out MonitoringState state) =>
+                {
+                    state = new MonitoringState(true, "bot-1", DateTimeOffset.UtcNow);
+                    return true;
+                });
+
+            _mockChatCommandProcessor
+                .Setup(x => x.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<Func<string, string, Task>>()))
+                .Callback<ChatCommandContext, Func<string, string, Task>>(async (_, send) =>
+                {
+                    await send("123", "hi");
+                })
+                .Returns(Task.CompletedTask);
+
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""chatter_user_id"": ""123"",
+                ""message_id"": ""m1"",
+                ""message"": { ""text"": ""!ping"" }
+            }").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockTwitchApiService.Verify(x => x.SendChatMessageAsBotAsync("123", "bot-1", "hi", "m1"), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenNoMonitoringState_FallsBackToEligibilityAndCachesState()
+        {
+            _mockMonitoringRegistry
+                .Setup(x => x.TryGetState("123", out It.Ref<MonitoringState>.IsAny))
+                .Returns(false);
+
+            _mockUserRepository
+                .Setup(x => x.GetUserAsync("123"))
+                .ReturnsAsync(new User { TwitchUserId = "123", AccessToken = "access" });
+
+            _mockBotEligibilityService
+                .Setup(x => x.GetEligibilityAsync("123", "access", default))
+                .ReturnsAsync(new BotEligibilityResult(true, "bot-2", "ok"));
+
+            _mockChatCommandProcessor
+                .Setup(x => x.ProcessAsync(It.IsAny<ChatCommandContext>(), It.IsAny<Func<string, string, Task>>()))
+                .Callback<ChatCommandContext, Func<string, string, Task>>(async (_, send) =>
+                {
+                    await send("123", "hello");
+                })
+                .Returns(Task.CompletedTask);
+
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""chatter_user_id"": ""999"",
+                ""message_id"": ""m2"",
+                ""message"": { ""text"": ""!ping"" }
+            }").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockTwitchApiService.Verify(x => x.SendChatMessageAsBotAsync("123", "bot-2", "hello", "m2"), Times.Once);
+            _mockMonitoringRegistry.Verify(x => x.SetState("123", It.IsAny<MonitoringState>()), Times.Once);
         }
     }
 

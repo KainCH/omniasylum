@@ -139,21 +139,21 @@ namespace OmniForge.Infrastructure.Services
 
                 if (user == null)
                 {
-                    _logger.LogWarning("User {UserId} not found", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning("User {UserId} not found", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     return;
                 }
 
                 var channelLogin = (user.Username ?? string.Empty).Trim().TrimStart('#');
                 if (string.IsNullOrWhiteSpace(channelLogin))
                 {
-                    _logger.LogWarning("User {UserId} has no username/channel to join", LogSanitizer.Sanitize(userId));
+                    _logger.LogWarning("User {UserId} has no username/channel to join", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     return;
                 }
 
                 var botClient = await EnsureBotConnectedAsync(botCredentialRepository, authService).ConfigureAwait(false);
                 if (botClient == null)
                 {
-                    _logger.LogError("❌ Forge bot is not configured/connected. Cannot join channel for user {UserId}", LogSanitizer.Sanitize(userId));
+                    _logger.LogError("❌ Forge bot is not configured/connected. Cannot join channel for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     return;
                 }
 
@@ -161,7 +161,9 @@ namespace OmniForge.Infrastructure.Services
                 botClient.JoinChannel(channelLogin);
                 _userIdToChannel.TryAdd(userId, channelLogin);
                 _channelToUserId.AddOrUpdate(channelLogin.ToLowerInvariant(), userId, (_, __) => userId);
-                _logger.LogInformation("✅ Forge bot joined channel {Channel} for user {UserId}", LogSanitizer.Sanitize(channelLogin), LogSanitizer.Sanitize(userId));
+                _logger.LogInformation("✅ Forge bot joined channel {Channel} for user {UserId}",
+                    (channelLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
         }
 
@@ -279,7 +281,7 @@ namespace OmniForge.Infrastructure.Services
                         };
 
                         await botCredentialRepository.SaveAsync(creds).ConfigureAwait(false);
-                        _logger.LogInformation("✅ Seeded Forge bot credentials from configuration for {Username}", LogSanitizer.Sanitize(creds.Username));
+                        _logger.LogInformation("✅ Seeded Forge bot credentials from configuration for {Username}", (creds.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     }
                     else
                     {
@@ -291,11 +293,11 @@ namespace OmniForge.Infrastructure.Services
                 // Refresh bot token if needed (buffer of 5 minutes)
                 if (creds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
                 {
-                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                    _logger.LogInformation("🔄 Refreshing Forge bot token for {Username}", (creds.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                     var refreshed = await authService.RefreshTokenAsync(creds.RefreshToken).ConfigureAwait(false);
                     if (refreshed == null)
                     {
-                        _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", LogSanitizer.Sanitize(creds.Username));
+                        _logger.LogError("❌ Failed to refresh Forge bot token for {Username}", (creds.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         return null;
                     }
 
@@ -316,8 +318,8 @@ namespace OmniForge.Infrastructure.Services
                 var client = _botClientFactory.Create(clientOptions);
                 client.Initialize(credentials);
 
-                client.OnLog += (s, e) => _logger.LogDebug("Forge Bot: {Data}", LogSanitizer.Sanitize(e.Data));
-                client.OnConnected += (s, e) => _logger.LogInformation("✅ Forge bot connected as {Username}", LogSanitizer.Sanitize(creds.Username));
+                client.OnLog += (s, e) => _logger.LogDebug("Forge Bot: {Data}", (e.Data ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                client.OnConnected += (s, e) => _logger.LogInformation("✅ Forge bot connected as {Username}", (creds.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 client.OnMessageReceived += (s, e) => HandleMessage(e.ChatMessage);
 
                 try

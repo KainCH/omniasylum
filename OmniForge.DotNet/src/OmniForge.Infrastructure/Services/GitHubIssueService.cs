@@ -112,7 +112,7 @@ namespace OmniForge.Infrastructure.Services
 
                     if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrWhiteSpace(responseBody))
                     {
-                        _logger.LogDebug("GitHub issue create response body (snippet): {Body}", LogSanitizer.Sanitize(TruncateForLogging(responseBody)));
+                        _logger.LogDebug("GitHub issue create response body (snippet): {Body}", TruncateForLogging(responseBody).Replace("\r", "\\r").Replace("\n", "\\n"));
                     }
 
                     throw new InvalidOperationException("GitHub issue creation failed.");
@@ -134,7 +134,7 @@ namespace OmniForge.Infrastructure.Services
                     if (_logger.IsEnabled(LogLevel.Debug))
                     {
                         _logger.LogWarning("⚠️ GitHub create issue succeeded but response missing expected fields.");
-                        _logger.LogDebug("GitHub create issue response body (snippet): {Body}", LogSanitizer.Sanitize(TruncateForLogging(responseBody)));
+                        _logger.LogDebug("GitHub create issue response body (snippet): {Body}", TruncateForLogging(responseBody).Replace("\r", "\\r").Replace("\n", "\\n"));
                     }
                     else
                     {

@@ -93,19 +93,19 @@ namespace OmniForge.Infrastructure.Services
                         {
                             _logger.LogDebug(
                                 "💬 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
-                                LogSanitizer.Sanitize(message.Metadata.MessageId),
-                                LogSanitizer.Sanitize(subscriptionType!),
-                                LogSanitizer.Sanitize(subscriptionId ?? string.Empty),
-                                LogSanitizer.Sanitize(broadcasterId ?? string.Empty));
+                                (message.Metadata.MessageId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (subscriptionType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (subscriptionId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         else
                         {
                             _logger.LogInformation(
                                 "📨 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
-                                LogSanitizer.Sanitize(message.Metadata.MessageId),
-                                LogSanitizer.Sanitize(subscriptionType ?? string.Empty),
-                                LogSanitizer.Sanitize(subscriptionId ?? string.Empty),
-                                LogSanitizer.Sanitize(broadcasterId ?? string.Empty));
+                                (message.Metadata.MessageId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (subscriptionType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (subscriptionId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                                (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         break;
 

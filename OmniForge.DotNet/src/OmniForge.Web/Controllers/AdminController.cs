@@ -235,11 +235,15 @@ namespace OmniForge.Web.Controllers
         {
             var adminId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(adminId)) return Unauthorized();
+            if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "UserId is required" });
+
+            var safeUserId = userId!;
+            var safeAdminId = adminId!;
 
             _logger.LogInformation("🛰️ Admin monitoring request: targetUser={TargetUserId}, actingAdmin={AdminId}",
-                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(adminId));
+                (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (safeAdminId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
-            var result = await _streamMonitorService.SubscribeToUserAsAsync(userId, adminId);
+            var result = await _streamMonitorService.SubscribeToUserAsAsync(safeUserId!, safeAdminId!);
 
             return result switch
             {
@@ -260,12 +264,16 @@ namespace OmniForge.Web.Controllers
         {
             var adminId = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(adminId)) return Unauthorized();
+            if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { error = "UserId is required" });
+
+            var safeUserId = userId!;
+            var safeAdminId = adminId!;
 
             _logger.LogInformation("🧹 Admin stop monitoring request: targetUser={TargetUserId}, actingAdmin={AdminId}",
-                LogSanitizer.Sanitize(userId), LogSanitizer.Sanitize(adminId));
+                (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (safeAdminId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
-            await _streamMonitorService.UnsubscribeFromUserAsync(userId);
-            return Ok(new { message = "Monitoring stopped", userId, actingAdmin = adminId });
+            await _streamMonitorService.UnsubscribeFromUserAsync(safeUserId!);
+            return Ok(new { message = "Monitoring stopped", userId = safeUserId, actingAdmin = safeAdminId });
         }
 
         [HttpGet("monitor/status/{userId}")]
