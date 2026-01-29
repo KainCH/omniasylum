@@ -242,7 +242,6 @@
       {
         var actingUserId = user.FindFirst("userId")?.Value
           ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-          ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
           ?? user.FindFirst("sub")?.Value;
 
         if (string.IsNullOrWhiteSpace(actingUserId))

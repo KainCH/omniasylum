@@ -2,8 +2,10 @@
 @page "/manage/{StreamerId}/settings/series"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
 @inject AuthenticationStateProvider AuthStateProvider
 @inject OmniForge.Core.Interfaces.IUserRepository UserRepository
+@inject ILogger<SeriesManager> Logger
 @attribute [Authorize]
 @using OmniForge.Web.Components.Settings
 
@@ -85,7 +87,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading series user context: {ex.Message}");
+            Logger.LogError(ex, "❌ Error loading series user context");
         }
         finally
         {

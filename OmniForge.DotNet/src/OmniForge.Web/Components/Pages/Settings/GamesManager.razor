@@ -2,8 +2,10 @@
 @page "/manage/{StreamerId}/settings/games"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
 @inject AuthenticationStateProvider AuthStateProvider
 @inject OmniForge.Core.Interfaces.IUserRepository UserRepository
+@inject ILogger<GamesManager> Logger
 @attribute [Authorize]
 @using OmniForge.Web.Components.Settings
 
@@ -83,7 +85,7 @@
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error loading games user context: {ex.Message}");
+      Logger.LogError(ex, "❌ Error loading games user context");
     }
     finally
     {

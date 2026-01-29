@@ -135,32 +135,36 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
 
                 // Counter actions are intentionally silent (no alert), but we update the counters + overlay.
-                if (string.Equals(reward.Action, "increment_deaths", StringComparison.OrdinalIgnoreCase))
+                var action = reward.Action ?? string.Empty;
+                switch (action.ToLowerInvariant())
                 {
-                    var counters = await counterRepository.IncrementCounterAsync(broadcasterId, "deaths", 1).ConfigureAwait(false);
-                    await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
-                    return;
-                }
+                    case "increment_deaths":
+                        {
+                            var counters = await counterRepository.IncrementCounterAsync(broadcasterId, "deaths", 1).ConfigureAwait(false);
+                            await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
+                            return;
+                        }
 
-                if (string.Equals(reward.Action, "increment_swears", StringComparison.OrdinalIgnoreCase))
-                {
-                    var counters = await counterRepository.IncrementCounterAsync(broadcasterId, "swears", 1).ConfigureAwait(false);
-                    await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
-                    return;
-                }
+                    case "increment_swears":
+                        {
+                            var counters = await counterRepository.IncrementCounterAsync(broadcasterId, "swears", 1).ConfigureAwait(false);
+                            await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
+                            return;
+                        }
 
-                if (string.Equals(reward.Action, "decrement_deaths", StringComparison.OrdinalIgnoreCase))
-                {
-                    var counters = await counterRepository.DecrementCounterAsync(broadcasterId, "deaths", 1).ConfigureAwait(false);
-                    await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
-                    return;
-                }
+                    case "decrement_deaths":
+                        {
+                            var counters = await counterRepository.DecrementCounterAsync(broadcasterId, "deaths", 1).ConfigureAwait(false);
+                            await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
+                            return;
+                        }
 
-                if (string.Equals(reward.Action, "decrement_swears", StringComparison.OrdinalIgnoreCase))
-                {
-                    var counters = await counterRepository.DecrementCounterAsync(broadcasterId, "swears", 1).ConfigureAwait(false);
-                    await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
-                    return;
+                    case "decrement_swears":
+                        {
+                            var counters = await counterRepository.DecrementCounterAsync(broadcasterId, "swears", 1).ConfigureAwait(false);
+                            await overlayNotifier.NotifyCounterUpdateAsync(broadcasterId, counters).ConfigureAwait(false);
+                            return;
+                        }
                 }
 
                 Logger.LogInformation(

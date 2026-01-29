@@ -69,6 +69,55 @@ namespace OmniForge.Tests
             Assert.Contains("Monitoring started", ok.Value!.ToString());
         }
 
+        [Theory]
+        [InlineData(OmniForge.Core.Interfaces.SubscriptionResult.RequiresReauth, 403)]
+        [InlineData(OmniForge.Core.Interfaces.SubscriptionResult.Unauthorized, 401)]
+        [InlineData(OmniForge.Core.Interfaces.SubscriptionResult.Failed, 400)]
+        public async Task StartMonitoringForUser_WhenNotSuccess_ShouldReturnExpectedStatus(
+            OmniForge.Core.Interfaces.SubscriptionResult subscriptionResult,
+            int expectedStatus)
+        {
+            _mockStreamMonitorService
+                .Setup(s => s.SubscribeToUserAsAsync("targetUser", "admin123"))
+                .ReturnsAsync(subscriptionResult);
+
+            var result = await _controller.StartMonitoringForUser("targetUser");
+
+            if (expectedStatus == 401)
+            {
+                Assert.IsType<UnauthorizedObjectResult>(result);
+            }
+            else
+            {
+                var obj = Assert.IsAssignableFrom<ObjectResult>(result);
+                Assert.Equal(expectedStatus, obj.StatusCode);
+            }
+        }
+
+        [Fact]
+        public async Task StartMonitoringForUser_WhenActingAdminMissing_ShouldReturnUnauthorized()
+        {
+            var controller = new AdminController(
+                _mockUserRepository.Object,
+                _mockCounterRepository.Object,
+                _mockTwitchClientManager.Object,
+                _mockStreamMonitorService.Object);
+
+            var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
+            {
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = user }
+            };
+
+            var result = await controller.StartMonitoringForUser("targetUser");
+
+            Assert.IsType<UnauthorizedResult>(result);
+        }
+
         [Fact]
         public async Task StopMonitoringForUser_ShouldCallService()
         {
@@ -77,6 +126,30 @@ namespace OmniForge.Tests
             var ok = Assert.IsType<OkObjectResult>(result);
             _mockStreamMonitorService.Verify(s => s.UnsubscribeFromUserAsync("targetUser"), Times.Once);
             Assert.Contains("Monitoring stopped", ok.Value!.ToString());
+        }
+
+        [Fact]
+        public async Task StopMonitoringForUser_WhenActingAdminMissing_ShouldReturnUnauthorized()
+        {
+            var controller = new AdminController(
+                _mockUserRepository.Object,
+                _mockCounterRepository.Object,
+                _mockTwitchClientManager.Object,
+                _mockStreamMonitorService.Object);
+
+            var user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
+            {
+                new Claim(ClaimTypes.Role, "admin")
+            }, "mock"));
+
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = user }
+            };
+
+            var result = await controller.StopMonitoringForUser("targetUser");
+
+            Assert.IsType<UnauthorizedResult>(result);
         }
 
         [Fact]

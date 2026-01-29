@@ -94,7 +94,7 @@ namespace OmniForge.Infrastructure.Services
                             _logger.LogDebug(
                                 "💬 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
                                 LogSanitizer.Sanitize(message.Metadata.MessageId),
-                                LogSanitizer.Sanitize(subscriptionType ?? string.Empty),
+                                LogSanitizer.Sanitize(subscriptionType!),
                                 LogSanitizer.Sanitize(subscriptionId ?? string.Empty),
                                 LogSanitizer.Sanitize(broadcasterId ?? string.Empty));
                         }

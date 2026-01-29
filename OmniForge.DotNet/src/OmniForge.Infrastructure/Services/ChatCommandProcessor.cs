@@ -56,7 +56,7 @@ namespace OmniForge.Infrastructure.Services
         // Inline amount between command base and operation, e.g. !d5+ or !death10-
         // We only treat the digits as an amount if the derived base command exists.
         private static readonly Regex InlineAmountBeforeOpRegex = new(
-            @"^(![^\d\s\+\-:]+?)(\d{1,2})([\+\-])$",
+            @"^(![^\d\s\+\-:]+?)((?:[2-9]|10))([\+\-])$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         private static readonly Regex CustomCounterCommandRegex = new(
@@ -65,7 +65,7 @@ namespace OmniForge.Infrastructure.Services
 
         // Inline amount right before + / - for custom counters too, e.g. !pulls5+ or !boss10-
         private static readonly Regex InlineAmountCustomCounterRegex = new(
-            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*?)(?<num>\d{1,2})(?<op>[\+\-])$",
+            @"^!(?<id>[a-z0-9_]+(?:-[a-z0-9_]+)*?)(?<num>(?:[2-9]|10))(?<op>[\+\-])$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         // Custom counter trigger cache expiration.

@@ -95,6 +95,80 @@ namespace OmniForge.Tests.EventHandlers
         }
 
         [Fact]
+        public void Process_ChatNotification_ShouldLogDebug()
+        {
+            // Arrange
+            var json = @"{
+                ""metadata"": {
+                    ""message_id"": ""notification-123"",
+                    ""message_type"": ""notification"",
+                    ""message_timestamp"": ""2024-01-01T00:00:00Z""
+                },
+                ""payload"": {
+                    ""subscription"": {
+                        ""id"": ""sub-123"",
+                        ""type"": ""channel.chat.message""
+                    },
+                    ""event"": {
+                        ""broadcaster_user_id"": ""123""
+                    }
+                }
+            }";
+
+            // Act
+            var result = _processor.Process(json);
+
+            // Assert
+            Assert.Equal(EventSubMessageType.Notification, result.MessageType);
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Debug,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.AtLeastOnce);
+        }
+
+        [Fact]
+        public void Process_Notification_WithWrappedEvent_ShouldIncludeBroadcasterIdInLog()
+        {
+            // Arrange
+            var json = @"{
+                ""metadata"": {
+                    ""message_id"": ""notification-123"",
+                    ""message_type"": ""notification"",
+                    ""message_timestamp"": ""2024-01-01T00:00:00Z""
+                },
+                ""payload"": {
+                    ""subscription"": {
+                        ""id"": ""sub-123"",
+                        ""type"": ""stream.online""
+                    },
+                    ""event"": {
+                        ""event"": {
+                            ""broadcaster_user_id"": ""123""
+                        }
+                    }
+                }
+            }";
+
+            // Act
+            var result = _processor.Process(json);
+
+            // Assert
+            Assert.Equal(EventSubMessageType.Notification, result.MessageType);
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("broadcaster_user_id=123")),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.AtLeastOnce);
+        }
+
+        [Fact]
         public void Process_Reconnect_ShouldReturnReconnectTypeAndUrl()
         {
             // Arrange

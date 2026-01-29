@@ -521,7 +521,7 @@ namespace OmniForge.Infrastructure.Services
                     // Subscribe only when feature is enabled and the broadcaster token has the required scope.
                     if (!isAdminActing && user.Features.ChannelPoints)
                     {
-                        if (tokenScopes?.Contains("channel:read:redemptions") == true)
+                        if (tokenScopes != null && tokenScopes.Contains("channel:read:redemptions"))
                         {
                             var redemptionCondition = new Dictionary<string, string>
                             {
@@ -1264,124 +1264,124 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-            // Only attempt to maintain connection if we have users wanting monitoring
-            if (_usersWantingMonitoring.IsEmpty)
-            {
-                _logger.LogDebug("Watchdog: No users wanting monitoring, skipping check");
-                return;
-            }
-
-            if (!_eventSubService.IsConnected)
-            {
-                _logger.LogWarning("🔄 Watchdog detected disconnected state. Users wanting monitoring: {Count}. Attempting to reconnect...",
-                    _usersWantingMonitoring.Count);
-                try
+                // Only attempt to maintain connection if we have users wanting monitoring
+                if (_usersWantingMonitoring.IsEmpty)
                 {
-                    await _eventSubService.ConnectAsync().ConfigureAwait(false);
-
-                    // Wait for session welcome before re-subscribing
-                    await Task.Delay(2000).ConfigureAwait(false); // Give time for welcome message
-
-                    if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
-                    {
-                        _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
-                        foreach (var userId in _usersWantingMonitoring.Keys)
-                        {
-                            if (!UserStillWantsMonitoring(userId))
-                            {
-                                continue;
-                            }
-                            _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
-                            var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
-                            _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning("🔄 Connected but no session ID yet. Will retry on next watchdog tick.");
-                    }
+                    _logger.LogDebug("Watchdog: No users wanting monitoring, skipping check");
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "🔴 Watchdog reconnection failed.");
-                }
-            }
-            else
-            {
-                // Check keepalive
-                var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
 
-                // Twitch tells us the negotiated keepalive timeout in session_welcome.keepalive_timeout_seconds.
-                // Use a forgiving threshold (3x) so we don't flap on transient latency.
-                var negotiated = _eventSubService.KeepaliveTimeoutSeconds;
-                var thresholdSeconds = negotiated.HasValue
-                    ? Math.Max(30, negotiated.Value * 3)
-                    : 30;
-
-                if (timeSinceLastKeepalive.TotalSeconds > thresholdSeconds)
+                if (!_eventSubService.IsConnected)
                 {
-                    _logger.LogWarning(
-                        "⏱️ No keepalive received for {Seconds:F1}s (threshold={Threshold}s, negotiated={Negotiated}s). Triggering reconnect...",
-                        timeSinceLastKeepalive.TotalSeconds,
-                        thresholdSeconds,
-                        negotiated.HasValue ? negotiated.Value : -1);
+                    _logger.LogWarning("🔄 Watchdog detected disconnected state. Users wanting monitoring: {Count}. Attempting to reconnect...",
+                        _usersWantingMonitoring.Count);
                     try
                     {
-                        await _eventSubService.DisconnectAsync().ConfigureAwait(false);
                         await _eventSubService.ConnectAsync().ConfigureAwait(false);
 
                         // Wait for session welcome before re-subscribing
-                        await Task.Delay(2000).ConfigureAwait(false);
+                        await Task.Delay(2000).ConfigureAwait(false); // Give time for welcome message
 
                         if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
                         {
-                            _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
+                            _logger.LogInformation("🔄 Reconnected! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
                             foreach (var userId in _usersWantingMonitoring.Keys)
                             {
                                 if (!UserStillWantsMonitoring(userId))
                                 {
                                     continue;
                                 }
+                                _logger.LogInformation("🔄 Re-subscribing user {UserId}...", LogSanitizer.Sanitize(userId));
                                 var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
                                 _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning("🔄 Connected but no session ID yet. Will retry on next watchdog tick.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "🔴 Watchdog reconnection failed.");
+                    }
+                }
+                else
+                {
+                    // Check keepalive
+                    var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
+
+                    // Twitch tells us the negotiated keepalive timeout in session_welcome.keepalive_timeout_seconds.
+                    // Use a forgiving threshold (3x) so we don't flap on transient latency.
+                    var negotiated = _eventSubService.KeepaliveTimeoutSeconds;
+                    var thresholdSeconds = negotiated.HasValue
+                        ? Math.Max(30, negotiated.Value * 3)
+                        : 30;
+
+                    if (timeSinceLastKeepalive.TotalSeconds > thresholdSeconds)
+                    {
+                        _logger.LogWarning(
+                            "⏱️ No keepalive received for {Seconds:F1}s (threshold={Threshold}s, negotiated={Negotiated}s). Triggering reconnect...",
+                            timeSinceLastKeepalive.TotalSeconds,
+                            thresholdSeconds,
+                            negotiated.HasValue ? negotiated.Value : -1);
+                        try
+                        {
+                            await _eventSubService.DisconnectAsync().ConfigureAwait(false);
+                            await _eventSubService.ConnectAsync().ConfigureAwait(false);
+
+                            // Wait for session welcome before re-subscribing
+                            await Task.Delay(2000).ConfigureAwait(false);
+
+                            if (_eventSubService.IsConnected && !string.IsNullOrEmpty(_eventSubService.SessionId))
+                            {
+                                _logger.LogInformation("🔄 Reconnected after keepalive timeout! Re-subscribing {Count} users...", _usersWantingMonitoring.Count);
+                                foreach (var userId in _usersWantingMonitoring.Keys)
+                                {
+                                    if (!UserStillWantsMonitoring(userId))
+                                    {
+                                        continue;
+                                    }
+                                    var result = await SubscribeToUserAsync(userId).ConfigureAwait(false);
+                                    _logger.LogInformation("🔄 Re-subscription result for user {UserId}: {Result}", LogSanitizer.Sanitize(userId), result);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "🔴 Keepalive reconnection failed.");
+                        }
+                    }
+                }
+
+                // Overlay live heartbeat: if a broadcaster is live, emit a periodic 'live' status update.
+                // overlay.html treats streamStatusUpdate("live") as an online heartbeat and auto-hides after 2 minutes without it.
+                if (!_liveBroadcasters.IsEmpty)
+                {
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                        if (overlayNotifier != null)
+                        {
+                            foreach (var broadcasterId in _liveBroadcasters.Keys)
+                            {
+                                // If monitoring was stopped for this user, don't keep sending heartbeats.
+                                if (!UserStillWantsMonitoring(broadcasterId))
+                                {
+                                    _liveBroadcasters.TryRemove(broadcasterId, out _);
+                                    continue;
+                                }
+
+                                await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "live").ConfigureAwait(false);
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "🔴 Keepalive reconnection failed.");
+                        _logger.LogWarning(ex, "⚠️ Watchdog failed to emit overlay live heartbeats");
                     }
                 }
-            }
-
-            // Overlay live heartbeat: if a broadcaster is live, emit a periodic 'live' status update.
-            // overlay.html treats streamStatusUpdate("live") as an online heartbeat and auto-hides after 2 minutes without it.
-            if (!_liveBroadcasters.IsEmpty)
-            {
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
-                    if (overlayNotifier != null)
-                    {
-                        foreach (var broadcasterId in _liveBroadcasters.Keys)
-                        {
-                            // If monitoring was stopped for this user, don't keep sending heartbeats.
-                            if (!UserStillWantsMonitoring(broadcasterId))
-                            {
-                                _liveBroadcasters.TryRemove(broadcasterId, out _);
-                                continue;
-                            }
-
-                            await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "live").ConfigureAwait(false);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "⚠️ Watchdog failed to emit overlay live heartbeats");
-                }
-            }
 
             }
             finally

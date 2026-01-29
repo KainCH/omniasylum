@@ -447,5 +447,128 @@ namespace OmniForge.Tests
             // Assert
             _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync(It.IsAny<string>()), Times.Never);
         }
+
+        [Fact]
+        public async Task ConnectUserAsync_WhenBotCredsMissing_ShouldSeedFromConfigThenRefresh()
+        {
+            // Arrange
+            var userId = "12345";
+            var user = new User
+            {
+                TwitchUserId = userId,
+                Username = "testuser",
+                AccessToken = "user_token",
+                RefreshToken = "user_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(user);
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync((BotCredentials?)null);
+
+            _mockTwitchAuthService.Setup(x => x.RefreshTokenAsync("bot_refresh"))
+                .ReturnsAsync(new TwitchTokenResponse
+                {
+                    AccessToken = "new_token",
+                    RefreshToken = "new_refresh_token",
+                    ExpiresIn = 3600
+                });
+
+            // Act
+            await _twitchClientManager.ConnectUserAsync(userId);
+
+            // Assert
+            _mockBotCredentialRepository.Verify(x => x.SaveAsync(It.IsAny<BotCredentials>()), Times.AtLeastOnce);
+            _mockTwitchAuthService.Verify(x => x.RefreshTokenAsync("bot_refresh"), Times.Once);
+        }
+
+        [Fact]
+        public async Task ConnectUserAsync_WhenBotConnectReturnsFalse_ShouldNotJoinChannel()
+        {
+            // Arrange
+            var localFactory = new FakeBotClientFactoryThatCannotConnect();
+
+            var twitchSettings = Options.Create(new TwitchSettings
+            {
+                ClientId = "client",
+                ClientSecret = "secret",
+                RedirectUri = "https://example.com/auth/twitch/callback",
+                BotRedirectUri = "https://example.com/auth/twitch/bot/callback",
+                BotUsername = "forge_bot",
+                BotAccessToken = "bot_access",
+                BotRefreshToken = "bot_refresh"
+            });
+
+            var manager = new TwitchClientManager(
+                _mockScopeFactory.Object,
+                _mockMessageHandler.Object,
+                twitchSettings,
+                _mockLogger.Object,
+                localFactory);
+
+            var userId = "12345";
+            _mockUserRepository.Setup(x => x.GetUserAsync(userId))
+                .ReturnsAsync(new User { TwitchUserId = userId, Username = "testuser" });
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    Username = "forge_bot",
+                    AccessToken = "bot_access",
+                    RefreshToken = "bot_refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            // Act
+            await manager.ConnectUserAsync(userId);
+
+            // Assert
+            Assert.False(localFactory.LastClient!.JoinCalled);
+            Assert.False(manager.GetUserBotStatus(userId).Connected);
+        }
+
+        private sealed class FakeBotClientFactoryThatCannotConnect : ITwitchBotClientFactory
+        {
+            public FakeBotClientThatCannotConnect? LastClient { get; private set; }
+
+            public ITwitchBotClient Create(TwitchLib.Communication.Models.ClientOptions clientOptions)
+            {
+                LastClient = new FakeBotClientThatCannotConnect();
+                return LastClient;
+            }
+        }
+
+        private sealed class FakeBotClientThatCannotConnect : ITwitchBotClient
+        {
+            public bool IsConnected => false;
+            public bool JoinCalled { get; private set; }
+
+#pragma warning disable CS0067
+            public event EventHandler<TwitchLib.Client.Events.OnLogArgs>? OnLog;
+            public event EventHandler<TwitchLib.Client.Events.OnConnectedArgs>? OnConnected;
+            public event EventHandler<TwitchLib.Client.Events.OnMessageReceivedArgs>? OnMessageReceived;
+#pragma warning restore CS0067
+
+            public void Initialize(TwitchLib.Client.Models.ConnectionCredentials credentials)
+            {
+                // no-op
+            }
+
+            public bool Connect() => false;
+
+            public void JoinChannel(string channel) => JoinCalled = true;
+
+            public void LeaveChannel(string channel)
+            {
+                // no-op
+            }
+
+            public void SendMessage(string channel, string message)
+            {
+                // no-op
+            }
+        }
     }
 }

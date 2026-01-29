@@ -180,7 +180,7 @@
   private string? message;
   private string messageType = "info";
 
-  private CreateRewardRequest createModel = new()
+  private readonly CreateRewardRequest createModel = new()
   {
     Title = string.Empty,
     Cost = 1000,

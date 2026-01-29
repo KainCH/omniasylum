@@ -1,24 +1,24 @@
+const isDebugEnabled = () => {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('debug') === 'true' || window.omniOverlayDebug === true;
+    } catch (e) {
+        return window.omniOverlayDebug === true;
+    }
+};
+
+const log = (...args) => {
+    if (isDebugEnabled()) console.log(...args);
+};
+
+const warn = (...args) => {
+    if (isDebugEnabled()) console.warn(...args);
+};
+
 export function connect(url, dotNetHelper) {
     const socket = new WebSocket(url);
 
     const pad2 = (n) => String(n).padStart(2, '0');
-
-    const isDebugEnabled = () => {
-        try {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('debug') === 'true' || window.omniOverlayDebug === true;
-        } catch (e) {
-            return window.omniOverlayDebug === true;
-        }
-    };
-
-    const log = (...args) => {
-        if (isDebugEnabled()) console.log(...args);
-    };
-
-    const warn = (...args) => {
-        if (isDebugEnabled()) console.warn(...args);
-    };
 
     // Stream timer state (client-side; avoids Blazor re-rendering every second)
     let timerIntervalId = null;

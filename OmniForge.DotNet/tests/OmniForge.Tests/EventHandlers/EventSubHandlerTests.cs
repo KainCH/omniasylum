@@ -1274,7 +1274,7 @@ namespace OmniForge.Tests.EventHandlers
         [Fact]
         public async Task HandleAsync_WhenRewardNotManaged_ShouldIgnore()
         {
-                        var eventData = JsonDocument.Parse("""
+            var eventData = JsonDocument.Parse("""
                         {
                             "broadcaster_user_id": "123",
                             "user_name": "Viewer",
@@ -1293,7 +1293,7 @@ namespace OmniForge.Tests.EventHandlers
         [Fact]
         public async Task HandleAsync_WhenActionIsJumpScare_ShouldNotifyCustomAlert()
         {
-                        var eventData = JsonDocument.Parse("""
+            var eventData = JsonDocument.Parse("""
                         {
                             "id": "red-1",
                             "broadcaster_user_id": "123",
@@ -1321,7 +1321,7 @@ namespace OmniForge.Tests.EventHandlers
         [Fact]
         public async Task HandleAsync_WhenActionIsIncrementDeaths_ShouldUpdateCountersAndNotifyOverlay()
         {
-                        var eventData = JsonDocument.Parse("""
+            var eventData = JsonDocument.Parse("""
                         {
                             "id": "red-1",
                             "broadcaster_user_id": "123",
@@ -1346,6 +1346,182 @@ namespace OmniForge.Tests.EventHandlers
             _mockCounterRepository.Verify(x => x.IncrementCounterAsync("123", "deaths", 1), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("123", updatedCounters), Times.Once);
             _mockOverlayNotifier.Verify(x => x.NotifyCustomAlertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenRewardIdMissing_ShouldReturnEarly()
+        {
+            var eventData = JsonDocument.Parse("""{"broadcaster_user_id":"123","reward":{}}""").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockChannelPointRepository.Verify(x => x.GetRewardAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenChannelPointRepositoryMissing_ShouldReturnEarly()
+        {
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IChannelPointRepository))).Returns(null);
+            var eventData = JsonDocument.Parse("""{"id":"red-1","broadcaster_user_id":"123","reward":{"id":"reward-1"}}""").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockChannelPointRepository.Verify(x => x.GetRewardAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Theory]
+        [InlineData("increment_swears", "swears", true)]
+        [InlineData("decrement_deaths", "deaths", false)]
+        [InlineData("decrement_swears", "swears", false)]
+        public async Task HandleAsync_WhenCounterAction_ShouldUpdateCountersAndNotifyOverlay(string action, string counterId, bool increment)
+        {
+            var eventData = JsonDocument.Parse("""
+                        {
+                            "id": "red-1",
+                            "broadcaster_user_id": "123",
+                            "user_name": "Viewer",
+                            "reward": { "id": "reward-1", "title": "Counter" }
+                        }
+                        """).RootElement;
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardAsync("123", "reward-1")).ReturnsAsync(new ChannelPointReward
+            {
+                UserId = "123",
+                RewardId = "reward-1",
+                RewardTitle = "Counter",
+                Action = action
+            });
+
+            var updatedCounters = new Counter { TwitchUserId = "123" };
+            if (increment)
+            {
+                _mockCounterRepository.Setup(x => x.IncrementCounterAsync("123", counterId, 1)).ReturnsAsync(updatedCounters);
+            }
+            else
+            {
+                _mockCounterRepository.Setup(x => x.DecrementCounterAsync("123", counterId, 1)).ReturnsAsync(updatedCounters);
+            }
+
+            await _handler.HandleAsync(eventData);
+
+            if (increment)
+            {
+                _mockCounterRepository.Verify(x => x.IncrementCounterAsync("123", counterId, 1), Times.Once);
+            }
+            else
+            {
+                _mockCounterRepository.Verify(x => x.DecrementCounterAsync("123", counterId, 1), Times.Once);
+            }
+
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("123", updatedCounters), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenActionNotImplemented_ShouldNotTouchCounters()
+        {
+            var eventData = JsonDocument.Parse("""
+                        {
+                            "id": "red-1",
+                            "broadcaster_user_id": "123",
+                            "user_name": "Viewer",
+                            "reward": { "id": "reward-1", "title": "Something" }
+                        }
+                        """).RootElement;
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardAsync("123", "reward-1")).ReturnsAsync(new ChannelPointReward
+            {
+                UserId = "123",
+                RewardId = "reward-1",
+                RewardTitle = "Something",
+                Action = "not_implemented"
+            });
+
+            await _handler.HandleAsync(eventData);
+
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _mockCounterRepository.Verify(x => x.DecrementCounterAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenDiscordEnabled_ShouldSendNotification()
+        {
+            var eventData = JsonDocument.Parse("""
+                        {
+                            "id": "red-1",
+                            "broadcaster_user_id": "123",
+                            "user_name": "Viewer",
+                            "user_login": "viewer",
+                            "user_input": "boo",
+                            "reward": { "id": "reward-1", "title": "Death+" }
+                        }
+                        """).RootElement;
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardAsync("123", "reward-1")).ReturnsAsync(new ChannelPointReward
+            {
+                UserId = "123",
+                RewardId = "reward-1",
+                RewardTitle = "Death+",
+                Action = "increment_deaths"
+            });
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(new User
+            {
+                TwitchUserId = "123",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { ChannelPointRedemption = true }
+                }
+            });
+
+            var updatedCounters = new Counter { TwitchUserId = "123", Deaths = 11 };
+            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("123", "deaths", 1)).ReturnsAsync(updatedCounters);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockDiscordService.Verify(x => x.SendNotificationAsync(It.IsAny<User>(), "channel_point_redemption", It.IsAny<object>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenDiscordThrows_ShouldStillProcessAction()
+        {
+            var eventData = JsonDocument.Parse("""
+                        {
+                            "id": "red-1",
+                            "broadcaster_user_id": "123",
+                            "user_name": "Viewer",
+                            "reward": { "id": "reward-1", "title": "Death+" }
+                        }
+                        """).RootElement;
+
+            _mockChannelPointRepository.Setup(x => x.GetRewardAsync("123", "reward-1")).ReturnsAsync(new ChannelPointReward
+            {
+                UserId = "123",
+                RewardId = "reward-1",
+                RewardTitle = "Death+",
+                Action = "increment_deaths"
+            });
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(new User
+            {
+                TwitchUserId = "123",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { ChannelPointRedemption = true }
+                }
+            });
+
+            _mockDiscordService
+                .Setup(x => x.SendNotificationAsync(It.IsAny<User>(), "channel_point_redemption", It.IsAny<object>()))
+                .ThrowsAsync(new Exception("discord boom"));
+
+            var updatedCounters = new Counter { TwitchUserId = "123", Deaths = 11 };
+            _mockCounterRepository.Setup(x => x.IncrementCounterAsync("123", "deaths", 1)).ReturnsAsync(updatedCounters);
+
+            await _handler.HandleAsync(eventData);
+
+            _mockCounterRepository.Verify(x => x.IncrementCounterAsync("123", "deaths", 1), Times.Once);
+            _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("123", updatedCounters), Times.Once);
         }
     }
 }

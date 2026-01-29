@@ -91,9 +91,9 @@ namespace OmniForge.Web.Controllers
 
             try
             {
-            var incrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
+                var incrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
 
-            var counters = await _counterRepository.IncrementCounterAsync(userId, type, incrementAmount);
+                var counters = await _counterRepository.IncrementCounterAsync(userId, type, incrementAmount);
 
                 // Notify via SignalR
                 await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
@@ -124,8 +124,8 @@ namespace OmniForge.Web.Controllers
 
             try
             {
-            var decrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
-            var counters = await _counterRepository.DecrementCounterAsync(userId, type, decrementAmount);
+                var decrementAmount = ParsePositiveAmountOrDefault(amount, defaultValue: 1);
+                var counters = await _counterRepository.DecrementCounterAsync(userId, type, decrementAmount);
 
                 // Notify via SignalR
                 await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);

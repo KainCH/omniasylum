@@ -110,5 +110,46 @@ namespace OmniForge.Tests
             var obj = Assert.IsType<ObjectResult>(result);
             Assert.Equal(500, obj.StatusCode);
         }
+
+        [Fact]
+        public async Task UpdateSettings_WhenNoUserIdClaim_ShouldReturnUnauthorized()
+        {
+            var controller = new AutomodController(_mockTwitchApiService.Object, NullLogger<AutomodController>.Instance);
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+            };
+
+            var result = await controller.UpdateSettings(new AutomodSettingsDto());
+
+            Assert.IsType<UnauthorizedResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateSettings_WhenReauthRequired_ShouldReturnUnauthorizedPayload()
+        {
+            var dto = new AutomodSettingsDto { Aggression = 3 };
+            _mockTwitchApiService
+                .Setup(x => x.UpdateAutomodSettingsAsync("12345", dto))
+                .ThrowsAsync(new ReauthRequiredException("expired"));
+
+            var result = await _controller.UpdateSettings(dto);
+
+            Assert.IsType<UnauthorizedObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateSettings_WhenUnexpectedException_ShouldReturn500()
+        {
+            var dto = new AutomodSettingsDto { Aggression = 3 };
+            _mockTwitchApiService
+                .Setup(x => x.UpdateAutomodSettingsAsync("12345", dto))
+                .ThrowsAsync(new Exception("boom"));
+
+            var result = await _controller.UpdateSettings(dto);
+
+            var obj = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, obj.StatusCode);
+        }
     }
 }
