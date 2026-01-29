@@ -145,8 +145,8 @@ namespace OmniForge.Web.Services
                     }
                     _logger.LogInformation(
                         "📦 Overlay payload: user_id={UserId}, alert_type={AlertType}, data={Data}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        LogValue.Safe(userId),
+                        LogValue.Safe(alertType),
                         json);
                 }
                 catch
@@ -176,15 +176,15 @@ namespace OmniForge.Web.Services
                 {
                     _logger.LogDebug(
                         "💓 Overlay heartbeat: user_id={UserId}, action={Action}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(action));
                 }
                 else
                 {
                     _logger.LogInformation(
                         "📣 Overlay send: user_id={UserId}, action={Action}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(action));
                 }
                 return;
             }
@@ -193,17 +193,17 @@ namespace OmniForge.Web.Services
             {
                 _logger.LogDebug(
                     "💓 Overlay heartbeat: user_id={UserId}, action={Action}, alert_type={AlertType}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(action),
+                    LogValue.Safe(alertType));
             }
             else
             {
                 _logger.LogInformation(
                     "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (alertType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(action),
+                    LogValue.Safe(alertType));
             }
         }
 

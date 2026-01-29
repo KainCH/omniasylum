@@ -146,14 +146,12 @@ else
     }
     catch (ReauthRequiredException ex)
     {
-      Logger.LogWarning(ex, "AutoMod init requires reauth: {Message}", (ex.Message ?? string.Empty).Replace("\r",
-      "\\r").Replace("\n", "\\n"));
+      Logger.LogWarning(ex, "AutoMod init requires reauth: {Message}", LogValueSanitizer.Safe(ex.Message));
       Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
     }
     catch (Exception ex)
     {
-      Logger.LogError(ex, "AutoMod page init failed: {Message}", (ex.Message ?? string.Empty).Replace("\r",
-      "\\r").Replace("\n", "\\n"));
+      Logger.LogError(ex, "AutoMod page init failed: {Message}", LogValueSanitizer.Safe(ex.Message));
       errorMessage = ex.Message;
     }
     finally
@@ -177,14 +175,12 @@ else
     }
     catch (ReauthRequiredException ex)
     {
-      Logger.LogWarning(ex, "AutoMod refresh requires reauth: {Message}", (ex.Message ?? string.Empty).Replace("\r",
-      "\\r").Replace("\n", "\\n"));
+      Logger.LogWarning(ex, "AutoMod refresh requires reauth: {Message}", LogValueSanitizer.Safe(ex.Message));
       Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
     }
     catch (Exception ex)
     {
-      Logger.LogError(ex, "AutoMod refresh failed: {Message}", (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n",
-      "\\n"));
+      Logger.LogError(ex, "AutoMod refresh failed: {Message}", LogValueSanitizer.Safe(ex.Message));
       errorMessage = ex.Message;
     }
     finally
@@ -202,7 +198,7 @@ else
       return;
     }
 
-    var safeUserId = userId ?? string.Empty;
+    var safeUserId = userId;
 
     Logger.LogInformation("AutoMod load requested. Reason={Reason} UserId={UserId}", LogValueSanitizer.Safe(reason),
     LogValueSanitizer.Safe(userId));
@@ -279,14 +275,12 @@ new Slider { Label = "Swearing", GetValue = () => settings.Swearing, SetValue = 
     }
     catch (ReauthRequiredException ex)
     {
-      Logger.LogWarning(ex, "AutoMod save requires reauth: {Message}", (ex.Message ?? string.Empty).Replace("\r",
-      "\\r").Replace("\n", "\\n"));
+      Logger.LogWarning(ex, "AutoMod save requires reauth: {Message}", LogValueSanitizer.Safe(ex.Message));
       Navigation.NavigateTo("/auth/logout?reauth=1", forceLoad: true);
     }
     catch (Exception ex)
     {
-      Logger.LogError(ex, "AutoMod save failed: {Message}", (ex.Message ?? string.Empty).Replace("\r", "\\r").Replace("\n",
-      "\\n"));
+      Logger.LogError(ex, "AutoMod save failed: {Message}", LogValueSanitizer.Safe(ex.Message));
       errorMessage = ex.Message;
     }
     finally

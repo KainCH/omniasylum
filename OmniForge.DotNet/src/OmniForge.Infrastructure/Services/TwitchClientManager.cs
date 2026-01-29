@@ -140,21 +140,21 @@ namespace OmniForge.Infrastructure.Services
 
                 if (user == null)
                 {
-                    _logger.LogWarning("User {UserId} not found", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    _logger.LogWarning("User {UserId} not found", LogValue.Safe(userId));
                     return;
                 }
 
                 var channelLogin = (user.Username ?? string.Empty).Trim().TrimStart('#');
                 if (string.IsNullOrWhiteSpace(channelLogin))
                 {
-                    _logger.LogWarning("User {UserId} has no username/channel to join", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    _logger.LogWarning("User {UserId} has no username/channel to join", LogValue.Safe(userId));
                     return;
                 }
 
                 var botClient = await EnsureBotConnectedAsync(botCredentialRepository, authService).ConfigureAwait(false);
                 if (botClient == null)
                 {
-                    _logger.LogError("❌ Forge bot is not configured/connected. Cannot join channel for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    _logger.LogError("❌ Forge bot is not configured/connected. Cannot join channel for user {UserId}", LogValue.Safe(userId));
                     return;
                 }
 
@@ -163,8 +163,8 @@ namespace OmniForge.Infrastructure.Services
                 _userIdToChannel.TryAdd(userId, channelLogin);
                 _channelToUserId.AddOrUpdate(channelLogin.ToLowerInvariant(), userId, (_, __) => userId);
                 _logger.LogInformation("✅ Forge bot joined channel {Channel} for user {UserId}",
-                    (channelLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(channelLogin),
+                    LogValue.Safe(userId));
             }
         }
 

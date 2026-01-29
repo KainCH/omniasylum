@@ -67,7 +67,7 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed computing effective overlay settings for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "❌ Failed computing effective overlay settings for user {UserId}", LogValue.Safe(userId));
             }
 
             return effective;
@@ -239,7 +239,7 @@ namespace OmniForge.Web.Controllers
         public async Task<IActionResult> GetOverlaySettings()
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("⚙️ GetOverlaySettings called for userId: {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("⚙️ GetOverlaySettings called for userId: {UserId}", LogValue.Safe(userId));
 
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -248,14 +248,14 @@ namespace OmniForge.Web.Controllers
 
             if (!user.Features.StreamOverlay)
             {
-                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", LogValue.Safe(userId));
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
             var effective = await GetEffectiveOverlaySettingsAsync(userId ?? string.Empty, user);
 
             _logger.LogDebug("📋 Returning overlay settings (effective): Position={Position}, Scale={Scale}",
-                (effective?.Position ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), effective?.Scale);
+                LogValue.Safe(effective?.Position), effective?.Scale);
 
             return Ok(effective);
         }
@@ -264,9 +264,9 @@ namespace OmniForge.Web.Controllers
         public async Task<IActionResult> UpdateOverlaySettings([FromBody] Core.Entities.OverlaySettings request)
         {
             var userId = User.FindFirst("userId")?.Value;
-            _logger.LogInformation("💾 UpdateOverlaySettings called for userId: {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("💾 UpdateOverlaySettings called for userId: {UserId}", LogValue.Safe(userId));
             _logger.LogDebug("📥 Received settings: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                (request?.Position ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), request?.Scale, request?.Enabled);
+                LogValue.Safe(request?.Position), request?.Scale, request?.Enabled);
 
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -281,7 +281,7 @@ namespace OmniForge.Web.Controllers
 
             if (!user.Features.StreamOverlay)
             {
-                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogWarning("⚠️ Stream overlay feature not enabled for user {UserId}", LogValue.Safe(userId));
                 return StatusCode(403, new { error = "Stream overlay feature is not enabled for your account" });
             }
 
@@ -289,7 +289,7 @@ namespace OmniForge.Web.Controllers
             var validPositions = new[] { "top-left", "top-right", "bottom-left", "bottom-right" };
             if (!string.IsNullOrEmpty(request.Position) && !validPositions.Contains(request.Position))
             {
-                _logger.LogWarning("⚠️ Invalid position: {Position}", (request.Position ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogWarning("⚠️ Invalid position: {Position}", LogValue.Safe(request.Position));
                 return BadRequest(new { error = "Invalid position. Must be one of: " + string.Join(", ", validPositions) });
             }
 
@@ -318,10 +318,10 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed persisting active game core counter selection for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "❌ Failed persisting active game core counter selection for user {UserId}", LogValue.Safe(userId));
             }
 
-            _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", LogValue.Safe(userId));
 
             return Ok(new
             {
@@ -341,19 +341,19 @@ namespace OmniForge.Web.Controllers
 
             var safeUserId = userId ?? string.Empty;
 
-            _logger.LogInformation("📊 GetPublicCounters called for userId: {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("📊 GetPublicCounters called for userId: {UserId}", LogValue.Safe(safeUserId));
 
             var counters = await _counterRepository.GetCountersAsync(safeUserId!);
             if (counters == null)
             {
-                _logger.LogWarning("⚠️ Counters not found for userId: {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogWarning("⚠️ Counters not found for userId: {UserId}", LogValue.Safe(safeUserId));
                 return NotFound();
             }
 
             var user = await _userRepository.GetUserAsync(safeUserId!);
             if (user == null)
             {
-                _logger.LogWarning("⚠️ User not found for userId: {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogWarning("⚠️ User not found for userId: {UserId}", LogValue.Safe(safeUserId));
                 return NotFound();
             }
 
@@ -368,11 +368,11 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed loading active custom counters config for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "❌ Failed loading active custom counters config for user {UserId}", LogValue.Safe(safeUserId));
             }
 
             _logger.LogDebug("📋 User OverlaySettings (effective) for {UserId}: Position={Position}, Scale={Scale}, Enabled={Enabled}",
-                (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (effectiveSettings?.Position ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), effectiveSettings?.Scale, effectiveSettings?.Enabled);
+                LogValue.Safe(safeUserId), LogValue.Safe(effectiveSettings?.Position), effectiveSettings?.Scale, effectiveSettings?.Enabled);
             _logger.LogDebug("📋 OverlaySettings.Counters (effective): Deaths={Deaths}, Swears={Swears}, Screams={Screams}, Bits={Bits}",
                 effectiveSettings?.Counters?.Deaths, effectiveSettings?.Counters?.Swears,
                 effectiveSettings?.Counters?.Screams, effectiveSettings?.Counters?.Bits);
@@ -401,7 +401,7 @@ namespace OmniForge.Web.Controllers
             };
 
             _logger.LogInformation("✅ Returning public counters for {UserId}: Deaths={Deaths}, Swears={Swears}, StreamStarted={StreamStarted}",
-                (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
+                LogValue.Safe(safeUserId), counters.Deaths, counters.Swears, counters.StreamStarted?.ToString("o") ?? "null");
 
             return Ok(response);
         }

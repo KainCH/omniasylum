@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
@@ -78,8 +79,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed reading existing game library item for user {UserId} game {GameId}",
-                        userId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                        gameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId));
                 }
 
                 GameCoreCountersConfig? existingSelection = null;
@@ -92,8 +93,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed reading core counter selection for user {UserId} game {GameId}",
-                        userId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                        gameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId));
                 }
 
                 // Everything is already set; keep the original early-return behavior.
@@ -125,8 +126,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed upserting game library item for user {UserId} game {GameId}",
-                        userId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                        gameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId));
                 }
 
                 try
@@ -143,7 +144,7 @@ namespace OmniForge.Infrastructure.Services
                             _logger.LogError(
                                 ex,
                                 "❌ Failed reading user for {UserId}",
-                                userId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                                LogValue.Safe(userId));
                         }
 
                         var overlayCounters = userForSeed?.OverlaySettings?.Counters;
@@ -167,8 +168,8 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed seeding core counter selection for user {UserId} game {GameId}",
-                        userId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                        gameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId));
                 }
 
                 return;
@@ -184,7 +185,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed reading user for {UserId}",
-                    userId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId));
             }
 
             // Capture current active configs (these are what the bot/overlay are using right now)
@@ -200,7 +201,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed reading active chat commands for user {UserId}",
-                    userId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId));
                 activeChatCommands = new ChatCommandConfiguration();
             }
 
@@ -213,7 +214,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed reading active custom counters config for user {UserId}",
-                    userId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId));
                 activeCustomCounters = new CustomCounterConfiguration();
             }
 
@@ -228,8 +229,8 @@ namespace OmniForge.Infrastructure.Services
                     await _gameCountersRepository.SaveAsync(safeUserId, current.ActiveGameId!, existing);
                     _logger.LogInformation(
                         "💾 Saved counters for user {UserId} game {GameId}",
-                        safeUserId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                        current.ActiveGameId!.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(safeUserId),
+                        LogValue.Safe(current.ActiveGameId));
 
                     // Persist current active configs to the previous game as well
                     try
@@ -263,15 +264,15 @@ namespace OmniForge.Infrastructure.Services
 
                         _logger.LogInformation(
                             "💾 Saved per-game configs for user {UserId} game {GameId}",
-                            (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                            (current.ActiveGameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            LogValue.Safe(userId),
+                            LogValue.Safe(current.ActiveGameId));
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(
                             ex,
                             "❌ Failed saving per-game configs for previous game for user {UserId}",
-                            (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            LogValue.Safe(userId));
                     }
                 }
             }
@@ -280,7 +281,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed saving counters for previous game for user {UserId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId));
             }
 
             // Ensure game exists in library
@@ -293,8 +294,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed reading existing game library item for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             try
@@ -317,8 +318,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed upserting game library item for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             // Load counters for the new game (or initialize)
@@ -341,8 +342,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed loading game counters for user {UserId} game {GameId}; using defaults",
-                    safeUserId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                    safeGameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(safeUserId),
+                    LogValue.Safe(safeGameId));
                 newCounters = new Counter { TwitchUserId = safeUserId, LastUpdated = now };
             }
 
@@ -362,8 +363,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed loading game chat commands for user {UserId} game {GameId}; using active",
-                    safeUserId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                    safeGameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(safeUserId),
+                    LogValue.Safe(safeGameId));
                 newChatCommands = activeChatCommands ?? new ChatCommandConfiguration();
             }
 
@@ -387,8 +388,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed loading game custom counters config for user {UserId} game {GameId}; using empty config",
-                    safeUserId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                    safeGameId.Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(safeUserId),
+                    LogValue.Safe(safeGameId));
                 newCustomCountersConfig = new CustomCounterConfiguration();
             }
 
@@ -421,8 +422,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed loading core counter selection for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             // Apply core selection to overlay visibility and (by override) to default chat commands
@@ -448,8 +449,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed applying core counter selection for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             // Swap the active counters (existing system uses the primary counters row)
@@ -468,8 +469,8 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed applying active per-game configs for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             await _gameContextRepository.SaveAsync(new GameContext
@@ -492,9 +493,9 @@ namespace OmniForge.Infrastructure.Services
                     var fallback = user.Features.StreamSettings.DefaultContentClassificationLabels;
                     _logger.LogInformation(
                         "🏷️ Using user default CCL fallback (game has no admin CCL config). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        string.Join(", ", fallback.Select(v => (v ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"))));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId),
+                        LogValue.JoinSafe(fallback));
 
                     await _twitchApiService.UpdateChannelInformationAsync(safeUserId, safeGameId, fallback);
                 }
@@ -502,8 +503,8 @@ namespace OmniForge.Infrastructure.Services
                 {
                     _logger.LogInformation(
                         "ℹ️ No admin CCL config and no user default CCL fallback; skipping CCL apply. user_id={UserId} game_id={GameId}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId),
+                        LogValue.Safe(gameId));
                 }
             }
             catch (Exception ex)
@@ -511,16 +512,16 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogError(
                     ex,
                     "❌ Failed updating Twitch channel info (CCLs) for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
 
             await _overlayNotifier.NotifyCounterUpdateAsync(safeUserId, newCounters);
             _logger.LogInformation(
                 "🔄 Active game switched for user {UserId}: {GameId} ({GameName})",
-                (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (gameName ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                LogValue.Safe(userId),
+                LogValue.Safe(gameId),
+                LogValue.Safe(gameName));
         }
 
         public async Task ApplyActiveCoreCountersSelectionAsync(string userId, string gameId)
@@ -556,7 +557,7 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed reading user for {UserId}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId));
                 }
 
                 if (user != null)
@@ -582,7 +583,7 @@ namespace OmniForge.Infrastructure.Services
                     _logger.LogError(
                         ex,
                         "❌ Failed reading active chat commands for user {UserId}",
-                        (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        LogValue.Safe(userId));
                     activeChat = new ChatCommandConfiguration();
                 }
 
@@ -592,16 +593,16 @@ namespace OmniForge.Infrastructure.Services
 
                 _logger.LogInformation(
                     "✅ Applied active core counter selection for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
             catch (Exception ex)
             {
                 _logger.LogError(
                     ex,
                     "❌ Failed applying active core counter selection for user {UserId} game {GameId}",
-                    (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(userId),
+                    LogValue.Safe(gameId));
             }
         }
 

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Controllers
 {
@@ -51,7 +52,7 @@ namespace OmniForge.Web.Controllers
 
             var duration = request.DurationMs.HasValue ? Math.Clamp(request.DurationMs.Value, 500, 30000) : 5000;
 
-            _logger.LogInformation("🧪 DEBUG: Sending interaction banner to {TargetUserId}", (targetUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🧪 DEBUG: Sending interaction banner to {TargetUserId}", LogValue.Safe(targetUserId));
 
             await _overlayNotifier.NotifyCustomAlertAsync(targetUserId!, "interactionBanner", new
             {
@@ -77,7 +78,7 @@ namespace OmniForge.Web.Controllers
             }
 
             var targetUserId = request.TwitchUserId!;
-            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", (targetUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🔄 DEBUG: Restoring series save for user {TargetUserId}", LogValue.Safe(targetUserId));
 
             // Validate request
 
@@ -115,7 +116,7 @@ namespace OmniForge.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", (targetUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "Failed to restore series save for user {TargetUserId}", LogValue.Safe(targetUserId));
                 return StatusCode(500, new { success = false, error = "Failed to create series save" });
             }
 
@@ -146,7 +147,7 @@ namespace OmniForge.Web.Controllers
             var safeUserId = userId!;
 
             var testWebhookUrl = "https://discord.com/api/webhooks/1234567890/test-webhook-token-12345";
-            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", LogValue.Safe(safeUserId));
 
             var user = await _userRepository.GetUserAsync(safeUserId!);
             if (user == null) return NotFound("User not found");
@@ -186,7 +187,7 @@ namespace OmniForge.Web.Controllers
 
             var safeUserId = userId!;
 
-            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", LogValue.Safe(safeUserId));
 
             var user = await _userRepository.GetUserAsync(safeUserId!);
 
@@ -221,7 +222,7 @@ namespace OmniForge.Web.Controllers
                 });
             }
 
-            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🚀 Triggering test stream notification for {Username}", LogValue.Safe(user.Username));
 
             var mockEvent = new
             {
@@ -250,7 +251,7 @@ namespace OmniForge.Web.Controllers
 
             var safeUserId = userId!;
 
-            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("🧹 DEBUG: Cleaning up user data for {UserId}", LogValue.Safe(safeUserId));
 
             var user = await _userRepository.GetUserAsync(safeUserId!);
             if (user == null) return NotFound("User not found");

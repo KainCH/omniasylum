@@ -154,8 +154,8 @@ namespace OmniForge.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Failed ensuring per-game counter value for user {UserId} game {GameId}",
-                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(safeUserId),
+                    LogValue.Safe(gameId));
             }
 
             // If this game is active, also update active configs so bot/overlay pick it up immediately
@@ -174,13 +174,13 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed updating active config for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "❌ Failed updating active config for user {UserId}", LogValue.Safe(safeUserId));
             }
 
             _logger.LogInformation("✅ Added library counter {CounterId} to game {GameId} for user {UserId}",
-                (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                LogValue.Safe(counterId),
+                LogValue.Safe(gameId),
+                LogValue.Safe(userId));
         }
 
         public async Task RemoveLibraryCounterFromGameAsync(string userId, string gameId, string counterId)
@@ -267,8 +267,8 @@ namespace OmniForge.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Failed removing per-game counter value for user {UserId} game {GameId}",
-                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    LogValue.Safe(safeUserId),
+                    LogValue.Safe(gameId));
             }
 
             // If this game is active, also update active configs so bot/overlay pick it up immediately
@@ -287,13 +287,13 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Failed updating active config after removing counter for user {UserId}", (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "❌ Failed updating active config after removing counter for user {UserId}", LogValue.Safe(safeUserId));
             }
 
             _logger.LogInformation("✅ Removed library counter {CounterId} from game {GameId} for user {UserId}",
-                (counterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (gameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                LogValue.Safe(counterId),
+                LogValue.Safe(gameId),
+                LogValue.Safe(userId));
         }
 
     }
