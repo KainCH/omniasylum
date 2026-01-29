@@ -299,7 +299,7 @@ namespace OmniForge.Infrastructure.Services
 
                     // We must be able to read the broadcaster's moderators list to decide if Forge bot is eligible.
                     // Twitch enforces this as 'moderation:read'.
-                    if (!isAdminActing && (tokenScopes?.Contains("moderation:read") != true))
+                    if (!isAdminActing && (tokenScopes == null || !tokenScopes.Contains("moderation:read")))
                     {
                         _logger.LogWarning(
                             "🔒 User {UserId} token is missing required scope for moderators lookup: moderation:read. User must re-login to enable Forge bot moderator eligibility checks.",
@@ -356,7 +356,7 @@ namespace OmniForge.Infrastructure.Services
                         ? Array.Empty<string>()
                         : new[] { "user:read:chat", "moderator:read:followers" };
 
-                    var missingScopes = requiredScopes.Where(s => tokenScopes?.Contains(s) != true).ToList();
+                    var missingScopes = requiredScopes.Where(s => tokenScopes == null || !tokenScopes.Contains(s)).ToList();
                     if (missingScopes.Count > 0)
                     {
                         _logger.LogWarning("🔒 User {UserId} token is missing required scopes: [{MissingScopes}]. User must re-login to get updated scopes.",
@@ -364,7 +364,7 @@ namespace OmniForge.Infrastructure.Services
                         return SubscriptionResult.RequiresReauth;
                     }
 
-                    var hasChatScope = useBotForChannelEvents || (tokenScopes?.Contains("user:read:chat") == true);
+                    var hasChatScope = useBotForChannelEvents || (tokenScopes != null && tokenScopes.Contains("user:read:chat"));
                     var channelEventsUserId = useBotForChannelEvents ? botUserId! : tokenUserId;
 
                     var condition = new Dictionary<string, string> { { "broadcaster_user_id", broadcasterId } };

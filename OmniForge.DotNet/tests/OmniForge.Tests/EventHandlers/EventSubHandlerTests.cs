@@ -1362,7 +1362,7 @@ namespace OmniForge.Tests.EventHandlers
         [Fact]
         public async Task HandleAsync_WhenChannelPointRepositoryMissing_ShouldReturnEarly()
         {
-            _mockServiceProvider.Setup(x => x.GetService(typeof(IChannelPointRepository))).Returns(null);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IChannelPointRepository))).Returns((object?)null);
             var eventData = JsonDocument.Parse("""{"id":"red-1","broadcaster_user_id":"123","reward":{"id":"reward-1"}}""").RootElement;
 
             await _handler.HandleAsync(eventData);

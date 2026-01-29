@@ -11,10 +11,22 @@ namespace OmniForge.Core.Utilities
                 return string.Empty;
             }
 
-            // Remove newlines and other control characters that could be used for log injection
-            return input.Replace(Environment.NewLine, "")
-                        .Replace("\n", "")
-                        .Replace("\r", "");
+            // Prevent log forging / injection by stripping control characters (CR/LF, tabs, nulls, etc.).
+            // This intentionally does NOT redact values; it only removes characters that could alter log structure.
+            var buffer = new char[input.Length];
+            var length = 0;
+
+            foreach (var ch in input)
+            {
+                if (!char.IsControl(ch))
+                {
+                    buffer[length++] = ch;
+                }
+            }
+
+            return length == input.Length
+                ? input
+                : new string(buffer, 0, length);
         }
 
         public static object? Sanitize(object? input)

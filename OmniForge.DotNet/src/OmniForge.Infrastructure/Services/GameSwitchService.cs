@@ -101,9 +101,9 @@ namespace OmniForge.Infrastructure.Services
                             GameId = gameId,
                             GameName = gameName ?? current.ActiveGameName ?? string.Empty,
                             BoxArtUrl = boxArtUrl ?? string.Empty,
-                            CreatedAt = existingLibraryItem?.CreatedAt ?? now,
+                            CreatedAt = now,
                             LastSeenAt = now,
-                            EnabledContentClassificationLabels = existingLibraryItem?.EnabledContentClassificationLabels
+                            EnabledContentClassificationLabels = null
                         };
 
                         await _gameLibraryRepository.UpsertAsync(upsertedLibraryItem);

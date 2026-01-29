@@ -27,6 +27,13 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public void Sanitize_String_RemovesOtherControlCharacters()
+        {
+            var result = LogSanitizer.Sanitize("a\tb\0c");
+            Assert.Equal("abc", result);
+        }
+
+        [Fact]
         public void Sanitize_Object_Null_ReturnsNull()
         {
             var result = LogSanitizer.Sanitize((object?)null);
