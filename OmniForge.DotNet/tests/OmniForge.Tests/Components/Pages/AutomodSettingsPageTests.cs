@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Web.Components.Pages;
 using System.Collections.Generic;
 using System.Security.Claims;
@@ -39,6 +40,7 @@ public class AutomodSettingsPageTests : BunitContext
         Services.AddSingleton<ITwitchApiService>(_mockTwitchApiService.Object);
         Services.AddSingleton<IUserRepository>(_mockUserRepository.Object);
         Services.AddSingleton(NullLogger<AutomodSettings>.Instance);
+        Services.AddSingleton<ILogValueSanitizer>(new LogValueSanitizer());
     }
 
     [Fact]

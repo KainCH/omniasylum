@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using OmniForge.Infrastructure.Models.EventSub;
 
-namespace OmniForge.Infrastructure.Services
+namespace OmniForge.Infrastructure.Interfaces
 {
     public interface INativeEventSubService
     {

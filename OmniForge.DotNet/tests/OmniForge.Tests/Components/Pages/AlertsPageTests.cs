@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Web.Components.Pages;
 using System.Collections.Generic;
 using System.Security.Claims;
@@ -39,6 +40,7 @@ public class AlertsPageTests : BunitContext
         Services.AddSingleton<IAlertRepository>(_mockAlertRepository.Object);
         Services.AddSingleton<IUserRepository>(_mockUserRepository.Object);
         Services.AddSingleton(NullLogger<Alerts>.Instance);
+        Services.AddSingleton<ILogValueSanitizer>(new LogValueSanitizer());
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Moq;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Client.Models;
 using Xunit;

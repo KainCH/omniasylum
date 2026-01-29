@@ -9,6 +9,7 @@
 @inject Microsoft.Extensions.Logging.ILogger<AutomodSettings> Logger
 @inject Microsoft.AspNetCore.Components.NavigationManager Navigation
 @inject OmniForge.Core.Interfaces.IUserRepository UserRepository
+@inject ILogValueSanitizer LogValueSanitizer
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>AutoMod Settings</PageTitle>
@@ -203,8 +204,8 @@ else
 
     var safeUserId = userId ?? string.Empty;
 
-    Logger.LogInformation("AutoMod load requested. Reason={Reason} UserId={UserId}", (reason ?? string.Empty).Replace("\r",
-    "\\r").Replace("\n", "\\n"), (userId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+    Logger.LogInformation("AutoMod load requested. Reason={Reason} UserId={UserId}", LogValueSanitizer.Safe(reason),
+    LogValueSanitizer.Safe(userId));
 
     settings = await TwitchApiService.GetAutomodSettingsAsync(safeUserId);
     if (settings == null)
@@ -270,8 +271,7 @@ new Slider { Label = "Swearing", GetValue = () => settings.Swearing, SetValue = 
 
       var safeUserId = userId ?? string.Empty;
 
-      Logger.LogInformation("AutoMod save requested. UserId={UserId}", (userId ?? string.Empty).Replace("\r",
-      "\\r").Replace("\n", "\\n"));
+      Logger.LogInformation("AutoMod save requested. UserId={UserId}", LogValueSanitizer.Safe(userId));
 
       settings = await TwitchApiService.UpdateAutomodSettingsAsync(safeUserId, settings);
       SetupSliders();

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services.EventHandlers;
@@ -73,7 +74,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockSettings.Object,
                 _mockDiscordTracker.Object,
                 _mockAuthService.Object,
-                _mockDiscordInviteBroadcastScheduler.Object);
+                _mockDiscordInviteBroadcastScheduler.Object,
+                new LogValueSanitizer());
         }
 
         private void SetupDependencyInjection()

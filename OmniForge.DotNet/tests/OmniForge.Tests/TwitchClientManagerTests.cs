@@ -7,6 +7,7 @@ using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
 using Xunit;
 

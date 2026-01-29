@@ -24,13 +24,15 @@ namespace OmniForge.Infrastructure.Services
         private readonly ILogger<DiscordService> _logger;
         private readonly DiscordBotSettings _discordBotSettings;
         private readonly IDiscordBotClient _discordBotClient;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
-        public DiscordService(HttpClient httpClient, ILogger<DiscordService> logger, IOptions<DiscordBotSettings> discordBotSettings, IDiscordBotClient discordBotClient)
+        public DiscordService(HttpClient httpClient, ILogger<DiscordService> logger, IOptions<DiscordBotSettings> discordBotSettings, IDiscordBotClient discordBotClient, ILogValueSanitizer logValueSanitizer)
         {
             _httpClient = httpClient;
             _logger = logger;
             _discordBotSettings = discordBotSettings.Value;
             _discordBotClient = discordBotClient;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task SendTestNotificationAsync(User user)
@@ -63,9 +65,9 @@ namespace OmniForge.Infrastructure.Services
             var effectiveChannelId = GetEffectiveChannelId(user, template);
 
             _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, ChannelId={ChannelId}, LegacyWebhookConfigured={LegacyWebhook}",
-                (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (safeEventType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : (effectiveChannelId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                _logValueSanitizer.Safe(user.Username),
+                _logValueSanitizer.Safe(safeEventType),
+                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : _logValueSanitizer.Safe(effectiveChannelId),
                 !string.IsNullOrEmpty(user.DiscordWebhookUrl));
 
             if (string.IsNullOrEmpty(effectiveChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
@@ -78,8 +80,8 @@ namespace OmniForge.Infrastructure.Services
             if (!IsNotificationEnabled(user, safeEventType!))
             {
                 _logger.LogInformation("Discord notification disabled for {EventType} by user {Username}",
-                    (safeEventType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    _logValueSanitizer.Safe(safeEventType),
+                    _logValueSanitizer.Safe(user.Username));
                 return;
             }
 
@@ -392,7 +394,7 @@ namespace OmniForge.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", (webhookUrl ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", _logValueSanitizer.Safe(webhookUrl));
                 return false;
             }
         }

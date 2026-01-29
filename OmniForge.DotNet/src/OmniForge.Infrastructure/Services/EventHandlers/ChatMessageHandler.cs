@@ -24,6 +24,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly IMonitoringRegistry _monitoringRegistry;
         private readonly ITwitchBotEligibilityService _botEligibilityService;
         private readonly IUserRepository _userRepository;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
@@ -34,7 +35,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             ITwitchApiService twitchApiService,
             IMonitoringRegistry monitoringRegistry,
             ITwitchBotEligibilityService botEligibilityService,
-            IUserRepository userRepository)
+            IUserRepository userRepository,
+            ILogValueSanitizer logValueSanitizer)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
@@ -44,6 +46,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             _monitoringRegistry = monitoringRegistry;
             _botEligibilityService = botEligibilityService;
             _userRepository = userRepository;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -77,7 +80,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 var messageType = GetStringProperty(eventData, "message_type", string.Empty);
 
                 // Process chat commands via shared processor (EventSub path)
-                var safeBroadcasterId = broadcasterId ?? string.Empty;
+                var safeBroadcasterId = broadcasterId;
                 var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == safeBroadcasterId;
                 var isModerator = isBroadcaster || HasBadge(eventData, "moderator");
                 var isSubscriber = HasBadge(eventData, "subscriber") || HasBadge(eventData, "founder");
@@ -86,23 +89,23 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     Logger.LogInformation(
                         "💬 EventSub chat: broadcaster={BroadcasterLogin}({BroadcasterId}) chatter={ChatterLogin}({ChatterId}) type={MessageType} mod={IsMod} sub={IsSub} msgId={MessageId} text=\"{Text}\"",
-                        (broadcasterLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (broadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (chatterLogin ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (chatterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (messageType ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
+                        _logValueSanitizer.Safe(broadcasterLogin),
+                        _logValueSanitizer.Safe(broadcasterId),
+                        _logValueSanitizer.Safe(chatterLogin),
+                        _logValueSanitizer.Safe(chatterId),
+                        _logValueSanitizer.Safe(messageType),
                         isModerator,
                         isSubscriber,
-                        (messageId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (safeMessageText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        _logValueSanitizer.Safe(messageId),
+                        _logValueSanitizer.Safe(safeMessageText));
 
                     if (safeMessageText!.StartsWith("!"))
                     {
                         var firstToken = safeMessageText!.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? safeMessageText;
                         Logger.LogInformation(
                             "🧩 Chat command candidate: {Token} full=\"{Text}\"",
-                            (firstToken ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                            (safeMessageText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            _logValueSanitizer.Safe(firstToken),
+                            _logValueSanitizer.Safe(safeMessageText));
                     }
                 }
 

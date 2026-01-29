@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OmniForge.Core.Configuration;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Repositories;
@@ -31,6 +32,7 @@ namespace OmniForge.Infrastructure
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
             services.AddHttpClient<IGitHubIssueService, GitHubIssueService>();
             services.AddScoped<IJwtService, JwtService>();
+            services.AddSingleton<ILogValueSanitizer, LogValueSanitizer>();
 
             var storageAccountName = configuration["AzureStorage:AccountName"];
             var azureClientId = configuration["AZURE_CLIENT_ID"];
@@ -85,7 +87,7 @@ namespace OmniForge.Infrastructure
 
             services.AddScoped<IGameSwitchService, GameSwitchService>();
             services.AddScoped<IGameCounterSetupService, GameCounterSetupService>();
-            services.AddScoped<CoreCounterLibrarySeeder>();
+            services.AddScoped<ICoreCounterLibrarySeeder, CoreCounterLibrarySeeder>();
             // Bot eligibility caching: Redis when configured, otherwise in-memory.
             services.AddSingleton<IBotEligibilityCache>(sp =>
             {
@@ -101,12 +103,14 @@ namespace OmniForge.Infrastructure
             services.AddScoped<ITwitchBotEligibilityService, TwitchBotEligibilityService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
-            services.AddHostedService<DiscordBotPresenceHostedService>();
+            services.AddSingleton<IDiscordBotPresenceHostedService, DiscordBotPresenceHostedService>();
+            services.AddHostedService(sp => (DiscordBotPresenceHostedService)sp.GetRequiredService<IDiscordBotPresenceHostedService>());
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
-            services.AddHostedService<TwitchConnectionService>();
+            services.AddSingleton<ITwitchConnectionService, TwitchConnectionService>();
+            services.AddHostedService(sp => (TwitchConnectionService)sp.GetRequiredService<ITwitchConnectionService>());
 
             services.AddSingleton<IMonitoringRegistry, MonitoringRegistry>();
 

@@ -94,6 +94,12 @@ namespace OmniForge.Tests
         {
             var handler = new Mock<HttpMessageHandler>();
 
+            var response = new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.Created,
+                Content = new StringContent("{\"number\": 1, \"html_url\": \"https://github.com/KainCH/omniasylum/issues/1\"}", Encoding.UTF8, "application/json")
+            };
+
             handler.Protected()
                 .Setup<Task<HttpResponseMessage>>("SendAsync",
                     ItExpr.Is<HttpRequestMessage>(req =>
@@ -101,11 +107,7 @@ namespace OmniForge.Tests
                         req.Headers.Authorization != null &&
                         req.Headers.Authorization.Scheme == "Bearer"),
                     ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage
-                {
-                    StatusCode = HttpStatusCode.Created,
-                    Content = new StringContent("{\"number\": 1, \"html_url\": \"https://github.com/KainCH/omniasylum/issues/1\"}", Encoding.UTF8, "application/json")
-                })
+                .ReturnsAsync(response)
                 .Verifiable();
 
             var httpClient = new HttpClient(handler.Object);
@@ -129,6 +131,8 @@ namespace OmniForge.Tests
                 Times.Once(),
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>());
+
+            response.Dispose();
         }
 
         [Theory]

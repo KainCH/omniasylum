@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Services;
 using TwitchLib.Client.Enums;
 using TwitchLib.Client.Models;
@@ -58,7 +59,8 @@ namespace OmniForge.Tests
             _handler = new ChatCommandProcessor(
                 _mockScopeFactory.Object,
                 _mockOverlayNotifier.Object,
-                _mockLogger.Object);
+                _mockLogger.Object,
+                new LogValueSanitizer());
         }
 
         private ChatMessage CreateMessage(string message, bool isMod = false, bool isBroadcaster = false, bool isSubscriber = false)

@@ -5,11 +5,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Core.Utilities;
 
 namespace OmniForge.Infrastructure.Services
 {
-    public class TwitchConnectionService : BackgroundService
+    public class TwitchConnectionService : BackgroundService, ITwitchConnectionService
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ITwitchClientManager _twitchClientManager;

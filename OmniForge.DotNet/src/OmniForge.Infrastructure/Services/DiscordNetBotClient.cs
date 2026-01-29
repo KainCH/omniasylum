@@ -13,6 +13,7 @@ namespace OmniForge.Infrastructure.Services
     public class DiscordNetBotClient : IDiscordBotClient, IDisposable
     {
         private readonly ILogger<DiscordNetBotClient> _logger;
+        private readonly ILogValueSanitizer _logValueSanitizer;
         private readonly SemaphoreSlim _clientLock = new SemaphoreSlim(1, 1);
 
         private DiscordRestClient? _client;
@@ -24,9 +25,10 @@ namespace OmniForge.Infrastructure.Services
 
         private Task? _gatewayStartTask;
 
-        public DiscordNetBotClient(ILogger<DiscordNetBotClient> logger)
+        public DiscordNetBotClient(ILogger<DiscordNetBotClient> logger, ILogValueSanitizer logValueSanitizer)
         {
             _logger = logger;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task EnsureOnlineAsync(string botToken, string activityText)
@@ -84,7 +86,7 @@ namespace OmniForge.Infrastructure.Services
                 throw new InvalidOperationException("Discord channel is not a message channel or was not found");
             }
 
-            _logger.LogInformation("Sending Discord bot message to channelId={ChannelId}", (channelId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+            _logger.LogInformation("Sending Discord bot message to channelId={ChannelId}", _logValueSanitizer.Safe(channelId));
 
             await messageChannel.SendMessageAsync(
                 text: content,

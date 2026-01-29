@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Utilities;
 using System.Collections.Concurrent;
 using System.Linq;
@@ -25,16 +26,12 @@ namespace OmniForge.Infrastructure.Services
         public bool IsSubscriber { get; init; }
     }
 
-    public interface IChatCommandProcessor
-    {
-        Task ProcessAsync(ChatCommandContext context, Func<string, string, Task>? sendMessage = null);
-    }
-
     public class ChatCommandProcessor : IChatCommandProcessor
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<ChatCommandProcessor> _logger;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         // Cooldown tracking: UserId -> Command -> LastUsedTime
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _cooldowns = new();
@@ -101,11 +98,13 @@ namespace OmniForge.Infrastructure.Services
         public ChatCommandProcessor(
             IServiceScopeFactory scopeFactory,
             IOverlayNotifier overlayNotifier,
-            ILogger<ChatCommandProcessor> logger)
+            ILogger<ChatCommandProcessor> logger,
+            ILogValueSanitizer logValueSanitizer)
         {
             _scopeFactory = scopeFactory;
             _overlayNotifier = overlayNotifier;
             _logger = logger;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public async Task ProcessAsync(ChatCommandContext context, Func<string, string, Task>? sendMessage = null)
@@ -491,9 +490,9 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogDebug(
                     "Ignoring custom counter mutation from non-mod/broadcaster. user_id={UserId} counter_id={CounterId} op={Op}",
-                    (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (actualCounterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (op ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    _logValueSanitizer.Safe(context.UserId),
+                    _logValueSanitizer.Safe(actualCounterId),
+                    _logValueSanitizer.Safe(op));
                 return true;
             }
 

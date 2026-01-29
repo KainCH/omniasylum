@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {

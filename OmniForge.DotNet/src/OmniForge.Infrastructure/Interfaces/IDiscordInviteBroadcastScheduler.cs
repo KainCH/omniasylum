@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace OmniForge.Infrastructure.Services.EventHandlers
+namespace OmniForge.Infrastructure.Interfaces
 {
     public interface IDiscordInviteBroadcastScheduler
     {

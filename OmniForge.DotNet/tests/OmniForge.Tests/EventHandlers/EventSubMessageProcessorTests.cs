@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Moq;
 using OmniForge.Infrastructure.Services;
+using OmniForge.Core.Utilities;
 using Xunit;
 
 namespace OmniForge.Tests.EventHandlers
@@ -15,7 +16,7 @@ namespace OmniForge.Tests.EventHandlers
         public EventSubMessageProcessorTests()
         {
             _mockLogger = new Mock<ILogger<EventSubMessageProcessor>>();
-            _processor = new EventSubMessageProcessor(_mockLogger.Object);
+            _processor = new EventSubMessageProcessor(_mockLogger.Object, new LogValueSanitizer());
         }
 
         [Fact]

@@ -1,9 +1,10 @@
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services;
 
-public sealed class CoreCounterLibrarySeeder
+public sealed class CoreCounterLibrarySeeder : ICoreCounterLibrarySeeder
 {
     private readonly ICounterLibraryRepository _counterLibraryRepository;
 

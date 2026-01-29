@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {

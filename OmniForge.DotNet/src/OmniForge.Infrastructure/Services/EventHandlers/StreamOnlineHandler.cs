@@ -23,6 +23,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly IDiscordNotificationTracker _discordTracker;
         private readonly ITwitchAuthService _twitchAuthService;
         private readonly IDiscordInviteBroadcastScheduler _discordInviteBroadcastScheduler;
+        private readonly ILogValueSanitizer _logValueSanitizer;
 
         public StreamOnlineHandler(
             IServiceScopeFactory scopeFactory,
@@ -30,13 +31,15 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             IOptions<TwitchSettings> twitchSettings,
             IDiscordNotificationTracker discordTracker,
             ITwitchAuthService twitchAuthService,
-            IDiscordInviteBroadcastScheduler discordInviteBroadcastScheduler)
+            IDiscordInviteBroadcastScheduler discordInviteBroadcastScheduler,
+            ILogValueSanitizer logValueSanitizer)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
             _discordTracker = discordTracker;
             _twitchAuthService = twitchAuthService;
             _discordInviteBroadcastScheduler = discordInviteBroadcastScheduler;
+            _logValueSanitizer = logValueSanitizer;
         }
 
         public override string SubscriptionType => "stream.online";
@@ -53,7 +56,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 return;
             }
 
-            string safeBroadcasterId = broadcasterId ?? string.Empty;
+            string safeBroadcasterId = broadcasterId;
 
             Logger.LogInformation("Stream Online: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
 
@@ -120,13 +123,13 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning(ex, "⚠️ Failed to fetch channel category on stream online for user {UserId}", (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    Logger.LogWarning(ex, "⚠️ Failed to fetch channel category on stream online for user {UserId}", _logValueSanitizer.Safe(safeBroadcasterId));
                 }
             }
 
             if (isNewStream && category != null && !string.IsNullOrWhiteSpace(category.GameId) && gameCountersRepository != null)
             {
-                string safeGameId = category.GameId ?? string.Empty;
+                string safeGameId = category.GameId!;
                 string safeGameName = category.GameName ?? string.Empty;
 
                 try
@@ -135,13 +138,13 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     if (savedForGame != null)
                     {
                         counters = savedForGame;
-                        counters.TwitchUserId = safeBroadcasterId ?? string.Empty;
+                        counters.TwitchUserId = safeBroadcasterId;
                         counters.LastCategoryName = safeGameName;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning(ex, "⚠️ Failed loading saved per-game counters on stream online for user {UserId} game {GameId}", (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), (safeGameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    Logger.LogWarning(ex, "⚠️ Failed loading saved per-game counters on stream online for user {UserId} game {GameId}", _logValueSanitizer.Safe(safeBroadcasterId), _logValueSanitizer.Safe(safeGameId));
                 }
 
                 // Best-effort: persist game context for other subsystems.
@@ -151,7 +154,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     {
                         await gameContextRepository.SaveAsync(new GameContext
                         {
-                            UserId = safeBroadcasterId ?? string.Empty,
+                            UserId = safeBroadcasterId,
                             ActiveGameId = safeGameId,
                             ActiveGameName = safeGameName,
                             UpdatedAt = now
@@ -163,8 +166,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         Logger.LogWarning(
                             ex,
                             "⚠️ Failed to persist game context on stream online for user {UserId} game {GameId}",
-                            (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                            (safeGameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            _logValueSanitizer.Safe(safeBroadcasterId),
+                            _logValueSanitizer.Safe(safeGameId));
                     }
                 }
             }
@@ -205,29 +208,29 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     if (category != null && !string.IsNullOrWhiteSpace(category.GameId))
                     {
-                        string safeGameId = category.GameId ?? string.Empty;
+                        string safeGameId = category.GameId!;
                         string safeGameName = category.GameName ?? string.Empty;
                         Logger.LogInformation(
                             "🎮 Stream online category for user {UserId}: {GameName} ({GameId})",
-                            (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                            (safeGameName ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                            (safeGameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            _logValueSanitizer.Safe(safeBroadcasterId),
+                            _logValueSanitizer.Safe(safeGameName),
+                            _logValueSanitizer.Safe(safeGameId));
 
                         var libraryItem = await gameLibraryRepository.GetAsync(safeBroadcasterId!, safeGameId!);
                         if (libraryItem == null)
                         {
                             Logger.LogInformation(
                                 "➕ Auto-adding missing game to global library on stream online. user_id={UserId} game_id={GameId} game_name={GameName}",
-                                (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                (category.GameName ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                                _logValueSanitizer.Safe(safeBroadcasterId),
+                                _logValueSanitizer.Safe(category.GameId),
+                                _logValueSanitizer.Safe(category.GameName));
 
                             await gameLibraryRepository.UpsertAsync(new Core.Entities.GameLibraryItem
                             {
                                 // Repository is global; UserId is ignored for partitioning.
                                 UserId = "global",
-                                GameId = safeGameId ?? string.Empty,
-                                GameName = safeGameName ?? string.Empty,
+                                GameId = safeGameId,
+                                GameName = safeGameName,
                                 CreatedAt = now,
                                 LastSeenAt = now,
                                 BoxArtUrl = string.Empty,
@@ -240,9 +243,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                             {
                                 Logger.LogInformation(
                                     "🏷️ Applying user default CCL fallback on stream online (game auto-added). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
-                                        (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                        (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                        string.Join(", ", fallback.Select(label => (label ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"))));
+                                        _logValueSanitizer.Safe(safeBroadcasterId),
+                                        _logValueSanitizer.Safe(category.GameId),
+                                        _logValueSanitizer.JoinSafe(fallback));
 
                                 await twitchApiService.UpdateChannelInformationAsync(
                                     safeBroadcasterId!,
@@ -253,7 +256,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                             {
                                 Logger.LogInformation(
                                     "ℹ️ Game auto-added but has no admin CCL config and no user default CCL fallback; skipping CCL apply. game_id={GameId}",
-                                        (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                                        _logValueSanitizer.Safe(category.GameId));
                             }
                         }
                         else
@@ -265,9 +268,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 {
                                     Logger.LogInformation(
                                         "🏷️ Applying user default CCL fallback on stream online (game unconfigured). user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
-                                            (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                            (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                            string.Join(", ", fallback.Select(label => (label ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"))));
+                                            _logValueSanitizer.Safe(safeBroadcasterId),
+                                            _logValueSanitizer.Safe(category.GameId),
+                                            _logValueSanitizer.JoinSafe(fallback));
 
                                     await twitchApiService.UpdateChannelInformationAsync(
                                         safeBroadcasterId!,
@@ -278,8 +281,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 {
                                     Logger.LogInformation(
                                         "ℹ️ Admin CCL config not set for this game and no user default CCL fallback; skipping CCL apply. user_id={UserId} game_id={GameId}",
-                                            (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                            (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                                            _logValueSanitizer.Safe(safeBroadcasterId),
+                                            _logValueSanitizer.Safe(category.GameId));
                                 }
                             }
                             else
@@ -287,9 +290,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                                 var enabledCcls = libraryItem.EnabledContentClassificationLabels;
                                 Logger.LogInformation(
                                     "🏷️ Applying admin-configured CCLs on stream online. user_id={UserId} game_id={GameId} enabled_ccls={Ccls}",
-                                        (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                        (category.GameId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                                        string.Join(", ", enabledCcls.Select(label => (label ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"))));
+                                        _logValueSanitizer.Safe(safeBroadcasterId),
+                                        _logValueSanitizer.Safe(category.GameId),
+                                        _logValueSanitizer.JoinSafe(enabledCcls));
 
                                 await twitchApiService.UpdateChannelInformationAsync(
                                     safeBroadcasterId!,
@@ -302,12 +305,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     {
                         Logger.LogInformation(
                             "🎮 Stream online: no channel category returned; skipping CCL apply. user_id={UserId}",
-                            (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                            _logValueSanitizer.Safe(safeBroadcasterId));
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning(ex, "⚠️ Failed applying CCLs on stream online for user {UserId}", (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    Logger.LogWarning(ex, "⚠️ Failed applying CCLs on stream online for user {UserId}", _logValueSanitizer.Safe(safeBroadcasterId));
                 }
             }
 
@@ -327,7 +330,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 catch (Exception ex)
                 {
                     // If we can't safely dedupe, prefer suppressing to avoid spam.
-                    Logger.LogWarning(ex, "⚠️ Failed to claim stream_start Discord notification; suppressing send. user_id={UserId}", (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                    Logger.LogWarning(ex, "⚠️ Failed to claim stream_start Discord notification; suppressing send. user_id={UserId}", _logValueSanitizer.Safe(safeBroadcasterId));
                     claimed = false;
                 }
 
@@ -335,8 +338,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 {
                     Logger.LogInformation(
                         "🔁 Suppressed duplicate stream_start Discord announcement. user_id={UserId} stream_instance_id={StreamInstanceId}",
-                        (safeBroadcasterId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
-                        (streamInstanceId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                        _logValueSanitizer.Safe(safeBroadcasterId),
+                        _logValueSanitizer.Safe(streamInstanceId));
                 }
                 else
                 {

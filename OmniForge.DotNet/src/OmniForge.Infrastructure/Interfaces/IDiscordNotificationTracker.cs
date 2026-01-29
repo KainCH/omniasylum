@@ -1,6 +1,6 @@
 using System;
 
-namespace OmniForge.Infrastructure.Services.EventHandlers
+namespace OmniForge.Infrastructure.Interfaces
 {
     /// <summary>
     /// Interface for tracking Discord notification status.

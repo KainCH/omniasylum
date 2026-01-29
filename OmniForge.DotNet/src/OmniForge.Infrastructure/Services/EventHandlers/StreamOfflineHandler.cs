@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services.EventHandlers
 {

@@ -10,7 +10,7 @@ using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
-    public class DiscordBotPresenceHostedService : IHostedService
+    public class DiscordBotPresenceHostedService : IHostedService, IDiscordBotPresenceHostedService
     {
         private const string DefaultActivityText = "shaping commands in the forge";
 

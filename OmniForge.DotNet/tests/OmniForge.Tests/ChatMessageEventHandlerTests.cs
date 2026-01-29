@@ -6,7 +6,9 @@ using Microsoft.Extensions.Options;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Services.EventHandlers;
 using Xunit;
@@ -36,7 +38,8 @@ namespace OmniForge.Tests
                 _mockTwitchApiService.Object,
                 _mockMonitoringRegistry.Object,
                 _mockBotEligibilityService.Object,
-                _mockUserRepository.Object);
+                _mockUserRepository.Object,
+                new LogValueSanitizer());
         }
 
         [Fact]

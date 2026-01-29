@@ -14,6 +14,7 @@ using TwitchLib.Client.Events;
 using TwitchLib.Communication.Clients;
 using TwitchLib.Communication.Models;
 using OmniForge.Infrastructure.Configuration;
+using OmniForge.Infrastructure.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
 {
