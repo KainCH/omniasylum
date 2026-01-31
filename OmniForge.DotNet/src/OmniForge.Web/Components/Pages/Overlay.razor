@@ -685,6 +685,17 @@ else
             }
         }
 
+        if (string.Equals(type, "raid", StringComparison.OrdinalIgnoreCase) && !payload.ContainsKey("effects"))
+        {
+            payload["effects"] = new Dictionary<string, object>
+            {
+                ["animation"] = "electricPulse",
+                ["particle"] = "sparks",
+                ["screenShake"] = true,
+                ["screenFlicker"] = true
+            };
+        }
+
         return payload;
     }
 

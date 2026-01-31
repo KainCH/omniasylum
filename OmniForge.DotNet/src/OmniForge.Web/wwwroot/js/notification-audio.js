@@ -1,5 +1,8 @@
 class NotificationAudioManager {
     constructor() {
+        if (window.omniDisableNotificationAudio === undefined) {
+            window.omniDisableNotificationAudio = true;
+        }
         this.audioCache = {};
         this.volume = 0.8; // Higher volume for OBS capture
         this.notificationSounds = {
@@ -10,8 +13,9 @@ class NotificationAudioManager {
             bits: 'electroshock.wav',
             milestone: 'alarm.wav',
             timerFinished: 'hypeTrain.wav',
-            raid: "alarm.wav"
+            raid: 'alarm.wav'
         };
+        this.cacheVersion = 2;
         // Auto-init ONLY if we are on the overlay page
         if (window.location.pathname.startsWith('/overlay')) {
             if (document.readyState === 'complete') {
@@ -25,6 +29,11 @@ class NotificationAudioManager {
     async init() {
         if (this.initialized) return;
         this.initialized = true;
+
+        if (window.omniDisableNotificationAudio === true) {
+            console.log('🔇 Notification audio disabled; skipping cache restore/preload.');
+            return;
+        }
 
         console.log('OBS Audio Manager initializing for Overlay...');
 
@@ -45,6 +54,10 @@ class NotificationAudioManager {
             if (!saved) return false;
 
             const cacheState = JSON.parse(saved);
+            if ((cacheState.version ?? 1) !== this.cacheVersion) {
+                localStorage.removeItem('omni_notification_audio_cache');
+                return false;
+            }
             const age = Date.now() - cacheState.timestamp;
 
             if (age > 24 * 60 * 60 * 1000) {
@@ -98,6 +111,7 @@ class NotificationAudioManager {
     saveNotificationCacheState() {
         try {
             const cacheState = {
+                version: this.cacheVersion,
                 timestamp: Date.now(),
                 notifications: Object.keys(this.audioCache).map(eventType => ({
                     eventType: eventType,
@@ -176,6 +190,10 @@ class NotificationAudioManager {
     }
 
     async playNotification(eventType, data = {}) {
+        if (window.omniDisableNotificationAudio === true) {
+            console.log('🔇 Notification audio disabled; skipping playback:', eventType);
+            return;
+        }
         // If the overlay isn't visible, don't play audio.
         // OBS can throttle hidden browser sources; queued JS events may flush on resume.
         if (document.visibilityState !== 'visible') {
