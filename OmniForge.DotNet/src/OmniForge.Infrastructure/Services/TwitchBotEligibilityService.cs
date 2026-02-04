@@ -53,7 +53,7 @@ namespace OmniForge.Infrastructure.Services
             var safeBotLoginOrId = botLoginOrId!;
 
             // Cache to avoid calling Helix Get Moderators on every chat command.
-            // Uses Redis when configured (Entra/MI), else in-memory.
+            // In-memory cache only.
             var cacheTtl = TimeSpan.FromHours(3);
             var cached = await _cache.TryGetAsync(safeBroadcasterUserId, safeBotLoginOrId, cancellationToken);
             if (cached != null)
