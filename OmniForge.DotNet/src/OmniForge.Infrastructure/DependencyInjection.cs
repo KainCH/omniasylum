@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OmniForge.Core.Configuration;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Infrastructure.Configuration;
 using OmniForge.Infrastructure.Interfaces;
 using OmniForge.Infrastructure.Repositories;
 using OmniForge.Infrastructure.Services;
