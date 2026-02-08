@@ -2,6 +2,7 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Constants;
 using OmniForge.Core.Interfaces;
 
 namespace OmniForge.Infrastructure.Services
@@ -57,6 +58,17 @@ namespace OmniForge.Infrastructure.Services
 
             if (mappingFound && !string.IsNullOrWhiteSpace(mappedAlertType))
             {
+                var coreAlertTypes = AlertTemplates.GetDefaultTemplates()
+                    .Select(t => t.Type)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (coreAlertTypes.Contains(mappedAlertType))
+                {
+                    await SendStandardAlertAsync(userId, mappedAlertType, data);
+                    return;
+                }
+
                 await _overlayNotifier.NotifyCustomAlertAsync(userId, mappedAlertType, data);
                 return;
             }
