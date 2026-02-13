@@ -409,7 +409,11 @@ else
                         IsPreviewMode = true;
                     }
                 }
-                catch { /* ignore query parsing errors */ }
+                catch
+                {
+                    // Silently ignore query string parsing errors - preview mode is optional
+                    // and should not prevent the overlay from loading
+                }
 
                 if (user.OverlaySettings?.OfflinePreview == true)
                 {
@@ -589,35 +593,57 @@ else
         }
 
         var alert = alerts.FirstOrDefault(a => a.Type == type && a.IsEnabled);
-        if (alert == null) return;
 
-        var payload = new Dictionary<string, object>
-        {
-            ["id"] = alert.Id,
-            ["type"] = alert.Type,
-            ["name"] = alert.Name,
-            ["visualCue"] = alert.VisualCue,
-            ["sound"] = alert.Sound,
-            ["soundDescription"] = alert.SoundDescription,
-            ["textPrompt"] = alert.TextPrompt,
-            ["duration"] = alert.Duration,
-            ["backgroundColor"] = alert.BackgroundColor,
-            ["textColor"] = alert.TextColor,
-            ["borderColor"] = alert.BorderColor
-        };
+        Dictionary<string, object> payload;
 
-        try
+        if (alert == null)
         {
-            if (!string.IsNullOrEmpty(alert.Effects))
+            // Only generate fallback alerts for known visual alert types.
+            // Non-alert event types (e.g., chatCommandsUpdated, customCommandsUpdated) should not trigger visual alerts.
+            if (!IsKnownAlertType(type))
             {
-                var effectsObj = JsonSerializer.Deserialize<object>(alert.Effects);
-                if (effectsObj != null)
-                {
-                    payload["effects"] = effectsObj;
-                }
+                return;
+            }
+
+            payload = BuildFallbackAlertPayload(type, data);
+            if (payload.Count == 0)
+            {
+                return;
             }
         }
-        catch {}
+        else
+        {
+            payload = new Dictionary<string, object>
+            {
+                ["id"] = alert.Id,
+                ["type"] = alert.Type,
+                ["name"] = alert.Name,
+                ["visualCue"] = alert.VisualCue,
+                ["sound"] = alert.Sound,
+                ["soundDescription"] = alert.SoundDescription,
+                ["textPrompt"] = alert.TextPrompt,
+                ["duration"] = alert.Duration,
+                ["backgroundColor"] = alert.BackgroundColor,
+                ["textColor"] = alert.TextColor,
+                ["borderColor"] = alert.BorderColor
+            };
+
+            try
+            {
+                if (!string.IsNullOrEmpty(alert.Effects))
+                {
+                    var effectsObj = JsonSerializer.Deserialize<object>(alert.Effects);
+                    if (effectsObj != null)
+                    {
+                        payload["effects"] = effectsObj;
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to deserialize alert effects for alert {alert.Id}: {ex.Message}");
+            }
+        }
 
         // Merge data into payload
         if (data is JsonElement jsonElement)
@@ -643,6 +669,110 @@ else
         }
 
         await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+    }
+
+    private Dictionary<string, object> BuildFallbackAlertPayload(string type, object data)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["id"] = $"{type}-default",
+            ["type"] = type,
+            ["name"] = GetDefaultAlertName(type)
+        };
+
+        var theme = user?.OverlaySettings?.Theme;
+        if (theme != null)
+        {
+            payload["backgroundColor"] = theme.BackgroundColor;
+            payload["textColor"] = theme.TextColor;
+            payload["borderColor"] = theme.BorderColor;
+        }
+
+        MergeAlertData(payload, data);
+
+        if (!payload.TryGetValue("textPrompt", out var promptObj) || promptObj is not string prompt || string.IsNullOrWhiteSpace(prompt))
+        {
+            var defaultTemplate = GetDefaultAlertTemplate(type);
+            if (!string.IsNullOrWhiteSpace(defaultTemplate))
+            {
+                payload["textPrompt"] = ApplyTemplate(defaultTemplate, payload);
+            }
+        }
+
+        if (string.Equals(type, "raid", StringComparison.OrdinalIgnoreCase) && !payload.ContainsKey("effects"))
+        {
+            payload["effects"] = new Dictionary<string, object>
+            {
+                ["animation"] = "electricPulse",
+                ["particle"] = "sparks",
+                ["screenShake"] = true,
+                ["screenFlicker"] = true
+            };
+        }
+
+        return payload;
+    }
+
+    private static bool IsKnownAlertType(string type)
+    {
+        // List of event types that should generate visual alerts.
+        // Non-alert event types (e.g., chatCommandsUpdated, customCommandsUpdated, overlaySettingsUpdate)
+        // are data/state updates and should not trigger visual alerts.
+        return type switch
+        {
+            "follow" or "subscription" or "resub" or "giftsub" or "bits" or "raid" or "milestone" => true,
+            _ => false
+        };
+    }
+
+    private static string GetDefaultAlertName(string type)
+    {
+        return type switch
+        {
+            "follow" => "Follow",
+            "subscription" => "Subscription",
+            "resub" => "Resubscription",
+            "giftsub" => "Gift Sub",
+            "bits" => "Bits",
+            "raid" => "Raid",
+            "milestone" => "Milestone",
+            _ => "Alert"
+        };
+    }
+
+    private static string GetDefaultAlertTemplate(string type)
+    {
+        return type switch
+        {
+            "follow" => "New Follower: [User]",
+            "subscription" => "New Subscriber: [User]",
+            "resub" => "[User] Resubscribed x[Months]",
+            "giftsub" => "[User] Gifted [Amount] Subs",
+            "bits" => "[User] Cheered [Amount] Bits",
+            "raid" => "Raid: [User] ([Viewers])",
+            "milestone" => "Milestone reached!",
+            _ => string.Empty
+        };
+    }
+
+    private static void MergeAlertData(IDictionary<string, object> payload, object data)
+    {
+        if (data is not JsonElement jsonElement)
+        {
+            return;
+        }
+
+        var json = jsonElement.GetRawText();
+        var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+        if (dataDict == null)
+        {
+            return;
+        }
+
+        foreach (var kvp in dataDict.Where(kvp => !payload.ContainsKey(kvp.Key)))
+        {
+            payload[kvp.Key] = kvp.Value;
+        }
     }
 
     private static string ApplyTemplate(string template, IReadOnlyDictionary<string, object> payload)

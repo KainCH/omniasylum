@@ -26,7 +26,6 @@ namespace OmniForge.Infrastructure
             services.Configure<DiscordBotSettings>(configuration.GetSection("DiscordBot"));
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<AzureTableConfiguration>(configuration.GetSection(AzureTableConfiguration.SectionName));
-            services.Configure<RedisSettings>(configuration.GetSection("Redis"));
             services.Configure<GitHubSettings>(configuration.GetSection("GitHub"));
 
             services.AddHttpClient<ITwitchAuthService, TwitchAuthService>();
@@ -88,17 +87,8 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IGameSwitchService, GameSwitchService>();
             services.AddScoped<IGameCounterSetupService, GameCounterSetupService>();
             services.AddScoped<ICoreCounterLibrarySeeder, CoreCounterLibrarySeeder>();
-            // Bot eligibility caching: Redis when configured, otherwise in-memory.
-            services.AddSingleton<IBotEligibilityCache>(sp =>
-            {
-                var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisSettings>>().Value;
-                if (!string.IsNullOrWhiteSpace(settings.HostName))
-                {
-                    return ActivatorUtilities.CreateInstance<RedisBotEligibilityCache>(sp);
-                }
-
-                return new MemoryBotEligibilityCache();
-            });
+            // Bot eligibility caching: in-memory only.
+            services.AddSingleton<IBotEligibilityCache, MemoryBotEligibilityCache>();
 
             services.AddScoped<ITwitchBotEligibilityService, TwitchBotEligibilityService>();
             services.AddScoped<INotificationService, NotificationService>();
