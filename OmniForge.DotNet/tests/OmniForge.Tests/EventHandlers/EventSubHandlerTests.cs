@@ -38,6 +38,7 @@ namespace OmniForge.Tests.EventHandlers
         private readonly Mock<IGameCountersRepository> _mockGameCountersRepository;
         private readonly Mock<IGameContextRepository> _mockGameContextRepository;
         private readonly Mock<IDiscordInviteBroadcastScheduler> _mockDiscordInviteBroadcastScheduler;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
         private readonly StreamOnlineHandler _handler;
 
         public StreamOnlineHandlerTests()
@@ -59,6 +60,7 @@ namespace OmniForge.Tests.EventHandlers
             _mockGameCountersRepository = new Mock<IGameCountersRepository>();
             _mockGameContextRepository = new Mock<IGameContextRepository>();
             _mockDiscordInviteBroadcastScheduler = new Mock<IDiscordInviteBroadcastScheduler>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
 
             _mockSettings.Setup(x => x.Value).Returns(new TwitchSettings
             {
@@ -75,7 +77,8 @@ namespace OmniForge.Tests.EventHandlers
                 _mockDiscordTracker.Object,
                 _mockAuthService.Object,
                 _mockDiscordInviteBroadcastScheduler.Object,
-                new LogValueSanitizer());
+                new LogValueSanitizer(),
+                _mockBotCredentialRepository.Object);
         }
 
         private void SetupDependencyInjection()

@@ -191,13 +191,23 @@ namespace OmniForge.Infrastructure.Services
                     {
                         try
                         {
+                            var message = string.IsNullOrWhiteSpace(msg.Message) ? msg.Exception?.GetType().Name ?? "Unknown" : msg.Message;
+
                             if (msg.Exception != null)
                             {
-                                _logger.LogWarning(msg.Exception, "Discord gateway: {Message}", msg.Message);
+                                // GatewayReconnectException is normal - Discord periodically requests reconnects for load balancing
+                                if (msg.Exception is Discord.WebSocket.GatewayReconnectException)
+                                {
+                                    _logger.LogInformation("Discord gateway: Server requested reconnect - this is normal behavior");
+                                }
+                                else
+                                {
+                                    _logger.LogWarning(msg.Exception, "Discord gateway: {Message}", message);
+                                }
                             }
                             else
                             {
-                                _logger.LogInformation("Discord gateway: {Message}", msg.Message);
+                                _logger.LogInformation("Discord gateway: {Message}", message);
                             }
                         }
                         catch

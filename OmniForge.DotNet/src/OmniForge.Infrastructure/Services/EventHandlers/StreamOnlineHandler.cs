@@ -24,6 +24,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly ITwitchAuthService _twitchAuthService;
         private readonly IDiscordInviteBroadcastScheduler _discordInviteBroadcastScheduler;
         private readonly ILogValueSanitizer _logValueSanitizer;
+        private readonly IBotCredentialRepository _botCredentialRepository;
 
         public StreamOnlineHandler(
             IServiceScopeFactory scopeFactory,
@@ -32,7 +33,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             IDiscordNotificationTracker discordTracker,
             ITwitchAuthService twitchAuthService,
             IDiscordInviteBroadcastScheduler discordInviteBroadcastScheduler,
-            ILogValueSanitizer logValueSanitizer)
+            ILogValueSanitizer logValueSanitizer,
+            IBotCredentialRepository botCredentialRepository)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
@@ -40,6 +42,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             _twitchAuthService = twitchAuthService;
             _discordInviteBroadcastScheduler = discordInviteBroadcastScheduler;
             _logValueSanitizer = logValueSanitizer;
+            _botCredentialRepository = botCredentialRepository;
         }
 
         public override string SubscriptionType => "stream.online";
@@ -363,14 +366,58 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             {
                 if (!string.IsNullOrEmpty(_twitchSettings.ClientId))
                 {
-                    var accessToken = !string.IsNullOrEmpty(user.AccessToken)
-                        ? user.AccessToken
-                        : await _twitchAuthService.GetAppAccessTokenAsync();
+                    // Prioritize bot credentials (has all permissions as the monitor system),
+                    // then fall back to app token, and finally user token.
+                    string? accessToken = null;
+                    string tokenSource = "none";
+
+                    // 1. Try bot credentials first (best option - has full permissions)
+                    try
+                    {
+                        var botCredentials = await _botCredentialRepository.GetAsync();
+                        if (botCredentials != null && !string.IsNullOrEmpty(botCredentials.AccessToken))
+                        {
+                            // Check if bot token is expired and needs refresh
+                            if (botCredentials.TokenExpiry > DateTimeOffset.UtcNow.AddMinutes(5))
+                            {
+                                accessToken = botCredentials.AccessToken;
+                                tokenSource = "bot";
+                            }
+                            else
+                            {
+                                Logger.LogInformation("Bot token expired for Discord notification fetch; trying alternatives");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to get bot credentials for Discord notification fetch");
+                    }
+
+                    // 2. Fall back to app token (limited but works for public stream data)
+                    if (string.IsNullOrEmpty(accessToken))
+                    {
+                        accessToken = await _twitchAuthService.GetAppAccessTokenAsync();
+                        if (!string.IsNullOrEmpty(accessToken))
+                        {
+                            tokenSource = "app";
+                        }
+                    }
+
+                    // 3. Last resort: user's own token
+                    if (string.IsNullOrEmpty(accessToken) && !string.IsNullOrEmpty(user.AccessToken))
+                    {
+                        accessToken = user.AccessToken;
+                        tokenSource = "user";
+                    }
 
                     if (string.IsNullOrEmpty(accessToken))
                     {
+                        Logger.LogWarning("No valid access token available for Discord notification fetch for user {UserId}", _logValueSanitizer.Safe(userId));
                         return new { };
                     }
+
+                    Logger.LogInformation("Fetching stream info for Discord notification using {TokenSource} token for user {UserId}", tokenSource, _logValueSanitizer.Safe(userId));
 
                     var streams = await helixWrapper.GetStreamsAsync(
                         _twitchSettings.ClientId,
@@ -380,6 +427,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     if (streams.Streams != null && streams.Streams.Length > 0)
                     {
                         var stream = streams.Streams[0];
+                        Logger.LogInformation(
+                            "✅ Retrieved stream data for Discord notification: Title='{Title}', Game='{Game}', Viewers={Viewers}",
+                            _logValueSanitizer.Safe(stream.Title ?? ""),
+                            _logValueSanitizer.Safe(stream.GameName ?? ""),
+                            stream.ViewerCount);
+
                         return new
                         {
                             title = stream.Title,
@@ -393,6 +446,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     }
 
                     // Fallback to channel info if stream not available yet
+                    Logger.LogInformation("Stream not yet available via GetStreams; falling back to channel info for user {UserId}", _logValueSanitizer.Safe(userId));
+
                     var channelInfo = await helixWrapper.GetChannelInformationAsync(
                         _twitchSettings.ClientId,
                         accessToken,
@@ -401,6 +456,11 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     if (channelInfo.Data != null && channelInfo.Data.Length > 0)
                     {
                         var info = channelInfo.Data[0];
+                        Logger.LogInformation(
+                            "✅ Retrieved channel data for Discord notification: Title='{Title}', Game='{Game}'",
+                            _logValueSanitizer.Safe(info.Title ?? ""),
+                            _logValueSanitizer.Safe(info.GameName ?? ""));
+
                         return new
                         {
                             title = info.Title,
@@ -411,6 +471,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                             broadcasterName = info.BroadcasterName
                         };
                     }
+
+                    Logger.LogWarning("No stream or channel data returned for user {UserId}", _logValueSanitizer.Safe(userId));
                 }
             }
             catch (Exception ex)
