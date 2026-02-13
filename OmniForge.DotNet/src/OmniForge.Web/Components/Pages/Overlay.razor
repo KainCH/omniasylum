@@ -388,6 +388,7 @@ else
     private bool IsPreviewMode { get; set; } = false;
     private List<Alert> alerts = new();
     private IJSObjectReference? jsModule;
+    private DotNetObjectReference<Overlay>? dotNetRef;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -469,8 +470,11 @@ else
                 // Use a try-catch block specifically for the module import to handle potential network issues or file not found errors
                 try
                 {
-                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
-                    await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+                    dotNetRef ??= DotNetObjectReference.Create(this);
+
+                    // Use absolute path so this works under /overlay/* and /overlay/v2/*
+                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "/js/overlay-websocket.js");
+                    await jsModule.InvokeVoidAsync("connect", wsUrl, dotNetRef);
                 }
                 catch (JSException jsEx)
                 {
@@ -942,6 +946,15 @@ else
             {
                 // Ignore other disposal errors
             }
+        }
+
+        try
+        {
+            dotNetRef?.Dispose();
+        }
+        catch
+        {
+            // Ignore disposal errors
         }
     }
 }
