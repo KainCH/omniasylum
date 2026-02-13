@@ -594,6 +594,13 @@ else
 
         if (alert == null)
         {
+            // Only generate fallback alerts for known visual alert types.
+            // Non-alert event types (e.g., chatCommandsUpdated, customCommandsUpdated) should not trigger visual alerts.
+            if (!IsKnownAlertType(type))
+            {
+                return;
+            }
+
             payload = BuildFallbackAlertPayload(type, data);
             if (payload.Count == 0)
             {
@@ -697,6 +704,18 @@ else
         }
 
         return payload;
+    }
+
+    private static bool IsKnownAlertType(string type)
+    {
+        // List of event types that should generate visual alerts.
+        // Non-alert event types (e.g., chatCommandsUpdated, customCommandsUpdated, overlaySettingsUpdate)
+        // are data/state updates and should not trigger visual alerts.
+        return type switch
+        {
+            "follow" or "subscription" or "resub" or "giftsub" or "bits" or "raid" or "milestone" => true,
+            _ => false
+        };
     }
 
     private static string GetDefaultAlertName(string type)
