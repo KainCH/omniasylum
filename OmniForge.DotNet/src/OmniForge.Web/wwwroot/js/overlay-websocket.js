@@ -15,8 +15,83 @@ const warn = (...args) => {
     if (isDebugEnabled()) console.warn(...args);
 };
 
+let activeSocket = null;
+let reconnectTimerId = null;
+let staleCheckTimerId = null;
+let reconnectAttempts = 0;
+let lastMessageAtMs = Date.now();
+let isUnloading = false;
+
+// Stream heartbeat tracking. Server sends periodic streamStatusUpdate as a live signal.
+let lastStreamHeartbeatAtMs = null;
+let lastLiveSignalAtMs = null;
+let inferredEnded = false;
+
+const getLiveSignalTtlMs = () => {
+    const configured = Number(window.omniLiveSignalTtlMs);
+    // Default to 2 minutes (matches legacy overlay.html).
+    return Number.isFinite(configured) && configured > 0 ? configured : 120000;
+};
+
+const clearTimers = () => {
+    if (reconnectTimerId) {
+        clearTimeout(reconnectTimerId);
+        reconnectTimerId = null;
+    }
+    if (staleCheckTimerId) {
+        clearInterval(staleCheckTimerId);
+        staleCheckTimerId = null;
+    }
+};
+
+const scheduleReconnect = (url, dotNetHelper, reason) => {
+    if (isUnloading) return;
+    if (reconnectTimerId) return;
+
+    // If we're already connected/connecting, don't schedule a reconnect.
+    if (activeSocket && (activeSocket.readyState === WebSocket.OPEN || activeSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
+    // Exponential backoff with a cap. Keep it modest for overlays.
+    const delayMs = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+    reconnectAttempts++;
+
+    warn('[WebSocket] Scheduling reconnect in', delayMs, 'ms. Reason:', reason);
+    reconnectTimerId = setTimeout(() => {
+        reconnectTimerId = null;
+        connect(url, dotNetHelper);
+    }, delayMs);
+};
+
+export function disconnect() {
+    isUnloading = true;
+    clearTimers();
+}
+
 export function connect(url, dotNetHelper) {
+    if (!window.__omniOverlayWsUnloadHookRegistered) {
+        window.__omniOverlayWsUnloadHookRegistered = true;
+        window.addEventListener('beforeunload', () => {
+            isUnloading = true;
+            clearTimers();
+        });
+    }
+
+    isUnloading = false;
+    clearTimers();
+
+    // If we already have an open/connecting socket, do not initiate a client close.
+    // Let server-side closures (restarts, timeouts) drive reconnects.
+    if (activeSocket && (activeSocket.readyState === WebSocket.OPEN || activeSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
     const socket = new WebSocket(url);
+    activeSocket = socket;
+    lastMessageAtMs = Date.now();
+    lastStreamHeartbeatAtMs = Date.now();
+    inferredEnded = false;
 
     const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -185,6 +260,7 @@ export function connect(url, dotNetHelper) {
 
     socket.onopen = function(e) {
         log("[WebSocket] Connection established");
+        reconnectAttempts = 0;
     };
 
     socket.onmessage = function(event) {
@@ -192,6 +268,13 @@ export function connect(url, dotNetHelper) {
             const message = JSON.parse(event.data);
             const method = message.method;
             const data = message.data;
+
+            lastMessageAtMs = Date.now();
+
+            // Server keep-alive. Do not forward through Blazor.
+            if (method === 'ping') {
+                return;
+            }
 
             if (method === "counterUpdate") {
                 // Update DOM directly to avoid Blazor Circuit dependency
@@ -208,8 +291,19 @@ export function connect(url, dotNetHelper) {
                 // Also update Blazor state if connected, but don't crash if not
                 try { dotNetHelper.invokeMethodAsync("OnCounterUpdate", data); } catch (e) {}
             } else if (method === "streamStatusUpdate") {
-                updateStreamStatus(data.streamStatus);
-                try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", data.streamStatus); } catch (e) {}
+                const status = data && data.streamStatus ? data.streamStatus : 'offline';
+
+                // Track heartbeat time regardless of status.
+                lastStreamHeartbeatAtMs = Date.now();
+
+                // Only treat "live" and "prepping" as a live signal.
+                if (status === 'live' || status === 'prepping') {
+                    lastLiveSignalAtMs = Date.now();
+                    inferredEnded = false;
+                }
+
+                updateStreamStatus(status);
+                try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", status); } catch (e) {}
             } else if (method === "customAlert") {
                 // Some customAlert types are control-plane updates (e.g. game switch), not user-facing alerts.
                 if (isDebugEnabled()) {
@@ -245,8 +339,12 @@ export function connect(url, dotNetHelper) {
                 }
                 try { dotNetHelper.invokeMethodAsync("OnStreamStarted", data); } catch (e) {}
             } else if (method === "streamEnded") {
-                // Clear timer on stream end
+                // Authoritative stream end event.
                 setStreamStarted(null);
+                inferredEnded = false;
+                lastLiveSignalAtMs = null;
+                updateStreamStatus('offline');
+                try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", 'offline'); } catch (e) {}
             } else if (method === "overlaySettingsUpdate" || method === "settingsUpdate") {
                 const settings = normalizeOverlaySettings(data);
                 if (settings) {
@@ -281,14 +379,39 @@ export function connect(url, dotNetHelper) {
             log(`[WebSocket] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
         } else {
             log('[WebSocket] Connection died');
-            // Optional: Implement reconnect logic here
-            setTimeout(() => connect(url, dotNetHelper), 5000);
         }
+
+        // Always attempt to reconnect for overlay reliability (unless unloading).
+        scheduleReconnect(url, dotNetHelper, `close code=${event.code} clean=${event.wasClean}`);
     };
 
     socket.onerror = function(error) {
-        log(`[WebSocket] Error: ${error.message}`);
+        log(`[WebSocket] Error: ${error && error.message ? error.message : '(unknown)'}`);
+        scheduleReconnect(url, dotNetHelper, 'socket error');
     };
+
+    // Live signal TTL: If we stop receiving the Twitch-driven heartbeats for 2x TTL,
+    // infer stream ended (but do NOT close the socket).
+    staleCheckTimerId = setInterval(() => {
+        if (isUnloading) return;
+        if (!activeSocket) return;
+        if (activeSocket.readyState !== WebSocket.OPEN) return;
+
+        const ttlMs = getLiveSignalTtlMs();
+        const inferredEndMs = ttlMs * 2;
+
+        if (!lastLiveSignalAtMs) return;
+
+        const ageMs = Date.now() - lastLiveSignalAtMs;
+        if (ageMs >= inferredEndMs && !inferredEnded) {
+            inferredEnded = true;
+            warn('[WebSocket] Live signal TTL exceeded; inferring stream ended. ageMs=', ageMs, 'ttlMs=', ttlMs);
+
+            try { setStreamStarted(null); } catch (e) {}
+            try { updateStreamStatus('offline'); } catch (e) {}
+            try { dotNetHelper.invokeMethodAsync("OnStreamStatusUpdate", 'offline'); } catch (e) {}
+        }
+    }, 10000);
 }
 
 function updateCounter(type, value) {
