@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,6 +14,13 @@ namespace OmniForge.Infrastructure.Services
         private readonly IAlertRepository _alertRepository;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly ILogger<AlertEventRouter> _logger;
+
+        // Cached set of core alert types to avoid repeated allocations on every RouteAsync call
+        private static readonly HashSet<string> CoreAlertTypes = new(
+            AlertTemplates.GetDefaultTemplates()
+                .Select(t => t.Type)
+                .Where(t => !string.IsNullOrWhiteSpace(t)),
+            StringComparer.OrdinalIgnoreCase);
 
         public AlertEventRouter(
             IAlertRepository alertRepository,
@@ -58,12 +67,7 @@ namespace OmniForge.Infrastructure.Services
 
             if (mappingFound && !string.IsNullOrWhiteSpace(mappedAlertType))
             {
-                var coreAlertTypes = AlertTemplates.GetDefaultTemplates()
-                    .Select(t => t.Type)
-                    .Where(t => !string.IsNullOrWhiteSpace(t))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                if (coreAlertTypes.Contains(mappedAlertType))
+                if (CoreAlertTypes.Contains(mappedAlertType))
                 {
                     await SendStandardAlertAsync(userId, mappedAlertType, data);
                     return;

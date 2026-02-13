@@ -3,7 +3,7 @@ class NotificationAudioManager {
         // Default to audio enabled unless explicitly disabled via query string or localStorage
         if (window.omniDisableNotificationAudio === undefined) {
             let shouldDisable = false;
-            
+
             // Check query string for explicit opt-out
             try {
                 const searchParams = new URLSearchParams(window.location.search);
@@ -15,7 +15,7 @@ class NotificationAudioManager {
             } catch (error) {
                 console.warn('Failed to parse disableNotificationAudio query param:', error);
             }
-            
+
             // Check localStorage for persistent opt-out
             if (!shouldDisable) {
                 try {
@@ -24,7 +24,7 @@ class NotificationAudioManager {
                     console.warn('Failed to read omni_disable_notification_audio from localStorage:', error);
                 }
             }
-            
+
             window.omniDisableNotificationAudio = shouldDisable;
         }
         this.audioCache = {};

@@ -635,7 +635,10 @@ else
                     }
                 }
             }
-            catch {}
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to deserialize alert effects for alert {alert.Id}: {ex.Message}");
+            }
         }
 
         // Merge data into payload
@@ -762,12 +765,9 @@ else
             return;
         }
 
-        foreach (var kvp in dataDict)
+        foreach (var kvp in dataDict.Where(kvp => !payload.ContainsKey(kvp.Key)))
         {
-            if (!payload.ContainsKey(kvp.Key))
-            {
-                payload[kvp.Key] = kvp.Value;
-            }
+            payload[kvp.Key] = kvp.Value;
         }
     }
 
