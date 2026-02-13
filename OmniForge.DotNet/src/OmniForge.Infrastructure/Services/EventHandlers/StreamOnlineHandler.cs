@@ -377,15 +377,44 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         var botCredentials = await _botCredentialRepository.GetAsync();
                         if (botCredentials != null && !string.IsNullOrEmpty(botCredentials.AccessToken))
                         {
-                            // Check if bot token is expired and needs refresh
+                            // Check if bot token is expired and needs refresh (5-minute buffer)
                             if (botCredentials.TokenExpiry > DateTimeOffset.UtcNow.AddMinutes(5))
                             {
                                 accessToken = botCredentials.AccessToken;
                                 tokenSource = "bot";
                             }
+                            else if (!string.IsNullOrEmpty(botCredentials.RefreshToken))
+                            {
+                                // Attempt to refresh the bot token
+                                Logger.LogInformation("Bot token expired for Discord notification fetch; attempting refresh");
+                                try
+                                {
+                                    var refreshedToken = await _twitchAuthService.RefreshTokenAsync(botCredentials.RefreshToken);
+                                    if (refreshedToken != null && !string.IsNullOrEmpty(refreshedToken.AccessToken))
+                                    {
+                                        // Update and persist the refreshed credentials
+                                        botCredentials.AccessToken = refreshedToken.AccessToken;
+                                        botCredentials.RefreshToken = refreshedToken.RefreshToken;
+                                        botCredentials.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshedToken.ExpiresIn);
+                                        await _botCredentialRepository.SaveAsync(botCredentials);
+
+                                        accessToken = botCredentials.AccessToken;
+                                        tokenSource = "bot (refreshed)";
+                                        Logger.LogInformation("✅ Bot token refreshed successfully for Discord notification fetch");
+                                    }
+                                    else
+                                    {
+                                        Logger.LogWarning("Bot token refresh returned null; falling back to alternatives");
+                                    }
+                                }
+                                catch (Exception refreshEx)
+                                {
+                                    Logger.LogWarning(refreshEx, "Failed to refresh bot token for Discord notification fetch; falling back to alternatives");
+                                }
+                            }
                             else
                             {
-                                Logger.LogInformation("Bot token expired for Discord notification fetch; trying alternatives");
+                                Logger.LogInformation("Bot token expired and no refresh token available; falling back to alternatives");
                             }
                         }
                     }
