@@ -506,13 +506,27 @@ else
     [JSInvokable]
     public async Task OnAlert(string type, object data)
     {
-        await TriggerAlert(type, data);
+        try
+        {
+            await TriggerAlert(type, data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] OnAlert error: {ex}");
+        }
     }
 
     [JSInvokable]
     public async Task OnCustomAlert(string type, object data)
     {
-        await TriggerAlert(type, data);
+        try
+        {
+            await TriggerAlert(type, data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] OnCustomAlert error: {ex}");
+        }
     }
 
     [JSInvokable]
@@ -560,6 +574,8 @@ else
 
     private async Task TriggerAlert(string type, object data)
     {
+        try
+        {
         if (string.Equals(type, "interactionBanner", StringComparison.OrdinalIgnoreCase))
         {
             string? text = null;
@@ -650,21 +666,28 @@ else
             }
         }
 
-        // Merge data into payload
-        if (data is JsonElement jsonElement)
+        // Merge event data into payload (defensively; bad payloads must not kill the circuit)
+        try
         {
-             var json = jsonElement.GetRawText();
-             var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-             if (dataDict != null)
-             {
-                 foreach (var kvp in dataDict)
-                 {
-                     if (!payload.ContainsKey(kvp.Key))
-                     {
-                         payload[kvp.Key] = kvp.Value;
-                     }
-                 }
-             }
+            if (data is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Object)
+            {
+                var json = jsonElement.GetRawText();
+                var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                if (dataDict != null)
+                {
+                    foreach (var kvp in dataDict)
+                    {
+                        if (!payload.ContainsKey(kvp.Key))
+                        {
+                            payload[kvp.Key] = kvp.Value;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] Failed to merge alert payload for type '{type}': {ex.Message}");
         }
 
         // Apply placeholder substitution after we have merged event data.
@@ -673,7 +696,23 @@ else
             payload["textPrompt"] = ApplyTemplate(templatePrompt, payload);
         }
 
-        await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException)
+        {
+            // Overlay circuit disconnected; ignore.
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] JS triggerAlert failed: {ex.Message}");
+        }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] TriggerAlert error (type='{type}'): {ex}");
+        }
     }
 
     private Dictionary<string, object> BuildFallbackAlertPayload(string type, object data)
