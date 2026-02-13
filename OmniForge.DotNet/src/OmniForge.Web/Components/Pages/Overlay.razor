@@ -409,7 +409,11 @@ else
                         IsPreviewMode = true;
                     }
                 }
-                catch { /* ignore query parsing errors */ }
+                catch
+                {
+                    // Silently ignore query string parsing errors - preview mode is optional
+                    // and should not prevent the overlay from loading
+                }
 
                 if (user.OverlaySettings?.OfflinePreview == true)
                 {

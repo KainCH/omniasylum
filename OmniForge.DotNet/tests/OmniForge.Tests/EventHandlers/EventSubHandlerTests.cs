@@ -691,6 +691,206 @@ namespace OmniForge.Tests.EventHandlers
                 x => x.UpdateChannelInformationAsync("123", "game1", It.Is<IReadOnlyCollection<string>>(c => c.Contains("DrugsIntoxication"))),
                 Times.Once);
         }
+
+        [Fact]
+        public async Task HandleAsync_WhenBotCredentialsValid_ShouldUseBotTokenForStreamInfoFetch()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "user_token" };
+            var counters = new Counter { TwitchUserId = "123" };
+            var botCredentials = new BotCredentials
+            {
+                Username = "forgebot",
+                AccessToken = "bot_token",
+                RefreshToken = "bot_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1) // Valid token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(botCredentials);
+
+            var emptyStreamsResponse = new GetStreamsResponse();
+            SetNonPublicProperty(emptyStreamsResponse, nameof(GetStreamsResponse.Streams), Array.Empty<TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream>());
+
+            var emptyChannelInfoResponse = new GetChannelInformationResponse();
+            SetNonPublicProperty(emptyChannelInfoResponse, nameof(GetChannelInformationResponse.Data), Array.Empty<ChannelInformation>());
+
+            _mockHelixWrapper.Setup(x => x.GetStreamsAsync(
+                    It.IsAny<string>(),
+                    "bot_token", // Should use bot token
+                    It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(emptyStreamsResponse);
+
+            _mockHelixWrapper.Setup(x => x.GetChannelInformationAsync(
+                    It.IsAny<string>(),
+                    "bot_token",
+                    "123"))
+                .ReturnsAsync(emptyChannelInfoResponse);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert - should use bot token for API calls
+            _mockHelixWrapper.Verify(x => x.GetStreamsAsync(It.IsAny<string>(), "bot_token", It.IsAny<System.Collections.Generic.List<string>>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBotTokenExpired_ShouldRefreshAndUseBotToken()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "user_token" };
+            var counters = new Counter { TwitchUserId = "123" };
+            var botCredentials = new BotCredentials
+            {
+                Username = "forgebot",
+                AccessToken = "expired_bot_token",
+                RefreshToken = "bot_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(-10) // Expired token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(botCredentials);
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("bot_refresh"))
+                .ReturnsAsync(new TwitchTokenResponse
+                {
+                    AccessToken = "refreshed_bot_token",
+                    RefreshToken = "new_refresh_token",
+                    ExpiresIn = 3600
+                });
+
+            var emptyStreamsResponse = new GetStreamsResponse();
+            SetNonPublicProperty(emptyStreamsResponse, nameof(GetStreamsResponse.Streams), Array.Empty<TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream>());
+
+            var emptyChannelInfoResponse = new GetChannelInformationResponse();
+            SetNonPublicProperty(emptyChannelInfoResponse, nameof(GetChannelInformationResponse.Data), Array.Empty<ChannelInformation>());
+
+            _mockHelixWrapper.Setup(x => x.GetStreamsAsync(
+                    It.IsAny<string>(),
+                    "refreshed_bot_token", // Should use refreshed token
+                    It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(emptyStreamsResponse);
+
+            _mockHelixWrapper.Setup(x => x.GetChannelInformationAsync(
+                    It.IsAny<string>(),
+                    "refreshed_bot_token",
+                    "123"))
+                .ReturnsAsync(emptyChannelInfoResponse);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert - should refresh and save bot token
+            _mockAuthService.Verify(x => x.RefreshTokenAsync("bot_refresh"), Times.Once);
+            _mockBotCredentialRepository.Verify(x => x.SaveAsync(It.Is<BotCredentials>(c => c.AccessToken == "refreshed_bot_token")), Times.Once);
+            _mockHelixWrapper.Verify(x => x.GetStreamsAsync(It.IsAny<string>(), "refreshed_bot_token", It.IsAny<System.Collections.Generic.List<string>>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBotTokenExpiredAndRefreshFails_ShouldFallbackToAppToken()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "user_token" };
+            var counters = new Counter { TwitchUserId = "123" };
+            var botCredentials = new BotCredentials
+            {
+                Username = "forgebot",
+                AccessToken = "expired_bot_token",
+                RefreshToken = "bot_refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(-10) // Expired token
+            };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(botCredentials);
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("bot_refresh"))
+                .ThrowsAsync(new Exception("Refresh failed"));
+            _mockAuthService.Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync("app_token");
+
+            var emptyStreamsResponse = new GetStreamsResponse();
+            SetNonPublicProperty(emptyStreamsResponse, nameof(GetStreamsResponse.Streams), Array.Empty<TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream>());
+
+            var emptyChannelInfoResponse = new GetChannelInformationResponse();
+            SetNonPublicProperty(emptyChannelInfoResponse, nameof(GetChannelInformationResponse.Data), Array.Empty<ChannelInformation>());
+
+            _mockHelixWrapper.Setup(x => x.GetStreamsAsync(
+                    It.IsAny<string>(),
+                    "app_token", // Should fallback to app token
+                    It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(emptyStreamsResponse);
+
+            _mockHelixWrapper.Setup(x => x.GetChannelInformationAsync(
+                    It.IsAny<string>(),
+                    "app_token",
+                    "123"))
+                .ReturnsAsync(emptyChannelInfoResponse);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert - should fallback to app token
+            _mockHelixWrapper.Verify(x => x.GetStreamsAsync(It.IsAny<string>(), "app_token", It.IsAny<System.Collections.Generic.List<string>>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenNoBotCredentialsAndNoAppToken_ShouldFallbackToUserToken()
+        {
+            // Arrange
+            var eventData = JsonDocument.Parse(@"{
+                ""broadcaster_user_id"": ""123"",
+                ""broadcaster_user_name"": ""TestUser""
+            }").RootElement;
+
+            var user = new User { TwitchUserId = "123", DisplayName = "TestUser", AccessToken = "user_token" };
+            var counters = new Counter { TwitchUserId = "123" };
+
+            _mockUserRepository.Setup(x => x.GetUserAsync("123")).ReturnsAsync(user);
+            _mockCounterRepository.Setup(x => x.GetCountersAsync("123")).ReturnsAsync(counters);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync((BotCredentials?)null);
+            _mockAuthService.Setup(x => x.GetAppAccessTokenAsync(It.IsAny<IReadOnlyCollection<string>?>()))
+                .ReturnsAsync((string?)null);
+
+            var emptyStreamsResponse = new GetStreamsResponse();
+            SetNonPublicProperty(emptyStreamsResponse, nameof(GetStreamsResponse.Streams), Array.Empty<TwitchLib.Api.Helix.Models.Streams.GetStreams.Stream>());
+
+            var emptyChannelInfoResponse = new GetChannelInformationResponse();
+            SetNonPublicProperty(emptyChannelInfoResponse, nameof(GetChannelInformationResponse.Data), Array.Empty<ChannelInformation>());
+
+            _mockHelixWrapper.Setup(x => x.GetStreamsAsync(
+                    It.IsAny<string>(),
+                    "user_token", // Should fallback to user token
+                    It.IsAny<System.Collections.Generic.List<string>>()))
+                .ReturnsAsync(emptyStreamsResponse);
+
+            _mockHelixWrapper.Setup(x => x.GetChannelInformationAsync(
+                    It.IsAny<string>(),
+                    "user_token",
+                    "123"))
+                .ReturnsAsync(emptyChannelInfoResponse);
+
+            // Act
+            await _handler.HandleAsync(eventData);
+
+            // Assert - should use user token as last resort
+            _mockHelixWrapper.Verify(x => x.GetStreamsAsync(It.IsAny<string>(), "user_token", It.IsAny<System.Collections.Generic.List<string>>()), Times.Once);
+        }
     }
 
     public class StreamOfflineHandlerTests
