@@ -218,23 +218,6 @@ class NotificationAudioManager {
             console.log('🔇 Notification audio disabled; skipping playback:', eventType);
             return;
         }
-        // If the overlay isn't visible, don't play audio.
-        // OBS can throttle hidden browser sources; queued JS events may flush on resume.
-        if (document.visibilityState !== 'visible') {
-            console.log('🔇 Notification suppressed because overlay is not visible:', eventType);
-            return;
-        }
-
-        // Suppress audio briefly after resume to avoid replaying buffered alerts.
-        if (window.omniOverlayResumeSuppressUntil && Date.now() < window.omniOverlayResumeSuppressUntil) {
-            console.log('🔇 Notification suppressed during resume window:', eventType);
-            return;
-        }
-
-        if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
-            console.log('🔇 Notification sound suppressed during silence window:', eventType);
-            return;
-        }
 
         if (!this.notificationSounds[eventType]) {
             console.warn('⚠️ No sound configured for event type:', eventType);

@@ -170,10 +170,9 @@
 
 <body>
   <script>
-    // Silence alert sounds briefly on load/refresh
-    window.omniSilenceInitialMs = 3000;
-    // Set the suppression window immediately so refresh/reconnect doesn't play sounds
-    window.omniSilenceUntil = Date.now() + window.omniSilenceInitialMs;
+    // Intentionally do not silence alerts/sounds on load.
+    window.omniSilenceInitialMs = 0;
+    window.omniSilenceUntil = 0;
   </script>
   <div id="overlay-container" class="counter-overlay">
     <!-- Counters will be injected here -->
@@ -569,6 +568,26 @@
           case 'counterUpdate':
             console.log("📊 Counter update:", JSON.stringify(data));
             updateCounters(data);
+            break;
+          case 'milestoneReached':
+            // Normalize milestoneReached to the user-facing 'milestone' alert.
+            if (window.overlayInterop) {
+              window.overlayInterop.triggerAlert('milestone', data || {});
+            }
+            break;
+          case 'bitsGoalUpdate':
+            // No dedicated UI in the static overlay; ignore.
+            break;
+          case 'bitsGoalComplete':
+            if (window.overlayInterop && window.overlayInterop.triggerBitsGoalCelebration) {
+              window.overlayInterop.triggerBitsGoalCelebration();
+            }
+            break;
+          case 'templateChanged':
+            // Control-plane update (used by the refactor/Blazor overlay). Static HTML overlay does not render templates.
+            if (window.omniOverlayDebug === true) {
+              console.log('🛠️ Control-plane: templateChanged', JSON.stringify(data || {}));
+            }
             break;
           case 'overlaySettingsUpdate':
           case 'settingsUpdate':
