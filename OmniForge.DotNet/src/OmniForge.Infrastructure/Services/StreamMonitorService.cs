@@ -1313,9 +1313,68 @@ namespace OmniForge.Infrastructure.Services
                     // Check keepalive
                     var timeSinceLastKeepalive = DateTime.UtcNow - _eventSubService.LastKeepaliveTime;
 
+                    // If EventSub isn't responding (no keepalives), we treat stream end as inferred after 2x the
+                    // negotiated keepalive timeout (Twitch provides this in session_welcome.keepalive_timeout_seconds).
+                    // This keeps overlays from staying "live" indefinitely when EventSub is unhealthy.
+                    var negotiated = _eventSubService.KeepaliveTimeoutSeconds;
+                    if (negotiated.HasValue
+                        && negotiated.Value > 0
+                        && !_liveBroadcasters.IsEmpty
+                        && timeSinceLastKeepalive.TotalSeconds > negotiated.Value * 2)
+                    {
+                        _logger.LogWarning(
+                            "💀 EventSub keepalive missing for {Seconds:F1}s (>2x negotiated TTL={Negotiated}s). Inferring stream end for {Count} live broadcasters.",
+                            timeSinceLastKeepalive.TotalSeconds,
+                            negotiated.Value,
+                            _liveBroadcasters.Count);
+
+                        try
+                        {
+                            using var scope = _scopeFactory.CreateScope();
+                            var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                            var counterRepository = scope.ServiceProvider.GetService<ICounterRepository>();
+
+                            foreach (var broadcasterId in _liveBroadcasters.Keys)
+                            {
+                                // If monitoring was stopped for this user, don't keep sending updates.
+                                if (!UserStillWantsMonitoring(broadcasterId))
+                                {
+                                    _liveBroadcasters.TryRemove(broadcasterId, out _);
+                                    continue;
+                                }
+
+                                Counter? counters = null;
+                                try
+                                {
+                                    if (counterRepository != null)
+                                    {
+                                        counters = await counterRepository.GetCountersAsync(broadcasterId).ConfigureAwait(false);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "⚠️ Best-effort: failed to load counters while inferring stream end for user {UserId}", EscapeLogValue(broadcasterId));
+                                }
+
+                                counters ??= new Counter { TwitchUserId = broadcasterId };
+
+                                if (overlayNotifier != null)
+                                {
+                                    await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "offline").ConfigureAwait(false);
+                                    await overlayNotifier.NotifyStreamEndedAsync(broadcasterId, counters).ConfigureAwait(false);
+                                }
+
+                                _liveBroadcasters.TryRemove(broadcasterId, out _);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "⚠️ Failed to infer stream end from EventSub keepalive timeout");
+                        }
+                    }
+
                     // Twitch tells us the negotiated keepalive timeout in session_welcome.keepalive_timeout_seconds.
                     // Use a forgiving threshold (3x) so we don't flap on transient latency.
-                    var negotiated = _eventSubService.KeepaliveTimeoutSeconds;
                     var thresholdSeconds = negotiated.HasValue
                         ? Math.Max(30, negotiated.Value * 3)
                         : 30;
