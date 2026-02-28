@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Web;
 
 namespace OmniForge.Web.Services
 {
@@ -38,6 +39,22 @@ namespace OmniForge.Web.Services
 
             var buffer = new byte[1024 * 4];
             using var pingCts = new CancellationTokenSource();
+
+            // Send initial server info so the overlay can detect server restarts without an HTTP health check.
+            // This is always from the same replica as the socket, avoiding load-balancer confusion.
+            try
+            {
+                var infoPayload = new { method = "serverInfo", data = new { serverInstanceId = ServerInstance.Id } };
+                var infoJson = System.Text.Json.JsonSerializer.Serialize(infoPayload,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+                var infoBytes = Encoding.UTF8.GetBytes(infoJson);
+                await webSocket.SendAsync(new ArraySegment<byte>(infoBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Failed to send serverInfo to overlay for user {UserId} (conn: {ConnectionId})",
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+            }
 
             // Start ping task to keep connection alive
             var pingTask = SendPingsAsync(webSocket, connectionId, safeUserId!, pingCts.Token);
