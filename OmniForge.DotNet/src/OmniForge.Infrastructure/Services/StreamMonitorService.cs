@@ -1205,6 +1205,9 @@ namespace OmniForge.Infrastructure.Services
             return _subscribedUsers.ContainsKey(userId);
         }
 
+        public bool IsUserLive(string userId) =>
+            !string.IsNullOrEmpty(userId) && _liveBroadcasters.ContainsKey(userId);
+
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Starting StreamMonitorService...");

@@ -372,10 +372,21 @@
         window.omniOverlayTimerForceVisible = manualRunning;
 
         if (manualRunning) {
-          timerExpired = false;
-          window.omniOverlayTimerExpired = false;
           const parsed = parseToMs(settings.timerManualStartUtc ?? settings.TimerManualStartUtc);
-          manualStartMs = parsed || Date.now();
+          const newStartMs = parsed || Date.now();
+
+          // Only reset timerExpired when the timer session actually changes (i.e. a new start
+          // time was set server-side).  Pure settings updates — position, scale, offlinePreview,
+          // etc. — share the same timerManualStartUtc, so we preserve the current expired state
+          // to avoid re-firing the timerFinished notification sound or briefly restoring a
+          // finished countdown to "active".
+          const isNewTimerSession = !manualStartMs || Math.abs(newStartMs - manualStartMs) > 1000;
+          if (isNewTimerSession) {
+            timerExpired = false;
+            window.omniOverlayTimerExpired = false;
+          }
+
+          manualStartMs = newStartMs;
           startTimerInterval();
         } else {
           manualStartMs = null;
@@ -597,8 +608,10 @@
             console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
             updateCounters(data);
 
-            // Treat streamStarted as an initial live heartbeat.
-            // Twitch may not re-send stream.online on reconnect, and the server may not yet have sent streamStatusUpdate.
+            // streamStarted is sent as a recurring heartbeat while the stream is live.
+            // Always refresh the live signal — updateCounters already does this via the
+            // hasStreamStartedField path, but set it explicitly here too so the case handler
+            // is self-contained and correct even if called without a timestamp in data.
             lastKnownIsLive = true;
             lastOnlineSignalAtMs = Date.now();
             updateOverlayContainerVisibility();
@@ -806,27 +819,19 @@
         if (hasStreamStartedField) {
           const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
 
-          // Semantics:
-          // - `streamStarted: <valid timestamp>` => online signal (refresh TTL)
-          // - `streamStarted: null` => explicitly offline
-          // - `streamStarted` present but invalid/non-null => ignore (don't spuriously flip offline)
-          if (raw === null) {
-            streamStartMs = null;
-            lastKnownIsLive = false;
-            lastOnlineSignalAtMs = null;
-          } else {
+          // The streamStarted field in counter payloads and streamStarted WS messages acts as a
+          // live heartbeat from Twitch — refresh the live signal every time a valid timestamp is
+          // present, regardless of whether it changed.
+          // - `streamStarted: null`  => stream not started via dashboard; leave live signal alone.
+          //   Visibility is driven exclusively by 'streamStatusUpdate' and 'streamEnded'.
+          // - `streamStarted: <timestamp>` => always treated as proof the stream is live.
+          // Timer state (streamStartMs, timerExpired) is intentionally NOT managed here.
+          // The overlay timer is a standalone client-side timer controlled via Settings.
+          if (raw !== null) {
             const parsedStart = parseToMs(raw);
             if (parsedStart) {
-              const isNewStreamStart = !streamStartMs || Math.abs(parsedStart - streamStartMs) > 1000;
-              streamStartMs = parsedStart;
               lastKnownIsLive = true;
               lastOnlineSignalAtMs = Date.now();
-              // Only reset completion state if the stream start timestamp actually changed.
-              // Otherwise, counterUpdate payloads can repeatedly clear timerExpired and re-trigger timerFinished audio.
-              if (isNewStreamStart) {
-                timerExpired = false;
-                window.omniOverlayTimerExpired = false;
-              }
             }
           }
         }
