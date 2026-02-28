@@ -598,9 +598,14 @@
             }
 
             applyTimerSettings(data);
-            // Re-render counters with new settings filter
+
+            // Re-render counter DOM so visibility settings (deaths/swears on/off) take effect
+            // immediately even for callers that don't follow with a counterUpdate (e.g. a
+            // position/scale-only change from UserController).  When a counterUpdate DOES follow
+            // (game switch, UpdateOverlaySettings) it will immediately overwrite this render with
+            // fresh values — both messages arrive on the same WS connection so the flash is
+            // imperceptible.
             if (lastCounterData) {
-              console.log("🔄 Re-rendering counters with new settings filter");
               updateCounters(lastCounterData);
             }
             break;
