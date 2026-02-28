@@ -129,6 +129,8 @@ namespace OmniForge.Infrastructure
             services.AddHostedService(sp => sp.GetRequiredService<StreamMonitorService>());
             services.AddSingleton<IStreamMonitorService>(sp => sp.GetRequiredService<StreamMonitorService>());
 
+            services.AddHostedService<CounterSnapshotService>();
+
             return services;
         }
     }
