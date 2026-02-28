@@ -75,7 +75,7 @@ namespace OmniForge.Web.Services
             //      restart before monitoring has been re-established.  StreamStarted is persisted by
             //      StreamOnlineHandler / StreamOfflineHandler so it reflects the Twitch-confirmed
             //      live/offline state across process lifetimes.
-            var isLiveInMemory = _streamMonitorService?.IsUserLive(safeUserId) == true;
+            var isLiveInMemory = _streamMonitorService?.IsUserLive(safeUserId!) == true;
             var isLiveInDb = false;
 
             if (!isLiveInMemory && _scopeFactory != null)
@@ -86,7 +86,7 @@ namespace OmniForge.Web.Services
                     var counterRepo = scope.ServiceProvider.GetService<ICounterRepository>();
                     if (counterRepo != null)
                     {
-                        var counters = await counterRepo.GetCountersAsync(safeUserId).ConfigureAwait(false);
+                        var counters = await counterRepo.GetCountersAsync(safeUserId!).ConfigureAwait(false);
                         isLiveInDb = counters?.StreamStarted != null;
                     }
                 }
