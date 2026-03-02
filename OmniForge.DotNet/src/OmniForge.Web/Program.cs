@@ -156,9 +156,23 @@ builder.Services.AddSignalR(hubOptions =>
 builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 
 builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
-builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IFeedbackIssueService, FeedbackIssueService>();
+
+// V2 overlay: SSE connection manager (singleton + hosted service for keepalives)
+builder.Services.AddSingleton<SseConnectionManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SseConnectionManager>());
+
+// Alert enrichment (scoped — uses IAlertRepository which is scoped)
+builder.Services.AddScoped<IAlertPayloadEnricher, AlertPayloadEnricher>();
+
+// Overlay notifiers: v1 WebSocket + v2 SSE, composed into a single IOverlayNotifier
+builder.Services.AddSingleton<WebSocketOverlayNotifier>();
+builder.Services.AddSingleton<SseOverlayNotifier>();
+builder.Services.AddSingleton<IOverlayNotifier>(sp => new CompositeOverlayNotifier(
+    sp.GetRequiredService<WebSocketOverlayNotifier>(),
+    sp.GetRequiredService<SseOverlayNotifier>()
+));
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
