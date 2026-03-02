@@ -108,7 +108,7 @@ namespace OmniForge.Web.Controllers
                         counter.CustomCounters,
                         counter.StreamStarted
                     } : null,
-                    customCountersConfig,
+                    customCountersConfig = customCountersConfig?.Counters,
                     alerts,
                     streamStatus = isLive ? "live" : "offline",
                     streamStarted = counter?.StreamStarted,

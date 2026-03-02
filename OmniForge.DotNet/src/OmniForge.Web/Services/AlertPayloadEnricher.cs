@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Constants;
 using OmniForge.Core.Interfaces;
 
 namespace OmniForge.Web.Services
@@ -25,15 +26,30 @@ namespace OmniForge.Web.Services
             {
                 var alerts = await _alertRepository.GetAlertsAsync(userId);
                 var anyMatching = alerts.Any(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase));
+
+                Core.Entities.Alert? alert;
                 if (!anyMatching)
                 {
-                    return baseData;
+                    // Fall back to default template if no user-configured alert exists
+                    var defaults = AlertTemplates.GetDefaultTemplates();
+                    var defaultAlert = defaults.FirstOrDefault(a =>
+                        string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase));
+                    if (defaultAlert != null)
+                    {
+                        alert = defaultAlert;
+                    }
+                    else
+                    {
+                        return baseData; // truly unknown alert type, passthrough
+                    }
                 }
-
-                var alert = alerts.FirstOrDefault(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase) && a.IsEnabled);
-                if (alert == null)
+                else
                 {
-                    return new Dictionary<string, object> { ["suppress"] = true };
+                    alert = alerts.FirstOrDefault(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase) && a.IsEnabled);
+                    if (alert == null)
+                    {
+                        return new Dictionary<string, object> { ["suppress"] = true };
+                    }
                 }
 
                 var payload = new Dictionary<string, object>

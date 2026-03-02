@@ -72,6 +72,14 @@ window.overlayInterop = {
             console.log("Triggering alert:", type, safePayload);
         }
 
+        // Skip entire alert during reconnect silence window
+        if (window.omniSuppressNotificationAudioResume === true) {
+            if (isDebugEnabled()) {
+                console.log("Alert suppressed during reconnect silence window:", type);
+            }
+            return;
+        }
+
         // Interaction banners are UI-only and should not require an alert definition.
         if (type === 'interactionBanner') {
             const text = safePayload?.textPrompt || safePayload?.text;
@@ -81,17 +89,19 @@ window.overlayInterop = {
             return;
         }
 
-        // Play audio if available
-        if (window.notificationAudio) {
-            // Map alert types to audio types if needed
-            const audioType = type === 'giftsub' ? 'giftsub' :
-                              type === 'resub' ? 'resub' :
-                              type === 'subscription' ? 'subscription' :
-                              type === 'bits' ? 'bits' :
-                              type === 'follow' ? 'follow' :
-                              type === 'milestone' ? 'milestone' : type;
-
-            window.notificationAudio.playNotification(audioType, safePayload);
+        // Play audio on-demand from the enriched alert payload's effects.soundTrigger
+        {
+            const effectsJson = safePayload.effects;
+            const soundTrigger = (typeof effectsJson === 'object' && effectsJson?.soundTrigger)
+                || (typeof effectsJson === 'string' && (() => { try { return JSON.parse(effectsJson)?.soundTrigger; } catch (e) { return null; } })())
+                || null;
+            if (soundTrigger && typeof soundTrigger === 'string' && soundTrigger.includes('.')) {
+                try {
+                    const audio = new Audio(`/sounds/${soundTrigger}`);
+                    audio.volume = 0.8;
+                    audio.play().catch(() => {});
+                } catch (e) { /* ignore audio errors */ }
+            }
         }
 
         // Handle specific types that need custom logic
