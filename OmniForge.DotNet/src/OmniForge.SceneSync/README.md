@@ -67,17 +67,17 @@ Edit `appsettings.json` next to the executable:
 }
 ```
 
-| Setting               | Description                                     |
-| --------------------- | ----------------------------------------------- |
-| `Server.BaseUrl`      | Your OmniForge server URL                       |
+| Setting               | Description                                                     |
+| --------------------- | --------------------------------------------------------------- |
+| `Server.BaseUrl`      | Your OmniForge server URL                                       |
 | `Server.AuthToken`    | Twitch JWT token (copy from browser cookie `token` after login) |
-| `OBS.Enabled`         | Set `true` to connect to OBS Studio             |
-| `OBS.Host`            | OBS WebSocket host (usually `localhost`)        |
-| `OBS.Port`            | OBS WebSocket port (default `4455`)             |
-| `OBS.Password`        | OBS WebSocket password (leave empty if none)    |
-| `Streamlabs.Enabled`  | Set `true` to connect to Streamlabs Desktop     |
-| `Streamlabs.PipeName` | Named pipe name (default `slobs`)               |
-| `DebounceMs`          | Milliseconds to debounce duplicate scene events |
+| `OBS.Enabled`         | Set `true` to connect to OBS Studio                             |
+| `OBS.Host`            | OBS WebSocket host (usually `localhost`)                        |
+| `OBS.Port`            | OBS WebSocket port (default `4455`)                             |
+| `OBS.Password`        | OBS WebSocket password (leave empty if none)                    |
+| `Streamlabs.Enabled`  | Set `true` to connect to Streamlabs Desktop                     |
+| `Streamlabs.PipeName` | Named pipe name (default `slobs`)                               |
+| `DebounceMs`          | Milliseconds to debounce duplicate scene events                 |
 
 ### 3. Enable OBS WebSocket Server
 
@@ -148,10 +148,10 @@ window.addEventListener('omniforge:sceneChange', (e) => {
 
 ## Troubleshooting
 
-| Symptom                                | Fix                                                                                                       |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Symptom                                | Fix                                                                                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `Authentication failed (401)`          | Your Twitch JWT token is expired or invalid. Log in again at stream-tool.cerillia.net and copy the new `token` cookie. |
-| `Failed to reach the OmniForge server` | Check `Server.BaseUrl` in appsettings.json. Is the server running?                                        |
-| `OBS connection attempt failed`        | Make sure OBS is running and the WebSocket server is enabled. Check host/port/password.                   |
-| `Streamlabs pipe closed`               | Make sure Streamlabs Desktop is running. The pipe is only available while SLOBS is open.                  |
-| Duplicate scene events                 | Increase `DebounceMs` (default 500ms). This can happen if both OBS and Streamlabs report the same switch. |
+| `Failed to reach the OmniForge server` | Check `Server.BaseUrl` in appsettings.json. Is the server running?                                                     |
+| `OBS connection attempt failed`        | Make sure OBS is running and the WebSocket server is enabled. Check host/port/password.                                |
+| `Streamlabs pipe closed`               | Make sure Streamlabs Desktop is running. The pipe is only available while SLOBS is open.                               |
+| Duplicate scene events                 | Increase `DebounceMs` (default 500ms). This can happen if both OBS and Streamlabs report the same switch.              |
