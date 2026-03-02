@@ -170,10 +170,9 @@
 
 <body>
   <script>
-    // Silence alert sounds briefly on load/refresh
-    window.omniSilenceInitialMs = 3000;
-    // Set the suppression window immediately so refresh/reconnect doesn't play sounds
-    window.omniSilenceUntil = Date.now() + window.omniSilenceInitialMs;
+    // Intentionally do not silence alerts/sounds on load.
+    window.omniSilenceInitialMs = 0;
+    window.omniSilenceUntil = 0;
   </script>
   <div id="overlay-container" class="counter-overlay">
     <!-- Counters will be injected here -->
@@ -189,6 +188,7 @@
 
   <div class="bits-celebration" id="bits-celebration"></div>
   <div class="sub-celebration" id="sub-celebration"></div>
+  <div class="sub-banner hide" id="sub-banner"></div>
 
   <!-- Scripts -->
   <script src="/js/asylum-effects.js"></script>
@@ -373,10 +373,21 @@
         window.omniOverlayTimerForceVisible = manualRunning;
 
         if (manualRunning) {
-          timerExpired = false;
-          window.omniOverlayTimerExpired = false;
           const parsed = parseToMs(settings.timerManualStartUtc ?? settings.TimerManualStartUtc);
-          manualStartMs = parsed || Date.now();
+          const newStartMs = parsed || Date.now();
+
+          // Only reset timerExpired when the timer session actually changes (i.e. a new start
+          // time was set server-side).  Pure settings updates — position, scale, offlinePreview,
+          // etc. — share the same timerManualStartUtc, so we preserve the current expired state
+          // to avoid re-firing the timerFinished notification sound or briefly restoring a
+          // finished countdown to "active".
+          const isNewTimerSession = !manualStartMs || Math.abs(newStartMs - manualStartMs) > 1000;
+          if (isNewTimerSession) {
+            timerExpired = false;
+            window.omniOverlayTimerExpired = false;
+          }
+
+          manualStartMs = newStartMs;
           startTimerInterval();
         } else {
           manualStartMs = null;
@@ -443,8 +454,10 @@
       const MAX_RECONNECT_BEFORE_HEALTH_CHECK = 3;
       const MAX_HEALTH_CHECK_FAILURES = 5; // After this many failures, show warning
 
-      async function checkServerRestart() {
-        // Prevent concurrent health checks to avoid race conditions
+      async function checkServerAvailability() {
+        // Pure availability check — does NOT compare serverInstanceId.
+        // Server restart detection is now done via the 'serverInfo' WebSocket message
+        // (always from the same replica as the socket, so no load-balancer mismatch).
         if (isHealthCheckInProgress) {
           console.log("⏳ Health check already in progress, skipping...");
           return;
@@ -453,23 +466,10 @@
         isHealthCheckInProgress = true;
         try {
           const response = await fetch('/health');
-          const data = await response.json();
+          await response.json(); // consume body
 
           // Reset failure counter on success
           healthCheckFailures = 0;
-
-          if (knownServerInstanceId === null) {
-            // First time - store the server instance ID
-            knownServerInstanceId = data.serverInstanceId;
-            console.log("🔑 Server instance ID stored:", knownServerInstanceId);
-          } else if (data.serverInstanceId !== knownServerInstanceId) {
-            // Server has restarted - refresh the page silently
-            console.log("🔄 Server restart detected! Old:", knownServerInstanceId, "New:", data.serverInstanceId);
-            console.log("🔄 Refreshing overlay silently...");
-            window.location.reload();
-          }
-          // Note: reconnectAttempts is reset in the WebSocket onopen handler, and only if no new reconnect attempts
-          // were initiated during this health check (see the conditional guard in the onopen logic).
         } catch (err) {
           healthCheckFailures++;
           console.warn(`⚠️ Health check failed (${healthCheckFailures}/${MAX_HEALTH_CHECK_FAILURES}):`, err.message);
@@ -482,9 +482,6 @@
         }
       }
 
-      // Initial health check to get server instance ID
-      checkServerRestart();
-
       // WebSocket Connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/overlay?userId=${userId}`;
@@ -496,21 +493,11 @@
 
         socket.onopen = function () {
           console.log("Connected to Overlay WebSocket");
-          // Reset health check failure counter on successful connection
+          // Reset counters on successful connection.
+          // Server restart is detected via the 'serverInfo' message the server sends
+          // immediately after accepting the socket — no HTTP health check needed here.
           healthCheckFailures = 0;
-          // Check for server restart on successful reconnect
-          if (reconnectAttempts > 0) {
-            console.log("🔍 Checking for server restart after reconnection...");
-            const attemptsBeforeCheck = reconnectAttempts;
-            checkServerRestart()
-              .finally(() => {
-                // Only reset if no new reconnect attempts occurred during the health check
-                if (reconnectAttempts === attemptsBeforeCheck) {
-                  reconnectAttempts = 0;
-                }
-              });
-          }
-          // Note: No else block needed - reconnectAttempts is already 0 on initial connection
+          reconnectAttempts = 0;
         };
 
         socket.onmessage = function (event) {
@@ -526,12 +513,10 @@
           console.log("WebSocket closed. code=", event.code, "reason=", event.reason, "clean=", event.wasClean, "Reconnecting in 5s...");
           reconnectAttempts++;
 
-          // After multiple reconnect attempts, check if server restarted
-          // Note: Health check is informational only here - reconnectAttempts reset happens in onopen
+          // After multiple reconnect attempts, verify the server is still reachable.
           if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK && !isHealthCheckInProgress) {
-            console.log("🔍 Multiple reconnect attempts, checking server health...");
-            // Don't await - let reconnect continue while health check runs
-            checkServerRestart();
+            console.log("🔍 Multiple reconnect attempts, checking server availability...");
+            checkServerAvailability();
           }
 
           setTimeout(connect, 5000);
@@ -566,9 +551,55 @@
         const { method, data } = msg;
 
         switch (method) {
+          case 'serverInfo':
+            // The server sends its serverInstanceId immediately after the WebSocket connects.
+            // Because the WS is sticky to one replica, this is always the correct ID to compare.
+            if (data && data.serverInstanceId) {
+              if (knownServerInstanceId === null) {
+                knownServerInstanceId = data.serverInstanceId;
+                console.log("🔑 Server instance ID stored via WS:", knownServerInstanceId);
+              } else if (data.serverInstanceId !== knownServerInstanceId) {
+                console.log("🔄 Server restart detected via WS! Old:", knownServerInstanceId, "New:", data.serverInstanceId);
+                window.location.reload();
+              }
+            }
+            break;
           case 'counterUpdate':
             console.log("📊 Counter update:", JSON.stringify(data));
             updateCounters(data);
+            break;
+          case 'milestoneReached':
+            // Normalize milestoneReached to the user-facing 'milestone' alert.
+            if (window.overlayInterop && data) {
+              const { counterType, milestone, newValue } = data;
+              const readableCounter = counterType && typeof counterType === 'string'
+                ? counterType.charAt(0).toUpperCase() + counterType.slice(1)
+                : 'Counter';
+              const milestoneLabel = milestone != null ? milestone : newValue;
+              const textPrompt = milestoneLabel != null
+                ? readableCounter + ' milestone reached: ' + milestoneLabel
+                : readableCounter + ' milestone reached';
+              const alertPayload = {
+                ...data,
+                name: readableCounter + ' milestone',
+                textPrompt
+              };
+              window.overlayInterop.triggerAlert('milestone', alertPayload);
+            }
+            break;
+          case 'bitsGoalUpdate':
+            // No dedicated UI in the static overlay; ignore.
+            break;
+          case 'bitsGoalComplete':
+            if (window.overlayInterop && window.overlayInterop.triggerBitsGoalCelebration) {
+              window.overlayInterop.triggerBitsGoalCelebration();
+            }
+            break;
+          case 'templateChanged':
+            // Control-plane update (used by the refactor/Blazor overlay). Static HTML overlay does not render templates.
+            if (window.omniOverlayDebug === true) {
+              console.log('🛠️ Control-plane: templateChanged', JSON.stringify(data || {}));
+            }
             break;
           case 'overlaySettingsUpdate':
           case 'settingsUpdate':
@@ -581,9 +612,14 @@
             }
 
             applyTimerSettings(data);
-            // Re-render counters with new settings filter
+
+            // Re-render counter DOM so visibility settings (deaths/swears on/off) take effect
+            // immediately even for callers that don't follow with a counterUpdate (e.g. a
+            // position/scale-only change from UserController).  When a counterUpdate DOES follow
+            // (game switch, UpdateOverlaySettings) it will immediately overwrite this render with
+            // fresh values — both messages arrive on the same WS connection so the flash is
+            // imperceptible.
             if (lastCounterData) {
-              console.log("🔄 Re-rendering counters with new settings filter");
               updateCounters(lastCounterData);
             }
             break;
@@ -591,8 +627,10 @@
             console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
             updateCounters(data);
 
-            // Treat streamStarted as an initial live heartbeat.
-            // Twitch may not re-send stream.online on reconnect, and the server may not yet have sent streamStatusUpdate.
+            // streamStarted is sent as a recurring heartbeat while the stream is live.
+            // Always refresh the live signal — updateCounters already does this via the
+            // hasStreamStartedField path, but set it explicitly here too so the case handler
+            // is self-contained and correct even if called without a timestamp in data.
             lastKnownIsLive = true;
             lastOnlineSignalAtMs = Date.now();
             updateOverlayContainerVisibility();
@@ -800,27 +838,19 @@
         if (hasStreamStartedField) {
           const raw = (data.streamStarted !== undefined ? data.streamStarted : data.StreamStarted);
 
-          // Semantics:
-          // - `streamStarted: <valid timestamp>` => online signal (refresh TTL)
-          // - `streamStarted: null` => explicitly offline
-          // - `streamStarted` present but invalid/non-null => ignore (don't spuriously flip offline)
-          if (raw === null) {
-            streamStartMs = null;
-            lastKnownIsLive = false;
-            lastOnlineSignalAtMs = null;
-          } else {
+          // The streamStarted field in counter payloads and streamStarted WS messages acts as a
+          // live heartbeat from Twitch — refresh the live signal every time a valid timestamp is
+          // present, regardless of whether it changed.
+          // - `streamStarted: null`  => stream not started via dashboard; leave live signal alone.
+          //   Visibility is driven exclusively by 'streamStatusUpdate' and 'streamEnded'.
+          // - `streamStarted: <timestamp>` => always treated as proof the stream is live.
+          // Timer state (streamStartMs, timerExpired) is intentionally NOT managed here.
+          // The overlay timer is a standalone client-side timer controlled via Settings.
+          if (raw !== null) {
             const parsedStart = parseToMs(raw);
             if (parsedStart) {
-              const isNewStreamStart = !streamStartMs || Math.abs(parsedStart - streamStartMs) > 1000;
-              streamStartMs = parsedStart;
               lastKnownIsLive = true;
               lastOnlineSignalAtMs = Date.now();
-              // Only reset completion state if the stream start timestamp actually changed.
-              // Otherwise, counterUpdate payloads can repeatedly clear timerExpired and re-trigger timerFinished audio.
-              if (isNewStreamStart) {
-                timerExpired = false;
-                window.omniOverlayTimerExpired = false;
-              }
             }
           }
         }

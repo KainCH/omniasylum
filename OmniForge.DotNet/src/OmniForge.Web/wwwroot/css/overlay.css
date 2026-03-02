@@ -1,0 +1,96 @@
+/* ==========================================================================
+   Overlay CSS — Supplementary styles for OBS/StreamLabs browser source overlay.
+   Referenced by overlay.html.
+   ========================================================================== */
+
+/* ---- Bit Particle (Cheer Celebration) ---- */
+.bit-particle {
+  position: absolute;
+  top: -10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #9146ff, #ffcc00, #00ff7f);
+  animation: bitFall linear forwards;
+  pointer-events: none;
+}
+
+@keyframes bitFall {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+
+  70% {
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: translateY(100vh) rotate(720deg) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* ---- Sub Heart (Sub Celebration) ---- */
+.sub-heart {
+  position: absolute;
+  bottom: -30px;
+  font-size: 24px;
+  animation: heartFloat 4s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes heartFloat {
+  0% {
+    transform: translateY(0) scale(0);
+    opacity: 0;
+  }
+
+  15% {
+    transform: translateY(-15vh) scale(1.2);
+    opacity: 1;
+  }
+
+  50% {
+    transform: translateY(-50vh) scale(1);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: translateY(-100vh) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* ---- Sub Banner ---- */
+.sub-banner {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.5);
+  background: rgba(100, 65, 165, 0.9);
+  border: 2px solid #9146ff;
+  border-radius: 12px;
+  padding: 12px 24px;
+  color: white;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 950;
+  pointer-events: none;
+  min-width: 280px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 15px rgba(145, 70, 255, 0.4);
+}
+
+.sub-banner.show {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.sub-banner.hide {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.5);
+}

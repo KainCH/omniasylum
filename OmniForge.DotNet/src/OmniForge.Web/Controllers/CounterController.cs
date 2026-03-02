@@ -323,6 +323,24 @@ namespace OmniForge.Web.Controllers
 
             _logger.LogInformation("✅ Overlay settings updated successfully for user {UserId}", LogValue.Safe(userId));
 
+            // Push both the new settings and the current counter values to the overlay.
+            // Settings change affects which counters are visible; the counter push re-renders them
+            // immediately with the correct values rather than waiting for the next increment/decrement.
+            await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
+
+            try
+            {
+                var counters = await _counterRepository.GetCountersAsync(userId);
+                if (counters != null)
+                {
+                    await _overlayNotifier.NotifyCounterUpdateAsync(userId, counters);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Failed pushing counter update after overlay settings save for user {UserId}", LogValue.Safe(userId));
+            }
+
             return Ok(new
             {
                 message = "Overlay settings updated successfully",
