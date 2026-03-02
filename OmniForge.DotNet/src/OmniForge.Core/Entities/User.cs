@@ -51,6 +51,7 @@ namespace OmniForge.Core.Entities
         public bool StreamAlerts { get; set; } = true;
         public bool SceneSync { get; set; } = false;
         public bool OverlayV2 { get; set; } = false;
+        public bool AutoBanEvaders { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 
