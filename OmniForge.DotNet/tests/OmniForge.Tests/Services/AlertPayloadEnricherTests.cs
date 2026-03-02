@@ -23,11 +23,25 @@ public class AlertPayloadEnricherTests
     }
 
     [Fact]
-    public async Task EnrichPayloadAsync_NoMatchingAlert_ReturnsBaseData()
+    public async Task EnrichPayloadAsync_NoMatchingAlert_UnknownType_ReturnsBaseData()
     {
         var baseData = new { displayName = "TestUser" };
-        var result = await _enricher.EnrichPayloadAsync("user1", "follow", baseData);
+        var result = await _enricher.EnrichPayloadAsync("user1", "unknownAlertType", baseData);
         Assert.Same(baseData, result);
+    }
+
+    [Fact]
+    public async Task EnrichPayloadAsync_NoUserAlert_FallsBackToDefaultTemplate()
+    {
+        // No user-configured alerts in the repository (constructor sets up empty list).
+        // For a known alert type like "follow", the enricher should fall back to the default template.
+        var baseData = new { displayName = "TestUser" };
+        var result = await _enricher.EnrichPayloadAsync("user1", "follow", baseData);
+
+        Assert.NotSame(baseData, result);
+        var json = JsonSerializer.Serialize(result);
+        Assert.Contains("New Follower", json); // Default template name
+        Assert.Contains("doorCreak.wav", json); // Default sound trigger
     }
 
     [Fact]

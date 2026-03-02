@@ -465,6 +465,13 @@
       const { connectionId } = JSON.parse(e.data);
       console.log('SSE connected, connectionId:', connectionId);
 
+      // Activate silence window to suppress backlog burst on connect/reconnect
+      const RECONNECT_SILENCE_MS = 10000;
+      window.omniSuppressNotificationAudioResume = true;
+      window.omniOverlayResumeSuppressUntil = Date.now() + RECONNECT_SILENCE_MS;
+      window.omniSilenceUntil = Date.now() + RECONNECT_SILENCE_MS;
+      setTimeout(() => { window.omniSuppressNotificationAudioResume = false; }, RECONNECT_SILENCE_MS);
+
       // Step 2: Signal ready after DOM is set up
       fetch(`/api/v2/overlay/ready?userId=${encodeURIComponent(userId)}&connectionId=${encodeURIComponent(connectionId)}`, {
         method: 'POST'

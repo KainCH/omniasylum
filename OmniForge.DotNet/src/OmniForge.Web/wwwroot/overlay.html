@@ -422,116 +422,219 @@
         }
       }
 
-      // Initial Data Load
-      fetch(`/api/counters/${userId}`)
-        .then(response => response.json())
-        .then(data => {
-          console.log("📥 Initial data loaded:", JSON.stringify(data));
-          if (data.settings) {
-            currentSettings = data.settings;
-            console.log("⚙️ Loaded settings:", JSON.stringify(currentSettings));
-            applySettings(data.settings);
-
-            if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
-              window.overlayInterop.updateOverlaySettings(data.settings);
-            }
-
-            applyTimerSettings(data.settings);
-          }
-
-          // Load custom counter definitions if present
-          customCountersConfig = data.customCountersConfig || data.CustomCountersConfig || {};
-
-          updateCounters(data);
-        })
-        .catch(err => console.error("Error loading initial data:", err));
-
       // Server Instance ID tracking for silent refresh on server restart
       let knownServerInstanceId = null;
-      let reconnectAttempts = 0;
-      let isHealthCheckInProgress = false; // Prevent concurrent health checks
-      let healthCheckFailures = 0; // Track consecutive health check failures
-      const MAX_RECONNECT_BEFORE_HEALTH_CHECK = 3;
-      const MAX_HEALTH_CHECK_FAILURES = 5; // After this many failures, show warning
 
-      async function checkServerAvailability() {
-        // Pure availability check — does NOT compare serverInstanceId.
-        // Server restart detection is now done via the 'serverInfo' WebSocket message
-        // (always from the same replica as the socket, so no load-balancer mismatch).
-        if (isHealthCheckInProgress) {
-          console.log("⏳ Health check already in progress, skipping...");
+      // --- SSE Connection (two-step handshake) ---
+      const RECONNECT_SILENCE_MS = 10000;
+      const eventsUrl = `/api/v2/overlay/events?userId=${encodeURIComponent(userId)}`;
+      let source = null;
+
+      function preloadSoundsFromAlerts(alerts) {
+        if (!alerts || !Array.isArray(alerts)) return;
+        const seen = new Set();
+        for (const alert of alerts) {
+          try {
+            const effects = typeof alert.effects === 'string'
+              ? JSON.parse(alert.effects) : alert.effects;
+            const soundFile = effects?.soundTrigger;
+            if (soundFile && !seen.has(soundFile)) {
+              seen.add(soundFile);
+              const audio = new Audio();
+              audio.preload = 'auto';
+              audio.src = `/sounds/${soundFile}`;
+              // Silent preload only — do NOT call .play()
+            }
+          } catch (e) { /* skip invalid effects JSON */ }
+        }
+      }
+
+      function setStreamStatus(data) {
+        if (!data) return;
+        const status = typeof data === 'string' ? data : (data.status || data.streamStatus || data.StreamStatus);
+        const streamStarted = data.streamStarted || data.StreamStarted;
+
+        if (typeof status === 'string') {
+          const normalized = status.toLowerCase();
+          const isLive = normalized === 'live';
+          lastKnownIsLive = isLive;
+
+          if (isLive) {
+            lastOnlineSignalAtMs = Date.now();
+            if (streamStarted) {
+              const parsed = parseToMs(streamStarted);
+              if (parsed) streamStartMs = parsed;
+            }
+            if (!manualRunning && streamStartMs) startTimerInterval();
+          } else if (normalized === 'offline') {
+            lastOnlineSignalAtMs = null;
+            if (!manualRunning) {
+              streamStartMs = null;
+              stopTimerInterval();
+              updateTimerDisplay();
+            }
+          }
+        }
+
+        updateOverlayContainerVisibility();
+        updateTimerVisibility();
+      }
+
+      function handleAlert(data) {
+        if (!data) return;
+        const alertType = data.type || data.alertType || 'alert';
+
+        // Control-plane updates (silent)
+        if (alertType === 'chatCommandsUpdated') {
+          if (window.omniOverlayDebug === true) {
+            console.log('Control-plane: chatCommandsUpdated', JSON.stringify(data.data || {}));
+          }
+          return;
+        }
+        if (alertType === 'customCountersUpdated') {
+          if (window.omniOverlayDebug === true) {
+            console.log('Control-plane: customCountersUpdated', JSON.stringify(data.data || {}));
+          }
+          customCountersConfig = (data.data && data.data.counters) ? data.data.counters
+            : (data.counters || {});
+          if (lastCounterData) updateCounters(lastCounterData);
+          return;
+        }
+        if (alertType === 'customCounterUpdate') {
+          if (window.omniOverlayDebug === true) {
+            console.log('Control-plane: customCounterUpdate', JSON.stringify(data.data || {}));
+          }
+          const counterId = data.data?.counterId ?? data.counterId;
+          const value = data.data?.value ?? data.value;
+          if (counterId != null && value != null) {
+            if (!lastCounterData) lastCounterData = {};
+            if (!lastCounterData.customCounters) lastCounterData.customCounters = {};
+            lastCounterData.customCounters[counterId] = value;
+            updateCounters(lastCounterData);
+          }
           return;
         }
 
-        isHealthCheckInProgress = true;
-        try {
-          const response = await fetch('/health');
-          await response.json(); // consume body
-
-          // Reset failure counter on success
-          healthCheckFailures = 0;
-        } catch (err) {
-          healthCheckFailures++;
-          console.warn(`⚠️ Health check failed (${healthCheckFailures}/${MAX_HEALTH_CHECK_FAILURES}):`, err.message);
-
-          if (healthCheckFailures >= MAX_HEALTH_CHECK_FAILURES) {
-            console.error("❌ Multiple health check failures. Server may be down or network issues.");
-          }
-        } finally {
-          isHealthCheckInProgress = false;
+        // Standard alert
+        if (window.overlayInterop) {
+          window.overlayInterop.triggerAlert(alertType, data.data || data);
         }
       }
 
-      // WebSocket Connection
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/overlay?userId=${userId}`;
+      function connectSSE() {
+        source = new EventSource(eventsUrl);
 
-      let socket;
+        // Step 1: Server assigns connectionId
+        source.addEventListener('connected', (e) => {
+          const { connectionId } = JSON.parse(e.data);
+          console.log('SSE connected, connectionId:', connectionId);
 
-      function connect() {
-        socket = new WebSocket(wsUrl);
+          // Activate silence window to suppress backlog burst on connect/reconnect
+          window.omniSuppressNotificationAudioResume = true;
+          window.omniOverlayResumeSuppressUntil = Date.now() + RECONNECT_SILENCE_MS;
+          window.omniSilenceUntil = Date.now() + RECONNECT_SILENCE_MS;
+          setTimeout(() => { window.omniSuppressNotificationAudioResume = false; }, RECONNECT_SILENCE_MS);
 
-        socket.onopen = function () {
-          console.log("Connected to Overlay WebSocket");
-          // Reset counters on successful connection.
-          // Server restart is detected via the 'serverInfo' message the server sends
-          // immediately after accepting the socket — no HTTP health check needed here.
-          healthCheckFailures = 0;
-          reconnectAttempts = 0;
-        };
+          // Step 2: Signal ready after DOM is set up
+          fetch(`/api/v2/overlay/ready?userId=${encodeURIComponent(userId)}&connectionId=${encodeURIComponent(connectionId)}`, {
+            method: 'POST'
+          }).catch(err => console.error('Failed to send ready signal:', err));
+        });
 
-        socket.onmessage = function (event) {
-          try {
-            const msg = JSON.parse(event.data);
-            handleMessage(msg);
-          } catch (e) {
-            console.error("Error parsing WS message:", e);
+        // Step 3: Server sends full config bundle
+        source.addEventListener('init', (e) => {
+          const config = JSON.parse(e.data);
+          console.log('SSE init received');
+
+          // Server instance ID for restart detection
+          if (config.serverInstanceId) {
+            if (knownServerInstanceId === null) {
+              knownServerInstanceId = config.serverInstanceId;
+            } else if (config.serverInstanceId !== knownServerInstanceId) {
+              console.log('Server restart detected, reloading...');
+              window.location.reload();
+              return;
+            }
           }
-        };
 
-        socket.onclose = function (event) {
-          console.log("WebSocket closed. code=", event.code, "reason=", event.reason, "clean=", event.wasClean, "Reconnecting in 5s...");
-          reconnectAttempts++;
-
-          // After multiple reconnect attempts, verify the server is still reachable.
-          if (reconnectAttempts >= MAX_RECONNECT_BEFORE_HEALTH_CHECK && !isHealthCheckInProgress) {
-            console.log("🔍 Multiple reconnect attempts, checking server availability...");
-            checkServerAvailability();
+          // Apply settings
+          if (config.settings) {
+            currentSettings = config.settings;
+            applySettings(config.settings);
+            if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+              window.overlayInterop.updateOverlaySettings(config.settings);
+            }
+            applyTimerSettings(config.settings);
           }
 
-          setTimeout(connect, 5000);
-        };
+          // Load custom counters config
+          customCountersConfig = config.customCountersConfig || {};
 
-        socket.onerror = function (err) {
-          console.error("WebSocket error:", err);
-          socket.close();
+          // Render counters
+          if (config.counters) {
+            updateCounters(config.counters);
+          }
+
+          // Set stream status
+          if (config.streamStatus) {
+            setStreamStatus({
+              status: config.streamStatus,
+              streamStarted: config.streamStarted || config.counters?.streamStarted || config.counters?.StreamStarted
+            });
+          }
+
+          // Lazy-preload sound files from alert templates into browser cache
+          preloadSoundsFromAlerts(config.alerts);
+        });
+
+        // --- Incremental events ---
+
+        source.addEventListener('counter', (e) => {
+          updateCounters(JSON.parse(e.data));
+        });
+
+        source.addEventListener('alert', (e) => {
+          handleAlert(JSON.parse(e.data));
+        });
+
+        source.addEventListener('config', (e) => {
+          const settings = JSON.parse(e.data);
+          currentSettings = settings;
+          applySettings(settings);
+          if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
+            window.overlayInterop.updateOverlaySettings(settings);
+          }
+          applyTimerSettings(settings);
+          if (lastCounterData) updateCounters(lastCounterData);
+        });
+
+        source.addEventListener('stream', (e) => {
+          setStreamStatus(JSON.parse(e.data));
+        });
+
+        source.addEventListener('bitsgoal', (e) => {
+          const data = JSON.parse(e.data);
+          if (data && data.completed === true && window.overlayInterop && window.overlayInterop.triggerBitsGoalCelebration) {
+            window.overlayInterop.triggerBitsGoalCelebration();
+          }
+        });
+
+        source.addEventListener('template', (e) => {
+          // Template changes are handled by the effects system.
+          if (window.omniOverlayDebug === true) {
+            console.log('Template update received:', e.data);
+          }
+        });
+
+        source.onerror = () => {
+          // EventSource auto-reconnects. On reconnect, server sends new event: connected.
+          console.warn('SSE connection error, auto-reconnecting...');
         };
       }
 
-      connect();
+      connectSSE();
 
       // Watchdog: if the monitor stops sending online heartbeats, auto-hide.
-      // This runs even when no websocket messages are incoming.
       setInterval(() => {
         updateOverlayContainerVisibility();
 
@@ -545,194 +648,6 @@
 
         updateTimerVisibility();
       }, 5000);
-
-      function handleMessage(msg) {
-        console.log("📨 WebSocket message received:", JSON.stringify(msg));
-        const { method, data } = msg;
-
-        switch (method) {
-          case 'serverInfo':
-            // The server sends its serverInstanceId immediately after the WebSocket connects.
-            // Because the WS is sticky to one replica, this is always the correct ID to compare.
-            if (data && data.serverInstanceId) {
-              if (knownServerInstanceId === null) {
-                knownServerInstanceId = data.serverInstanceId;
-                console.log("🔑 Server instance ID stored via WS:", knownServerInstanceId);
-              } else if (data.serverInstanceId !== knownServerInstanceId) {
-                console.log("🔄 Server restart detected via WS! Old:", knownServerInstanceId, "New:", data.serverInstanceId);
-                window.location.reload();
-              }
-            }
-            break;
-          case 'counterUpdate':
-            console.log("📊 Counter update:", JSON.stringify(data));
-            updateCounters(data);
-            break;
-          case 'milestoneReached':
-            // Normalize milestoneReached to the user-facing 'milestone' alert.
-            if (window.overlayInterop && data) {
-              const { counterType, milestone, newValue } = data;
-              const readableCounter = counterType && typeof counterType === 'string'
-                ? counterType.charAt(0).toUpperCase() + counterType.slice(1)
-                : 'Counter';
-              const milestoneLabel = milestone != null ? milestone : newValue;
-              const textPrompt = milestoneLabel != null
-                ? readableCounter + ' milestone reached: ' + milestoneLabel
-                : readableCounter + ' milestone reached';
-              const alertPayload = {
-                ...data,
-                name: readableCounter + ' milestone',
-                textPrompt
-              };
-              window.overlayInterop.triggerAlert('milestone', alertPayload);
-            }
-            break;
-          case 'bitsGoalUpdate':
-            // No dedicated UI in the static overlay; ignore.
-            break;
-          case 'bitsGoalComplete':
-            if (window.overlayInterop && window.overlayInterop.triggerBitsGoalCelebration) {
-              window.overlayInterop.triggerBitsGoalCelebration();
-            }
-            break;
-          case 'templateChanged':
-            // Control-plane update (used by the refactor/Blazor overlay). Static HTML overlay does not render templates.
-            if (window.omniOverlayDebug === true) {
-              console.log('🛠️ Control-plane: templateChanged', JSON.stringify(data || {}));
-            }
-            break;
-          case 'overlaySettingsUpdate':
-          case 'settingsUpdate':
-            console.log("⚙️ Settings update via WebSocket:", JSON.stringify(data));
-            currentSettings = data;
-            applySettings(data);
-
-            if (window.overlayInterop && window.overlayInterop.updateOverlaySettings) {
-              window.overlayInterop.updateOverlaySettings(data);
-            }
-
-            applyTimerSettings(data);
-
-            // Re-render counter DOM so visibility settings (deaths/swears on/off) take effect
-            // immediately even for callers that don't follow with a counterUpdate (e.g. a
-            // position/scale-only change from UserController).  When a counterUpdate DOES follow
-            // (game switch, UpdateOverlaySettings) it will immediately overwrite this render with
-            // fresh values — both messages arrive on the same WS connection so the flash is
-            // imperceptible.
-            if (lastCounterData) {
-              updateCounters(lastCounterData);
-            }
-            break;
-          case 'streamStarted':
-            console.log("🟢 Stream started! Data:", JSON.stringify(data), "streamStarted value:", data.streamStarted);
-            updateCounters(data);
-
-            // streamStarted is sent as a recurring heartbeat while the stream is live.
-            // Always refresh the live signal — updateCounters already does this via the
-            // hasStreamStartedField path, but set it explicitly here too so the case handler
-            // is self-contained and correct even if called without a timestamp in data.
-            lastKnownIsLive = true;
-            lastOnlineSignalAtMs = Date.now();
-            updateOverlayContainerVisibility();
-            updateTimerVisibility();
-            break;
-          case 'streamEnded':
-            console.log("🔴 Stream ended! Data:", JSON.stringify(data));
-            updateCounters(data);
-
-            if (!manualRunning) {
-              streamStartMs = null;
-              lastKnownIsLive = false;
-              lastOnlineSignalAtMs = null;
-              stopTimerInterval();
-              updateTimerVisibility();
-              updateTimerDisplay();
-            }
-            break;
-          case 'streamStatusUpdate':
-            console.log("📺 Stream status update:", JSON.stringify(data));
-            {
-              const status = (data && (data.streamStatus ?? data.StreamStatus)) ?? data;
-              if (typeof status === 'string') {
-                const normalized = status.toLowerCase();
-                const isLive = normalized === 'live';
-                lastKnownIsLive = isLive;
-
-                if (isLive) {
-                  lastOnlineSignalAtMs = Date.now();
-                } else if (normalized === 'offline') {
-                  // Explicit offline signal should immediately hide.
-                  lastOnlineSignalAtMs = null;
-                  if (!manualRunning) {
-                    streamStartMs = null;
-                    stopTimerInterval();
-                    updateTimerDisplay();
-                  }
-                }
-              }
-
-              updateOverlayContainerVisibility();
-              updateTimerVisibility();
-            }
-            break;
-          case 'ping':
-            // Ignore ping messages
-            break;
-          case 'customAlert':
-            // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
-            if (data && data.alertType) {
-              // These are control-plane updates, not user-facing alerts.
-              if (data.alertType === 'chatCommandsUpdated') {
-                // Overlay does not render chat commands; this message is for backend/bot sync.
-                // Treat as silent to avoid showing a default "ALERT" popup during game switches.
-                if (window.omniOverlayDebug === true) {
-                  console.log('🛠️ Control-plane: chatCommandsUpdated', JSON.stringify(data.data || {}));
-                }
-                return;
-              }
-
-              if (data.alertType === 'customCountersUpdated') {
-                if (window.omniOverlayDebug === true) {
-                  console.log('🛠️ Control-plane: customCountersUpdated', JSON.stringify(data.data || {}));
-                }
-                customCountersConfig = (data.data && data.data.counters) ? data.data.counters : {};
-                if (lastCounterData) {
-                  updateCounters(lastCounterData);
-                }
-                return;
-              }
-
-              if (data.alertType === 'customCounterUpdate') {
-                if (window.omniOverlayDebug === true) {
-                  console.log('🛠️ Control-plane: customCounterUpdate', JSON.stringify(data.data || {}));
-                }
-                // Update cached lastCounterData's customCounters if possible
-                const counterId = data.data?.counterId;
-                const value = data.data?.value;
-                if (counterId && value !== null && value !== undefined) {
-                  if (!lastCounterData) lastCounterData = {};
-                  if (!lastCounterData.customCounters) lastCounterData.customCounters = {};
-                  lastCounterData.customCounters[counterId] = value;
-                  updateCounters(lastCounterData);
-                }
-                return;
-              }
-
-              // Everything else is an actual alert
-              if (window.overlayInterop) {
-                window.overlayInterop.triggerAlert(data.alertType, data.data || {});
-              }
-            }
-            break;
-          default:
-            console.log("🔔 Alert message:", method, JSON.stringify(data));
-            // Handle alerts
-            if (window.overlayInterop) {
-              window.overlayInterop.triggerAlert(method, data);
-            }
-            break;
-        }
-      }
 
       function applySettings(settings) {
         const container = document.getElementById('overlay-container');
