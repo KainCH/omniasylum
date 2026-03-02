@@ -640,6 +640,15 @@
           case 'ping':
             // Ignore ping messages
             break;
+          case 'sceneChange':
+            console.log("🎬 Scene change:", JSON.stringify(data));
+            // Store current scene state for other overlay components to read
+            window.currentScene = data.sceneName || null;
+            window.previousScene = data.previousScene || null;
+            window.sceneSource = data.source || null;
+            // Dispatch a CustomEvent so other overlay scripts can listen
+            window.dispatchEvent(new CustomEvent('omniforge:sceneChange', { detail: data }));
+            break;
           case 'customAlert':
             // WebSocketOverlayNotifier sends custom alerts as: { alertType, data }
             if (data && data.alertType) {

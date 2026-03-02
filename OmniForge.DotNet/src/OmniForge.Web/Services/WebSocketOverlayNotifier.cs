@@ -376,5 +376,18 @@ namespace OmniForge.Web.Services
         {
             await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
         }
+
+        public async Task NotifySceneChangeAsync(string userId, string sceneName, string? previousScene, string source)
+        {
+            LogOverlayAction(userId, "sceneChange");
+
+            await _webSocketManager.SendToUserAsync(userId, "sceneChange", new
+            {
+                sceneName,
+                previousScene,
+                source,
+                timestamp = DateTimeOffset.UtcNow
+            });
+        }
     }
 }

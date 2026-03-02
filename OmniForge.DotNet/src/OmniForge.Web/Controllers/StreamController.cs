@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.DTOs;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 
@@ -420,6 +421,34 @@ namespace OmniForge.Web.Controllers
                 isActive = user.IsActive,
                 counters = counters,
                 lastUpdated = DateTimeOffset.UtcNow
+            });
+        }
+
+        [HttpPost("scene")]
+        public async Task<IActionResult> ReportSceneChange([FromBody] SceneChangeRequest request)
+        {
+            var userId = User.FindFirst("userId")?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(request?.SceneName))
+                return BadRequest(new { error = "SceneName is required" });
+
+            var source = string.IsNullOrWhiteSpace(request.Source) ? "OBS" : request.Source;
+
+            _logger.LogInformation(
+                "🎬 Scene change reported: user_id={UserId}, scene={Scene}, previous={Previous}, source={Source}",
+                userId, request.SceneName, request.PreviousScene ?? "(none)", source);
+
+            await _overlayNotifier.NotifySceneChangeAsync(
+                userId, request.SceneName, request.PreviousScene, source);
+
+            return Ok(new
+            {
+                message = "Scene change broadcast",
+                sceneName = request.SceneName,
+                previousScene = request.PreviousScene,
+                source,
+                timestamp = DateTimeOffset.UtcNow
             });
         }
 

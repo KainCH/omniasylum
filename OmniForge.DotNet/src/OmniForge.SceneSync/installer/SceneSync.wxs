@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  WiX v6 installer definition for OmniForge SceneSync.
+  Produces a standard Windows MSI with:
+    - Install to Program Files\OmniForge\SceneSync
+    - Start Menu shortcut
+    - Add/Remove Programs entry
+    - Editable appsettings.json preserved on upgrade
+-->
+
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="OmniForge SceneSync"
+           Manufacturer="OmniForge"
+           Version="1.0.0.0"
+           UpgradeCode="A7F3B1C2-9D4E-4F5A-8B6C-1E2D3F4A5B6C"
+           Scope="perUser"
+           InstallerVersion="500">
+
+    <!-- Allow upgrades, prevent downgrades -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of OmniForge SceneSync is already installed." />
+
+    <!-- Use the WiX minimal UI (license + install progress) -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <!-- Embedded CAB for a single MSI file -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- License -->
+    <WixVariable Id="WixUILicenseRtf" Value="installer\License.rtf" />
+
+    <!-- Default install directory -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="OmniForgeDir" Name="OmniForge">
+        <Directory Id="INSTALLFOLDER" Name="SceneSync" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="OmniForgeMenuDir" Name="OmniForge" />
+    </StandardDirectory>
+
+    <!-- Main component group -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <!-- The self-contained exe -->
+      <Component Id="MainExe" Guid="B1A2C3D4-E5F6-7890-ABCD-EF1234567890">
+        <File Id="SceneSyncExe"
+              Source="$(var.PublishDir)\OmniForge.SceneSync.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Config file — marked NeverOverwrite so upgrades preserve user edits -->
+      <Component Id="ConfigFile" Guid="C2B3D4E5-F6A7-8901-BCDE-F12345678901"
+                 NeverOverwrite="yes">
+        <File Id="AppSettings"
+              Source="$(var.PublishDir)\appsettings.json"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Start Menu shortcut -->
+      <Component Id="StartMenuShortcut" Guid="D3C4E5F6-A7B8-9012-CDEF-123456789012"
+                 Directory="OmniForgeMenuDir">
+        <Shortcut Id="SceneSyncShortcut"
+                  Name="OmniForge SceneSync"
+                  Description="OBS/Streamlabs scene change sync for OmniForge"
+                  Target="[INSTALLFOLDER]OmniForge.SceneSync.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\OmniForge\SceneSync"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <RemoveFolder Id="RemoveOmniForgeMenuDir" On="uninstall" />
+      </Component>
+
+      <!-- Desktop shortcut (optional, off by default) -->
+      <Component Id="DesktopShortcut" Guid="E4D5F6A7-B8C9-0123-DEFA-234567890123"
+                 Directory="DesktopFolder">
+        <Shortcut Id="DesktopSceneSyncShortcut"
+                  Name="OmniForge SceneSync"
+                  Description="OBS/Streamlabs scene change sync for OmniForge"
+                  Target="[INSTALLFOLDER]OmniForge.SceneSync.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\OmniForge\SceneSync"
+                       Name="DesktopShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+      <!-- Windows Startup registry entry (optional) -->
+      <Component Id="StartupEntry" Guid="F5E6A7B8-C9D0-1234-EFAB-345678901234">
+        <RegistryValue Root="HKCU"
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                       Name="OmniForgeSceneSync"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]OmniForge.SceneSync.exe&quot;"
+                       KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- Features shown to the user -->
+    <Feature Id="MainFeature" Title="OmniForge SceneSync" Level="1"
+             Description="Scene change detection for OBS Studio and Streamlabs Desktop"
+             ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="ConfigFile" />
+      <ComponentRef Id="StartMenuShortcut" />
+
+      <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="2"
+               Description="Create a desktop shortcut">
+        <ComponentRef Id="DesktopShortcut" />
+      </Feature>
+
+      <Feature Id="AutoStartFeature" Title="Start with Windows" Level="2"
+               Description="Automatically start SceneSync when you log in">
+        <ComponentRef Id="StartupEntry" />
+      </Feature>
+    </Feature>
+
+  </Package>
+</Wix>
