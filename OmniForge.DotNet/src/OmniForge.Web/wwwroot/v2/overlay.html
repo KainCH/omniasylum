@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniForge Overlay v2</title>
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/v2/css/overlay.css">
+  <link rel="stylesheet" href="/css/overlay.css">
+</head>
+
+<body>
+  <script>
+    // Intentionally do not silence alerts/sounds on load.
+    window.omniSilenceInitialMs = 0;
+    window.omniSilenceUntil = 0;
+  </script>
+
+  <div id="overlay-container" class="counter-overlay">
+    <!-- Counters will be injected here -->
+  </div>
+
+  <div class="interaction-banner hide" id="interaction-banner"></div>
+
+  <div class="counter-alert alert-container" id="alert-popup">
+    <img id="alert-image" class="alert-image" src="" alt="Alert Visual" />
+    <div class="alert-title" id="alert-title">ALERT</div>
+    <div class="alert-message" id="alert-message">Message</div>
+  </div>
+
+  <div class="bits-celebration" id="bits-celebration"></div>
+  <div class="sub-celebration" id="sub-celebration"></div>
+  <div class="sub-banner hide" id="sub-banner"></div>
+
+  <!-- Shared v1 scripts (effects, audio, interop) -->
+  <script src="/js/asylum-effects.js"></script>
+  <script src="/js/notification-audio.js"></script>
+  <script src="/js/overlay-interop.js"></script>
+
+  <!-- V2 SSE overlay client -->
+  <script src="/v2/js/overlay.js"></script>
+</body>
+
+</html>
