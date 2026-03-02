@@ -4,8 +4,11 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
+using OmniForge.Core.Entities;
+using OmniForge.Core.Interfaces;
 using OmniForge.Web.Services;
 using Xunit;
 
@@ -161,9 +164,9 @@ namespace OmniForge.Tests
 
             await manager.SendToUserAsync("user1", "update", new { X = 1 });
 
-            Assert.Single(socket.SentTextMessages);
-            Assert.Contains("\"method\":\"update\"", socket.SentTextMessages[0]);
-            Assert.Contains("\"x\":1", socket.SentTextMessages[0]);
+            // serverInfo is always the first message; the update payload is the subsequent one.
+            Assert.Contains(socket.SentTextMessages, m => m.Contains("\"method\":\"update\"", StringComparison.Ordinal));
+            Assert.Contains(socket.SentTextMessages, m => m.Contains("\"x\":1", StringComparison.Ordinal));
 
             socket.RequestClientClose();
             await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
@@ -211,6 +214,148 @@ namespace OmniForge.Tests
 
             // Ping payload should have been sent as a text frame.
             Assert.Contains(socket.SentTextMessages, m => m.Contains("\"method\":\"ping\""));
+
+            socket.RequestClientClose();
+            await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        // ─── On-connect message tests ─────────────────────────────────────────────
+
+        /// <summary>serverInfo is always the first message sent on every new connection.</summary>
+        [Fact]
+        public async Task HandleConnectionAsync_ShouldSendServerInfo_OnConnect()
+        {
+            var logger = new Mock<ILogger<WebSocketOverlayManager>>();
+            var manager = new WebSocketOverlayManager(logger.Object);
+
+            var socket = new ControlledWebSocket();
+            var connectionTask = manager.HandleConnectionAsync("user1", socket);
+
+            await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Contains(socket.SentTextMessages, m =>
+                m.Contains("\"method\":\"serverInfo\"", StringComparison.Ordinal) &&
+                m.Contains("\"serverInstanceId\"", StringComparison.Ordinal));
+
+            socket.RequestClientClose();
+            await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        /// <summary>
+        /// When IStreamMonitorService.IsUserLive() returns true (stream live in memory),
+        /// an immediate streamStatusUpdate:live heartbeat must be sent right after serverInfo.
+        /// </summary>
+        [Fact]
+        public async Task HandleConnectionAsync_WhenStreamLiveInMemory_ShouldSendLiveHeartbeat()
+        {
+            var logger = new Mock<ILogger<WebSocketOverlayManager>>();
+            var mockMonitor = new Mock<IStreamMonitorService>();
+            mockMonitor.Setup(m => m.IsUserLive("user1")).Returns(true);
+
+            var manager = new WebSocketOverlayManager(logger.Object, streamMonitorService: mockMonitor.Object);
+
+            var socket = new ControlledWebSocket();
+            var connectionTask = manager.HandleConnectionAsync("user1", socket);
+
+            await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Contains(socket.SentTextMessages, m =>
+                m.Contains("\"method\":\"streamStatusUpdate\"", StringComparison.Ordinal) &&
+                m.Contains("\"streamStatus\":\"live\"", StringComparison.Ordinal));
+
+            socket.RequestClientClose();
+            await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        /// <summary>
+        /// When the in-memory check returns false but Counter.StreamStarted is set in the DB
+        /// (post-restart scenario), the DB fallback must fire a streamStatusUpdate:live heartbeat.
+        /// </summary>
+        [Fact]
+        public async Task HandleConnectionAsync_WhenStreamLiveInDbOnly_ShouldSendLiveHeartbeat()
+        {
+            var logger = new Mock<ILogger<WebSocketOverlayManager>>();
+
+            // In-memory monitor says not live (e.g. fresh restart, monitoring not yet re-established).
+            var mockMonitor = new Mock<IStreamMonitorService>();
+            mockMonitor.Setup(m => m.IsUserLive(It.IsAny<string>())).Returns(false);
+
+            // DB has StreamStarted set — stream was live before the restart.
+            var mockCounterRepo = new Mock<ICounterRepository>();
+            mockCounterRepo
+                .Setup(r => r.GetCountersAsync("user1"))
+                .ReturnsAsync(new Counter { TwitchUserId = "user1", StreamStarted = DateTimeOffset.UtcNow });
+
+            var mockServiceProvider = new Mock<IServiceProvider>();
+            mockServiceProvider
+                .Setup(sp => sp.GetService(typeof(ICounterRepository)))
+                .Returns(mockCounterRepo.Object);
+
+            var mockScope = new Mock<IServiceScope>();
+            mockScope.Setup(s => s.ServiceProvider).Returns(mockServiceProvider.Object);
+
+            var mockScopeFactory = new Mock<IServiceScopeFactory>();
+            mockScopeFactory.Setup(f => f.CreateScope()).Returns(mockScope.Object);
+
+            var manager = new WebSocketOverlayManager(
+                logger.Object,
+                streamMonitorService: mockMonitor.Object,
+                scopeFactory: mockScopeFactory.Object);
+
+            var socket = new ControlledWebSocket();
+            var connectionTask = manager.HandleConnectionAsync("user1", socket);
+
+            await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Contains(socket.SentTextMessages, m =>
+                m.Contains("\"method\":\"streamStatusUpdate\"", StringComparison.Ordinal) &&
+                m.Contains("\"streamStatus\":\"live\"", StringComparison.Ordinal));
+
+            socket.RequestClientClose();
+            await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        /// <summary>
+        /// When neither the in-memory check nor the DB fallback find a live stream,
+        /// no streamStatusUpdate:live message should be sent on connect.
+        /// </summary>
+        [Fact]
+        public async Task HandleConnectionAsync_WhenStreamNotLive_ShouldNotSendLiveHeartbeat()
+        {
+            var logger = new Mock<ILogger<WebSocketOverlayManager>>();
+
+            var mockMonitor = new Mock<IStreamMonitorService>();
+            mockMonitor.Setup(m => m.IsUserLive(It.IsAny<string>())).Returns(false);
+
+            // DB has StreamStarted = null (stream is offline).
+            var mockCounterRepo = new Mock<ICounterRepository>();
+            mockCounterRepo
+                .Setup(r => r.GetCountersAsync("user1"))
+                .ReturnsAsync(new Counter { TwitchUserId = "user1", StreamStarted = null });
+
+            var mockServiceProvider = new Mock<IServiceProvider>();
+            mockServiceProvider
+                .Setup(sp => sp.GetService(typeof(ICounterRepository)))
+                .Returns(mockCounterRepo.Object);
+
+            var mockScope = new Mock<IServiceScope>();
+            mockScope.Setup(s => s.ServiceProvider).Returns(mockServiceProvider.Object);
+
+            var mockScopeFactory = new Mock<IServiceScopeFactory>();
+            mockScopeFactory.Setup(f => f.CreateScope()).Returns(mockScope.Object);
+
+            var manager = new WebSocketOverlayManager(
+                logger.Object,
+                streamMonitorService: mockMonitor.Object,
+                scopeFactory: mockScopeFactory.Object);
+
+            var socket = new ControlledWebSocket();
+            var connectionTask = manager.HandleConnectionAsync("user1", socket);
+
+            await socket.ReceiveStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.DoesNotContain(socket.SentTextMessages, m =>
+                m.Contains("\"streamStatus\":\"live\"", StringComparison.Ordinal));
 
             socket.RequestClientClose();
             await connectionTask.WaitAsync(TimeSpan.FromSeconds(2));

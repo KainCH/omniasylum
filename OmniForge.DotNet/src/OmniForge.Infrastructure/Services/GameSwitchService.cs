@@ -97,9 +97,32 @@ namespace OmniForge.Infrastructure.Services
                         LogValue.Safe(gameId));
                 }
 
-                // Everything is already set; keep the original early-return behavior.
+                // Everything is already set; snapshot the live counters so the per-game store
+                // stays current regardless of when it was last written, then return early.
                 if (existingLibraryItem != null && existingSelection != null)
                 {
+                    try
+                    {
+                        var live = await _counterRepository.GetCountersAsync(safeUserId).ConfigureAwait(false);
+                        if (live != null)
+                        {
+                            live.LastUpdated = now;
+                            await _gameCountersRepository.SaveAsync(safeUserId, safeGameId, live).ConfigureAwait(false);
+                            _logger.LogInformation(
+                                "💾 Snapshotted live counters on same-game re-detect for user {UserId} game {GameId}",
+                                LogValue.Safe(safeUserId),
+                                LogValue.Safe(safeGameId));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "❌ Failed snapshotting counters on same-game re-detect for user {UserId} game {GameId}",
+                            LogValue.Safe(userId),
+                            LogValue.Safe(gameId));
+                    }
+
                     return;
                 }
 

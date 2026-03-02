@@ -11,6 +11,13 @@ namespace OmniForge.Core.Interfaces
         Task<SubscriptionResult> ForceReconnectUserAsync(string userId);
         StreamMonitorStatus GetUserConnectionStatus(string userId);
         bool IsUserSubscribed(string userId);
+
+        /// <summary>
+        /// Returns true if the broadcaster is currently known to be live (i.e. in the heartbeat loop).
+        /// Used by the WebSocket overlay manager to send an immediate live signal on reconnect so the
+        /// overlay doesn't appear offline for up to one watchdog minute after a container restart.
+        /// </summary>
+        bool IsUserLive(string userId);
     }
 
     public enum SubscriptionResult

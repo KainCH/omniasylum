@@ -21,6 +21,7 @@ public class GameLibraryManagerTests : BunitContext
     private readonly Mock<IGameCoreCountersConfigRepository> _mockGameCoreCountersConfigRepository;
     private readonly Mock<IUserRepository> _mockUserRepository;
     private readonly Mock<ICounterRepository> _mockCounterRepository;
+    private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
 
     public GameLibraryManagerTests()
     {
@@ -35,6 +36,7 @@ public class GameLibraryManagerTests : BunitContext
         _mockGameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
         _mockUserRepository = new Mock<IUserRepository>();
         _mockCounterRepository = new Mock<ICounterRepository>();
+        _mockOverlayNotifier = new Mock<IOverlayNotifier>();
 
         Services.AddSingleton(_mockGameLibraryRepository.Object);
         Services.AddSingleton(_mockGameCountersRepository.Object);
@@ -47,6 +49,7 @@ public class GameLibraryManagerTests : BunitContext
         Services.AddSingleton(_mockGameCoreCountersConfigRepository.Object);
         Services.AddSingleton(_mockUserRepository.Object);
         Services.AddSingleton(_mockCounterRepository.Object);
+        Services.AddSingleton(_mockOverlayNotifier.Object);
 
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -82,6 +85,21 @@ public class GameLibraryManagerTests : BunitContext
         });
 
         _mockGameCountersRepository.Setup(r => r.GetAsync(userId, gameId)).ReturnsAsync(new Counter
+        {
+            TwitchUserId = userId,
+            Deaths = 1,
+            Swears = 2,
+            Screams = 3,
+            Bits = 4,
+            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wins"] = 7
+            },
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Active game → SelectGame reads live CounterRepository
+        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
         {
             TwitchUserId = userId,
             Deaths = 1,
@@ -156,6 +174,17 @@ public class GameLibraryManagerTests : BunitContext
         });
 
         _mockGameCountersRepository.Setup(r => r.GetAsync(userId, gameId)).ReturnsAsync(new Counter
+        {
+            TwitchUserId = userId,
+            CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wins"] = 1
+            },
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Active game → SelectGame reads live CounterRepository
+        _mockCounterRepository.Setup(r => r.GetCountersAsync(userId)).ReturnsAsync(new Counter
         {
             TwitchUserId = userId,
             CustomCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)

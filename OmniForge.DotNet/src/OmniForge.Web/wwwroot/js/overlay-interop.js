@@ -2,36 +2,21 @@ window.overlayInterop = {
     init: function() {
         const isDebugEnabled = () => window.omniOverlayDebug === true;
 
-        // If OBS scene switching causes the browser source to be hidden/throttled,
-        // WebSocket messages and timers can effectively "catch up" when visible again.
-        // That can replay old alert audio. We add a short suppression window on resume.
-        const getResumeSilenceMs = () => {
-            const configured = Number(window.omniResumeSilenceMs);
-            return Number.isFinite(configured) && configured >= 0 ? configured : 1500;
-        };
-
-        const bumpResumeSilence = (reason) => {
-            const ms = getResumeSilenceMs();
-            const until = Date.now() + ms;
-
-            window.omniOverlayResumeSuppressUntil = until;
-
-            // Also extend the general silence window so all audio systems agree.
-            if (!window.omniSilenceUntil || window.omniSilenceUntil < until) {
-                window.omniSilenceUntil = until;
-            }
-
-            if (isDebugEnabled()) {
-                console.log(`🔇 Resume suppression active for ${ms}ms (${reason})`);
-            }
-        };
-
         if (!window.__omniOverlayVisibilityHandlerRegistered) {
             window.__omniOverlayVisibilityHandlerRegistered = true;
 
             document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') {
-                    bumpResumeSilence('visibilitychange');
+                if (document.visibilityState !== 'visible') return;
+
+                // If an alert arrived while hidden, flush it once.
+                try {
+                    const pending = window.__omniOverlayPendingAlert;
+                    if (pending && pending.type) {
+                        window.__omniOverlayPendingAlert = null;
+                        this.triggerAlert(pending.type, pending.payload);
+                    }
+                } catch (e) {
+                    // Ignore flush errors; overlay should keep running.
                 }
             });
         }
@@ -49,52 +34,49 @@ window.overlayInterop = {
             console.warn("NotificationAudio not found! Audio will not play.");
         }
 
-        // Silence alerts briefly on initial load and on resume.
-        // overlay.html sets an initial silence window, but other entry points may not.
-        const initialMs = Number(window.omniSilenceInitialMs) || 3000;
-        const initialUntil = Date.now() + initialMs;
-        if (!window.omniSilenceUntil || window.omniSilenceUntil < initialUntil) {
-            window.omniSilenceUntil = initialUntil;
-        }
-
-        bumpResumeSilence('init');
+        // Intentionally do not silence alerts on init.
     },
 
     triggerAlert: function(type, payload) {
         const isDebugEnabled = () => window.omniOverlayDebug === true;
 
-        // If the page is not visible, ignore alerts (prevents backlog replay on resume).
+        const now = Date.now();
+
+        // Normalize payload to an object so null/strings don't crash the overlay.
+        const safePayload = (payload && typeof payload === 'object')
+            ? payload
+            : { textPrompt: payload != null ? String(payload) : '' };
+
+        const queuePendingAlert = (reason, flushAtMs) => {
+            try {
+                window.__omniOverlayPendingAlert = {
+                    type,
+                    payload: safePayload,
+                    receivedAtMs: now,
+                    reason
+                };
+            } catch (e) {
+                // Ignore queue errors; overlay should keep running.
+            }
+        };
+
+        // If the page is not visible, queue the latest alert and flush when visible.
         if (document.visibilityState !== 'visible') {
             if (isDebugEnabled()) {
-                console.log("🔇 Alert suppressed because overlay is not visible:", type);
+                console.log("🔇 Alert queued because overlay is not visible:", type);
             }
-            return;
-        }
-
-        // Suppress alerts briefly after resume to avoid playing buffered messages.
-        if (window.omniOverlayResumeSuppressUntil && Date.now() < window.omniOverlayResumeSuppressUntil) {
-            if (isDebugEnabled()) {
-                console.log("🔇 Alert suppressed during resume window:", type);
-            }
-            return;
-        }
-
-        // Skip playing alerts if we're still in the initial silence window
-        if (window.omniSilenceUntil && Date.now() < window.omniSilenceUntil) {
-            if (isDebugEnabled()) {
-                console.log("🔇 Alert suppressed during initial silence window:", type);
-            }
+            queuePendingAlert('hidden');
             return;
         }
         if (isDebugEnabled()) {
-            console.log("Triggering alert:", type, payload);
+            console.log("Triggering alert:", type, safePayload);
         }
 
         // Interaction banners are UI-only and should not require an alert definition.
         if (type === 'interactionBanner') {
-            const text = payload?.textPrompt || payload?.text;
+            const text = safePayload?.textPrompt || safePayload?.text;
             if (text) {
-                this.showInteractionBanner(text, payload?.duration || 5000);
+                this.showInteractionBanner(text, safePayload?.duration || 5000);
             }
             return;
         }
@@ -109,39 +91,40 @@ window.overlayInterop = {
                               type === 'follow' ? 'follow' :
                               type === 'milestone' ? 'milestone' : type;
 
-            window.notificationAudio.playNotification(audioType, payload);
+            window.notificationAudio.playNotification(audioType, safePayload);
         }
 
         // Handle specific types that need custom logic
         if (type === 'bits') {
-            this.triggerBitsCelebration(payload.amount || payload.bits || 50);
+            this.triggerBitsCelebration(safePayload.amount || safePayload.bits || 50);
         } else if (type === 'subscription' || type === 'resub' || type === 'giftsub') {
             this.triggerSubCelebration();
-            if (payload.textPrompt) {
-                this.showSubBanner(payload.textPrompt);
+            if (safePayload.textPrompt) {
+                this.showSubBanner(safePayload.textPrompt);
             }
         } else if (type === 'milestone') {
              // Milestone specific logic if any
         }
 
         // Show the main alert popup with visual cue and text
-        this.showAlertPopup(payload);
+        this.showAlertPopup(safePayload);
 
         // Use AsylumEffects for the main alert popup
         if (window.asylumEffects) {
             window.asylumEffects.triggerEffect({
-                textPrompt: payload.textPrompt || payload.name,
-                backgroundColor: payload.backgroundColor,
-                textColor: payload.textColor,
-                borderColor: payload.borderColor,
-                duration: payload.duration || 5000,
-                soundTrigger: payload.sound, // AsylumEffects might handle its own sound too
-                effects: payload.effects || {}
+                textPrompt: safePayload.textPrompt || safePayload.name,
+                backgroundColor: safePayload.backgroundColor,
+                textColor: safePayload.textColor,
+                borderColor: safePayload.borderColor,
+                duration: safePayload.duration || 5000,
+                soundTrigger: safePayload.sound, // AsylumEffects might handle its own sound too
+                effects: safePayload.effects || {}
             });
         }
     },
 
     showAlertPopup: function(payload) {
+        const safePayload = (payload && typeof payload === 'object') ? payload : { textPrompt: payload != null ? String(payload) : '' };
         const popup = document.getElementById('alert-popup');
         const title = document.getElementById('alert-title');
         const message = document.getElementById('alert-message');
@@ -150,15 +133,15 @@ window.overlayInterop = {
         if (!popup || !title || !message) return;
 
         // Update text content
-        title.textContent = payload.name || 'ALERT'; // Or use type?
+        title.textContent = safePayload.name || 'ALERT'; // Or use type?
         // Intentionally do NOT fall back to payload.message.
         // payload.message often contains raw Twitch chat/resub text and we do not want to render chat on the overlay.
-        message.textContent = payload.textPrompt || '';
+        message.textContent = safePayload.textPrompt || '';
 
         // Update visual cue (image)
         if (image) {
             // Validate visualCue is a likely URL/path and not a description
-            const visualCue = payload.visualCue;
+            const visualCue = safePayload.visualCue;
             const isValidImage = visualCue &&
                                (visualCue.startsWith('http') ||
                                 visualCue.startsWith('/') ||
@@ -179,18 +162,18 @@ window.overlayInterop = {
         }
 
         // Apply colors if provided
-        if (payload.backgroundColor) popup.style.backgroundColor = payload.backgroundColor;
-        if (payload.borderColor) popup.style.borderColor = payload.borderColor;
-        if (payload.textColor) {
-            title.style.color = payload.textColor;
-            message.style.color = payload.textColor;
+        if (safePayload.backgroundColor) popup.style.backgroundColor = safePayload.backgroundColor;
+        if (safePayload.borderColor) popup.style.borderColor = safePayload.borderColor;
+        if (safePayload.textColor) {
+            title.style.color = safePayload.textColor;
+            message.style.color = safePayload.textColor;
         }
 
         // Show popup
         popup.classList.add('show');
 
         // Hide after duration
-        const duration = payload.duration || 5000;
+        const duration = safePayload.duration || 5000;
 
         if (popup.__hideTimer) clearTimeout(popup.__hideTimer);
 
@@ -273,21 +256,31 @@ window.overlayInterop = {
     },
 
     triggerBitsGoalCelebration: function() {
-        const alert = document.getElementById('alert-popup');
-        if (alert) {
-            alert.innerHTML = '🎯 BITS GOAL REACHED! 💎';
-            alert.classList.add('show');
+        // Reuse the existing alert popup markup; do NOT replace innerHTML (it breaks later alerts).
+        const popup = document.getElementById('alert-popup');
+        const title = document.getElementById('alert-title');
+        const message = document.getElementById('alert-message');
+        const image = document.getElementById('alert-image');
 
-            // Add sparkle effect
-            this.createSparkles();
+        if (!popup || !title || !message) return;
 
-            setTimeout(() => {
-                alert.classList.add('hide');
-                setTimeout(() => {
-                    alert.classList.remove('show', 'hide');
-                }, 500);
-            }, 5000);
+        if (image) {
+            image.classList.remove('show');
+            image.src = '';
         }
+
+        title.textContent = 'BITS GOAL';
+        message.textContent = '🎯 BITS GOAL REACHED! 💎';
+
+        popup.classList.add('show');
+
+        // Add sparkle effect
+        this.createSparkles();
+
+        if (popup.__hideTimer) clearTimeout(popup.__hideTimer);
+        popup.__hideTimer = setTimeout(() => {
+            popup.classList.remove('show');
+        }, 5000);
     },
 
     createSparkles: function() {
