@@ -570,8 +570,21 @@
             break;
           case 'milestoneReached':
             // Normalize milestoneReached to the user-facing 'milestone' alert.
-            if (window.overlayInterop) {
-              window.overlayInterop.triggerAlert('milestone', data || {});
+            if (window.overlayInterop && data) {
+              const { counterType, milestone, newValue } = data;
+              const readableCounter = counterType && typeof counterType === 'string'
+                ? counterType.charAt(0).toUpperCase() + counterType.slice(1)
+                : 'Counter';
+              const milestoneLabel = milestone != null ? milestone : newValue;
+              const textPrompt = milestoneLabel != null
+                ? readableCounter + ' milestone reached: ' + milestoneLabel
+                : readableCounter + ' milestone reached';
+              const alertPayload = {
+                ...data,
+                name: readableCounter + ' milestone',
+                textPrompt
+              };
+              window.overlayInterop.triggerAlert('milestone', alertPayload);
             }
             break;
           case 'bitsGoalUpdate':

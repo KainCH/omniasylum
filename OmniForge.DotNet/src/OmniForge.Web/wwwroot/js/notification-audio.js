@@ -219,6 +219,20 @@ class NotificationAudioManager {
             return;
         }
 
+        // Suppress audio during resume/backlog scenarios (e.g. immediately after WS reconnect)
+        if (window.omniSuppressNotificationAudioResume === true) {
+            console.log('🔇 Notification audio suppressed due to resume backlog protection:', eventType);
+            return;
+        }
+
+        // Do not play sounds when the overlay/document is not visible (e.g., OBS scene switches)
+        if (typeof document !== 'undefined' &&
+            typeof document.visibilityState === 'string' &&
+            document.visibilityState !== 'visible') {
+            console.log('🔇 Notification audio suppressed because document is not visible:', document.visibilityState, eventType);
+            return;
+        }
+
         if (!this.notificationSounds[eventType]) {
             console.warn('⚠️ No sound configured for event type:', eventType);
             return;

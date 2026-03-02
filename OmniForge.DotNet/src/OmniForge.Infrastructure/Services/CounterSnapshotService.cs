@@ -58,6 +58,9 @@ namespace OmniForge.Infrastructure.Services
                 {
                     if (ct.IsCancellationRequested) break;
 
+                    // Skip inactive accounts to avoid unnecessary storage reads/writes
+                    if (!user.IsActive) continue;
+
                     var userId = user.TwitchUserId;
                     if (string.IsNullOrWhiteSpace(userId)) continue;
 

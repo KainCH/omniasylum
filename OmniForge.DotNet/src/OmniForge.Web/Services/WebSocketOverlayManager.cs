@@ -18,6 +18,10 @@ namespace OmniForge.Web.Services
         private readonly IStreamMonitorService? _streamMonitorService;
         private readonly IServiceScopeFactory? _scopeFactory;
 
+        // Short-lived cache for the DB live-check so we don't hit storage on every reconnect.
+        // Entry expires after 60 seconds, which is well within a watchdog heartbeat cycle.
+        private readonly ConcurrentDictionary<string, (bool isLive, DateTime expiry)> _dbLiveCache = new();
+
         public WebSocketOverlayManager(
             ILogger<WebSocketOverlayManager> logger,
             IStreamMonitorService? streamMonitorService = null,
@@ -80,20 +84,32 @@ namespace OmniForge.Web.Services
 
             if (!isLiveInMemory && _scopeFactory != null)
             {
-                try
+                // Check the 60-second cache before hitting storage
+                var now = DateTime.UtcNow;
+                if (_dbLiveCache.TryGetValue(safeUserId!, out var cached) && cached.expiry > now)
                 {
-                    using var scope = _scopeFactory.CreateScope();
-                    var counterRepo = scope.ServiceProvider.GetService<ICounterRepository>();
-                    if (counterRepo != null)
-                    {
-                        var counters = await counterRepo.GetCountersAsync(safeUserId!).ConfigureAwait(false);
-                        isLiveInDb = counters?.StreamStarted != null;
-                    }
+                    isLiveInDb = cached.isLive;
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogWarning(ex, "⚠️ DB fallback live-check failed for user {UserId} (conn: {ConnectionId})",
-                        (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var counterRepo = scope.ServiceProvider.GetService<ICounterRepository>();
+                        if (counterRepo != null)
+                        {
+                            var counters = await counterRepo.GetCountersAsync(safeUserId!).ConfigureAwait(false);
+                            isLiveInDb = counters?.StreamStarted != null;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ DB fallback live-check failed for user {UserId} (conn: {ConnectionId})",
+                            (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+                    }
+
+                    // Cache result for 60 seconds regardless of outcome
+                    _dbLiveCache[safeUserId!] = (isLiveInDb, now.AddSeconds(60));
                 }
             }
 
