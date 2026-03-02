@@ -36,188 +36,180 @@
         }
         else
         {
-          <div class="counters-grid">
-            @if (overlaySettings?.Counters?.Deaths != false)
-            {
-              <div class="counter-box deaths">
-                <div class="counter-label">Deaths</div>
-                <div class="counter-value">@counter.Deaths</div>
-              </div>
-            }
-
-            @if (overlaySettings?.Counters?.Swears != false)
-            {
-              <div class="counter-box swears">
-                <div class="counter-label">Swears</div>
-                <div class="counter-value">@counter.Swears</div>
-              </div>
-            }
-
-            @if (overlaySettings?.Counters?.Screams != false)
-            {
-              <div class="counter-box screams">
-                <div class="counter-label">Screams</div>
-                <div class="counter-value">@counter.Screams</div>
-              </div>
-            }
-
-            @if (overlaySettings?.Counters?.Bits == true)
-            {
-              <div class="counter-box bits">
-                <div class="counter-label">Bits</div>
-                <div class="counter-value">@counter.Bits</div>
-              </div>
-            }
-          </div>
-
-          if (!string.IsNullOrEmpty(errorMessage))
-          {
-            <div class="alert alert-danger mt-3" role="alert">
-              @errorMessage
+          <div class="current-game mb-3">
+            <span class="current-game-label">Current Game:</span>
+            <span class="current-game-name">@(string.IsNullOrEmpty(counter.LastCategoryName) ? "Not set" :
+                        counter.LastCategoryName)</span>
             </div>
-          }
-          else if (!string.IsNullOrEmpty(overlaySaveError))
-          {
-            <div class="alert alert-warning mt-3" role="alert">
-              @overlaySaveError
-            </div>
-          }
 
-          <div class="controls-section">
-            <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
-              <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
-              <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
-            </button>
-            <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
-              @if (resettingCounters)
+            <div class="counter-list">
+              @if (overlaySettings?.Counters?.Deaths != false)
               {
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-              }
-              <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
-            </button>
-            <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
-              <i class="bi bi-gear-fill"></i> Settings
-            </button>
-            <button class="btn-custom btn-settings" @onclick="() => showTimerSettings = true" title="Timer Settings">
-              <i class="bi bi-stopwatch"></i> Timer
-            </button>
-            <button class="btn-custom btn-alerts" @onclick="NavigateToAlerts">
-              <i class="bi bi-bell-fill"></i> Alerts
-            </button>
-            <button class="btn-custom btn-effects" @onclick="() => showAlertEffects = true">
-              <i class="bi bi-magic"></i> Effects
-            </button>
-          </div>
-
-          <div class="stats-grid">
-            <div class="stat-item">
-              <span>Total Events:</span>
-              <span>@(counter.Deaths + counter.Swears)</span>
-            </div>
-            <div class="stat-item">
-              <span>Last Updated:</span>
-              <span>@(counter.LastUpdated.ToLocalTime().ToString("g"))</span>
-            </div>
-          </div>
-
-          @if (monitorStatus != null)
-          {
-            <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
-              <h5><i class="bi bi-activity"></i> Monitor Status</h5>
-              <div class="row">
-                <div class="col-md-6">
-                  <p>
-                    <strong>Status:</strong>
-                    <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
-                      @(monitorStatus.Connected ? "Connected" : "Disconnected")
-                    </span>
-                  </p>
-                  <p>
-                    <strong>Monitoring You:</strong>
-                    <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
-                      @(isMonitoring ? "Yes" : "No")
-                    </span>
-                  </p>
+                <div class="counter-item" data-counter="deaths">
+                  <span class="counter-name">Deaths</span>
+                  <span class="counter-value">@counter.Deaths</span>
                 </div>
-                <div class="col-md-6">
-                  <p>
-                    <strong>Subscriptions:</strong>
-                    @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
-                    {
-                      @foreach (var sub in monitorStatus.Subscriptions)
-                      {
-                        <span class="badge bg-info text-dark me-1">@sub</span>
-                      }
-                    }
-                    else
-                    {
-                      <span class="text-muted">None</span>
-                    }
-                  </p>
-                  <p>
-                    <strong>Last Discord Notification:</strong>
-                    @if (monitorStatus.LastDiscordNotification.HasValue)
-                    {
-                      <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
-                        @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
-                        <i
-                        class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+              }
+              @if (overlaySettings?.Counters?.Swears != false)
+              {
+                <div class="counter-item" data-counter="swears">
+                  <span class="counter-name">Swears</span>
+                  <span class="counter-value">@counter.Swears</span>
+                </div>
+              }
+              @if (overlaySettings?.Counters?.Screams != false)
+              {
+                <div class="counter-item" data-counter="screams">
+                  <span class="counter-name">Screams</span>
+                  <span class="counter-value">@counter.Screams</span>
+                </div>
+              }
+              @if (overlaySettings?.Counters?.Bits == true)
+              {
+                <div class="counter-item" data-counter="bits">
+                  <span class="counter-name">Bits</span>
+                  <span class="counter-value">@counter.Bits</span>
+                </div>
+              }
+              @foreach (var kvp in counter.CustomCounters)
+              {
+                <div class="counter-item" data-counter="@kvp.Key.ToLower()">
+                  <span class="counter-name">@kvp.Key</span>
+                  <span class="counter-value">@kvp.Value</span>
+                </div>
+              }
+            </div>
+
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+              <div class="alert alert-danger mt-3" role="alert">
+                @errorMessage
+              </div>
+            }
+            else if (!string.IsNullOrEmpty(overlaySaveError))
+            {
+              <div class="alert alert-warning mt-3" role="alert">
+                @overlaySaveError
+              </div>
+            }
+
+            <div class="controls-section">
+              <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
+                <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
+                <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
+              </button>
+              <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
+                @if (resettingCounters)
+                {
+                  <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                }
+                <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
+              </button>
+              <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
+                <i class="bi bi-gear-fill"></i> Settings
+              </button>
+              <button class="btn-custom btn-settings" @onclick="() => showTimerSettings = true" title="Timer Settings">
+                <i class="bi bi-stopwatch"></i> Timer
+              </button>
+            </div>
+
+            @if (monitorStatus != null)
+            {
+              <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
+                <h5><i class="bi bi-activity"></i> Monitor Status</h5>
+                <div class="row">
+                  <div class="col-md-6">
+                    <p>
+                      <strong>Status:</strong>
+                      <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
+                        @(monitorStatus.Connected ? "Connected" : "Disconnected")
                       </span>
-                    }
-                    else
-                    {
-                      <span class="text-muted">Never</span>
-                    }
-                  </p>
+                    </p>
+                    <p>
+                      <strong>Monitoring You:</strong>
+                      <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
+                        @(isMonitoring ? "Yes" : "No")
+                      </span>
+                    </p>
+                  </div>
+                  <div class="col-md-6">
+                    <p>
+                      <strong>Subscriptions:</strong>
+                      @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
+                      {
+                        @foreach (var sub in monitorStatus.Subscriptions)
+                        {
+                          <span class="badge bg-info text-dark me-1">@sub</span>
+                        }
+                      }
+                      else
+                      {
+                        <span class="text-muted">None</span>
+                      }
+                    </p>
+                    <p>
+                      <strong>Last Discord Notification:</strong>
+                      @if (monitorStatus.LastDiscordNotification.HasValue)
+                      {
+                        <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
+                          @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
+                          <i
+                          class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+                        </span>
+                      }
+                      else
+                      {
+                        <span class="text-muted">Never</span>
+                      }
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          }
+            }
 
-          <div class="mt-4 text-center">
-            <p>
-              <strong>Twitch User ID:</strong> @TwitchUserId <br />
-              <strong>Overlay URL (v1):</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
-              <strong>Preview URL (v1):</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
+            <div class="mt-4 text-center">
+              <p>
+                <strong>Twitch User ID:</strong> @TwitchUserId <br />
+                <strong>Overlay URL (v1):</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
+                <strong>Preview URL (v1):</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
 
-              @if (context.User.IsInRole("admin"))
+                @if (context.User.IsInRole("admin"))
+                {
+                  <br />
+                  <strong>Overlay URL (v2):</strong>
+
+                  <a href="@OverlayV2Url" target="_blank">@OverlayV2Url</a>
+
+                  <br />
+                  <strong>Preview URL (v2):</strong>
+
+                  <a href="@OverlayV2PreviewUrl" target="_blank">@OverlayV2PreviewUrl</a>
+                }
+              </p>
+
+              @if (overlaySettings != null)
               {
-                <br />
-                <strong>Overlay URL (v2):</strong>
-
-                <a href="@OverlayV2Url" target="_blank">@OverlayV2Url</a>
-              
-                <br />
-                <strong>Preview URL (v2):</strong>
-
-                <a href="@OverlayV2PreviewUrl" target="_blank">@OverlayV2PreviewUrl</a>
-              }
-            </p>
-
-            @if (overlaySettings != null)
-            {
-              <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
-                <div class="form-check form-switch">
-                  <input id="offlinePreviewToggle" class="form-check-input" type="checkbox"
-                         checked="@overlaySettings.OfflinePreview" @onchange="OnOfflinePreviewChanged" />
-                  <label class="form-check-label" for="offlinePreviewToggle">Offline Preview (force visible when
-                    offline)</label>
+                <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
+                  <div class="form-check form-switch">
+                    <input id="offlinePreviewToggle" class="form-check-input" type="checkbox"
+                           checked="@overlaySettings.OfflinePreview" @onchange="OnOfflinePreviewChanged" />
+                    <label class="form-check-label" for="offlinePreviewToggle">Offline Preview (force visible when
+                      offline)</label>
+                    </div>
+                    @if (savingOfflinePreview)
+                    {
+                      <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                    }
                   </div>
-                  @if (savingOfflinePreview)
-                  {
-                    <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
-                  }
-                </div>
-              }
-            </div>
+                }
+              </div>
 
-            <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
-            <TimerSettingsModal @bind-Show="showTimerSettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
-            <AlertEffectsModal @bind-Show="showAlertEffects" />
-          }
-        </Authorized>
-    </AuthorizeView>
-  </div>
+              <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+              <TimerSettingsModal @bind-Show="showTimerSettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+            }
+          </Authorized>
+        </AuthorizeView>
+    </div>
 
 @code {
   [CascadingParameter]
@@ -237,7 +229,6 @@
   private bool resettingCounters = false;
   private bool showOverlaySettings = false;
   private bool showTimerSettings = false;
-  private bool showAlertEffects = false;
   private bool isMonitoring = false;
   private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
   private Timer? _refreshTimer;
@@ -321,16 +312,6 @@
     }
   }
 
-  private void NavigateToAlerts()
-  {
-    if (!string.IsNullOrWhiteSpace(StreamerId))
-    {
-      NavigationManager.NavigateTo($"manage/{StreamerId}/alerts");
-      return;
-    }
-    NavigationManager.NavigateTo("alerts");
-  }
-
   private void RefreshStatus()
   {
     if (!string.IsNullOrEmpty(TwitchUserId))
@@ -342,7 +323,7 @@
 
   private bool IsAnyModalOpen()
   {
-    return showOverlaySettings || showTimerSettings || showAlertEffects;
+    return showOverlaySettings || showTimerSettings;
   }
 
   public void Dispose()
