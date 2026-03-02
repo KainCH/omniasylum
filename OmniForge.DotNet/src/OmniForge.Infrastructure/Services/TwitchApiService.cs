@@ -185,6 +185,80 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task BanUserAsync(string broadcasterId, string userId, string reason)
+        {
+            try
+            {
+                var botCreds = await _botCredentialRepository.GetAsync();
+                if (botCreds == null || string.IsNullOrEmpty(botCreds.AccessToken))
+                {
+                    _logger.LogWarning("⚠️ Cannot ban user: bot credentials missing. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    return;
+                }
+
+                // Refresh bot token if expiring within 5 minutes
+                if (botCreds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
+                {
+                    _logger.LogInformation("🔄 Refreshing Forge bot token before ban. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
+                    if (refreshed == null)
+                    {
+                        _logger.LogError("❌ Failed to refresh bot token; cannot ban user. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                        return;
+                    }
+
+                    botCreds.AccessToken = refreshed.AccessToken;
+                    botCreds.RefreshToken = refreshed.RefreshToken;
+                    botCreds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                    await _botCredentialRepository.SaveAsync(botCreds);
+                }
+
+                var clientId = _twitchSettings.ClientId;
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var botUserId = botCreds.UserId;
+                if (string.IsNullOrEmpty(botUserId))
+                {
+                    _logger.LogWarning("⚠️ Bot UserId is missing; cannot ban user. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    return;
+                }
+
+                var url = $"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&moderator_id={Uri.EscapeDataString(botUserId)}";
+
+                var client = _httpClientFactory.CreateClient();
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", botCreds.AccessToken);
+
+                var payload = new
+                {
+                    data = new
+                    {
+                        user_id = userId,
+                        reason = reason
+                    }
+                };
+
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("❌ Failed to ban user via Helix. broadcaster_id={BroadcasterId}, user_id={UserId}, status={Status}, error={Error}",
+                        EscapeLogValue(broadcasterId), EscapeLogValue(userId), (int)response.StatusCode, EscapeLogValue(errorContent));
+                    return;
+                }
+
+                _logger.LogInformation("✅ Successfully banned user {UserId} in channel {BroadcasterId}. Reason: {Reason}",
+                    EscapeLogValue(userId), EscapeLogValue(broadcasterId), EscapeLogValue(reason));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error banning user {UserId} in channel {BroadcasterId}", EscapeLogValue(userId), EscapeLogValue(broadcasterId));
+            }
+        }
+
         private static HelixErrorResponse? TryParseHelixError(string? json)
         {
             if (string.IsNullOrWhiteSpace(json))

@@ -1126,5 +1126,151 @@ namespace OmniForge.Tests
             _mockHelixWrapper.Verify(x => x.GetCustomRewardsAsync("test_client_id", "bad_token", userId), Times.Once);
             _mockHelixWrapper.Verify(x => x.GetCustomRewardsAsync("test_client_id", "new_token", userId), Times.Once);
         }
+
+        [Fact]
+        public async Task BanUserAsync_WhenBotCredentialsValid_ShouldPostToHelixBanEndpoint()
+        {
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    UserId = "bot-999",
+                    Username = "omniforge_bot",
+                    AccessToken = "bot-token",
+                    RefreshToken = "bot-refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            HttpRequestMessage? capturedRequest = null;
+            string? capturedBody = null;
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedRequest = req;
+                capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
+
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+
+            await _service.BanUserAsync("broadcaster-123", "evader-456", "Auto-banned: likely ban evader");
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(HttpMethod.Post, capturedRequest!.Method);
+            Assert.Contains("broadcaster_id=broadcaster-123", capturedRequest.RequestUri!.Query);
+            Assert.Contains("moderator_id=bot-999", capturedRequest.RequestUri!.Query);
+
+            Assert.NotNull(capturedBody);
+            var doc = JsonDocument.Parse(capturedBody!);
+            var data = doc.RootElement.GetProperty("data");
+            Assert.Equal("evader-456", data.GetProperty("user_id").GetString());
+            Assert.Equal("Auto-banned: likely ban evader", data.GetProperty("reason").GetString());
+
+            _mockBotCredentialRepository.Verify(x => x.SaveAsync(It.IsAny<BotCredentials>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task BanUserAsync_WhenBotCredentialsMissing_ShouldReturnWithoutCallingHelix()
+        {
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync((BotCredentials?)null);
+
+            var httpCalled = false;
+            var handler = new StubHttpMessageHandler(_ => { httpCalled = true; return new HttpResponseMessage(HttpStatusCode.OK); });
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+
+            await _service.BanUserAsync("broadcaster-123", "evader-456", "test");
+
+            Assert.False(httpCalled);
+        }
+
+        [Fact]
+        public async Task BanUserAsync_WhenBotUserIdMissing_ShouldReturnWithoutCallingHelix()
+        {
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    UserId = string.Empty,
+                    Username = "omniforge_bot",
+                    AccessToken = "bot-token",
+                    RefreshToken = "bot-refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            var httpCalled = false;
+            var handler = new StubHttpMessageHandler(_ => { httpCalled = true; return new HttpResponseMessage(HttpStatusCode.OK); });
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+
+            await _service.BanUserAsync("broadcaster-123", "evader-456", "test");
+
+            Assert.False(httpCalled);
+        }
+
+        [Fact]
+        public async Task BanUserAsync_WhenBotTokenExpiring_ShouldRefreshTokenBeforeBan()
+        {
+            var expiredCreds = new BotCredentials
+            {
+                UserId = "bot-999",
+                Username = "omniforge_bot",
+                AccessToken = "old-token",
+                RefreshToken = "bot-refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddMinutes(2) // within 5-minute refresh window
+            };
+
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(expiredCreds);
+
+            var newToken = new TwitchTokenResponse { AccessToken = "new-token", RefreshToken = "new-refresh", ExpiresIn = 3600 };
+            _mockAuthService.Setup(x => x.RefreshTokenAsync("bot-refresh")).ReturnsAsync(newToken);
+
+            HttpRequestMessage? capturedRequest = null;
+            var handler = new StubHttpMessageHandler(req =>
+            {
+                capturedRequest = req;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+
+            await _service.BanUserAsync("broadcaster-123", "evader-456", "test");
+
+            _mockAuthService.Verify(x => x.RefreshTokenAsync("bot-refresh"), Times.Once);
+            _mockBotCredentialRepository.Verify(x => x.SaveAsync(It.Is<BotCredentials>(c => c.AccessToken == "new-token")), Times.Once);
+
+            // The request should use the new token.
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("Bearer new-token", capturedRequest!.Headers.Authorization!.ToString());
+        }
+
+        [Fact]
+        public async Task BanUserAsync_WhenHelixReturnsError_ShouldLogWarningAndNotThrow()
+        {
+            _mockBotCredentialRepository
+                .Setup(x => x.GetAsync())
+                .ReturnsAsync(new BotCredentials
+                {
+                    UserId = "bot-999",
+                    Username = "omniforge_bot",
+                    AccessToken = "bot-token",
+                    RefreshToken = "bot-refresh",
+                    TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+                });
+
+            var handler = new StubHttpMessageHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("{\"error\":\"Forbidden\",\"status\":403,\"message\":\"user is not a moderator\"}", Encoding.UTF8, "application/json")
+                });
+            using var httpClient = new HttpClient(handler);
+            _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+
+            // Should not throw.
+            var ex = await Record.ExceptionAsync(() => _service.BanUserAsync("broadcaster-123", "evader-456", "test"));
+            Assert.Null(ex);
+        }
     }
 }

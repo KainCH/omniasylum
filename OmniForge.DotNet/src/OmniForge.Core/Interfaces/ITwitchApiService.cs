@@ -24,6 +24,7 @@ namespace OmniForge.Core.Interfaces
 
         // Moderation
         Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default);
+        Task BanUserAsync(string broadcasterId, string userId, string reason);
 
         // AutoMod settings
         Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId);

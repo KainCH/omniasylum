@@ -543,6 +543,30 @@ namespace OmniForge.Infrastructure.Services
                         }
                     }
 
+                    // Suspicious user / ban evasion detection (requires AutoBanEvaders feature + bot with moderator:read:suspicious_users scope).
+                    if (user.Features.AutoBanEvaders)
+                    {
+                        if (useBotForChannelEvents && botCredentials != null)
+                        {
+                            var suspiciousUserCondition = new Dictionary<string, string>
+                            {
+                                { "broadcaster_user_id", broadcasterId },
+                                { "moderator_user_id", channelEventsUserId }
+                            };
+
+                            if (await SubscribeWithBotRetryAsync(helixWrapper, authService, botCredentialRepository!, botCredentials!, sessionId, "channel.suspicious_user.message", "1", suspiciousUserCondition, token).ConfigureAwait(false))
+                            {
+                                subscribedTypes.Add("channel.suspicious_user.message");
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "🔒 Skipping channel.suspicious_user.message EventSub subscription for user {UserId}: bot is required to hold the moderator:read:suspicious_users scope for ban evader detection.",
+                                EscapeLogValue(userId));
+                        }
+                    }
+
                     // User may have pressed Stop during reconnect/resubscribe. Don't re-add them.
                     if (!UserStillWantsMonitoring(userId))
                     {

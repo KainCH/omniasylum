@@ -97,6 +97,9 @@ namespace OmniForge.Web.Controllers
                 "moderator:manage:banned_users",
                 "moderator:manage:chat_messages",
 
+                // Suspicious user / ban evasion detection
+                "moderator:read:suspicious_users",
+
                 // Bits & clips
                 "bits:read",
                 "clips:edit",
@@ -169,6 +172,7 @@ namespace OmniForge.Web.Controllers
 
             await _botCredentialRepository.SaveAsync(new BotCredentials
             {
+                UserId = userInfo.Id,
                 Username = userInfo.Login,
                 AccessToken = tokenResponse.AccessToken,
                 RefreshToken = tokenResponse.RefreshToken,

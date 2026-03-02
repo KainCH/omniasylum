@@ -47,6 +47,7 @@ namespace OmniForge.Core.Entities
         public bool DiscordWebhook { get; set; } = false;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
+        public bool AutoBanEvaders { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 
