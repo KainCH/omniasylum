@@ -229,7 +229,7 @@ app.UseAntiforgery();
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
-app.UseWebSockets(); // Enable WebSockets
+// WebSockets already enabled above with KeepAliveInterval = 20s
 app.UseMiddleware<AuthMiddleware>();
 app.UseMiddleware<WebSocketOverlayMiddleware>();
 

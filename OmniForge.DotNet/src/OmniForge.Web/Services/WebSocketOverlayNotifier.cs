@@ -75,6 +75,7 @@ namespace OmniForge.Web.Services
 
             var data = new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" };
             var payload = await EnrichPayloadAsync(userId, "follow", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "follow", payload);
         }
 
@@ -84,6 +85,7 @@ namespace OmniForge.Web.Services
 
             var data = new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" };
             var payload = await EnrichPayloadAsync(userId, "subscription", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "subscription", payload);
         }
 
@@ -95,6 +97,7 @@ namespace OmniForge.Web.Services
             // We only act on commands; we don't display chat.
             var data = new { name = displayName, displayName, months, tier, textPrompt = $"{displayName} Resubscribed x{months}" };
             var payload = await EnrichPayloadAsync(userId, "resub", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "resub", payload);
         }
 
@@ -104,6 +107,7 @@ namespace OmniForge.Web.Services
 
             var data = new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" };
             var payload = await EnrichPayloadAsync(userId, "giftsub", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "giftsub", payload);
         }
 
@@ -115,6 +119,7 @@ namespace OmniForge.Web.Services
             // We only act on commands; we don't display chat.
             var data = new { name = displayName, displayName, amount, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
             var payload = await EnrichPayloadAsync(userId, "bits", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "bits", payload);
         }
 
@@ -124,6 +129,7 @@ namespace OmniForge.Web.Services
 
             var data = new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" };
             var payload = await EnrichPayloadAsync(userId, "raid", data);
+            if (IsSuppressed(payload)) return;
             await _webSocketManager.SendToUserAsync(userId, "raid", payload);
         }
 
@@ -207,6 +213,17 @@ namespace OmniForge.Web.Services
             }
         }
 
+        /// <summary>
+        /// Checks whether the enriched payload signals that the alert is suppressed
+        /// (i.e. a matching alert template exists in the DB but is disabled by the user).
+        /// </summary>
+        private static bool IsSuppressed(object payload)
+        {
+            return payload is Dictionary<string, object> dict
+                && dict.TryGetValue("suppress", out var val)
+                && val is true;
+        }
+
         private static bool IsOverlayNotificationLoggingDisabled()
         {
             var raw = Environment.GetEnvironmentVariable("OMNIFORGE_DISABLE_OVERLAY_NOTIFICATION_LOGS");
@@ -242,18 +259,9 @@ namespace OmniForge.Web.Services
                 var alert = alerts.FirstOrDefault(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase) && a.IsEnabled);
                 if (alert == null)
                 {
-                    // Matching alert exists but is disabled; return baseData but maybe we should suppress?
-                    // For now, returning baseData mimics old behavior (passthrough if not found/disabled)
-                    // But wait, if it's disabled in DB, we probably shouldn't show it at all?
-                    // The old logic for CustomAlert was: if disabled, return.
-                    // But for standard events (follow), we always want to show *something* (default behavior) unless explicitly disabled?
-                    // If the user created a "follow" alert and disabled it, they probably want NO alert.
-                    // But if they never created one, they want default.
-                    // "anyMatching" check handles "never created one".
-                    // If "anyMatching" is true, but "alert" is null (disabled), we should probably return null or a flag to suppress.
-                    // However, changing return type to Task<object?> might break things.
-                    // Let's stick to returning baseData for now to be safe, or maybe add a property "suppress": true?
-                    return baseData;
+                    // Matching alert exists but is explicitly disabled by the user.
+                    // Return a suppression flag so callers can skip the WebSocket send.
+                    return new Dictionary<string, object> { ["suppress"] = true };
                 }
 
                 var payload = new Dictionary<string, object>

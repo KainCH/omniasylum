@@ -2,8 +2,10 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using OmniForge.Core.Interfaces;
 using OmniForge.Core.Utilities;
+using OmniForge.Web;
 
 namespace OmniForge.Web.Services
 {
@@ -13,10 +15,22 @@ namespace OmniForge.Web.Services
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WebSocket>> _userSockets = new();
         private readonly ILogger<WebSocketOverlayManager> _logger;
         private readonly TimeSpan _pingInterval;
+        private readonly IStreamMonitorService? _streamMonitorService;
+        private readonly IServiceScopeFactory? _scopeFactory;
 
-        public WebSocketOverlayManager(ILogger<WebSocketOverlayManager> logger, TimeSpan? pingInterval = null)
+        // Short-lived cache for the DB live-check so we don't hit storage on every reconnect.
+        // Entry expires after 60 seconds, which is well within a watchdog heartbeat cycle.
+        private readonly ConcurrentDictionary<string, (bool isLive, DateTime expiry)> _dbLiveCache = new();
+
+        public WebSocketOverlayManager(
+            ILogger<WebSocketOverlayManager> logger,
+            IStreamMonitorService? streamMonitorService = null,
+            IServiceScopeFactory? scopeFactory = null,
+            TimeSpan? pingInterval = null)
         {
             _logger = logger;
+            _streamMonitorService = streamMonitorService;
+            _scopeFactory = scopeFactory;
             _pingInterval = pingInterval ?? TimeSpan.FromSeconds(30); // Keep alive every 30 seconds
         }
 
@@ -38,6 +52,87 @@ namespace OmniForge.Web.Services
 
             var buffer = new byte[1024 * 4];
             using var pingCts = new CancellationTokenSource();
+
+            // Send initial server info so the overlay can detect server restarts without an HTTP health check.
+            // This is always from the same replica as the socket, avoiding load-balancer confusion.
+            try
+            {
+                var infoPayload = new { method = "serverInfo", data = new { serverInstanceId = ServerInstance.Id } };
+                var infoJson = System.Text.Json.JsonSerializer.Serialize(infoPayload,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+                var infoBytes = Encoding.UTF8.GetBytes(infoJson);
+                await webSocket.SendAsync(new ArraySegment<byte>(infoBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Failed to send serverInfo to overlay for user {UserId} (conn: {ConnectionId})",
+                    (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+            }
+
+            // If the stream is already live, send an immediate heartbeat so the overlay doesn't
+            // wait up to one watchdog minute before discovering the stream is still running.
+            //
+            // Two-tier check:
+            //   1. In-memory _liveBroadcasters via IStreamMonitorService.IsUserLive() — instant, works
+            //      when monitoring is already active in this process.
+            //   2. Azure Table Counter.StreamStarted fallback — covers the gap after a container
+            //      restart before monitoring has been re-established.  StreamStarted is persisted by
+            //      StreamOnlineHandler / StreamOfflineHandler so it reflects the Twitch-confirmed
+            //      live/offline state across process lifetimes.
+            var isLiveInMemory = _streamMonitorService?.IsUserLive(safeUserId!) == true;
+            var isLiveInDb = false;
+
+            if (!isLiveInMemory && _scopeFactory != null)
+            {
+                // Check the 60-second cache before hitting storage
+                var now = DateTime.UtcNow;
+                if (_dbLiveCache.TryGetValue(safeUserId!, out var cached) && cached.expiry > now)
+                {
+                    isLiveInDb = cached.isLive;
+                }
+                else
+                {
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var counterRepo = scope.ServiceProvider.GetService<ICounterRepository>();
+                        if (counterRepo != null)
+                        {
+                            var counters = await counterRepo.GetCountersAsync(safeUserId!).ConfigureAwait(false);
+                            isLiveInDb = counters?.StreamStarted != null;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ DB fallback live-check failed for user {UserId} (conn: {ConnectionId})",
+                            (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+                    }
+
+                    // Cache result for 60 seconds regardless of outcome
+                    _dbLiveCache[safeUserId!] = (isLiveInDb, now.AddSeconds(60));
+                }
+            }
+
+            if (isLiveInMemory || isLiveInDb)
+            {
+                var source = isLiveInMemory ? "monitor" : "db fallback (post-restart)";
+                try
+                {
+                    var livePayload = new { method = "streamStatusUpdate", data = new { streamStatus = "live" } };
+                    var liveJson = System.Text.Json.JsonSerializer.Serialize(livePayload,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+                    var liveBytes = Encoding.UTF8.GetBytes(liveJson);
+                    await webSocket.SendAsync(new ArraySegment<byte>(liveBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    _logger.LogInformation("💓 Sent initial live heartbeat on connect for user {UserId} (conn: {ConnectionId}) — source: {Source}",
+                        (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId,
+                        (source ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Failed to send initial live heartbeat to overlay for user {UserId} (conn: {ConnectionId})",
+                        (safeUserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"), connectionId);
+                }
+            }
 
             // Start ping task to keep connection alive
             var pingTask = SendPingsAsync(webSocket, connectionId, safeUserId!, pingCts.Token);

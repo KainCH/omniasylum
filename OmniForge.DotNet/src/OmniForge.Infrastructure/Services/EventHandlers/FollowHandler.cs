@@ -34,18 +34,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             Logger.LogInformation("New follower {DisplayName} for broadcaster {BroadcasterId}", displayName, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();
-            var alertRouter = scope.ServiceProvider.GetService<IAlertEventRouter>();
             var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
 
-            var alertData = new { user = displayName, displayName };
-
-            if (alertRouter != null)
-            {
-                await alertRouter.RouteAsync(broadcasterId, "channel.follow", "follow", alertData);
-                return;
-            }
-
-            // Fallback if alert router isn't available
+            // Call the overlay notifier directly so the HTML overlay receives standard
+            // WebSocket method names ("follow", "subscription", etc.) instead of being
+            // routed through AlertEventRouter which may send "customAlert" — a method
+            // the static HTML overlay does not handle.
             if (overlayNotifier != null)
             {
                 await overlayNotifier.NotifyFollowerAsync(broadcasterId, displayName);
