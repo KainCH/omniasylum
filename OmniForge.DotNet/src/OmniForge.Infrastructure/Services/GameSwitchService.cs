@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
@@ -17,10 +18,12 @@ namespace OmniForge.Infrastructure.Services
         private readonly IGameCustomCountersConfigRepository _gameCustomCountersConfigRepository;
         private readonly IGameCoreCountersConfigRepository _gameCoreCountersConfigRepository;
         private readonly ICounterRepository _counterRepository;
+        private readonly ICounterLibraryRepository _counterLibraryRepository;
         private readonly IUserRepository _userRepository;
         private readonly ITwitchApiService _twitchApiService;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly IDiscordService _discordService;
+        private readonly IStreamMonitorService _streamMonitorService;
         private readonly ILogger<GameSwitchService> _logger;
 
         public GameSwitchService(
@@ -31,10 +34,12 @@ namespace OmniForge.Infrastructure.Services
             IGameCustomCountersConfigRepository gameCustomCountersConfigRepository,
             IGameCoreCountersConfigRepository gameCoreCountersConfigRepository,
             ICounterRepository counterRepository,
+            ICounterLibraryRepository counterLibraryRepository,
             IUserRepository userRepository,
             ITwitchApiService twitchApiService,
             IOverlayNotifier overlayNotifier,
             IDiscordService discordService,
+            IStreamMonitorService streamMonitorService,
             ILogger<GameSwitchService> logger)
         {
             _gameContextRepository = gameContextRepository;
@@ -44,10 +49,12 @@ namespace OmniForge.Infrastructure.Services
             _gameCustomCountersConfigRepository = gameCustomCountersConfigRepository;
             _gameCoreCountersConfigRepository = gameCoreCountersConfigRepository;
             _counterRepository = counterRepository;
+            _counterLibraryRepository = counterLibraryRepository;
             _userRepository = userRepository;
             _twitchApiService = twitchApiService;
             _overlayNotifier = overlayNotifier;
             _discordService = discordService;
+            _streamMonitorService = streamMonitorService;
             _logger = logger;
         }
 
@@ -551,15 +558,37 @@ namespace OmniForge.Infrastructure.Services
                 var capturedUser = user;
                 var capturedGameName = safeGameName;
                 var capturedBoxArtUrl = upsertedLibraryItem?.BoxArtUrl;
-                var capturedDescriptions = BuildActiveCounterDescriptions(coreSelection, newCustomCountersConfig);
                 var capturedUserId = userId;
                 var capturedGameId = gameId;
+                var capturedIsLive = _streamMonitorService.IsUserLive(userId);
+
+                // Look up counter library items so alias commands appear in the mod channel notification.
+                IReadOnlyDictionary<string, CounterLibraryItem>? capturedLibraryLookup = null;
+                try
+                {
+                    var libraryItems = await _counterLibraryRepository.ListAsync().ConfigureAwait(false);
+                    capturedLibraryLookup = libraryItems
+                        .ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "⚠️ Failed loading counter library for Discord mod notification; aliases will be omitted");
+                }
+
+                var capturedDescriptions = BuildActiveCounterDescriptions(coreSelection, newCustomCountersConfig, capturedLibraryLookup);
 
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _discordService.SendGameChangeAnnouncementAsync(capturedUser, capturedGameName, capturedBoxArtUrl);
+                        // Only announce game change to the public channel when the stream is live.
+                        if (capturedIsLive)
+                        {
+                            await _discordService.SendGameChangeAnnouncementAsync(capturedUser, capturedGameName, capturedBoxArtUrl);
+                        }
+
                         await _discordService.SendModChannelNotificationAsync(capturedUser, capturedGameName, capturedDescriptions);
                     }
                     catch (Exception ex)
@@ -714,7 +743,8 @@ namespace OmniForge.Infrastructure.Services
 
         private static List<string> BuildActiveCounterDescriptions(
             GameCoreCountersConfig? coreSelection,
-            CustomCounterConfiguration? customCounters)
+            CustomCounterConfiguration? customCounters,
+            IReadOnlyDictionary<string, CounterLibraryItem>? libraryLookup = null)
         {
             var descriptions = new List<string>();
 
@@ -736,7 +766,22 @@ namespace OmniForge.Infrastructure.Services
                 {
                     var name = string.IsNullOrWhiteSpace(kvp.Value.Name) ? kvp.Key : kvp.Value.Name;
                     var icon = string.IsNullOrWhiteSpace(kvp.Value.Icon) ? "\ud83c\udfaf" : kvp.Value.Icon;
-                    descriptions.Add($"{icon} **Custom: {name}** \u2014 `!{kvp.Key}` `!{kvp.Key}+`");
+
+                    // Include alias command from the counter library when available.
+                    var longCmd = $"!{kvp.Key}";
+                    var aliasCmd = (string?)null;
+                    if (libraryLookup != null && libraryLookup.TryGetValue(kvp.Key, out var libraryItem))
+                    {
+                        if (!string.IsNullOrWhiteSpace(libraryItem.LongCommand))
+                            longCmd = libraryItem.LongCommand;
+                        if (!string.IsNullOrWhiteSpace(libraryItem.AliasCommand))
+                            aliasCmd = libraryItem.AliasCommand;
+                    }
+
+                    var commands = aliasCmd != null
+                        ? $"`{longCmd}` `{aliasCmd}` `{longCmd}+`"
+                        : $"`{longCmd}` `{longCmd}+`";
+                    descriptions.Add($"{icon} **Custom: {name}** \u2014 {commands}");
                 }
             }
 
