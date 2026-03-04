@@ -147,7 +147,7 @@ else
 
     .overlay-timer .timer-value {
         font-weight: 800;
-        font-size: 28px;
+        font-size: 42px;
         line-height: 1;
     }
 
@@ -490,17 +490,17 @@ else
     }
 
     [JSInvokable]
-    public void OnCounterUpdate(OmniForge.Core.Entities.Counter updatedCounter)
+    public async Task OnCounterUpdate(OmniForge.Core.Entities.Counter updatedCounter)
     {
         counter = updatedCounter;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
-    public void OnStreamStatusUpdate(string status)
+    public async Task OnStreamStatusUpdate(string status)
     {
         StreamStatus = status;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
@@ -530,22 +530,22 @@ else
     }
 
     [JSInvokable]
-    public void OnBitsGoalUpdate(OmniForge.Core.Entities.BitsGoal goal)
+    public async Task OnBitsGoalUpdate(OmniForge.Core.Entities.BitsGoal goal)
     {
         if (user?.OverlaySettings != null)
         {
             user.OverlaySettings.BitsGoal = goal;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     [JSInvokable]
-    public void OnBitsGoalComplete(OmniForge.Core.Entities.BitsGoal goal)
+    public async Task OnBitsGoalComplete(OmniForge.Core.Entities.BitsGoal goal)
     {
         if (user?.OverlaySettings != null)
         {
             user.OverlaySettings.BitsGoal = goal;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -556,19 +556,19 @@ else
     }
 
     [JSInvokable]
-    public void OnStreamStarted(object data)
+    public async Task OnStreamStarted(object data)
     {
         StreamStatus = "live";
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
-    public void OnOverlaySettingsUpdate(OmniForge.Core.Entities.OverlaySettings settings)
+    public async Task OnOverlaySettingsUpdate(OmniForge.Core.Entities.OverlaySettings settings)
     {
         if (user != null)
         {
             user.OverlaySettings = settings;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
