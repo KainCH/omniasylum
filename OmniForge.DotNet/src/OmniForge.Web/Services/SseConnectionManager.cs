@@ -15,14 +15,18 @@ namespace OmniForge.Web.Services
         public string ConnectionId { get; init; } = string.Empty;
         public Stream ResponseBody { get; init; } = Stream.Null;
         public CancellationTokenSource Cts { get; init; } = new();
-        public bool IsReady { get; set; }
+        public SemaphoreSlim WriteLock { get; } = new(1, 1);
+        private volatile bool _isReady;
+        public bool IsReady { get => _isReady; set => _isReady = value; }
     }
 
     public class SseConnectionManager : IHostedService, IDisposable
     {
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, SseClient>> _connections = new();
         private readonly ILogger<SseConnectionManager> _logger;
-        private Timer? _keepaliveTimer;
+        private PeriodicTimer? _keepaliveTimer;
+        private Task? _keepaliveTask;
+        private CancellationTokenSource? _keepaliveCts;
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -118,6 +122,7 @@ namespace OmniForge.Web.Services
                 _logger.LogInformation("SSE disconnected: user_id={UserId}, connection_id={ConnectionId}", userId, connectionId);
                 try { client.Cts.Cancel(); } catch { }
                 try { client.Cts.Dispose(); } catch { }
+                try { client.WriteLock.Dispose(); } catch { }
             }
 
             if (userConnections.IsEmpty)
@@ -141,52 +146,74 @@ namespace OmniForge.Web.Services
             await WriteRawAsync(client, message);
         }
 
-        private static async Task WriteRawAsync(SseClient client, string raw)
+        private static async Task WriteRawAsync(SseClient client, string raw, CancellationToken? cancellationToken = null)
         {
-            var bytes = Encoding.UTF8.GetBytes(raw);
-            await client.ResponseBody.WriteAsync(bytes, client.Cts.Token);
-            await client.ResponseBody.FlushAsync(client.Cts.Token);
+            var ct = cancellationToken ?? client.Cts.Token;
+            await client.WriteLock.WaitAsync(ct);
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(raw);
+                await client.ResponseBody.WriteAsync(bytes, ct);
+                await client.ResponseBody.FlushAsync(ct);
+            }
+            finally
+            {
+                client.WriteLock.Release();
+            }
         }
 
         // IHostedService — manages the keepalive timer
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            // Send a keepalive comment every 30 seconds to prevent proxy/CDN timeouts
-            _keepaliveTimer = new Timer(SendKeepalives, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            _keepaliveCts = new CancellationTokenSource();
+            _keepaliveTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+            _keepaliveTask = SendKeepalivesLoopAsync(_keepaliveCts.Token);
             return Task.CompletedTask;
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
-            _keepaliveTimer?.Change(Timeout.Infinite, 0);
-            return Task.CompletedTask;
+            _keepaliveCts?.Cancel();
+            if (_keepaliveTask != null)
+                await _keepaliveTask.ConfigureAwait(false);
         }
 
-        private void SendKeepalives(object? state)
+        private async Task SendKeepalivesLoopAsync(CancellationToken ct)
         {
-            foreach (var userKvp in _connections)
+            try
             {
-                foreach (var clientKvp in userKvp.Value)
+                while (await _keepaliveTimer!.WaitForNextTickAsync(ct).ConfigureAwait(false))
                 {
-                    var client = clientKvp.Value;
-                    try
+                    foreach (var userKvp in _connections)
                     {
-                        // SSE comment (starts with colon) — not a named event, just keeps the connection alive
-                        var bytes = Encoding.UTF8.GetBytes(": keepalive\n\n");
-                        client.ResponseBody.WriteAsync(bytes, client.Cts.Token).AsTask().GetAwaiter().GetResult();
-                        client.ResponseBody.FlushAsync(client.Cts.Token).GetAwaiter().GetResult();
-                    }
-                    catch
-                    {
-                        RemoveClient(userKvp.Key, clientKvp.Key);
+                        foreach (var clientKvp in userKvp.Value)
+                        {
+                            var client = clientKvp.Value;
+                            try
+                            {
+                                using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(ct, client.Cts.Token);
+                                writeCts.CancelAfter(TimeSpan.FromSeconds(5));
+                                await WriteRawAsync(client, ": keepalive\n\n", writeCts.Token);
+                            }
+                            catch
+                            {
+                                RemoveClient(userKvp.Key, clientKvp.Key);
+                            }
+                        }
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal shutdown
             }
         }
 
         public void Dispose()
         {
+            _keepaliveCts?.Cancel();
+            _keepaliveCts?.Dispose();
             _keepaliveTimer?.Dispose();
         }
     }
