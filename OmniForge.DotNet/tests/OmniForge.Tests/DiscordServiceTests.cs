@@ -673,7 +673,7 @@ namespace OmniForge.Tests
                 .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
                 .Returns(Task.CompletedTask);
 
-            var descriptions = new[] { "\ud83d\udc80 **Deaths** \u2014 `!deaths` `!d+` `!d-`", "\ud83e\udd2c **Swears** \u2014 `!swears` `!sw+` `!sw-`" };
+            var descriptions = new[] { "\ud83d\udc80 **Deaths** \u2014 `!d`", "\ud83e\udd2c **Swears** \u2014 `!sw`" };
 
             await _service.SendModChannelNotificationAsync(user, "Elden Ring", descriptions);
 

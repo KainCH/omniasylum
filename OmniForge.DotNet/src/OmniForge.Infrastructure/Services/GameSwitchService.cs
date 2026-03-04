@@ -751,11 +751,11 @@ namespace OmniForge.Infrastructure.Services
             if (coreSelection != null)
             {
                 if (coreSelection.DeathsEnabled)
-                    descriptions.Add("\ud83d\udc80 **Deaths** \u2014 `!deaths` `!d+` `!d-`");
+                    descriptions.Add("\ud83d\udc80 **Deaths** \u2014 `!d`");
                 if (coreSelection.SwearsEnabled)
-                    descriptions.Add("\ud83e\udd2c **Swears** \u2014 `!swears` `!sw+` `!sw-`");
+                    descriptions.Add("\ud83e\udd2c **Swears** \u2014 `!sw`");
                 if (coreSelection.ScreamsEnabled)
-                    descriptions.Add("\ud83d\ude31 **Screams** \u2014 `!screams` `!sc+` `!sc-`");
+                    descriptions.Add("\ud83d\ude31 **Screams** \u2014 `!sc`");
                 if (coreSelection.BitsEnabled)
                     descriptions.Add("\ud83d\udc8e **Bits** \u2014 `!bits`");
             }
@@ -767,21 +767,16 @@ namespace OmniForge.Infrastructure.Services
                     var name = string.IsNullOrWhiteSpace(kvp.Value.Name) ? kvp.Key : kvp.Value.Name;
                     var icon = string.IsNullOrWhiteSpace(kvp.Value.Icon) ? "\ud83c\udfaf" : kvp.Value.Icon;
 
-                    // Include alias command from the counter library when available.
-                    var longCmd = $"!{kvp.Key}";
+                    // Show only the alias command from the counter library when available.
                     var aliasCmd = (string?)null;
-                    if (libraryLookup != null && libraryLookup.TryGetValue(kvp.Key, out var libraryItem))
+                    if (libraryLookup != null && libraryLookup.TryGetValue(kvp.Key, out var libraryItem)
+                        && !string.IsNullOrWhiteSpace(libraryItem.AliasCommand))
                     {
-                        if (!string.IsNullOrWhiteSpace(libraryItem.LongCommand))
-                            longCmd = libraryItem.LongCommand;
-                        if (!string.IsNullOrWhiteSpace(libraryItem.AliasCommand))
-                            aliasCmd = libraryItem.AliasCommand;
+                        aliasCmd = libraryItem.AliasCommand;
                     }
 
-                    var commands = aliasCmd != null
-                        ? $"`{longCmd}` `{aliasCmd}` `{longCmd}+`"
-                        : $"`{longCmd}` `{longCmd}+`";
-                    descriptions.Add($"{icon} **Custom: {name}** \u2014 {commands}");
+                    var command = aliasCmd ?? $"!{kvp.Key}";
+                    descriptions.Add($"{icon} **Custom: {name}** \u2014 `{command}`");
                 }
             }
 
