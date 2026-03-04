@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using OmniForge.Core.Entities;
 
@@ -8,6 +9,7 @@ namespace OmniForge.Core.Interfaces
         Task SendNotificationAsync(User user, string eventType, object data);
         Task SendTestNotificationAsync(User user);
         Task<bool> ValidateDiscordChannelAsync(string channelId);
-        Task<bool> ValidateWebhookAsync(string webhookUrl);
+        Task SendGameChangeAnnouncementAsync(User user, string gameName, string? boxArtUrl);
+        Task SendModChannelNotificationAsync(User user, string gameName, IReadOnlyList<string> activeCounterDescriptions);
     }
 }

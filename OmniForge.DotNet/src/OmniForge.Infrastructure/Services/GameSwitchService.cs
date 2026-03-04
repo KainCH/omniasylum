@@ -20,6 +20,7 @@ namespace OmniForge.Infrastructure.Services
         private readonly IUserRepository _userRepository;
         private readonly ITwitchApiService _twitchApiService;
         private readonly IOverlayNotifier _overlayNotifier;
+        private readonly IDiscordService _discordService;
         private readonly ILogger<GameSwitchService> _logger;
 
         public GameSwitchService(
@@ -33,6 +34,7 @@ namespace OmniForge.Infrastructure.Services
             IUserRepository userRepository,
             ITwitchApiService twitchApiService,
             IOverlayNotifier overlayNotifier,
+            IDiscordService discordService,
             ILogger<GameSwitchService> logger)
         {
             _gameContextRepository = gameContextRepository;
@@ -45,6 +47,7 @@ namespace OmniForge.Infrastructure.Services
             _userRepository = userRepository;
             _twitchApiService = twitchApiService;
             _overlayNotifier = overlayNotifier;
+            _discordService = discordService;
             _logger = logger;
         }
 
@@ -540,6 +543,36 @@ namespace OmniForge.Infrastructure.Services
             }
 
             await _overlayNotifier.NotifyCounterUpdateAsync(safeUserId, newCounters);
+
+            // Fire-and-forget: Discord notifications are non-critical and should not
+            // delay game switch processing or block EventSub event handling.
+            if (user != null)
+            {
+                var capturedUser = user;
+                var capturedGameName = safeGameName;
+                var capturedBoxArtUrl = upsertedLibraryItem?.BoxArtUrl;
+                var capturedDescriptions = BuildActiveCounterDescriptions(coreSelection, newCustomCountersConfig);
+                var capturedUserId = userId;
+                var capturedGameId = gameId;
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _discordService.SendGameChangeAnnouncementAsync(capturedUser, capturedGameName, capturedBoxArtUrl);
+                        await _discordService.SendModChannelNotificationAsync(capturedUser, capturedGameName, capturedDescriptions);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "❌ Failed sending Discord game-change notifications for user {UserId} game {GameId}",
+                            LogValue.Safe(capturedUserId),
+                            LogValue.Safe(capturedGameId));
+                    }
+                });
+            }
+
             _logger.LogInformation(
                 "🔄 Active game switched for user {UserId}: {GameId} ({GameName})",
                 LogValue.Safe(userId),
@@ -677,6 +710,37 @@ namespace OmniForge.Infrastructure.Services
                 Permission = "everyone",
                 Response = string.Empty
             };
+        }
+
+        private static List<string> BuildActiveCounterDescriptions(
+            GameCoreCountersConfig? coreSelection,
+            CustomCounterConfiguration? customCounters)
+        {
+            var descriptions = new List<string>();
+
+            if (coreSelection != null)
+            {
+                if (coreSelection.DeathsEnabled)
+                    descriptions.Add("\ud83d\udc80 **Deaths** \u2014 `!deaths` `!d+` `!d-`");
+                if (coreSelection.SwearsEnabled)
+                    descriptions.Add("\ud83e\udd2c **Swears** \u2014 `!swears` `!sw+` `!sw-`");
+                if (coreSelection.ScreamsEnabled)
+                    descriptions.Add("\ud83d\ude31 **Screams** \u2014 `!screams` `!sc+` `!sc-`");
+                if (coreSelection.BitsEnabled)
+                    descriptions.Add("\ud83d\udc8e **Bits** \u2014 `!bits`");
+            }
+
+            if (customCounters?.Counters != null)
+            {
+                foreach (var kvp in customCounters.Counters)
+                {
+                    var name = string.IsNullOrWhiteSpace(kvp.Value.Name) ? kvp.Key : kvp.Value.Name;
+                    var icon = string.IsNullOrWhiteSpace(kvp.Value.Icon) ? "\ud83c\udfaf" : kvp.Value.Icon;
+                    descriptions.Add($"{icon} **Custom: {name}** \u2014 `!{kvp.Key}` `!{kvp.Key}+`");
+                }
+            }
+
+            return descriptions;
         }
     }
 }

@@ -656,7 +656,7 @@ namespace OmniForge.Tests.Controllers
             var moderatorId = "test-user-id";
             var streamerId = "streamer-id";
             var moderator = new User { TwitchUserId = moderatorId, ManagedStreamers = new List<string> { streamerId } };
-            var streamer = new User { TwitchUserId = streamerId, DiscordWebhookUrl = "https://discord.com/api/webhooks/123", Features = new FeatureFlags { DiscordNotifications = true } };
+            var streamer = new User { TwitchUserId = streamerId, DiscordChannelId = "123456789012345678", Features = new FeatureFlags { DiscordNotifications = true } };
 
             _mockUserRepository.Setup(repo => repo.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
             _mockUserRepository.Setup(repo => repo.GetUserAsync(streamerId)).ReturnsAsync(streamer);
@@ -715,7 +715,7 @@ namespace OmniForge.Tests.Controllers
             var streamerId = "streamer-id";
             var moderator = new User { TwitchUserId = moderatorId, ManagedStreamers = new List<string> { streamerId } };
             var streamer = new User { TwitchUserId = streamerId, Features = new FeatureFlags() };
-            var request = new ModeratorController.UpdateDiscordWebhookRequest { WebhookUrl = "https://discord.com/api/webhooks/456", Enabled = true };
+            var request = new ModeratorController.UpdateDiscordWebhookRequest { ChannelId = "123456789012345678", Enabled = true };
 
             _mockUserRepository.Setup(repo => repo.GetUserAsync(moderatorId)).ReturnsAsync(moderator);
             _mockUserRepository.Setup(repo => repo.GetUserAsync(streamerId)).ReturnsAsync(streamer);
@@ -723,7 +723,7 @@ namespace OmniForge.Tests.Controllers
             var result = await _controller.UpdateStreamerDiscordWebhook(streamerId, request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            Assert.Equal(request.WebhookUrl, streamer.DiscordWebhookUrl);
+            Assert.Equal(request.ChannelId, streamer.DiscordChannelId);
             Assert.True(streamer.Features.DiscordNotifications);
         }
 

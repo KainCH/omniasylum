@@ -21,8 +21,8 @@ namespace OmniForge.Core.Entities
         public string Role { get; set; } = "streamer";
         public FeatureFlags Features { get; set; } = new FeatureFlags();
         public OverlaySettings OverlaySettings { get; set; } = new OverlaySettings();
-        public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string DiscordChannelId { get; set; } = string.Empty;
+        public string DiscordModChannelId { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
         public DiscordSettings DiscordSettings { get; set; } = new DiscordSettings();
         public bool IsActive { get; set; } = true;
@@ -39,12 +39,10 @@ namespace OmniForge.Core.Entities
         public bool AutoClip { get; set; } = false;
         public bool CustomCommands { get; set; } = false;
         public bool Analytics { get; set; } = false;
-        public bool Webhooks { get; set; } = false;
         public bool BitsIntegration { get; set; } = false;
         public bool StreamOverlay { get; set; } = false;
         public bool AlertAnimations { get; set; } = false;
         public bool DiscordNotifications { get; set; } = true;
-        public bool DiscordWebhook { get; set; } = false;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
@@ -167,6 +165,7 @@ namespace OmniForge.Core.Entities
         public bool FollowerGoal { get; set; } = false;
         public bool SubscriberMilestone { get; set; } = false;
         public bool ChannelPointRedemption { get; set; } = false;
+        public bool GameChange { get; set; } = true;
     }
 
     public class DiscordMilestoneThresholds

@@ -149,7 +149,15 @@ namespace OmniForge.Web.Services
         private static async Task WriteRawAsync(SseClient client, string raw, CancellationToken? cancellationToken = null)
         {
             var ct = cancellationToken ?? client.Cts.Token;
-            await client.WriteLock.WaitAsync(ct);
+            try
+            {
+                await client.WriteLock.WaitAsync(ct);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Client was removed concurrently; skip this write.
+                return;
+            }
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(raw);
@@ -158,7 +166,7 @@ namespace OmniForge.Web.Services
             }
             finally
             {
-                client.WriteLock.Release();
+                try { client.WriteLock.Release(); } catch (ObjectDisposedException) { }
             }
         }
 

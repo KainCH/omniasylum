@@ -137,69 +137,6 @@ namespace OmniForge.Web.Controllers
             });
         }
 
-        [HttpPost("test-webhook-save")]
-        public async Task<IActionResult> TestWebhookSave()
-        {
-            var userId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            var safeUserId = userId!;
-
-            var testWebhookUrl = "https://discord.com/api/webhooks/1234567890/test-webhook-token-12345";
-            _logger.LogInformation("🧪 DEBUG: Testing webhook save for user {UserId}", LogValue.Safe(safeUserId));
-
-            var user = await _userRepository.GetUserAsync(safeUserId!);
-            if (user == null) return NotFound("User not found");
-
-            var originalUrl = user.DiscordWebhookUrl;
-
-            // Update
-            user.DiscordWebhookUrl = testWebhookUrl;
-            await _userRepository.SaveUserAsync(user);
-
-            // Verify
-            var updatedUser = await _userRepository.GetUserAsync(safeUserId!);
-            var success = updatedUser?.DiscordWebhookUrl == testWebhookUrl;
-
-            // Restore (optional, but good for testing) - actually the legacy code leaves it?
-            // Legacy code: "Test the save operation" -> updates it.
-            // It doesn't seem to restore it. But it's a test endpoint.
-
-            return Ok(new
-            {
-                success = true,
-                message = "Webhook save test completed",
-                results = new
-                {
-                    originalUrl,
-                    savedUrl = updatedUser?.DiscordWebhookUrl,
-                    success
-                }
-            });
-        }
-
-        [HttpGet("test-webhook-read")]
-        public async Task<IActionResult> TestWebhookRead()
-        {
-            var userId = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            var safeUserId = userId!;
-
-            _logger.LogInformation("🧪 DEBUG: Testing webhook read for user {UserId}", LogValue.Safe(safeUserId));
-
-            var user = await _userRepository.GetUserAsync(safeUserId!);
-
-            return Ok(new
-            {
-                success = true,
-                webhookData = new
-                {
-                    webhookUrl = user?.DiscordWebhookUrl
-                }
-            });
-        }
-
         [HttpPost("test-stream-notification")]
         public async Task<IActionResult> TestStreamNotification()
         {
@@ -211,13 +148,13 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(safeUserId!);
             if (user == null) return NotFound("User not found");
 
-            if (string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(user.DiscordChannelId))
             {
                 return BadRequest(new
                 {
                     success = false,
-                    error = "No Discord webhook configured",
-                    recommendation = "Configure Discord webhook first"
+                    error = "No Discord channel configured",
+                    recommendation = "Configure Discord channel ID first"
                 });
             }
 
@@ -238,7 +175,7 @@ namespace OmniForge.Web.Controllers
                 success = true,
                 message = $"Test stream notification triggered for {user.Username}",
                 mockEvent,
-                webhookConfigured = true
+                channelConfigured = true
             });
         }
 
@@ -257,13 +194,6 @@ namespace OmniForge.Web.Controllers
 
             var cleanedFields = new System.Collections.Generic.List<string>();
 
-            // Check for test webhook data
-            if (!string.IsNullOrEmpty(user.DiscordWebhookUrl) && user.DiscordWebhookUrl.Contains("test-webhook-token"))
-            {
-                user.DiscordWebhookUrl = "";
-                cleanedFields.Add("DiscordWebhookUrl (test data removed)");
-            }
-
             if (cleanedFields.Count > 0)
             {
                 await _userRepository.SaveUserAsync(user);
@@ -274,7 +204,7 @@ namespace OmniForge.Web.Controllers
                 success = true,
                 message = "Cleanup completed",
                 cleanedFields,
-                user = new { user.TwitchUserId, user.DiscordWebhookUrl }
+                user = new { user.TwitchUserId }
             });
         }
     }

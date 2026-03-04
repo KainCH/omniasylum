@@ -97,6 +97,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.ApplyActiveCoreCountersSelectionAsync("user1", "game1");

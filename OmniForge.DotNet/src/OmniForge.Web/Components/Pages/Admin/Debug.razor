@@ -272,33 +272,13 @@
         {
             <div class="tab-pane fade show active" id="discord-panel" role="tabpanel" aria-labelledby="discord-tab">
                 <div class="alert alert-info mb-4">
-                    <strong>🤖 Discord Bot Testing</strong> - Test Discord webhook notifications and bot functionality.
+                    <strong>🤖 Discord Bot Testing</strong> - Test Discord bot notifications and functionality.
                 </div>
 
                 <!-- Target User Selection -->
                 <TargetUserCard UserId="@discordUserId" UserIdChanged="@((value) => discordUserId = value)" AvailableUsers="@availableUsers" />
 
                 <div class="row">
-                    <!-- Webhook Test -->
-                    <div class="col-md-6 mb-4">
-                        <div class="card h-100">
-                            <div class="card-header">
-                                <h5>🔗 Webhook Tests</h5>
-                            </div>
-                            <div class="card-body">
-                                <p class="text-muted">Test saving and reading Discord webhook URLs.</p>
-                                <div class="btn-group-vertical w-100">
-                                    <button class="btn btn-outline-primary" @onclick="TestWebhookSave" disabled="@string.IsNullOrEmpty(discordUserId)">
-                                        💾 Test Webhook Save
-                                    </button>
-                                    <button class="btn btn-outline-info mt-2" @onclick="TestWebhookRead" disabled="@string.IsNullOrEmpty(discordUserId)">
-                                        📖 Test Webhook Read
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Stream Notification Test -->
                     <div class="col-md-6 mb-4">
                         <div class="card h-100">
@@ -843,56 +823,6 @@
     }
 
     // ============== Discord Testing ==============
-
-    private async Task TestWebhookSave()
-    {
-        try
-        {
-            var user = await ValidateAndGetUserAsync(discordUserId,
-                success => discordSuccess = success,
-                result => discordResult = result);
-            if (user == null) return;
-
-            var originalUrl = user.DiscordWebhookUrl;
-            var testUrl = "https://discord.com/api/webhooks/1234567890/test-token";
-
-            user.DiscordWebhookUrl = testUrl;
-            await UserRepository.SaveUserAsync(user);
-
-            var savedUser = await UserRepository.GetUserAsync(discordUserId);
-
-            // Restore
-            user.DiscordWebhookUrl = originalUrl;
-            await UserRepository.SaveUserAsync(user);
-
-            discordSuccess = true;
-            discordResult = $"✅ Success!\nOriginal: {originalUrl}\nSaved: {savedUser?.DiscordWebhookUrl}\nRestored.";
-        }
-        catch (Exception ex)
-        {
-            discordSuccess = false;
-            discordResult = $"❌ Error: {ex.Message}";
-        }
-    }
-
-    private async Task TestWebhookRead()
-    {
-        try
-        {
-            var user = await ValidateAndGetUserAsync(discordUserId,
-                success => discordSuccess = success,
-                result => discordResult = result);
-            if (user == null) return;
-
-            discordSuccess = true;
-            discordResult = $"✅ Webhook URL: {(string.IsNullOrEmpty(user.DiscordWebhookUrl) ? "(not configured)" : user.DiscordWebhookUrl)}\nChannel ID: {(string.IsNullOrEmpty(user.DiscordChannelId) ? "(not configured)" : user.DiscordChannelId)}";
-        }
-        catch (Exception ex)
-        {
-            discordSuccess = false;
-            discordResult = $"❌ Error: {ex.Message}";
-        }
-    }
 
     private async Task TestStreamLiveNotification()
     {

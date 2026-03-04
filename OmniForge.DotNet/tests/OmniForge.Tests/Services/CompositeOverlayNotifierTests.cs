@@ -1,3 +1,6 @@
+using System;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
@@ -17,7 +20,7 @@ public class CompositeOverlayNotifierTests
     {
         _mock1 = new Mock<IOverlayNotifier>();
         _mock2 = new Mock<IOverlayNotifier>();
-        _composite = new CompositeOverlayNotifier(_mock1.Object, _mock2.Object);
+        _composite = new CompositeOverlayNotifier(NullLogger<CompositeOverlayNotifier>.Instance, _mock1.Object, _mock2.Object);
     }
 
     [Fact]
@@ -150,5 +153,41 @@ public class CompositeOverlayNotifierTests
 
         _mock1.Verify(n => n.NotifyGiftSubAsync("user1", "Gifter", "Recipient", "1000", 5), Times.Once);
         _mock2.Verify(n => n.NotifyGiftSubAsync("user1", "Gifter", "Recipient", "1000", 5), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyCounterUpdateAsync_FirstNotifierThrows_SecondStillReceivesCall()
+    {
+        var mock1 = new Mock<IOverlayNotifier>();
+        var mock2 = new Mock<IOverlayNotifier>();
+
+        mock1.Setup(n => n.NotifyCounterUpdateAsync(It.IsAny<string>(), It.IsAny<Counter>()))
+            .ThrowsAsync(new InvalidOperationException("WebSocket hang"));
+
+        var composite = new CompositeOverlayNotifier(NullLogger<CompositeOverlayNotifier>.Instance, mock1.Object, mock2.Object);
+        var counter = new Counter { TwitchUserId = "user1", Deaths = 5 };
+
+        // Should not throw
+        await composite.NotifyCounterUpdateAsync("user1", counter);
+
+        // Second notifier still called despite first throwing
+        mock2.Verify(n => n.NotifyCounterUpdateAsync("user1", counter), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyStreamStartedAsync_FirstNotifierThrows_SecondStillReceivesCall()
+    {
+        var mock1 = new Mock<IOverlayNotifier>();
+        var mock2 = new Mock<IOverlayNotifier>();
+
+        mock1.Setup(n => n.NotifyStreamStartedAsync(It.IsAny<string>(), It.IsAny<Counter>()))
+            .ThrowsAsync(new Exception("Connection reset"));
+
+        var composite = new CompositeOverlayNotifier(NullLogger<CompositeOverlayNotifier>.Instance, mock1.Object, mock2.Object);
+        var counter = new Counter { TwitchUserId = "user1" };
+
+        await composite.NotifyStreamStartedAsync("user1", counter);
+
+        mock2.Verify(n => n.NotifyStreamStartedAsync("user1", counter), Times.Once);
     }
 }

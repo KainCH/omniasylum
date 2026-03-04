@@ -87,6 +87,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync(userId, gameId, "Test Game");
