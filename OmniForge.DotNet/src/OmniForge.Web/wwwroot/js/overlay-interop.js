@@ -400,9 +400,10 @@ window.overlayInterop = {
                 ? String(explicitTimerColor).trim()
                 : (themeColor ? String(themeColor) : null);
 
-            if (valueColor) {
-                const valueEl = timer.querySelector('.timer-value');
-                if (valueEl) valueEl.style.color = valueColor;
+            const valueEl = timer.querySelector('.timer-value');
+            if (valueEl) {
+                valueEl.style.fontSize = '42px';
+                if (valueColor) valueEl.style.color = valueColor;
             }
 
             // Top-center placement requirement. Scale matches overlay scale.

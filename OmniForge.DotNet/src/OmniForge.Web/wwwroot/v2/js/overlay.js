@@ -545,7 +545,7 @@
         window.overlayInterop.updateOverlaySettings(settings);
       }
       applyTimerSettings(settings);
-      if (lastCounterData) renderCounters(lastCounterData);
+      renderCounters(lastCounterData || {});
     });
 
     source.addEventListener('stream', (e) => {
