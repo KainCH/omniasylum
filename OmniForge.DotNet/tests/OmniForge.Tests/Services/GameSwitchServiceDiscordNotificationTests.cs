@@ -20,10 +20,12 @@ namespace OmniForge.Tests.Services
             Mock<IGameCustomCountersConfigRepository>? gameCustomCountersConfigRepository = null,
             Mock<IGameCoreCountersConfigRepository>? gameCoreCountersConfigRepository = null,
             Mock<ICounterRepository>? counterRepository = null,
+            Mock<ICounterLibraryRepository>? counterLibraryRepository = null,
             Mock<IUserRepository>? userRepository = null,
             Mock<ITwitchApiService>? twitchApiService = null,
             Mock<IOverlayNotifier>? overlayNotifier = null,
             Mock<IDiscordService>? discordService = null,
+            Mock<IStreamMonitorService>? streamMonitorService = null,
             Mock<ILogger<GameSwitchService>>? logger = null)
         {
             return new GameSwitchService(
@@ -34,15 +36,17 @@ namespace OmniForge.Tests.Services
                 (gameCustomCountersConfigRepository ?? new Mock<IGameCustomCountersConfigRepository>()).Object,
                 (gameCoreCountersConfigRepository ?? new Mock<IGameCoreCountersConfigRepository>()).Object,
                 (counterRepository ?? new Mock<ICounterRepository>()).Object,
+                (counterLibraryRepository ?? new Mock<ICounterLibraryRepository>()).Object,
                 (userRepository ?? new Mock<IUserRepository>()).Object,
                 (twitchApiService ?? new Mock<ITwitchApiService>()).Object,
                 (overlayNotifier ?? new Mock<IOverlayNotifier>()).Object,
                 (discordService ?? new Mock<IDiscordService>()).Object,
+                (streamMonitorService ?? new Mock<IStreamMonitorService>()).Object,
                 (logger ?? new Mock<ILogger<GameSwitchService>>()).Object);
         }
 
         [Fact]
-        public async Task HandleGameDetectedAsync_ShouldCallDiscordNotifications_OnGameSwitch()
+        public async Task HandleGameDetectedAsync_ShouldCallDiscordNotifications_OnGameSwitch_WhenLive()
         {
             // Arrange
             var discordService = new Mock<IDiscordService>();
@@ -51,6 +55,8 @@ namespace OmniForge.Tests.Services
             var gameContextRepository = new Mock<IGameContextRepository>();
             var gameCountersRepository = new Mock<IGameCountersRepository>();
             var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
+            var streamMonitorService = new Mock<IStreamMonitorService>();
+            streamMonitorService.Setup(s => s.IsUserLive("user1")).Returns(true);
 
             var user = new User
             {
@@ -79,7 +85,8 @@ namespace OmniForge.Tests.Services
                 gameCoreCountersConfigRepository: gameCoreCountersConfigRepository,
                 counterRepository: counterRepository,
                 userRepository: userRepository,
-                discordService: discordService);
+                discordService: discordService,
+                streamMonitorService: streamMonitorService);
 
             // Act
             await service.HandleGameDetectedAsync("user1", "game1", "Elden Ring", "https://example.com/box.jpg");
@@ -87,9 +94,64 @@ namespace OmniForge.Tests.Services
             // Allow fire-and-forget to complete
             await Task.Delay(200);
 
-            // Assert
+            // Assert — both public announcement and mod channel fire when live
             discordService.Verify(d => d.SendGameChangeAnnouncementAsync(
                 user, "Elden Ring", It.IsAny<string?>()), Times.Once);
+            discordService.Verify(d => d.SendModChannelNotificationAsync(
+                user, "Elden Ring", It.IsAny<IReadOnlyList<string>>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleGameDetectedAsync_ShouldSkipPublicAnnouncement_WhenNotLive()
+        {
+            // Arrange
+            var discordService = new Mock<IDiscordService>();
+            var userRepository = new Mock<IUserRepository>();
+            var counterRepository = new Mock<ICounterRepository>();
+            var gameContextRepository = new Mock<IGameContextRepository>();
+            var gameCountersRepository = new Mock<IGameCountersRepository>();
+            var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
+            var streamMonitorService = new Mock<IStreamMonitorService>();
+            streamMonitorService.Setup(s => s.IsUserLive("user1")).Returns(false);
+
+            var user = new User
+            {
+                TwitchUserId = "user1",
+                Username = "testuser",
+                DiscordChannelId = "111111111111111111",
+                DiscordModChannelId = "222222222222222222"
+            };
+            userRepository.Setup(r => r.GetUserAsync("user1")).ReturnsAsync(user);
+            userRepository.Setup(r => r.GetChatCommandsConfigAsync("user1")).ReturnsAsync(new ChatCommandConfiguration());
+            userRepository.Setup(r => r.SaveChatCommandsConfigAsync("user1", It.IsAny<ChatCommandConfiguration>())).Returns(Task.CompletedTask);
+            userRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            counterRepository.Setup(r => r.GetCountersAsync("user1")).ReturnsAsync(new Counter { TwitchUserId = "user1" });
+            counterRepository.Setup(r => r.GetCustomCountersConfigAsync("user1")).ReturnsAsync(new CustomCounterConfiguration());
+            counterRepository.Setup(r => r.SaveCountersAsync(It.IsAny<Counter>())).Returns(Task.CompletedTask);
+            counterRepository.Setup(r => r.SaveCustomCountersConfigAsync("user1", It.IsAny<CustomCounterConfiguration>())).Returns(Task.CompletedTask);
+
+            gameContextRepository.Setup(r => r.GetAsync("user1")).ReturnsAsync((GameContext?)null);
+            gameContextRepository.Setup(r => r.SaveAsync(It.IsAny<GameContext>())).Returns(Task.CompletedTask);
+
+            var service = CreateService(
+                gameContextRepository: gameContextRepository,
+                gameCountersRepository: gameCountersRepository,
+                gameCoreCountersConfigRepository: gameCoreCountersConfigRepository,
+                counterRepository: counterRepository,
+                userRepository: userRepository,
+                discordService: discordService,
+                streamMonitorService: streamMonitorService);
+
+            // Act
+            await service.HandleGameDetectedAsync("user1", "game1", "Elden Ring");
+
+            // Allow fire-and-forget to complete
+            await Task.Delay(200);
+
+            // Assert — public announcement skipped, mod channel still fires
+            discordService.Verify(d => d.SendGameChangeAnnouncementAsync(
+                It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             discordService.Verify(d => d.SendModChannelNotificationAsync(
                 user, "Elden Ring", It.IsAny<IReadOnlyList<string>>()), Times.Once);
         }
