@@ -56,7 +56,6 @@ namespace OmniForge.Web.Controllers
                 isActive = user.IsActive,
                 createdAt = user.CreatedAt,
                 lastLogin = user.LastLogin,
-                discordWebhookUrl = user.DiscordWebhookUrl,
                 userStatus = string.IsNullOrEmpty(user.TwitchUserId) ? "broken" :
                              (string.IsNullOrEmpty(user.Username) ? "incomplete" : "complete")
             });
@@ -219,7 +218,6 @@ namespace OmniForge.Web.Controllers
                     autoClip = users.Count(u => u.Features.AutoClip),
                     customCommands = users.Count(u => u.Features.CustomCommands),
                     analytics = users.Count(u => u.Features.Analytics),
-                    webhooks = users.Count(u => u.Features.Webhooks),
                     bitsIntegration = users.Count(u => u.Features.BitsIntegration),
                     streamOverlay = users.Count(u => u.Features.StreamOverlay),
                     alertAnimations = users.Count(u => u.Features.AlertAnimations),

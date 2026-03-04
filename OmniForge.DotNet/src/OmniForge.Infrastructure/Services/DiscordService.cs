@@ -37,7 +37,7 @@ namespace OmniForge.Infrastructure.Services
 
         public async Task SendTestNotificationAsync(User user)
         {
-            if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(user.DiscordChannelId))
             {
                 _logger.LogWarning("Attempted to send test notification but no Discord destination is configured for user {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
@@ -64,13 +64,12 @@ namespace OmniForge.Infrastructure.Services
             var template = GetMessageTemplate(user, safeEventType);
             var effectiveChannelId = GetEffectiveChannelId(user, template);
 
-            _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, ChannelId={ChannelId}, LegacyWebhookConfigured={LegacyWebhook}",
+            _logger.LogInformation("📤 Discord notification request: User={Username}, EventType={EventType}, ChannelId={ChannelId}",
                 _logValueSanitizer.Safe(user.Username),
                 _logValueSanitizer.Safe(safeEventType),
-                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : _logValueSanitizer.Safe(effectiveChannelId),
-                !string.IsNullOrEmpty(user.DiscordWebhookUrl));
+                string.IsNullOrEmpty(effectiveChannelId) ? "EMPTY" : _logValueSanitizer.Safe(effectiveChannelId));
 
-            if (string.IsNullOrEmpty(effectiveChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(effectiveChannelId))
             {
                 _logger.LogWarning("⚠️ No Discord destination configured for user {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
@@ -340,6 +339,111 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task SendGameChangeAnnouncementAsync(User user, string gameName, string? boxArtUrl)
+        {
+            if (string.IsNullOrWhiteSpace(user.DiscordChannelId)) return;
+            if (string.IsNullOrWhiteSpace(_discordBotSettings.BotToken)) return;
+            if (!IsNotificationEnabled(user, "game_change")) return;
+
+            var safeUsername = user.Username ?? string.Empty;
+            var (mentionContent, allowedMentions) = BuildStreamStartMentions(user);
+
+            var options = new DiscordEmbedOptions
+            {
+                Color = 0x5865F2,
+                Url = $"https://twitch.tv/{safeUsername}",
+                Content = mentionContent,
+                AllowedMentions = allowedMentions,
+                Buttons = new List<DiscordButton>
+                {
+                    new DiscordButton
+                    {
+                        Label = "🎮 Watch Now",
+                        Url = $"https://twitch.tv/{safeUsername}",
+                        Style = 5
+                    }
+                }
+            };
+
+            if (!string.IsNullOrWhiteSpace(boxArtUrl))
+            {
+                options.ImageUrl = boxArtUrl;
+            }
+
+            var payload = CreateDiscordPayload(
+                $"🎮 Now Playing: {gameName}",
+                null,
+                user,
+                options
+            );
+
+            await SendDiscordMessageAsync(user, user.DiscordChannelId, payload, options);
+        }
+
+        public async Task SendModChannelNotificationAsync(User user, string gameName, IReadOnlyList<string> activeCounterDescriptions)
+        {
+            if (string.IsNullOrWhiteSpace(user.DiscordModChannelId)) return;
+            if (string.IsNullOrWhiteSpace(_discordBotSettings.BotToken)) return;
+
+            // Discord embed field values are limited to 1024 characters.
+            // Split descriptions across multiple fields if needed.
+            var fields = new List<DiscordField>();
+
+            if (activeCounterDescriptions.Count == 0)
+            {
+                fields.Add(new DiscordField { Name = "Active Counters", Value = "No counters enabled for this game", Inline = false });
+            }
+            else
+            {
+                var chunk = new System.Text.StringBuilder();
+                var fieldIndex = 0;
+
+                foreach (var line in activeCounterDescriptions)
+                {
+                    // +1 for the newline separator
+                    if (chunk.Length > 0 && chunk.Length + 1 + line.Length > 1024)
+                    {
+                        fields.Add(new DiscordField
+                        {
+                            Name = fieldIndex == 0 ? "Active Counters" : "Active Counters (cont.)",
+                            Value = chunk.ToString(),
+                            Inline = false
+                        });
+                        chunk.Clear();
+                        fieldIndex++;
+                    }
+
+                    if (chunk.Length > 0) chunk.Append('\n');
+                    chunk.Append(line);
+                }
+
+                if (chunk.Length > 0)
+                {
+                    fields.Add(new DiscordField
+                    {
+                        Name = fieldIndex == 0 ? "Active Counters" : "Active Counters (cont.)",
+                        Value = chunk.ToString(),
+                        Inline = false
+                    });
+                }
+            }
+
+            var options = new DiscordEmbedOptions
+            {
+                Color = 0x5865F2,
+                Fields = fields
+            };
+
+            var payload = CreateDiscordPayload(
+                $"🎮 Game Changed: {gameName}",
+                null,
+                user,
+                options
+            );
+
+            await SendDiscordMessageAsync(user, user.DiscordModChannelId, payload, options);
+        }
+
         private object? GetProperty(object obj, string propertyName)
         {
             if (obj == null) return null;
@@ -379,93 +483,34 @@ namespace OmniForge.Infrastructure.Services
                 "follower_goal" => user.DiscordSettings.EnabledNotifications.FollowerGoal,
                 "subscriber_milestone" => user.DiscordSettings.EnabledNotifications.SubscriberMilestone,
                 "channel_point_redemption" => user.DiscordSettings.EnabledNotifications.ChannelPointRedemption,
+                "game_change" => user.DiscordSettings.EnabledNotifications.GameChange,
                 _ => false
             };
         }
 
-        public async Task<bool> ValidateWebhookAsync(string webhookUrl)
-        {
-            if (string.IsNullOrEmpty(webhookUrl)) return false;
-
-            try
-            {
-                var response = await _httpClient.GetAsync(webhookUrl);
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error validating Discord webhook URL: {Url}", _logValueSanitizer.Safe(webhookUrl));
-                return false;
-            }
-        }
-
         private async Task SendDiscordMessageAsync(User user, string? effectiveChannelId, object embedPayload, DiscordEmbedOptions options)
         {
-            // Preferred path: Bot token + channelId
-            if (!string.IsNullOrWhiteSpace(effectiveChannelId))
+            if (string.IsNullOrWhiteSpace(effectiveChannelId))
             {
-                if (string.IsNullOrWhiteSpace(_discordBotSettings.BotToken))
-                {
-                    _logger.LogError("❌ Discord bot token is not configured (DiscordBot:BotToken). Cannot send Discord messages.");
-                    throw new InvalidOperationException("Discord bot token is not configured");
-                }
-
-                var embed = CreateDiscordNetEmbed(title: null, description: null, user: user, options: options, prebuiltWebhookPayload: embedPayload);
-                var components = CreateDiscordNetComponents(options);
-                await _discordBotClient.SendMessageAsync(
-                    effectiveChannelId,
-                    _discordBotSettings.BotToken,
-                    options.Content,
-                    embed,
-                    components,
-                    options.AllowedMentions ?? AllowedMentions.None);
+                _logger.LogWarning("⚠️ No Discord channel ID configured for user {Username}", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                 return;
             }
 
-            // Legacy fallback: webhook
-            if (!string.IsNullOrWhiteSpace(user.DiscordWebhookUrl))
+            if (string.IsNullOrWhiteSpace(_discordBotSettings.BotToken))
             {
-                _logger.LogWarning("⚠️ Sending Discord notification via legacy webhook for {Username}. Migrate to channelId for better security.", (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
-                var webhookUrl = user.DiscordWebhookUrl;
-                if (options.Buttons != null && options.Buttons.Count > 0)
-                {
-                    webhookUrl += "?with_components=true";
-                }
-                await SendWebhookAsync(webhookUrl, embedPayload);
+                _logger.LogError("❌ Discord bot token is not configured (DiscordBot:BotToken). Cannot send Discord messages.");
+                throw new InvalidOperationException("Discord bot token is not configured");
             }
-        }
 
-        private async Task SendWebhookAsync(string url, object payload)
-        {
-            try
-            {
-                var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                _logger.LogInformation("Sending Discord webhook to {Url}", (url ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
-
-                var response = await _httpClient.PostAsync(url, content);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorText = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Discord webhook failed with {StatusCode}: {ErrorText}", response.StatusCode, (errorText ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
-
-                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    {
-                        throw new HttpRequestException($"Discord webhook URL is invalid or has been deleted. Please update your settings with a new webhook URL. Details: {errorText}");
-                    }
-
-                    throw new HttpRequestException($"Discord webhook failed: {response.StatusCode} {errorText}");
-                }
-
-                _logger.LogInformation("Discord notification sent successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send Discord notification");
-                throw;
-            }
+            var embed = CreateDiscordNetEmbed(title: null, description: null, user: user, options: options, prebuiltWebhookPayload: embedPayload);
+            var components = CreateDiscordNetComponents(options);
+            await _discordBotClient.SendMessageAsync(
+                effectiveChannelId,
+                _discordBotSettings.BotToken,
+                options.Content,
+                embed,
+                components,
+                options.AllowedMentions ?? AllowedMentions.None);
         }
 
         private object CreateDiscordPayload(string title, string? description, User user, DiscordEmbedOptions options)

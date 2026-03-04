@@ -114,7 +114,7 @@ namespace OmniForge.Tests
             {
                 TwitchUserId = "12345",
                 Username = "testuser",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/...",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnableChannelNotifications = true,

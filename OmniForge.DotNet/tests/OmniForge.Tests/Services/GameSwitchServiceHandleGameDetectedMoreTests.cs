@@ -101,6 +101,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "newGame", "New Category");
@@ -185,6 +186,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");
@@ -241,6 +243,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");
@@ -332,6 +335,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");
@@ -417,6 +421,7 @@ namespace OmniForge.Tests.Services
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");

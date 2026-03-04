@@ -26,8 +26,8 @@ namespace OmniForge.Infrastructure.Entities
         public string features { get; set; } = "{}";
         public string overlaySettings { get; set; } = "{}";
         public string discordSettings { get; set; } = "{}";
-        public string discordWebhookUrl { get; set; } = string.Empty;
         public string discordChannelId { get; set; } = string.Empty;
+        public string discordModChannelId { get; set; } = string.Empty;
         public string discordInviteLink { get; set; } = string.Empty;
         public string managedStreamers { get; set; } = "[]";
         public bool isActive { get; set; } = true;
@@ -81,8 +81,8 @@ namespace OmniForge.Infrastructure.Entities
                 Features = DeserializeFeatureFlags(features),
                 OverlaySettings = DeserializeSafe<OverlaySettings>(overlaySettings),
                 DiscordSettings = DeserializeSafe<DiscordSettings>(discordSettings),
-                DiscordWebhookUrl = discordWebhookUrl,
                 DiscordChannelId = discordChannelId,
+                DiscordModChannelId = discordModChannelId,
                 DiscordInviteLink = discordInviteLink,
                 ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
                 IsActive = isActive,
@@ -153,12 +153,10 @@ namespace OmniForge.Infrastructure.Entities
                 if (!jsonProps.Contains("AutoClip")) deserialized.AutoClip = defaults.AutoClip;
                 if (!jsonProps.Contains("CustomCommands")) deserialized.CustomCommands = defaults.CustomCommands;
                 if (!jsonProps.Contains("Analytics")) deserialized.Analytics = defaults.Analytics;
-                if (!jsonProps.Contains("Webhooks")) deserialized.Webhooks = defaults.Webhooks;
                 if (!jsonProps.Contains("BitsIntegration")) deserialized.BitsIntegration = defaults.BitsIntegration;
                 if (!jsonProps.Contains("StreamOverlay")) deserialized.StreamOverlay = defaults.StreamOverlay;
                 if (!jsonProps.Contains("AlertAnimations")) deserialized.AlertAnimations = defaults.AlertAnimations;
                 if (!jsonProps.Contains("DiscordNotifications")) deserialized.DiscordNotifications = defaults.DiscordNotifications;
-                if (!jsonProps.Contains("DiscordWebhook")) deserialized.DiscordWebhook = defaults.DiscordWebhook;
                 if (!jsonProps.Contains("TemplateStyle")) deserialized.TemplateStyle = defaults.TemplateStyle;
                 if (!jsonProps.Contains("StreamAlerts")) deserialized.StreamAlerts = defaults.StreamAlerts;
                 if (!jsonProps.Contains("StreamSettings")) deserialized.StreamSettings = defaults.StreamSettings;
@@ -200,8 +198,8 @@ namespace OmniForge.Infrastructure.Entities
                 features = GetStringSafe(entity, "features", "{}"),
                 overlaySettings = GetStringSafe(entity, "overlaySettings", "{}"),
                 discordSettings = GetStringSafe(entity, "discordSettings", "{}"),
-                discordWebhookUrl = GetStringSafe(entity, "discordWebhookUrl"),
                 discordChannelId = GetStringSafe(entity, "discordChannelId"),
+                discordModChannelId = GetStringSafe(entity, "discordModChannelId"),
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
                 // Backward-compat: older records may have used different casing/key names.
                 // Defensive: if the value is stored as a non-array JSON value (e.g., "{}"), default to "[]".
@@ -296,8 +294,8 @@ namespace OmniForge.Infrastructure.Entities
                 features = JsonSerializer.Serialize(user.Features),
                 overlaySettings = JsonSerializer.Serialize(user.OverlaySettings),
                 discordSettings = JsonSerializer.Serialize(user.DiscordSettings),
-                discordWebhookUrl = user.DiscordWebhookUrl,
                 discordChannelId = user.DiscordChannelId,
+                discordModChannelId = user.DiscordModChannelId,
                 discordInviteLink = user.DiscordInviteLink,
                 managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
                 isActive = user.IsActive,

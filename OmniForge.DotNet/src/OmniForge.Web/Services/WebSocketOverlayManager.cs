@@ -245,7 +245,8 @@ namespace OmniForge.Web.Services
                     {
                         try
                         {
-                            await socket.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                            using var sendCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                            await socket.SendAsync(segment, WebSocketMessageType.Text, true, sendCts.Token);
                             sentCount++;
                         }
                         catch (Exception ex)

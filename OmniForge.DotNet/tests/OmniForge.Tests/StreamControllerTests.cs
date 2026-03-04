@@ -781,7 +781,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task GetEventSubStatus_ShouldReturnOk()
         {
-            var user = new User { TwitchUserId = "12345", Username = "testuser", DiscordWebhookUrl = "http://webhook.com" };
+            var user = new User { TwitchUserId = "12345", Username = "testuser", DiscordChannelId = "123456789012345678" };
             var status = new StreamMonitorStatus { Connected = true };
 
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);

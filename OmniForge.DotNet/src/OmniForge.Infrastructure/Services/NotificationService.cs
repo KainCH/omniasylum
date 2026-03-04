@@ -92,7 +92,7 @@ namespace OmniForge.Infrastructure.Services
                         (user.Username ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
 
                     // 4. Send Discord Notification
-                    if (discordEnabledForType && (!string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl)))
+                    if (discordEnabledForType && !string.IsNullOrEmpty(user.DiscordChannelId))
                     {
                         await _discordService.SendNotificationAsync(user, eventType, new
                         {

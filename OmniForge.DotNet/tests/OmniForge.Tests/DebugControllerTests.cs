@@ -47,33 +47,9 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task TestWebhookSave_ShouldReturnOk()
+        public async Task TestStreamNotification_ShouldReturnBadRequest_WhenNoChannel()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "old" };
-            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-
-            var result = await _controller.TestWebhookSave();
-
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl.Contains("test-webhook-token"))), Times.Once);
-        }
-
-        [Fact]
-        public async Task TestWebhookRead_ShouldReturnOk()
-        {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "url" };
-            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-
-            var result = await _controller.TestWebhookRead();
-
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            Assert.NotNull(okResult.Value);
-        }
-
-        [Fact]
-        public async Task TestStreamNotification_ShouldReturnBadRequest_WhenNoWebhook()
-        {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.TestStreamNotification();
@@ -84,7 +60,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task TestStreamNotification_ShouldReturnOk_WhenValid()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "url", Username = "test" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "123456789012345678", Username = "test" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.TestStreamNotification();
@@ -96,13 +72,12 @@ namespace OmniForge.Tests
         [Fact]
         public async Task CleanupUserData_ShouldReturnOk_WhenCleaning()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/1234567890/test-webhook-token-12345" };
+            var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.CleanupUserData();
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => string.IsNullOrEmpty(u.DiscordWebhookUrl))), Times.Once);
         }
 
         [Fact]

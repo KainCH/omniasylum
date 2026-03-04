@@ -297,7 +297,7 @@ namespace OmniForge.Infrastructure.Services
                             {
                                 var discordSettings = user.DiscordSettings ?? new DiscordSettings();
                                 var hasChannelOverride = discordSettings.MessageTemplates?.Values.Any(t => !string.IsNullOrWhiteSpace(t.ChannelIdOverride)) == true;
-                                var hasDestination = !string.IsNullOrWhiteSpace(user.DiscordChannelId) || !string.IsNullOrWhiteSpace(user.DiscordWebhookUrl) || hasChannelOverride;
+                                var hasDestination = !string.IsNullOrWhiteSpace(user.DiscordChannelId) || hasChannelOverride;
                                 if (!hasDestination)
                                 {
                                     // DiscordService also no-ops without a destination, but avoid invoking it at all.
