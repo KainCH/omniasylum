@@ -45,6 +45,7 @@ namespace OmniForge.Core.Entities
         public bool DiscordNotifications { get; set; } = true;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
+        public bool SceneSync { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 

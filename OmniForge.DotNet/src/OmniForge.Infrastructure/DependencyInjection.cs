@@ -80,6 +80,12 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IGameChatCommandsRepository, GameChatCommandsRepository>();
             services.AddScoped<IGameCustomCountersConfigRepository, GameCustomCountersConfigRepository>();
             services.AddScoped<IGameCoreCountersConfigRepository, GameCoreCountersConfigRepository>();
+            services.AddScoped<ISceneRepository, SceneRepository>();
+            services.AddScoped<ISceneActionRepository, SceneActionRepository>();
+            services.AddScoped<IBroadcastProfileRepository, BroadcastProfileRepository>();
+            services.AddSingleton<ISyncAgentTracker, SyncAgentTrackerService>();
+            services.AddScoped<ISceneActionService, SceneActionService>();
+            services.AddSingleton<OvertimeTrackerService>();
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();

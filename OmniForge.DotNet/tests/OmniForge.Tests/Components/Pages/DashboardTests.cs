@@ -45,6 +45,7 @@ namespace OmniForge.Tests.Components.Pages
             Services.AddSingleton(_mockStreamMonitorService.Object);
             Services.AddSingleton(_mockOverlayNotifier.Object);
             Services.AddSingleton(_mockSeriesRepository.Object);
+            Services.AddSingleton(new Mock<ISyncAgentTracker>().Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Add core authorization services (PolicyProvider, etc.)

@@ -1,0 +1,142 @@
+using Newtonsoft.Json.Linq;
+using OBSWebsocketDotNet;
+using OBSWebsocketDotNet.Types.Events;
+using OmniForge.SyncAgent.Abstractions;
+
+namespace OmniForge.SyncAgent.Services
+{
+    public class ObsWebSocketClient : IStreamingSoftwareClient, IDisposable
+    {
+        private readonly OBSWebsocket _obs = new();
+        private readonly string _url;
+        private readonly string? _password;
+        private readonly ILogger<ObsWebSocketClient> _logger;
+        private CancellationTokenSource? _reconnectCts;
+        private bool _intentionalDisconnect;
+
+        public bool IsConnected => _obs.IsConnected;
+        public string SoftwareType => "obs";
+
+        public event Action<string>? SceneChanged;
+        public event Action<string[]>? SceneListUpdated;
+        public event Action? Connected;
+        public event Action<string>? Disconnected;
+
+        public ObsWebSocketClient(IConfiguration config, ILogger<ObsWebSocketClient> logger)
+        {
+            _logger = logger;
+            _url = config.GetValue("Obs:Url", "ws://localhost:4455")!;
+            _password = config.GetValue<string?>("Obs:Password");
+
+            _obs.Connected += OnConnected;
+            _obs.Disconnected += OnDisconnected;
+            _obs.CurrentProgramSceneChanged += OnSceneChanged;
+            _obs.SceneListChanged += OnSceneListChanged;
+        }
+
+        public async Task ConnectAsync(CancellationToken cancellationToken = default)
+        {
+            _intentionalDisconnect = false;
+            _reconnectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    _obs.ConnectAsync(_url, _password ?? "");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to connect to OBS at {Url}", _url);
+                    _ = ReconnectLoopAsync(_reconnectCts.Token);
+                }
+            }, cancellationToken);
+        }
+
+        public Task DisconnectAsync()
+        {
+            _intentionalDisconnect = true;
+            _reconnectCts?.Cancel();
+            if (_obs.IsConnected)
+            {
+                _obs.Disconnect();
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task<string[]> GetScenesAsync()
+        {
+            var scenes = _obs.GetSceneList();
+            return Task.FromResult(scenes.Scenes.Select(s => s.Name).ToArray());
+        }
+
+        public Task<string?> GetActiveSceneAsync()
+        {
+            var scene = _obs.GetCurrentProgramScene();
+            return Task.FromResult<string?>(scene);
+        }
+
+        private void OnConnected(object? sender, EventArgs e)
+        {
+            _logger.LogInformation("Connected to OBS at {Url}", _url);
+            Connected?.Invoke();
+        }
+
+        private void OnDisconnected(object? sender, OBSWebsocketDotNet.Communication.ObsDisconnectionInfo info)
+        {
+            _logger.LogWarning("Disconnected from OBS: {Reason}", info.DisconnectReason);
+            Disconnected?.Invoke(info.DisconnectReason ?? "Unknown");
+
+            if (!_intentionalDisconnect && _reconnectCts is { IsCancellationRequested: false })
+            {
+                _ = ReconnectLoopAsync(_reconnectCts.Token);
+            }
+        }
+
+        private void OnSceneChanged(object? sender, ProgramSceneChangedEventArgs e)
+        {
+            _logger.LogInformation("OBS scene changed to: {Scene}", e.SceneName);
+            SceneChanged?.Invoke(e.SceneName);
+        }
+
+        private void OnSceneListChanged(object? sender, SceneListChangedEventArgs e)
+        {
+            var names = e.Scenes
+                .Select(s => s["sceneName"]?.ToString())
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Select(n => n!)
+                .ToArray();
+            _logger.LogInformation("OBS scene list updated: {Count} scenes", names.Length);
+            SceneListUpdated?.Invoke(names);
+        }
+
+        private async Task ReconnectLoopAsync(CancellationToken ct)
+        {
+            var delay = TimeSpan.FromSeconds(2);
+            var maxDelay = TimeSpan.FromSeconds(60);
+
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(delay, ct);
+                try
+                {
+                    _logger.LogInformation("Attempting to reconnect to OBS at {Url}...", _url);
+                    _obs.ConnectAsync(_url, _password ?? "");
+                    return; // Connected event will fire on success
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "OBS reconnect attempt failed");
+                    delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, maxDelay.TotalSeconds));
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _reconnectCts?.Cancel();
+            _reconnectCts?.Dispose();
+            _obs.Disconnect();
+        }
+    }
+}

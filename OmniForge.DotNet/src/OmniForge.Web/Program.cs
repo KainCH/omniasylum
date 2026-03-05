@@ -195,6 +195,9 @@ using (var scope = app.Services.CreateScope())
     var gameChatCommandsRepository = scope.ServiceProvider.GetRequiredService<IGameChatCommandsRepository>();
     var gameCustomCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCustomCountersConfigRepository>();
     var gameCoreCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCoreCountersConfigRepository>();
+    var sceneRepository = scope.ServiceProvider.GetRequiredService<ISceneRepository>();
+    var sceneActionRepository = scope.ServiceProvider.GetRequiredService<ISceneActionRepository>();
+    var broadcastProfileRepository = scope.ServiceProvider.GetRequiredService<IBroadcastProfileRepository>();
     var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<ICoreCounterLibrarySeeder>();
 
     try
@@ -212,6 +215,9 @@ using (var scope = app.Services.CreateScope())
         await gameChatCommandsRepository.InitializeAsync();
         await gameCustomCountersConfigRepository.InitializeAsync();
         await gameCoreCountersConfigRepository.InitializeAsync();
+        await sceneRepository.InitializeAsync();
+        await sceneActionRepository.InitializeAsync();
+        await broadcastProfileRepository.InitializeAsync();
 
         await coreCounterLibrarySeeder.SeedAsync();
     }
@@ -249,6 +255,7 @@ app.MapRazorComponents<App>()
 
 app.MapControllers();
 // app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
+app.MapHub<SyncAgentHub>("/hubs/sync-agent");
 
 // Health check endpoint for deployment verification
 app.MapGet("/health", () => Results.Ok(new
