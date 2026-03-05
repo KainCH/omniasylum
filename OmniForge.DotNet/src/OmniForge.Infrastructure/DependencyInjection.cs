@@ -86,6 +86,7 @@ namespace OmniForge.Infrastructure
             services.AddSingleton<ISyncAgentTracker, SyncAgentTrackerService>();
             services.AddScoped<ISceneActionService, SceneActionService>();
             services.AddSingleton<OvertimeTrackerService>();
+            services.AddScoped<ILicenseService, LicenseService>();
             services.AddScoped<IAlertEventRouter, AlertEventRouter>();
             services.AddScoped<ITwitchHelixWrapper, TwitchHelixWrapper>();
             services.AddScoped<ITwitchApiService, TwitchApiService>();

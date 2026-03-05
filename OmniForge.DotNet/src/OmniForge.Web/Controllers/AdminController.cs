@@ -56,6 +56,8 @@ namespace OmniForge.Web.Controllers
                 isActive = user.IsActive,
                 createdAt = user.CreatedAt,
                 lastLogin = user.LastLogin,
+                licenseTier = user.LicenseTier,
+                licenseExpiresAt = user.LicenseExpiresAt,
                 userStatus = string.IsNullOrEmpty(user.TwitchUserId) ? "broken" :
                              (string.IsNullOrEmpty(user.Username) ? "incomplete" : "complete")
             });
@@ -123,7 +125,9 @@ namespace OmniForge.Web.Controllers
                     features = user.Features,
                     isActive = user.IsActive,
                     createdAt = user.CreatedAt,
-                    lastLogin = user.LastLogin
+                    lastLogin = user.LastLogin,
+                    licenseTier = user.LicenseTier,
+                    licenseExpiresAt = user.LicenseExpiresAt
                 },
                 counters = counters
             });
@@ -168,6 +172,12 @@ namespace OmniForge.Web.Controllers
 
             bool wasOverlayEnabled = user.Features.StreamOverlay;
             bool isOverlayBeingEnabled = features.StreamOverlay && !wasOverlayEnabled;
+
+            bool isSceneSyncBeingEnabled = features.SceneSync && !user.Features.SceneSync;
+            if (isSceneSyncBeingEnabled && !features.OverlayV2)
+            {
+                features.OverlayV2 = true;
+            }
 
             user.Features = features;
 
@@ -222,11 +232,30 @@ namespace OmniForge.Web.Controllers
                     streamOverlay = users.Count(u => u.Features.StreamOverlay),
                     alertAnimations = users.Count(u => u.Features.AlertAnimations),
                     streamAlerts = users.Count(u => u.Features.StreamAlerts),
-                    sceneSync = users.Count(u => u.Features.SceneSync)
+                    sceneSync = users.Count(u => u.Features.SceneSync),
+                    overlayV2 = users.Count(u => u.Features.OverlayV2)
                 }
             };
 
             return Ok(stats);
+        }
+
+        [HttpPut("users/{userId}/license")]
+        public async Task<IActionResult> UpdateLicense(string userId, [FromBody] UpdateLicenseRequest request)
+        {
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null) return NotFound("User not found");
+
+            if (!Enum.TryParse<LicenseTier>(request.Tier, true, out var tier))
+            {
+                return BadRequest("Invalid license tier. Valid values: Free, Pro, Premium");
+            }
+
+            user.LicenseTier = tier;
+            user.LicenseExpiresAt = request.ExpiresAt;
+            await _userRepository.SaveUserAsync(user);
+
+            return Ok(new { message = $"License updated to {tier}", licenseTier = tier, licenseExpiresAt = user.LicenseExpiresAt });
         }
 
         [HttpPost("monitor/start/{userId}")]
@@ -314,5 +343,11 @@ namespace OmniForge.Web.Controllers
     public class UpdateFeaturesRequest
     {
         public FeatureFlags Features { get; set; } = new FeatureFlags();
+    }
+
+    public class UpdateLicenseRequest
+    {
+        public string Tier { get; set; } = string.Empty;
+        public DateTimeOffset? ExpiresAt { get; set; }
     }
 }

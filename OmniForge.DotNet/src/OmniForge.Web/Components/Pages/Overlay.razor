@@ -27,6 +27,16 @@ else if (!user.Features.StreamOverlay)
 {
     <div class="error">Stream overlay not enabled for this user</div>
 }
+else if (IsV2 && !user.Features.OverlayV2)
+{
+    <div class="overlay-upgrade-prompt" style="display:flex;align-items:center;justify-content:center;height:100vh;background:transparent;">
+        <div style="text-align:center;color:white;font-family:sans-serif;">
+            <h2>V2 Overlay — Pro Feature</h2>
+            <p>Your V2 overlay access has expired or is not enabled.</p>
+            <p>Switch to the free overlay URL or <a href="/upgrade" style="color:#d4af37;">upgrade to Pro</a>.</p>
+        </div>
+    </div>
+}
 else
 {
     @if (user.OverlaySettings is { TimerEnabled: true } overlaySettings)
@@ -107,6 +117,8 @@ else
 
     <!-- Interaction banner (admin-only feature for now) -->
     <div class="interaction-banner hide" id="interaction-banner" style="@GetInteractionBannerPositionStyle()"></div>
+
+    @* V2-only premium features render here when IsV2 && user.Features.OverlayV2 *@
 }
 
 <style>
@@ -441,9 +453,11 @@ else
         }
     }
 
+    private bool IsV2 => NavigationManager.Uri.Contains("/overlay/v2/", StringComparison.OrdinalIgnoreCase);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && user != null && user.Features.StreamOverlay)
+        if (firstRender && user != null && user.Features.StreamOverlay && !(IsV2 && !user.Features.OverlayV2))
         {
             try
             {
@@ -464,22 +478,18 @@ else
                     }
                 }
 
-                // Initialize WebSocket connection via JS
-                var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
-
-                // Use a try-catch block specifically for the module import to handle potential network issues or file not found errors
+                // Initialize SSE connection via JS
                 try
                 {
                     dotNetRef ??= DotNetObjectReference.Create(this);
 
-                    // Use absolute path so this works under /overlay/* and /overlay/v2/*
-                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "/js/overlay-websocket.js");
-                    await jsModule.InvokeVoidAsync("connect", wsUrl, dotNetRef);
+                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "/js/overlay-sse.js");
+                    var tier = IsV2 ? "v2" : (string?)null;
+                    await jsModule.InvokeVoidAsync("connect", TwitchUserId, dotNetRef, tier);
                 }
                 catch (JSException jsEx)
                 {
                      Console.WriteLine($"[Overlay] JS Import Error: {jsEx.Message}");
-                     // Fallback or retry logic could go here if needed
                 }
             }
             catch (Exception ex)

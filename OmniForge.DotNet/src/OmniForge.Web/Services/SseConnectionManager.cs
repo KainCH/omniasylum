@@ -16,6 +16,7 @@ namespace OmniForge.Web.Services
         public Stream ResponseBody { get; init; } = Stream.Null;
         public CancellationTokenSource Cts { get; init; } = new();
         public SemaphoreSlim WriteLock { get; } = new(1, 1);
+        public bool IsV2 { get; init; }
         private volatile bool _isReady;
         public bool IsReady { get => _isReady; set => _isReady = value; }
     }
@@ -43,7 +44,7 @@ namespace OmniForge.Web.Services
         /// Sends the initial "connected" event with the assigned connectionId.
         /// Returns the connectionId.
         /// </summary>
-        public async Task<string> RegisterAsync(string userId, Stream responseBody, CancellationToken ct)
+        public async Task<string> RegisterAsync(string userId, Stream responseBody, CancellationToken ct, bool isV2 = false)
         {
             var connectionId = Guid.NewGuid().ToString("N")[..8];
 
@@ -51,7 +52,8 @@ namespace OmniForge.Web.Services
             {
                 ConnectionId = connectionId,
                 ResponseBody = responseBody,
-                Cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
+                Cts = CancellationTokenSource.CreateLinkedTokenSource(ct),
+                IsV2 = isV2
             };
 
             var userConnections = _connections.GetOrAdd(userId, _ => new ConcurrentDictionary<string, SseClient>());
@@ -104,6 +106,30 @@ namespace OmniForge.Web.Services
                 catch (Exception)
                 {
                     // Client likely disconnected; remove it
+                    RemoveClient(userId, kvp.Key);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Broadcasts an SSE event only to V2 (premium) connections for a user.
+        /// </summary>
+        public async Task SendV2EventAsync(string userId, string eventType, object data)
+        {
+            if (!_connections.TryGetValue(userId, out var userConnections))
+                return;
+
+            foreach (var kvp in userConnections)
+            {
+                var client = kvp.Value;
+                if (!client.IsReady || !client.IsV2) continue;
+
+                try
+                {
+                    await WriteEventAsync(client, eventType, data);
+                }
+                catch (Exception)
+                {
                     RemoveClient(userId, kvp.Key);
                 }
             }

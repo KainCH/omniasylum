@@ -101,8 +101,17 @@ namespace OmniForge.Web.Hubs
             var previousScene = _tracker.GetAgentState(userId)?.CurrentScene;
             await _tracker.UpdateCurrentSceneAsync(userId, sceneName);
 
-            // Dispatch to scene action service
+            // Gate scene actions on OverlayV2 flag
             using var scope = _scopeFactory.CreateScope();
+            var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var user = await userRepo.GetUserAsync(userId);
+            if (user == null || !user.Features.OverlayV2)
+            {
+                _logger.LogInformation("Scene change ignored for userId={UserId}: OverlayV2 not enabled", userId);
+                return;
+            }
+
+            // Dispatch to scene action service
             var sceneActionService = scope.ServiceProvider.GetService<ISceneActionService>();
             if (sceneActionService != null)
             {

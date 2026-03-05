@@ -168,23 +168,100 @@
               </div>
             }
 
+            <div class="card mt-4 mb-4">
+              <div class="card-header d-flex justify-content-between align-items-center"
+                   @onclick="() => showSetup = !showSetup" style="cursor: pointer;">
+                <h5 class="mb-0"><i class="bi bi-rocket-takeoff"></i> Getting Started</h5>
+                <i class="bi @(showSetup ? "bi-chevron-up" : "bi-chevron-down")"></i>
+              </div>
+              @if (showSetup)
+              {
+                <div class="card-body">
+                  <div class="list-group list-group-flush">
+                    <div class="list-group-item">
+                      <i class="bi bi-check-circle-fill text-success me-2"></i>
+                      <strong>Set up your overlay</strong> &mdash; Copy the Overlay URL below and add it as
+                      a Browser Source in OBS/Streamlabs (width: 1920, height: 1080).
+                    </div>
+                    <div class="list-group-item">
+                      <i class="bi bi-gear me-2"></i>
+                      <strong>Customize settings</strong> &mdash; Click <em>Settings</em> above to choose
+                      which counters to show, colors, positioning, and alert sounds.
+                    </div>
+                    <div class="list-group-item">
+                      <i class="bi bi-broadcast me-2"></i>
+                      <strong>Start monitoring</strong> &mdash; Click <em>Start Monitor</em> to connect to
+                      Twitch and begin tracking events (follows, subs, bits, etc).
+                    </div>
+                    @if (currentUserEntity?.Features.DiscordNotifications == true)
+                    {
+                      <div class="list-group-item">
+                        <i class="bi bi-discord me-2"></i>
+                        <strong>Connect Discord</strong> &mdash;
+                        <a href="/settings/discord">Configure Discord</a> to get notifications
+                        in your server.
+                      </div>
+                    }
+                    @if (currentUserEntity?.Features.StreamAlerts == true)
+                    {
+                      <div class="list-group-item">
+                        <i class="bi bi-bell me-2"></i>
+                        <strong>Configure alerts</strong> &mdash;
+                        <a href="/alerts">Set up alert images and sounds</a> for follows,
+                        subs, and other events.
+                      </div>
+                    }
+                    @if (currentUserEntity?.Features.OverlayV2 == true)
+                    {
+                      <div class="list-group-item">
+                        <i class="bi bi-stars text-warning me-2"></i>
+                        <strong>V2 Overlay</strong> &mdash; You have access to the premium overlay
+                        with SSE transport and advanced features. Use the V2 URL below.
+                      </div>
+                    }
+                    else
+                    {
+                      <div class="list-group-item">
+                        <i class="bi bi-lock me-2"></i>
+                        <strong>V2 Overlay (Pro)</strong> &mdash; Upgrade to Pro for the advanced
+                        overlay with real-time SSE transport and enhanced visuals.
+                      </div>
+                    }
+                    @if (currentUserEntity?.Features.SceneSync == true)
+                    {
+                      <div class="list-group-item">
+                        <i class="bi bi-display me-2"></i>
+                        <strong>Scene Sync Agent</strong> &mdash;
+                        <a href="/api/sync/agent/download" target="_blank">Download the agent</a>
+                        to sync OBS scenes with automated actions.
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+
             <div class="mt-4 text-center">
               <p>
                 <strong>Twitch User ID:</strong> @TwitchUserId <br />
                 <strong>Overlay URL (v1):</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
                 <strong>Preview URL (v1):</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
 
-                @if (context.User.IsInRole("admin"))
+                <br />
+                @if (currentUserEntity?.Features.OverlayV2 == true)
                 {
-                  <br />
                   <strong>Overlay URL (v2):</strong>
-
                   <a href="@OverlayV2Url" target="_blank">@OverlayV2Url</a>
-
                   <br />
                   <strong>Preview URL (v2):</strong>
-
                   <a href="@OverlayV2PreviewUrl" target="_blank">@OverlayV2PreviewUrl</a>
+                }
+                else
+                {
+                  <strong>Overlay V2:</strong>
+                  <i class="bi bi-lock-fill text-muted"></i>
+                  <a href="/upgrade" class="text-warning">Upgrade to Pro</a>
+                  <span class="text-muted">&mdash; Advanced overlay with real-time SSE transport</span>
                 }
               </p>
 
@@ -236,6 +313,7 @@
   private string? OverlayPreviewUrl;
   private string? OverlayV2Url;
   private string? OverlayV2PreviewUrl;
+  private bool showSetup = false;
   private bool savingOfflinePreview = false;
   private bool resettingCounters = false;
   private bool showOverlaySettings = false;
