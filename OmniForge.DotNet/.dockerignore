@@ -6,3 +6,5 @@
 *.user
 *.suo
 *.launch
+src/OmniForge.SyncAgent/
+tests/
