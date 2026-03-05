@@ -36,6 +36,15 @@ else
             </InputSelect>
         </div>
 
+        <div class="mb-3">
+            <label class="form-label">License Tier</label>
+            <InputSelect class="form-select" @bind-Value="user.LicenseTier">
+                <option value="@LicenseTier.Free">Free</option>
+                <option value="@LicenseTier.Pro">Pro</option>
+                <option value="@LicenseTier.Premium">Premium</option>
+            </InputSelect>
+        </div>
+
         <div class="form-check mb-3">
             <InputCheckbox class="form-check-input" @bind-Value="user.IsActive" />
             <label class="form-check-label">Active</label>
@@ -63,6 +72,10 @@ else
                 <div class="form-check">
                     <InputCheckbox class="form-check-input" @bind-Value="user.Features.SceneSync" />
                     <label class="form-check-label">Scene Sync Agent</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="user.Features.OverlayV2" />
+                    <label class="form-check-label">Overlay V2 (Premium)</label>
                 </div>
             </div>
             <div class="col-md-6">

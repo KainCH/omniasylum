@@ -48,12 +48,28 @@ namespace OmniForge.Web.Controllers
                 return;
             }
 
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null || !user.Features.StreamOverlay)
+            {
+                Response.StatusCode = 403;
+                return;
+            }
+
+            var tier = HttpContext.Request.Query["tier"].FirstOrDefault();
+            bool isV2 = string.Equals(tier, "v2", StringComparison.OrdinalIgnoreCase);
+
+            if (isV2 && !user.Features.OverlayV2)
+            {
+                Response.StatusCode = 403;
+                return;
+            }
+
             Response.ContentType = "text/event-stream";
             Response.Headers["Cache-Control"] = "no-cache";
             Response.Headers["Connection"] = "keep-alive";
             Response.Headers["X-Accel-Buffering"] = "no"; // Disable nginx buffering
 
-            var connectionId = await _sseManager.RegisterAsync(userId, Response.Body, ct);
+            var connectionId = await _sseManager.RegisterAsync(userId, Response.Body, ct, isV2);
 
             // Hold connection open until client disconnects
             try
@@ -85,6 +101,9 @@ namespace OmniForge.Web.Controllers
             try
             {
                 var user = await _userRepository.GetUserAsync(userId);
+                if (user == null || !user.Features.StreamOverlay)
+                    return StatusCode(403, new { error = "Stream overlay not enabled" });
+
                 var counter = await _counterRepository.GetCountersAsync(userId);
                 var alerts = await _alertRepository.GetAlertsAsync(userId);
                 var customCountersConfig = await _counterRepository.GetCustomCountersConfigAsync(userId);

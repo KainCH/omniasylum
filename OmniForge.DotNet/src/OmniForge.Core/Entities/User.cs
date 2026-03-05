@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 namespace OmniForge.Core.Entities
 {
+    public enum LicenseTier { Free, Pro, Premium }
+
     public class User
     {
         /// <summary>
@@ -30,6 +32,8 @@ namespace OmniForge.Core.Entities
         public List<string> ManagedStreamers { get; set; } = new List<string>();
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset LastLogin { get; set; }
+        public LicenseTier LicenseTier { get; set; } = LicenseTier.Free;
+        public DateTimeOffset? LicenseExpiresAt { get; set; }
     }
 
     public class FeatureFlags
@@ -46,6 +50,7 @@ namespace OmniForge.Core.Entities
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
         public bool SceneSync { get; set; } = false;
+        public bool OverlayV2 { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 
