@@ -22,6 +22,7 @@ using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Interfaces;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -169,6 +170,34 @@ builder.Services.AddScoped<IAlertPayloadEnricher, AlertPayloadEnricher>();
 // Overlay notifier: SSE-based v2 overlay
 builder.Services.AddSingleton<SseOverlayNotifier>();
 builder.Services.AddSingleton<IOverlayNotifier>(sp => sp.GetRequiredService<SseOverlayNotifier>());
+
+builder.Services.AddSingleton<OmniForge.Web.Services.AgentPairingService>();
+
+// Blob storage for agent download
+var blobStorageAccountName = builder.Configuration["AzureStorage:AccountName"];
+if (!string.IsNullOrEmpty(blobStorageAccountName))
+{
+    var blobServiceUrl = new Uri($"https://{blobStorageAccountName}.blob.core.windows.net");
+    var blobAzureClientId = builder.Configuration["AZURE_CLIENT_ID"];
+
+    if (!string.IsNullOrEmpty(blobAzureClientId))
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(blobServiceUrl, new ManagedIdentityCredential(blobAzureClientId)));
+    }
+    else
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(blobServiceUrl, new DefaultAzureCredential()));
+    }
+}
+else
+{
+    var connectionString = builder.Configuration["Azure:StorageConnectionString"];
+    if (!string.IsNullOrEmpty(connectionString))
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(connectionString));
+    }
+    // In dev without connection string, BlobServiceClient is optional (injected as null)
+}
 
 builder.Services.AddInfrastructure(builder.Configuration);
 

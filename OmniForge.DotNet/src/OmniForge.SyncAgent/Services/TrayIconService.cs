@@ -6,7 +6,9 @@ namespace OmniForge.SyncAgent.Services
     {
         private readonly StreamingSoftwareMonitor _monitor;
         private readonly ServerConnectionService _serverConnection;
-        private readonly IConfiguration _config;
+        private readonly PairingService _pairingService;
+        private readonly AutoStartService _autoStartService;
+        private readonly AgentConfigStore _configStore;
         private readonly ILogger<TrayIconService> _logger;
         private Thread? _trayThread;
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
@@ -16,16 +18,21 @@ namespace OmniForge.SyncAgent.Services
         private string _currentScene = "";
         private int _checklistCompleted;
         private int _checklistTotal;
+        private bool _isPairing;
 
         public TrayIconService(
             StreamingSoftwareMonitor monitor,
             ServerConnectionService serverConnection,
-            IConfiguration config,
+            PairingService pairingService,
+            AutoStartService autoStartService,
+            AgentConfigStore configStore,
             ILogger<TrayIconService> logger)
         {
             _monitor = monitor;
             _serverConnection = serverConnection;
-            _config = config;
+            _pairingService = pairingService;
+            _autoStartService = autoStartService;
+            _configStore = configStore;
             _logger = logger;
         }
 
@@ -35,7 +42,7 @@ namespace OmniForge.SyncAgent.Services
             _monitor.SoftwareDisconnected += _ => { _softwareConnected = false; UpdateIcon(); };
             _monitor.SceneActivated += scene => { _currentScene = scene; UpdateIcon(); };
 
-            _serverConnection.ServerConnected += () => { _serverConnected = true; UpdateIcon(); };
+            _serverConnection.ServerConnected += () => { _serverConnected = true; UpdateIcon(); RebuildMenu(); };
             _serverConnection.ServerDisconnected += _ => { _serverConnected = false; UpdateIcon(); };
             _serverConnection.ChecklistProgressReceived += (completed, total) =>
             {
@@ -74,14 +81,7 @@ namespace OmniForge.SyncAgent.Services
                 };
 
                 UpdateIcon();
-
-                var menu = new System.Windows.Forms.ContextMenuStrip();
-                menu.Items.Add("Status", null, (_, _) => ShowStatus());
-                menu.Items.Add("Open Pre-Flight", null, (_, _) => OpenPreFlight());
-                menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-                menu.Items.Add("Exit", null, (_, _) => ExitApp());
-
-                _notifyIcon.ContextMenuStrip = menu;
+                RebuildMenu();
 
                 _appContext = new System.Windows.Forms.ApplicationContext();
                 System.Windows.Forms.Application.Run(_appContext);
@@ -90,6 +90,78 @@ namespace OmniForge.SyncAgent.Services
             {
                 _logger.LogError(ex, "Tray icon thread error");
             }
+        }
+
+        private void RebuildMenu()
+        {
+            if (_notifyIcon == null) return;
+
+            try
+            {
+                if (_notifyIcon.InvokeRequired())
+                {
+                    // Marshal to the tray thread
+                    _notifyIcon.ContextMenuStrip?.Invoke(new Action(RebuildMenu));
+                    return;
+                }
+            }
+            catch
+            {
+                // If invoke check fails, just build the menu directly
+            }
+
+            var menu = new System.Windows.Forms.ContextMenuStrip();
+
+            if (_configStore.HasToken())
+            {
+                menu.Items.Add("Status", null, (_, _) => ShowStatus());
+                menu.Items.Add("Open Pre-Flight", null, (_, _) => OpenPreFlight());
+                menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+                // Settings submenu
+                var settingsMenu = new System.Windows.Forms.ToolStripMenuItem("Settings");
+                var autoStartItem = new System.Windows.Forms.ToolStripMenuItem("Start with Windows")
+                {
+                    Checked = _autoStartService.IsEnabled(),
+                    CheckOnClick = true
+                };
+                autoStartItem.CheckedChanged += (_, _) =>
+                {
+                    if (autoStartItem.Checked)
+                    {
+                        _autoStartService.Enable();
+                        _configStore.Config.StartWithWindows = true;
+                    }
+                    else
+                    {
+                        _autoStartService.Disable();
+                        _configStore.Config.StartWithWindows = false;
+                    }
+                    _configStore.Save(_configStore.Config);
+                };
+                settingsMenu.DropDownItems.Add(autoStartItem);
+                menu.Items.Add(settingsMenu);
+
+                menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                menu.Items.Add("Sign Out", null, (_, _) => OnSignOutClicked());
+            }
+            else
+            {
+                if (_isPairing)
+                {
+                    menu.Items.Add("Signing in...", null, null!);
+                    menu.Items[0].Enabled = false;
+                }
+                else
+                {
+                    menu.Items.Add("Sign In", null, (_, _) => OnSignInClicked());
+                }
+            }
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            menu.Items.Add("Exit", null, (_, _) => ExitApp());
+
+            _notifyIcon.ContextMenuStrip = menu;
         }
 
         private void UpdateIcon()
@@ -101,7 +173,12 @@ namespace OmniForge.SyncAgent.Services
                 var tooltip = "OmniForge Sync Agent";
                 Color color;
 
-                if (_serverConnected && _softwareConnected)
+                if (!_configStore.HasToken())
+                {
+                    color = Color.Gray;
+                    tooltip += " - Not signed in";
+                }
+                else if (_serverConnected && _softwareConnected)
                 {
                     color = Color.Green;
                     tooltip += $" - Connected to {_monitor.Client.SoftwareType.ToUpperInvariant()}";
@@ -124,7 +201,6 @@ namespace OmniForge.SyncAgent.Services
                     tooltip += $"\nPre-Flight: {_checklistCompleted}/{_checklistTotal} complete";
                 }
 
-                // Create a simple colored circle icon
                 var bitmap = new Bitmap(16, 16);
                 using (var g = Graphics.FromImage(bitmap))
                 {
@@ -145,6 +221,59 @@ namespace OmniForge.SyncAgent.Services
             }
         }
 
+        private async void OnSignInClicked()
+        {
+            _isPairing = true;
+            RebuildMenu();
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                var token = await _pairingService.PairAsync(cts.Token);
+
+                if (!string.IsNullOrEmpty(token))
+                {
+                    await _serverConnection.UpdateTokenAndReconnectAsync(token);
+
+                    // Enable auto-start on first sign-in if preference says so
+                    if (_configStore.Config.StartWithWindows && !_autoStartService.IsEnabled())
+                    {
+                        _autoStartService.Enable();
+                    }
+
+                    _notifyIcon?.ShowBalloonTip(3000, "OmniForge Sync Agent",
+                        "Successfully signed in and connected!", System.Windows.Forms.ToolTipIcon.Info);
+                }
+                else
+                {
+                    _notifyIcon?.ShowBalloonTip(3000, "OmniForge Sync Agent",
+                        "Sign in was cancelled or expired.", System.Windows.Forms.ToolTipIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during sign-in");
+                _notifyIcon?.ShowBalloonTip(3000, "OmniForge Sync Agent",
+                    "Sign in failed. Please try again.", System.Windows.Forms.ToolTipIcon.Error);
+            }
+            finally
+            {
+                _isPairing = false;
+                UpdateIcon();
+                RebuildMenu();
+            }
+        }
+
+        private async void OnSignOutClicked()
+        {
+            _configStore.ClearToken();
+            _autoStartService.Disable();
+            await _serverConnection.DisconnectAsync();
+            _serverConnected = false;
+            UpdateIcon();
+            RebuildMenu();
+        }
+
         private void ShowStatus()
         {
             var status = _serverConnected && _softwareConnected
@@ -162,7 +291,7 @@ namespace OmniForge.SyncAgent.Services
 
         private void OpenPreFlight()
         {
-            var serverUrl = _config.GetValue<string>("OmniForge:ServerUrl") ?? "https://localhost:5001";
+            var serverUrl = _configStore.ServerUrl;
             var url = $"{serverUrl.TrimEnd('/')}/preflight";
             try
             {
@@ -184,6 +313,14 @@ namespace OmniForge.SyncAgent.Services
         public void Dispose()
         {
             _notifyIcon?.Dispose();
+        }
+    }
+
+    internal static class NotifyIconExtensions
+    {
+        public static bool InvokeRequired(this System.Windows.Forms.NotifyIcon icon)
+        {
+            return icon.ContextMenuStrip?.InvokeRequired ?? false;
         }
     }
 }

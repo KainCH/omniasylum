@@ -23,7 +23,8 @@ namespace OmniForge.Tests.Controllers
                 _mockTracker.Object,
                 _mockSceneRepo.Object,
                 _mockSceneActionRepo.Object,
-                _mockUserRepo.Object);
+                _mockUserRepo.Object,
+                blobServiceClient: null);
 
             var httpContext = new DefaultHttpContext();
             if (!string.IsNullOrEmpty(userId))

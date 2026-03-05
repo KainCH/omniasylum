@@ -18,6 +18,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using OmniForge.Core.Utilities;
 using OmniForge.Core.Exceptions;
+using OmniForge.Web.Services;
+using System.Text.RegularExpressions;
 
 namespace OmniForge.Web.Controllers
 {
@@ -32,6 +34,7 @@ namespace OmniForge.Web.Controllers
         private readonly TwitchSettings _twitchSettings;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthController> _logger;
+        private readonly AgentPairingService _pairingService;
 
         public AuthController(
             ITwitchAuthService twitchAuthService,
@@ -40,7 +43,8 @@ namespace OmniForge.Web.Controllers
             IJwtService jwtService,
             IOptions<TwitchSettings> twitchSettings,
             IConfiguration configuration,
-            ILogger<AuthController> logger)
+            ILogger<AuthController> logger,
+            AgentPairingService pairingService)
         {
             _twitchAuthService = twitchAuthService;
             _userRepository = userRepository;
@@ -49,6 +53,7 @@ namespace OmniForge.Web.Controllers
             _twitchSettings = twitchSettings.Value;
             _configuration = configuration;
             _logger = logger;
+            _pairingService = pairingService;
         }
 
         [HttpGet("twitch")]
@@ -410,6 +415,69 @@ namespace OmniForge.Web.Controllers
             return Ok(new { message = "Token refreshed", expiresAt = user.TokenExpiry });
         }
 
+        [HttpPost("pair/initiate")]
+        [AllowAnonymous]
+        public IActionResult InitiatePairing([FromBody] InitiatePairingRequest request)
+        {
+            if (string.IsNullOrEmpty(request.Code) || !Regex.IsMatch(request.Code, @"^[A-Z0-9]{6}$"))
+                return BadRequest(new { error = "Code must be exactly 6 uppercase alphanumeric characters" });
+
+            var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+            if (!_pairingService.TryRegisterCode(request.Code, expiresAt))
+                return Conflict(new { error = "Code already in use" });
+
+            return Ok(new { message = "Pairing initiated", expiresAt });
+        }
+
+        [HttpPost("pair/approve")]
+        [Authorize(AuthenticationSchemes = "Cookies")]
+        public async Task<IActionResult> ApprovePairing([FromBody] ApprovePairingRequest request)
+        {
+            var userId = User.FindFirst("userId")?.Value
+                ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var user = await _userRepository.GetUserAsync(userId);
+            if (user == null)
+                return NotFound(new { error = "User not found" });
+
+            if (!user.Features.SceneSync)
+                return StatusCode(403, new { error = "Scene sync feature is not enabled for your account" });
+
+            var entry = _pairingService.TryPoll(request.Code);
+            if (entry == null)
+                return NotFound(new { error = "Pairing code not found" });
+
+            if (entry.IsExpired)
+                return StatusCode(410, new { error = "Pairing code has expired" });
+
+            var token = _jwtService.GenerateToken(user);
+            if (!_pairingService.TryApprove(request.Code, userId, token))
+                return StatusCode(410, new { error = "Pairing code has expired" });
+
+            return Ok(new { message = "Pairing approved" });
+        }
+
+        [HttpGet("pair/poll/{code}")]
+        [AllowAnonymous]
+        public IActionResult PollPairing(string code)
+        {
+            var entry = _pairingService.TryPoll(code);
+
+            if (entry == null)
+                return StatusCode(202, new { status = "pending" });
+
+            if (entry.IsExpired)
+                return StatusCode(410, new { error = "Pairing code has expired" });
+
+            if (entry.IsApproved)
+                return Ok(new { status = "approved", token = entry.Token });
+
+            return StatusCode(202, new { status = "pending" });
+        }
+
         private string GetRedirectUri()
         {
             // CWE-247, CWE-350, CWE-807 Fix:
@@ -484,4 +552,7 @@ namespace OmniForge.Web.Controllers
             throw new ConfigurationException("Missing required configuration: Twitch:BotRedirectUri");
         }
     }
+
+    public record InitiatePairingRequest(string Code);
+    public record ApprovePairingRequest(string Code);
 }
