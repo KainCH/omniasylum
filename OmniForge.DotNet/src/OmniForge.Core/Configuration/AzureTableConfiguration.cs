@@ -28,5 +28,10 @@ namespace OmniForge.Core.Configuration
 
         // Per-game core counter selection
         public string GameCoreCountersConfigTable { get; set; } = "gamecorecounters";
+
+        // Scene sync
+        public string ScenesTable { get; set; } = "scenes";
+        public string SceneActionsTable { get; set; } = "sceneactions";
+        public string BroadcastProfilesTable { get; set; } = "broadcastprofiles";
     }
 }

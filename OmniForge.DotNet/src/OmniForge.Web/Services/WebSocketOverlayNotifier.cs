@@ -191,6 +191,11 @@ namespace OmniForge.Web.Services
             await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
         }
 
+        public async Task NotifySceneChangedAsync(string userId, string sceneName)
+        {
+            await _webSocketManager.SendToUserAsync(userId, "sceneChanged", new { sceneName });
+        }
+
         private (IAlertPayloadEnricher enricher, IServiceScope scope) CreateEnricher()
         {
             var scope = _scopeFactory.CreateScope();

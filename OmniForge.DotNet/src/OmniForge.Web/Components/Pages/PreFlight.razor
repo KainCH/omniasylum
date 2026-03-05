@@ -1,0 +1,181 @@
+@page "/preflight"
+@page "/manage/{StreamerId}/preflight"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Shared
+@using Microsoft.AspNetCore.SignalR
+@using OmniForge.Web.Hubs
+@attribute [Authorize]
+@inject IUserRepository UserRepository
+@inject ISceneRepository SceneRepository
+@inject ISceneActionRepository SceneActionRepository
+@inject ISyncAgentTracker SyncAgentTracker
+@inject IHubContext<SyncAgentHub> SyncAgentHubContext
+
+<PageTitle>Pre-Flight Checklist</PageTitle>
+
+<div class="container mt-4">
+  <h2><i class="bi bi-clipboard-check me-2"></i>Pre-Flight Checklist</h2>
+
+  <AuthorizeView>
+    <Authorized>
+      @if (!hasAccess)
+      {
+        <div class="alert alert-danger mt-3">Access denied.</div>
+      }
+      else if (!featureEnabled)
+      {
+        <div class="alert alert-warning mt-3">
+          <i class="bi bi-lock me-2"></i>Scene Sync is not enabled for your account.
+        </div>
+      }
+      else if (isLoading)
+      {
+        <p><em>Loading...</em></p>
+      }
+      else
+      {
+        <div class="mb-3">
+          <AgentStatusBadge UserId="@TwitchUserId" />
+        </div>
+
+        @if (allChecked)
+        {
+          <div class="alert alert-success">
+            <h4><i class="bi bi-check-circle-fill me-2"></i>Ready to Go Live!</h4>
+            All pre-flight checks complete.
+          </div>
+        }
+
+        <div class="list-group">
+          @foreach (var item in checklistState)
+          {
+            var isAuto = item.Item.CheckType == "auto";
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" checked="@item.Checked" disabled="@isAuto"
+                    @onchange="() => ToggleItem(item)" />
+                  <label class="form-check-label @(item.Checked ? "text-decoration-line-through text-muted" : "")">
+                    @item.Item.Label
+                  </label>
+                </div>
+              </div>
+              <div>
+                @if (isAuto)
+                {
+                  <span class="badge @(item.Checked ? "bg-success" : "bg-warning text-dark")">
+                    @(item.Checked ? "OK" : "Pending")
+                  </span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="mt-3 text-muted">
+          @completedCount / @totalCount complete
+        </div>
+      }
+    </Authorized>
+  </AuthorizeView>
+</div>
+
+@code {
+  [CascadingParameter] private Task<AuthenticationState>? authenticationStateTask { get; set; }
+  [Parameter] public string? StreamerId { get; set; }
+
+  private string? TwitchUserId;
+  private bool hasAccess = true;
+  private bool featureEnabled;
+  private bool isLoading = true;
+  private List<ChecklistState> checklistState = new();
+  private int completedCount => checklistState.Count(c => c.Checked);
+  private int totalCount => checklistState.Count;
+  private bool allChecked => totalCount > 0 && completedCount == totalCount;
+
+  protected override async Task OnInitializedAsync()
+  {
+    if (authenticationStateTask == null) return;
+
+    var authState = await authenticationStateTask;
+    var user = authState.User;
+    if (user.Identity?.IsAuthenticated != true) return;
+
+    var actingUserId = user.FindFirst("userId")?.Value
+      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+      ?? user.FindFirst("sub")?.Value;
+
+    if (string.IsNullOrWhiteSpace(actingUserId)) { hasAccess = false; isLoading = false; return; }
+
+    var targetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+    if (!string.Equals(targetUserId, actingUserId, StringComparison.Ordinal))
+    {
+      var actingUser = await UserRepository.GetUserAsync(actingUserId);
+      hasAccess = actingUser != null &&
+        (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+         actingUser.ManagedStreamers?.Contains(targetUserId) == true);
+      if (!hasAccess) { isLoading = false; return; }
+    }
+
+    TwitchUserId = targetUserId;
+
+    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    featureEnabled = userEntity?.Features.SceneSync == true;
+
+    if (featureEnabled)
+    {
+      await BuildChecklist();
+    }
+
+    isLoading = false;
+  }
+
+  private async Task BuildChecklist()
+  {
+    if (string.IsNullOrEmpty(TwitchUserId)) return;
+
+    var agentState = SyncAgentTracker.GetAgentState(TwitchUserId);
+    var scenes = await SceneRepository.GetScenesAsync(TwitchUserId);
+    var actions = await SceneActionRepository.GetAllAsync(TwitchUserId);
+
+    checklistState = new List<ChecklistState>
+    {
+      new() { Item = new ChecklistItem { Label = "Sync Agent Connected", CheckType = "auto", AutoCheckKey = "agent_connected" }, Checked = agentState != null },
+      new() { Item = new ChecklistItem { Label = "Streaming Software Detected", CheckType = "auto", AutoCheckKey = "streaming_software_detected" }, Checked = agentState != null && !string.IsNullOrEmpty(agentState.SoftwareType) },
+      new() { Item = new ChecklistItem { Label = $"Scenes Discovered ({scenes.Count})", CheckType = "auto", AutoCheckKey = "scenes_exist" }, Checked = scenes.Count > 0 },
+      new() { Item = new ChecklistItem { Label = $"Scene Actions Configured ({actions.Count})", CheckType = "auto", AutoCheckKey = "actions_configured" }, Checked = actions.Count > 0 },
+      new() { Item = new ChecklistItem { Label = "Mic Check", CheckType = "manual" }, Checked = false },
+      new() { Item = new ChecklistItem { Label = "Camera Focused", CheckType = "manual" }, Checked = false },
+      new() { Item = new ChecklistItem { Label = "Stream Title Set", CheckType = "manual" }, Checked = false },
+      new() { Item = new ChecklistItem { Label = "Overlay Visible", CheckType = "manual" }, Checked = false }
+    };
+
+    await PushChecklistProgress();
+  }
+
+  private async Task ToggleItem(ChecklistState item)
+  {
+    if (item.Item.CheckType == "auto") return;
+    item.Checked = !item.Checked;
+    await PushChecklistProgress();
+  }
+
+  private async Task PushChecklistProgress()
+  {
+    if (!string.IsNullOrEmpty(TwitchUserId))
+    {
+      await SyncAgentHub.SendChecklistProgress(SyncAgentHubContext, TwitchUserId, completedCount, totalCount);
+    }
+  }
+
+  private class ChecklistState
+  {
+    public ChecklistItem Item { get; set; } = new();
+    public bool Checked { get; set; }
+  }
+}

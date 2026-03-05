@@ -159,6 +159,7 @@ namespace OmniForge.Infrastructure.Entities
                 if (!jsonProps.Contains("DiscordNotifications")) deserialized.DiscordNotifications = defaults.DiscordNotifications;
                 if (!jsonProps.Contains("TemplateStyle")) deserialized.TemplateStyle = defaults.TemplateStyle;
                 if (!jsonProps.Contains("StreamAlerts")) deserialized.StreamAlerts = defaults.StreamAlerts;
+                if (!jsonProps.Contains("SceneSync")) deserialized.SceneSync = defaults.SceneSync;
                 if (!jsonProps.Contains("StreamSettings")) deserialized.StreamSettings = defaults.StreamSettings;
 
                 if (deserialized.StreamSettings == null)

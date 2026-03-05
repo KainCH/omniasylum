@@ -78,5 +78,8 @@ namespace OmniForge.Web.Services
 
         public Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
             => ForEachNotifierAsync(n => n.NotifyTemplateChangedAsync(userId, templateStyle, template));
+
+        public Task NotifySceneChangedAsync(string userId, string sceneName)
+            => ForEachNotifierAsync(n => n.NotifySceneChangedAsync(userId, sceneName));
     }
 }

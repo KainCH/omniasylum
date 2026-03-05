@@ -1,0 +1,172 @@
+@page "/settings/scenes"
+@page "/manage/{StreamerId}/settings/scenes"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Shared
+@using OmniForge.Web.Components.Modals
+@attribute [Authorize]
+@inject IUserRepository UserRepository
+@inject ISceneRepository SceneRepository
+@inject ISceneActionRepository SceneActionRepository
+@inject ISyncAgentTracker SyncAgentTracker
+
+<PageTitle>Scene Manager</PageTitle>
+
+<div class="container mt-4">
+  <h2><i class="bi bi-camera-video me-2"></i>Scene Manager</h2>
+
+  <AuthorizeView>
+    <Authorized>
+      @if (!hasAccess)
+      {
+        <div class="alert alert-danger mt-3">Access denied.</div>
+      }
+      else if (!featureEnabled)
+      {
+        <div class="alert alert-warning mt-3">
+          <i class="bi bi-lock me-2"></i>Scene Sync is not enabled for your account. Contact an admin to enable it.
+        </div>
+      }
+      else if (isLoading)
+      {
+        <p><em>Loading...</em></p>
+      }
+      else
+      {
+        <div class="mb-3">
+          <AgentStatusBadge UserId="@TwitchUserId" />
+        </div>
+
+        @if (scenes == null || scenes.Count == 0)
+        {
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>No scenes discovered yet. Connect the Sync Agent to your streaming software to discover scenes automatically.
+          </div>
+        }
+        else
+        {
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th>Scene</th>
+                  <th>Source</th>
+                  <th>Last Seen</th>
+                  <th>Actions Configured</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @foreach (var scene in scenes)
+                {
+                  var hasAction = sceneActions.Any(a => string.Equals(a.SceneName, scene.Name, StringComparison.OrdinalIgnoreCase));
+                  var isActiveScene = string.Equals(SyncAgentTracker.GetAgentState(TwitchUserId!)?.CurrentScene, scene.Name, StringComparison.OrdinalIgnoreCase);
+
+                  <tr class="@(isActiveScene ? "table-success" : "")">
+                    <td>
+                      @if (isActiveScene)
+                      {
+                        <i class="bi bi-broadcast me-1 text-success" title="Active scene"></i>
+                      }
+                      @scene.Name
+                    </td>
+                    <td><span class="badge bg-info text-dark">@scene.Source.ToUpperInvariant()</span></td>
+                    <td>@scene.LastSeen.ToLocalTime().ToString("g")</td>
+                    <td>
+                      @if (hasAction)
+                      {
+                        <span class="badge bg-primary">Configured</span>
+                      }
+                      else
+                      {
+                        <span class="text-muted">None</span>
+                      }
+                    </td>
+                    <td>
+                      <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenSceneActionModal(scene.Name)">
+                        <i class="bi bi-gear"></i> Configure
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
+        <SceneActionModal @bind-Show="showSceneActionModal" UserId="@TwitchUserId" SceneName="@selectedSceneName" OnSaved="OnActionSaved" />
+      }
+    </Authorized>
+  </AuthorizeView>
+</div>
+
+@code {
+  [CascadingParameter] private Task<AuthenticationState>? authenticationStateTask { get; set; }
+  [Parameter] public string? StreamerId { get; set; }
+
+  private string? TwitchUserId;
+  private bool hasAccess = true;
+  private bool featureEnabled;
+  private bool isLoading = true;
+  private List<Scene>? scenes;
+  private List<SceneAction> sceneActions = new();
+  private bool showSceneActionModal;
+  private string selectedSceneName = "";
+
+  protected override async Task OnInitializedAsync()
+  {
+    if (authenticationStateTask == null) return;
+
+    var authState = await authenticationStateTask;
+    var user = authState.User;
+    if (user.Identity?.IsAuthenticated != true) return;
+
+    var actingUserId = user.FindFirst("userId")?.Value
+      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+      ?? user.FindFirst("sub")?.Value;
+
+    if (string.IsNullOrWhiteSpace(actingUserId)) { hasAccess = false; return; }
+
+    var targetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+    if (!string.Equals(targetUserId, actingUserId, StringComparison.Ordinal))
+    {
+      var actingUser = await UserRepository.GetUserAsync(actingUserId);
+      hasAccess = actingUser != null &&
+        (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+         actingUser.ManagedStreamers?.Contains(targetUserId) == true);
+      if (!hasAccess) { isLoading = false; return; }
+    }
+
+    TwitchUserId = targetUserId;
+
+    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    featureEnabled = userEntity?.Features.SceneSync == true;
+
+    if (featureEnabled)
+    {
+      scenes = await SceneRepository.GetScenesAsync(TwitchUserId);
+      sceneActions = await SceneActionRepository.GetAllAsync(TwitchUserId);
+    }
+
+    isLoading = false;
+  }
+
+  private void OpenSceneActionModal(string sceneName)
+  {
+    selectedSceneName = sceneName;
+    showSceneActionModal = true;
+  }
+
+  private async Task OnActionSaved()
+  {
+    if (!string.IsNullOrEmpty(TwitchUserId))
+    {
+      sceneActions = await SceneActionRepository.GetAllAsync(TwitchUserId);
+      StateHasChanged();
+    }
+  }
+}

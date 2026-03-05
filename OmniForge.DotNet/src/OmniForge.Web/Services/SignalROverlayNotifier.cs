@@ -104,5 +104,10 @@ namespace OmniForge.Web.Services
         {
             await _hubContext.Clients.Group($"user:{userId}").SendAsync("templateChanged", new { templateStyle, template });
         }
+
+        public async Task NotifySceneChangedAsync(string userId, string sceneName)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("sceneChanged", new { sceneName });
+        }
     }
 }

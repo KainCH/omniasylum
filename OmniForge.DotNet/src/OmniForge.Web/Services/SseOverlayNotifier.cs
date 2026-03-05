@@ -159,6 +159,13 @@ namespace OmniForge.Web.Services
             await _sseManager.SendEventAsync(userId, "template", new { templateStyle, template });
         }
 
+        public async Task NotifySceneChangedAsync(string userId, string sceneName)
+        {
+            LogOverlayAction(userId, "scene");
+
+            await _sseManager.SendEventAsync(userId, "scene", new { sceneName });
+        }
+
         private async Task SendEnrichedAlertAsync(string userId, string alertType, object data)
         {
             using var scope = _scopeFactory.CreateScope();

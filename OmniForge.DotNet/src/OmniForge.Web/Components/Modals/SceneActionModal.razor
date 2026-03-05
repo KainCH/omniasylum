@@ -1,0 +1,189 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject ISceneActionRepository SceneActionRepository
+
+@if (Show)
+{
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-camera-video me-2"></i>Scene Actions: @SceneName</h5>
+          <button type="button" class="btn-close" @onclick="Close"></button>
+        </div>
+        <div class="modal-body">
+          @if (!string.IsNullOrEmpty(errorMessage))
+          {
+            <div class="alert alert-danger">@errorMessage</div>
+          }
+
+          <h6>Counter Visibility</h6>
+          <div class="row mb-3">
+            @foreach (var counter in new[] { "Deaths", "Swears", "Screams", "Bits" })
+            {
+              <div class="col-md-3 mb-2">
+                <label class="form-label">@counter</label>
+                <select class="form-select form-select-sm" @onchange="(e) => SetVisibility(counter, e.Value?.ToString())">
+                  <option value="default" selected="@(GetVisibility(counter) == "default")">Default</option>
+                  <option value="show" selected="@(GetVisibility(counter) == "show")">Show</option>
+                  <option value="hide" selected="@(GetVisibility(counter) == "hide")">Hide</option>
+                </select>
+              </div>
+            }
+          </div>
+
+          <h6>Timer</h6>
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Duration (minutes)</label>
+              <InputNumber TValue="int" class="form-control" @bind-Value="timerMinutes" min="0" max="999" />
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check form-switch">
+                <InputCheckbox id="autoStartTimer" class="form-check-input" @bind-Value="autoStartTimer" />
+                <label class="form-check-label" for="autoStartTimer">Auto-start on scene switch</label>
+              </div>
+            </div>
+          </div>
+
+          <h6>Overtime</h6>
+          <div class="row mb-3">
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="form-check form-switch">
+                <InputCheckbox id="overtimeEnabled" class="form-check-input" @bind-Value="overtimeEnabled" />
+                <label class="form-check-label" for="overtimeEnabled">Enable overtime</label>
+              </div>
+            </div>
+            @if (overtimeEnabled)
+            {
+              <div class="col-md-3">
+                <label class="form-label">Text</label>
+                <InputText class="form-control" @bind-Value="overtimeText" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Text Color</label>
+                <input type="color" class="form-control form-control-color" @bind="overtimeTextColor" @bind:event="oninput" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Flash Interval (s)</label>
+                <InputNumber TValue="int" class="form-control" @bind-Value="overtimeFlashInterval" min="1" max="30" />
+              </div>
+            }
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" @onclick="Close" disabled="@isSaving">Cancel</button>
+          <button class="btn btn-primary" @onclick="Save" disabled="@isSaving">
+            @if (isSaving)
+            {
+              <span class="spinner-border spinner-border-sm me-2"></span>
+              <span>Saving...</span>
+            }
+            else
+            {
+              <span>Save</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@code {
+  [Parameter] public bool Show { get; set; }
+  [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+  [Parameter] public string UserId { get; set; } = "";
+  [Parameter] public string SceneName { get; set; } = "";
+  [Parameter] public EventCallback OnSaved { get; set; }
+
+  private Dictionary<string, string> counterVisibility = new();
+  private int timerMinutes;
+  private bool autoStartTimer;
+  private bool overtimeEnabled;
+  private string overtimeText = "OVERTIME!";
+  private string overtimeTextColor = "#ff0000";
+  private int overtimeFlashInterval = 2;
+  private bool isSaving;
+  private string? errorMessage;
+
+  protected override async Task OnParametersSetAsync()
+  {
+    if (!Show || string.IsNullOrWhiteSpace(UserId) || string.IsNullOrWhiteSpace(SceneName)) return;
+
+    errorMessage = null;
+    var action = await SceneActionRepository.GetAsync(UserId, SceneName);
+    if (action != null)
+    {
+      counterVisibility = new Dictionary<string, string>(action.CounterVisibility, StringComparer.OrdinalIgnoreCase);
+      timerMinutes = action.TimerDurationMinutes;
+      autoStartTimer = action.AutoStartTimer;
+      overtimeEnabled = action.Overtime.Enabled;
+      overtimeText = action.Overtime.Text;
+      overtimeTextColor = action.Overtime.TextColor;
+      overtimeFlashInterval = action.Overtime.FlashIntervalSeconds;
+    }
+    else
+    {
+      counterVisibility = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+      timerMinutes = 0;
+      autoStartTimer = false;
+      overtimeEnabled = false;
+      overtimeText = "OVERTIME!";
+      overtimeTextColor = "#ff0000";
+      overtimeFlashInterval = 2;
+    }
+  }
+
+  private string GetVisibility(string counter)
+  {
+    return counterVisibility.TryGetValue(counter, out var v) ? v : "default";
+  }
+
+  private void SetVisibility(string counter, string? value)
+  {
+    counterVisibility[counter] = value ?? "default";
+  }
+
+  private async Task Save()
+  {
+    isSaving = true;
+    errorMessage = null;
+    try
+    {
+      var action = new SceneAction
+      {
+        UserId = UserId,
+        SceneName = SceneName,
+        CounterVisibility = counterVisibility,
+        TimerDurationMinutes = timerMinutes,
+        AutoStartTimer = autoStartTimer,
+        Overtime = new OvertimeConfig
+        {
+          Enabled = overtimeEnabled,
+          Text = overtimeText,
+          TextColor = overtimeTextColor,
+          FlashIntervalSeconds = overtimeFlashInterval
+        }
+      };
+
+      await SceneActionRepository.SaveAsync(action);
+      await OnSaved.InvokeAsync();
+      await Close();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Error saving: {ex.Message}";
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task Close()
+  {
+    Show = false;
+    await ShowChanged.InvokeAsync(false);
+  }
+}

@@ -568,6 +568,32 @@
       }
     });
 
+    source.addEventListener('scene', (e) => {
+      const data = JSON.parse(e.data);
+      if (window.omniOverlayDebug) {
+        console.log('Scene changed:', data.sceneName);
+      }
+      // Scene changes are handled server-side (counter visibility, timer, etc.)
+      // The overlay receives config/alert events as a result.
+    });
+
+    source.addEventListener('overtime', (e) => {
+      const data = JSON.parse(e.data);
+      if (window.omniOverlayDebug) {
+        console.log('Overtime triggered:', data);
+      }
+      // Display overtime banner
+      if (window.overlayInterop) {
+        window.overlayInterop.triggerAlert('overtime', {
+          text: data.text || 'OVERTIME!',
+          textColor: data.textColor || '#ff0000',
+          backgroundColor: data.backgroundColor || 'rgba(0, 0, 0, 0.8)',
+          flashIntervalSeconds: data.flashIntervalSeconds || 2,
+          duration: 0 // Persistent until scene change
+        });
+      }
+    });
+
     source.onerror = () => {
       // EventSource auto-reconnects. On reconnect, server sends new event: connected.
       // Nothing to do here — the handshake resets automatically.
