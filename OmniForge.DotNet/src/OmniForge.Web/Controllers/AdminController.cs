@@ -221,7 +221,8 @@ namespace OmniForge.Web.Controllers
                     bitsIntegration = users.Count(u => u.Features.BitsIntegration),
                     streamOverlay = users.Count(u => u.Features.StreamOverlay),
                     alertAnimations = users.Count(u => u.Features.AlertAnimations),
-                    streamAlerts = users.Count(u => u.Features.StreamAlerts)
+                    streamAlerts = users.Count(u => u.Features.StreamAlerts),
+                    sceneSync = users.Count(u => u.Features.SceneSync)
                 }
             };
 

@@ -1,0 +1,142 @@
+@page "/pair"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Services
+@attribute [Authorize]
+@inject AgentPairingService PairingService
+@inject IJwtService JwtService
+@inject IUserRepository UserRepository
+
+<PageTitle>Pair Sync Agent</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            @if (string.IsNullOrEmpty(Code))
+            {
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Missing Pairing Code</h5>
+                        <p class="text-muted">No pairing code was provided. Please use the "Sign In" button in the Sync Agent tray icon to start the pairing process.</p>
+                    </div>
+                </div>
+            }
+            else if (approved)
+            {
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">Pairing Approved</h5>
+                        <p class="text-muted">Your Sync Agent is now connected. You can close this tab.</p>
+                    </div>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="card border-danger">
+                    <div class="card-body text-center">
+                        <i class="bi bi-x-circle-fill text-danger" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">Pairing Failed</h5>
+                        <p class="text-danger">@errorMessage</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-link-45deg" style="font-size: 3rem;"></i>
+                        <h5 class="card-title mt-3">Pair Sync Agent</h5>
+                        <p>The OmniForge Sync Agent on your computer is requesting access to your account.</p>
+                        <p class="fw-bold">Pairing Code: <code>@Code</code></p>
+                        <p class="text-muted small">Only approve if you initiated this from the Sync Agent tray icon.</p>
+                        <button class="btn btn-success btn-lg" @onclick="ApproveAsync" disabled="@approving">
+                            @if (approving)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            <i class="bi bi-check-lg"></i> Approve
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Code { get; set; }
+
+    private bool approved;
+    private bool approving;
+    private string? errorMessage;
+
+    private async Task ApproveAsync()
+    {
+        if (string.IsNullOrEmpty(Code) || AuthStateTask == null) return;
+
+        approving = true;
+
+        try
+        {
+            var authState = await AuthStateTask;
+            var userId = authState.User.FindFirst("userId")?.Value
+                ?? authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                errorMessage = "Unable to determine your identity. Please log in again.";
+                return;
+            }
+
+            var user = await UserRepository.GetUserAsync(userId);
+            if (user == null)
+            {
+                errorMessage = "User not found.";
+                return;
+            }
+
+            if (!user.Features.SceneSync)
+            {
+                errorMessage = "The Scene Sync feature is not enabled for your account. Contact an admin.";
+                return;
+            }
+
+            var entry = PairingService.TryPoll(Code);
+            if (entry == null)
+            {
+                errorMessage = "Pairing code not found. It may have expired. Please try again from the Sync Agent.";
+                return;
+            }
+
+            if (entry.IsExpired)
+            {
+                errorMessage = "Pairing code has expired. Please try again from the Sync Agent.";
+                return;
+            }
+
+            var token = JwtService.GenerateToken(user);
+            if (!PairingService.TryApprove(Code, userId, token))
+            {
+                errorMessage = "Pairing code has expired. Please try again from the Sync Agent.";
+                return;
+            }
+
+            approved = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            approving = false;
+        }
+    }
+}

@@ -205,6 +205,14 @@
                 }
               </div>
 
+              @if (currentUserEntity?.Features.SceneSync == true)
+              {
+                <div class="mt-2">
+                  <strong>Sync Agent:</strong>
+                  <a href="/api/sync/agent/download" target="_blank">Download OmniForge Sync Agent</a>
+                </div>
+              }
+
               <AgentStatusBadge UserId="@TwitchUserId" />
 
               <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
@@ -239,6 +247,7 @@
   private string? overlaySaveError;
   private bool hasAccess = true;
   private string? accessDeniedMessage;
+  private OmniForge.Core.Entities.User? currentUserEntity;
 
   protected override async Task OnInitializedAsync()
   {
@@ -284,6 +293,7 @@
 
           // Load user settings to determine which counters to show
           var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+          currentUserEntity = userEntity;
           overlaySettings = userEntity?.OverlaySettings ?? new OmniForge.Core.Entities.OverlaySettings();
 
           // Use the static HTML overlay instead of the Blazor page
