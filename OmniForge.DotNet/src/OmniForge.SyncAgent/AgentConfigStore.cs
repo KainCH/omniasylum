@@ -6,7 +6,7 @@ namespace OmniForge.SyncAgent
     {
         private static readonly string ConfigDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "OmniForge");
+            "omni-forge");
 
         private static readonly string ConfigPath = Path.Combine(ConfigDir, "agent-config.json");
 
