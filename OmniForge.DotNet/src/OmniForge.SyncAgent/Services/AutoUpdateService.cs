@@ -162,14 +162,38 @@ namespace OmniForge.SyncAgent.Services
                 _logger.LogInformation("Applying update...");
                 UpdateApplying?.Invoke();
 
-                // Launch the new exe with --update-from pointing to our current location
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_pendingUpdatePath)
+                // Use a bat trampoline so that the current process fully exits before
+                // the file is copied. Directly launching the downloaded exe with
+                // UseShellExecute=true causes ERROR_SHARING_VIOLATION (32) because
+                // Windows Shell locks the file during SmartScreen/signature checks
+                // while our process still has it open in the download stream.
+                var currentPid  = Environment.ProcessId;
+                var updateDir   = Path.GetDirectoryName(_pendingUpdatePath)!;
+                var batPath     = Path.Combine(updateDir, "apply-update.bat");
+                var installPath = Path.GetFullPath(currentExePath);
+                var updateExe   = Path.GetFullPath(_pendingUpdatePath);
+
+                // Write a self-deleting bat that waits for our PID, then overwrites
+                // the installed exe and relaunches it.
+                var bat = $"""
+                    @echo off
+                    :wait
+                    tasklist /fi "pid eq {currentPid}" 2>nul | find "{currentPid}" >nul
+                    if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)
+                    copy /y "{updateExe}" "{installPath}"
+                    start "" "{installPath}"
+                    del "%~f0"
+                    """;
+
+                File.WriteAllText(batPath, bat);
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
                 {
-                    Arguments = $"--update-from \"{currentExePath}\"",
-                    UseShellExecute = true
+                    Arguments        = $"/c \"{batPath}\"",
+                    UseShellExecute  = false,
+                    CreateNoWindow   = true
                 });
 
-                // Exit current process
                 Environment.Exit(0);
             }
             catch (Exception ex)

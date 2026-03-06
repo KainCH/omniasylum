@@ -207,6 +207,11 @@ namespace OmniForge.SyncAgent.Services
             }
 
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            var versionStr = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "unknown";
+            var aboutItem = new System.Windows.Forms.ToolStripMenuItem($"About (v{versionStr})");
+            aboutItem.Enabled = false;
+            menu.Items.Add(aboutItem);
             menu.Items.Add("Exit", null, (_, _) => ExitApp());
 
             _notifyIcon.ContextMenuStrip = menu;

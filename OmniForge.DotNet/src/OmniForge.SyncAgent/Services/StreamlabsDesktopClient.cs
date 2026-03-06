@@ -107,7 +107,9 @@ namespace OmniForge.SyncAgent.Services
                         names.Add(name.GetString() ?? "");
                     }
                 }
-                return names.ToArray();
+                var sceneNames = names.ToArray();
+                SceneListUpdated?.Invoke(sceneNames);
+                return sceneNames;
             }
             catch (Exception ex)
             {

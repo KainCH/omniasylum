@@ -5,11 +5,11 @@ using Serilog;
 
 // ── Install path ─────────────────────────────────────────────────────────────
 // All agent operations (auto-start registry, auto-update) assume the exe lives
-// at %LocalAppData%\OmniForge\OmniForge.SyncAgent.exe.  On first launch from
+// at %AppData%\omni-forge\OmniForge.SyncAgent.exe.  On first launch from
 // anywhere else (Downloads, Desktop, …) we copy there and relaunch.
 var installDir = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "OmniForge");
+    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    "omni-forge");
 var installPath = Path.Combine(installDir, "OmniForge.SyncAgent.exe");
 
 // Handle --update-from: we are the new version; wait for old process to release
