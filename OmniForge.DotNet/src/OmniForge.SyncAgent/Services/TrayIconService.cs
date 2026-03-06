@@ -191,6 +191,7 @@ namespace OmniForge.SyncAgent.Services
 
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 menu.Items.Add("Sign Out", null, (_, _) => OnSignOutClicked());
+                menu.Items.Add("Uninstall", null, (_, _) => OnUninstallClicked());
             }
             else
             {
@@ -361,6 +362,68 @@ namespace OmniForge.SyncAgent.Services
 
         private void ExitApp()
         {
+            _notifyIcon?.Dispose();
+            _appContext?.ExitThread();
+            Environment.Exit(0);
+        }
+
+        private async void OnUninstallClicked()
+        {
+            var confirm = System.Windows.Forms.MessageBox.Show(
+                "This will remove the OmniForge Sync Agent from your computer:\n\n" +
+                "  • Sign out and disconnect\n" +
+                "  • Remove auto-start\n" +
+                "  • Delete all saved config and credentials\n" +
+                "  • Delete the installed application files\n\n" +
+                "Continue?",
+                "Uninstall OmniForge Sync Agent",
+                System.Windows.Forms.MessageBoxButtons.YesNo,
+                System.Windows.Forms.MessageBoxIcon.Warning,
+                System.Windows.Forms.MessageBoxDefaultButton.Button2);
+
+            if (confirm != System.Windows.Forms.DialogResult.Yes) return;
+
+            try
+            {
+                // 1. Disconnect from server
+                _configStore.ClearToken();
+                try { await _serverConnection.DisconnectAsync(); } catch { }
+
+                // 2. Remove auto-start registry entry
+                _autoStartService.Disable();
+
+                // 3. Delete all AppData (config, logs, cached credentials)
+                _configStore.DeleteAllData();
+
+                // 4. Schedule self-deletion of the exe via a cmd detach trick:
+                //    a short-delay batch command overwrites then deletes the file
+                //    after this process exits.
+                var exePath = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+                {
+                    var script = $"@echo off\r\n" +
+                                 $":loop\r\n" +
+                                 $"del /f /q \"{exePath}\" >nul 2>&1\r\n" +
+                                 $"if exist \"{exePath}\" (timeout /t 1 /nobreak >nul & goto loop)\r\n" +
+                                 $"rd /s /q \"{Path.GetDirectoryName(exePath)}\" >nul 2>&1\r\n";
+
+                    var batPath = Path.Combine(Path.GetTempPath(), "omni-forge-uninstall.bat");
+                    File.WriteAllText(batPath, script);
+
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+                    {
+                        Arguments = $"/c start /min \"\" \"{batPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during uninstall");
+            }
+
+            // Exit immediately so the bat can acquire the exe lock
             _notifyIcon?.Dispose();
             _appContext?.ExitThread();
             Environment.Exit(0);
