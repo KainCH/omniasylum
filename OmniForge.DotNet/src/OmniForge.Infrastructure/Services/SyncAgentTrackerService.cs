@@ -15,6 +15,8 @@ namespace OmniForge.Infrastructure.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SyncAgentTrackerService> _logger;
 
+        public event Action<string>? OnAgentStateChanged;
+
         public SyncAgentTrackerService(IServiceScopeFactory scopeFactory, ILogger<SyncAgentTrackerService> logger)
         {
             _scopeFactory = scopeFactory;
@@ -36,6 +38,7 @@ namespace OmniForge.Infrastructure.Services
             _logger.LogInformation("Sync agent registered: userId={UserId}, software={Software}, connectionId={ConnectionId}",
                 userId, softwareType, connectionId);
 
+            OnAgentStateChanged?.Invoke(userId);
             return Task.CompletedTask;
         }
 
@@ -47,6 +50,7 @@ namespace OmniForge.Infrastructure.Services
                 _agents.TryRemove(userId, out _);
                 _logger.LogInformation("Sync agent unregistered: userId={UserId}, connectionId={ConnectionId}",
                     userId, connectionId);
+                OnAgentStateChanged?.Invoke(userId);
             }
 
             return Task.CompletedTask;
@@ -58,6 +62,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 state.CurrentScene = sceneName;
                 state.LastHeartbeat = DateTimeOffset.UtcNow;
+                OnAgentStateChanged?.Invoke(userId);
             }
 
             return Task.CompletedTask;

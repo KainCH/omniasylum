@@ -12,6 +12,7 @@
 @inject ISceneRepository SceneRepository
 @inject ISceneActionRepository SceneActionRepository
 @inject ISyncAgentTracker SyncAgentTracker
+@implements IDisposable
 
 <PageTitle>Scene Manager</PageTitle>
 
@@ -43,7 +44,8 @@
         @if (scenes == null || scenes.Count == 0)
         {
           <div class="alert alert-info">
-            <i class="bi bi-info-circle me-2"></i>No scenes discovered yet. Connect the Sync Agent to your streaming software to discover scenes automatically.
+            <i class="bi bi-info-circle me-2"></i>No scenes discovered yet. Connect the Sync Agent to your streaming
+            software to discover scenes automatically.
           </div>
         }
         else
@@ -62,8 +64,10 @@
               <tbody>
                 @foreach (var scene in scenes)
                 {
-                  var hasAction = sceneActions.Any(a => string.Equals(a.SceneName, scene.Name, StringComparison.OrdinalIgnoreCase));
-                  var isActiveScene = string.Equals(SyncAgentTracker.GetAgentState(TwitchUserId!)?.CurrentScene, scene.Name, StringComparison.OrdinalIgnoreCase);
+                  var hasAction = sceneActions.Any(a => string.Equals(a.SceneName, scene.Name,
+            StringComparison.OrdinalIgnoreCase));
+                  var isActiveScene = string.Equals(SyncAgentTracker.GetAgentState(TwitchUserId!)?.CurrentScene, scene.Name,
+            StringComparison.OrdinalIgnoreCase);
 
                   <tr class="@(isActiveScene ? "table-success" : "")">
                     <td>
@@ -97,7 +101,8 @@
           </div>
         }
 
-        <SceneActionModal @bind-Show="showSceneActionModal" UserId="@TwitchUserId" SceneName="@selectedSceneName" OnSaved="OnActionSaved" />
+        <SceneActionModal @bind-Show="showSceneActionModal" UserId="@TwitchUserId" SceneName="@selectedSceneName"
+                          OnSaved="OnActionSaved" />
       }
     </Authorized>
   </AuthorizeView>
@@ -153,6 +158,7 @@
     }
 
     isLoading = false;
+    SyncAgentTracker.OnAgentStateChanged += OnAgentStateChanged;
   }
 
   private void OpenSceneActionModal(string sceneName)
@@ -168,5 +174,16 @@
       sceneActions = await SceneActionRepository.GetAllAsync(TwitchUserId);
       StateHasChanged();
     }
+  }
+
+  private void OnAgentStateChanged(string userId)
+  {
+    if (!string.Equals(userId, TwitchUserId, StringComparison.Ordinal)) return;
+    InvokeAsync(StateHasChanged);
+  }
+
+  public void Dispose()
+  {
+    SyncAgentTracker.OnAgentStateChanged -= OnAgentStateChanged;
   }
 }

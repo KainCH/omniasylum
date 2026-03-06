@@ -155,6 +155,7 @@
       startTimerInterval();
     } else {
       manualStartMs = null;
+      stopTimerInterval();
     }
 
     updateTimerVisibility();
@@ -608,7 +609,8 @@
   setInterval(() => {
     updateOverlayContainerVisibility();
     if (!manualRunning) {
-      if (isLiveSignalFresh() && streamStartMs) {
+      const timerHidden = (currentSettings?.timerHidden === true || currentSettings?.TimerHidden === true);
+      if (!timerHidden && isLiveSignalFresh() && streamStartMs) {
         startTimerInterval();
       } else {
         stopTimerInterval();
