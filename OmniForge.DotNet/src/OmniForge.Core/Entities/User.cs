@@ -85,6 +85,8 @@ namespace OmniForge.Core.Entities
         public string? TimerTextColor { get; set; }
         public bool TimerManualRunning { get; set; } = false;
         public DateTimeOffset? TimerManualStartUtc { get; set; }
+        /// <summary>Transient scene-action flag: hide the timer element completely, overriding IsLive auto-show.</summary>
+        public bool TimerHidden { get; set; } = false;
         public OverlayCounters Counters { get; set; } = new OverlayCounters();
         public BitsGoal BitsGoal { get; set; } = new BitsGoal();
         public OverlayTheme Theme { get; set; } = new OverlayTheme();

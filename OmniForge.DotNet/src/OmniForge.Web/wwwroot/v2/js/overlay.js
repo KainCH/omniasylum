@@ -91,7 +91,8 @@
     const timerEl = document.querySelector('.overlay-timer');
     if (!timerEl) return;
     window.omniOverlayTimerExpired = timerExpired;
-    timerEl.style.opacity = (!timerExpired && (shouldForceVisible() || isLiveSignalFresh())) ? '1' : '0';
+    const timerHidden = (currentSettings?.timerHidden === true || currentSettings?.TimerHidden === true);
+    timerEl.style.opacity = (!timerHidden && !timerExpired && (shouldForceVisible() || isLiveSignalFresh())) ? '1' : '0';
   };
 
   const updateTimerDisplay = () => {
