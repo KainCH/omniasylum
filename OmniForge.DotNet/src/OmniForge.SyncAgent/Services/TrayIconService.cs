@@ -8,6 +8,7 @@ namespace OmniForge.SyncAgent.Services
         private readonly ServerConnectionService _serverConnection;
         private readonly PairingService _pairingService;
         private readonly AutoStartService _autoStartService;
+        private readonly AutoUpdateService _autoUpdateService;
         private readonly AgentConfigStore _configStore;
         private readonly ILogger<TrayIconService> _logger;
         private Thread? _trayThread;
@@ -27,6 +28,7 @@ namespace OmniForge.SyncAgent.Services
             ServerConnectionService serverConnection,
             PairingService pairingService,
             AutoStartService autoStartService,
+            AutoUpdateService autoUpdateService,
             AgentConfigStore configStore,
             ILogger<TrayIconService> logger)
         {
@@ -34,6 +36,7 @@ namespace OmniForge.SyncAgent.Services
             _serverConnection = serverConnection;
             _pairingService = pairingService;
             _autoStartService = autoStartService;
+            _autoUpdateService = autoUpdateService;
             _configStore = configStore;
             _logger = logger;
         }
@@ -52,6 +55,27 @@ namespace OmniForge.SyncAgent.Services
                 _checklistCompleted = completed;
                 _checklistTotal = total;
                 UpdateIcon();
+            };
+
+            _autoUpdateService.UpdateAvailable += (current, remote) =>
+            {
+                _notifyIcon?.ShowBalloonTip(8000, "OmniForge Sync Agent — Update Available",
+                    $"Version {remote} is available (you have {current}).\nThe update will be applied automatically when your stream ends.",
+                    System.Windows.Forms.ToolTipIcon.Info);
+            };
+
+            _autoUpdateService.AlreadyUpToDate += current =>
+            {
+                _notifyIcon?.ShowBalloonTip(3000, "OmniForge Sync Agent",
+                    $"You're up to date (v{current}).",
+                    System.Windows.Forms.ToolTipIcon.Info);
+            };
+
+            _autoUpdateService.UpdateApplying += () =>
+            {
+                _notifyIcon?.ShowBalloonTip(4000, "OmniForge Sync Agent — Updating",
+                    "Applying update and restarting...",
+                    System.Windows.Forms.ToolTipIcon.Info);
             };
 
             _trayThread = new Thread(RunTray);
@@ -153,6 +177,11 @@ namespace OmniForge.SyncAgent.Services
                 }
 
                 menu.Items.Add(settingsMenu);
+
+                // Update check
+                var checkUpdateItem = new System.Windows.Forms.ToolStripMenuItem("Check for Update");
+                checkUpdateItem.Click += (_, _) => _ = _autoUpdateService.CheckNowAsync();
+                menu.Items.Add(checkUpdateItem);
 
                 // Setup instructions (visible after first detection)
                 if (_softwareDetected)

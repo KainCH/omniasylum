@@ -13,6 +13,15 @@ namespace OmniForge.SyncAgent.Services
         private bool _isLive;
         private CancellationTokenSource? _cts;
 
+        /// <summary>Fires when a newer version is found. Args: (currentVersion, remoteVersion).</summary>
+        public event Action<string, string>? UpdateAvailable;
+
+        /// <summary>Fires when there is no update (manual check only).</summary>
+        public event Action<string>? AlreadyUpToDate;
+
+        /// <summary>Fires just before the agent relaunches to apply an update.</summary>
+        public event Action? UpdateApplying;
+
         public AutoUpdateService(
             AgentConfigStore configStore,
             ServerConnectionService serverConnection,
@@ -43,6 +52,11 @@ namespace OmniForge.SyncAgent.Services
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Manually trigger an update check. Safe to call from any thread.
+        /// </summary>
+        public Task CheckNowAsync() => CheckForUpdateAsync(notifyIfCurrent: true);
+
         public Task StopAsync(CancellationToken cancellationToken)
         {
             _cts?.Cancel();
@@ -50,7 +64,7 @@ namespace OmniForge.SyncAgent.Services
             return Task.CompletedTask;
         }
 
-        private async Task CheckForUpdateAsync()
+        private async Task CheckForUpdateAsync(bool notifyIfCurrent = false)
         {
             if (!_configStore.HasToken()) return;
 
@@ -79,10 +93,13 @@ namespace OmniForge.SyncAgent.Services
                 if (remoteVersion <= currentVersion)
                 {
                     _logger.LogDebug("Agent is up to date ({Current})", currentVersion);
+                    if (notifyIfCurrent)
+                        AlreadyUpToDate?.Invoke(currentVersion.ToString());
                     return;
                 }
 
                 _logger.LogInformation("Update available: {Current} -> {Remote}", currentVersion, remoteVersion);
+                UpdateAvailable?.Invoke(currentVersion.ToString(), remoteVersion.ToString());
                 await DownloadUpdateAsync(serverUrl + result.DownloadUrl);
             }
             catch (Exception ex)
@@ -142,6 +159,7 @@ namespace OmniForge.SyncAgent.Services
                 }
 
                 _logger.LogInformation("Applying update...");
+                UpdateApplying?.Invoke();
 
                 // Launch the new exe with --update-from pointing to our current location
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_pendingUpdatePath)
