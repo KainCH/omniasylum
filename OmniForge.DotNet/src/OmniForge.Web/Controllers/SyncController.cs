@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -138,7 +140,7 @@ namespace OmniForge.Web.Controllers
             if (!await blobClient.ExistsAsync())
                 return NotFound(new { error = "Agent binary not found" });
 
-            // Generate user delegation SAS if possible, otherwise use service SAS
+            // Generate user delegation SAS using Managed Identity
             var sasBuilder = new BlobSasBuilder
             {
                 BlobContainerName = "sync-agent",
@@ -148,8 +150,15 @@ namespace OmniForge.Web.Controllers
             };
             sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-            var sasUri = blobClient.GenerateSasUri(sasBuilder);
-            return Redirect(sasUri.ToString());
+            var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+                DateTimeOffset.UtcNow.AddMinutes(-5),
+                DateTimeOffset.UtcNow.AddMinutes(5));
+
+            var sasUri = new BlobUriBuilder(blobClient.Uri)
+            {
+                Sas = sasBuilder.ToSasQueryParameters(delegationKey.Value, _blobServiceClient.AccountName)
+            };
+            return Redirect(sasUri.ToUri().ToString());
         }
 
         [HttpGet("agent/version")]
