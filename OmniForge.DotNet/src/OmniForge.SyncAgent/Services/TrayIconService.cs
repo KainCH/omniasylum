@@ -15,10 +15,12 @@ namespace OmniForge.SyncAgent.Services
         private System.Windows.Forms.ApplicationContext? _appContext;
         private bool _softwareConnected;
         private bool _serverConnected;
+        private bool _softwareDetected;
         private string _currentScene = "";
         private int _checklistCompleted;
         private int _checklistTotal;
         private bool _isPairing;
+        private bool _initialSyncShown;
 
         public TrayIconService(
             StreamingSoftwareMonitor monitor,
@@ -38,11 +40,12 @@ namespace OmniForge.SyncAgent.Services
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            _monitor.SoftwareConnected += () => { _softwareConnected = true; UpdateIcon(); };
+            _monitor.SoftwareDetected += OnSoftwareDetected;
+            _monitor.SoftwareConnected += () => { _softwareConnected = true; UpdateIcon(); OnFirstSync(); };
             _monitor.SoftwareDisconnected += _ => { _softwareConnected = false; UpdateIcon(); };
             _monitor.SceneActivated += scene => { _currentScene = scene; UpdateIcon(); };
 
-            _serverConnection.ServerConnected += () => { _serverConnected = true; UpdateIcon(); RebuildMenu(); };
+            _serverConnection.ServerConnected += () => { _serverConnected = true; UpdateIcon(); RebuildMenu(); OnFirstSync(); };
             _serverConnection.ServerDisconnected += _ => { _serverConnected = false; UpdateIcon(); };
             _serverConnection.ChecklistProgressReceived += (completed, total) =>
             {
@@ -140,7 +143,22 @@ namespace OmniForge.SyncAgent.Services
                     _configStore.Save(_configStore.Config);
                 };
                 settingsMenu.DropDownItems.Add(autoStartItem);
+
+                // OBS password setting (only when using OBS)
+                if (_monitor.Client is ObsWebSocketClient)
+                {
+                    var obsPasswordItem = new System.Windows.Forms.ToolStripMenuItem("OBS WebSocket Password...");
+                    obsPasswordItem.Click += (_, _) => PromptObsPassword();
+                    settingsMenu.DropDownItems.Add(obsPasswordItem);
+                }
+
                 menu.Items.Add(settingsMenu);
+
+                // Setup instructions (visible after first detection)
+                if (_softwareDetected)
+                {
+                    menu.Items.Add("Setup Instructions", null, (_, _) => OpenSetupInstructions());
+                }
 
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 menu.Items.Add("Sign Out", null, (_, _) => OnSignOutClicked());
@@ -178,10 +196,15 @@ namespace OmniForge.SyncAgent.Services
                     color = Color.Gray;
                     tooltip += " - Not signed in";
                 }
+                else if (!_softwareDetected)
+                {
+                    color = Color.Orange;
+                    tooltip += " - Scanning for streaming software...";
+                }
                 else if (_serverConnected && _softwareConnected)
                 {
                     color = Color.Green;
-                    tooltip += $" - Connected to {_monitor.Client.SoftwareType.ToUpperInvariant()}";
+                    tooltip += $" - Connected to {_monitor.Client?.SoftwareType?.ToUpperInvariant() ?? "Unknown"}";
                     if (!string.IsNullOrEmpty(_currentScene))
                         tooltip += $"\nScene: {_currentScene}";
                 }
@@ -276,14 +299,18 @@ namespace OmniForge.SyncAgent.Services
 
         private void ShowStatus()
         {
-            var status = _serverConnected && _softwareConnected
-                ? "Fully connected"
-                : _serverConnected ? "Server connected, software disconnected"
-                : _softwareConnected ? "Software connected, server disconnected"
-                : "Disconnected";
+            var softwareName = _monitor.DetectedSoftwareName ?? "Not detected";
+            var clientType = _monitor.Client?.SoftwareType ?? "none";
+            var status = !_softwareDetected
+                ? "Scanning for streaming software..."
+                : _serverConnected && _softwareConnected
+                    ? "Fully connected"
+                    : _serverConnected ? "Server connected, software disconnected"
+                    : _softwareConnected ? "Software connected, server disconnected"
+                    : "Disconnected";
 
             System.Windows.Forms.MessageBox.Show(
-                $"Status: {status}\nSoftware: {_monitor.Client.SoftwareType}\nScene: {_currentScene}",
+                $"Status: {status}\nSoftware: {softwareName} ({clientType})\nScene: {_currentScene}",
                 "OmniForge Sync Agent",
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
@@ -308,6 +335,152 @@ namespace OmniForge.SyncAgent.Services
             _notifyIcon?.Dispose();
             _appContext?.ExitThread();
             Environment.Exit(0);
+        }
+
+        private void OnSoftwareDetected(string softwareName)
+        {
+            _softwareDetected = true;
+            UpdateIcon();
+            RebuildMenu();
+
+            // Toast: announce which software was found
+            _notifyIcon?.ShowBalloonTip(5000, "OmniForge Sync Agent",
+                $"{softwareName} detected! Scene sync is ready to connect.",
+                System.Windows.Forms.ToolTipIcon.Info);
+
+            // If OBS was detected, show a follow-up toast about password requirement
+            if (_monitor.Client is ObsWebSocketClient obsClient)
+            {
+                obsClient.AuthenticationFailed += OnObsAuthFailed;
+
+                // If no saved password, proactively notify that it may be needed
+                if (string.IsNullOrEmpty(_configStore.Config.ObsPassword))
+                {
+                    _notifyIcon?.ShowBalloonTip(7000, "OBS WebSocket Password",
+                        "If OBS has WebSocket authentication enabled, set your password in the tray menu:\nRight-click > Settings > OBS WebSocket Password",
+                        System.Windows.Forms.ToolTipIcon.Warning);
+                }
+            }
+        }
+
+        private void OnFirstSync()
+        {
+            // Show setup instructions once when both software and server are connected for the first time
+            if (_initialSyncShown || !_softwareConnected || !_serverConnected) return;
+            _initialSyncShown = true;
+
+            var softwareName = _monitor.DetectedSoftwareName ?? "streaming software";
+            _notifyIcon?.ShowBalloonTip(5000, "OmniForge Sync Agent",
+                $"Connected to {softwareName} and OmniForge server!\nOpening setup instructions...",
+                System.Windows.Forms.ToolTipIcon.Info);
+
+            // Automatically open the setup instructions page
+            OpenSetupInstructions();
+        }
+
+        private void OpenSetupInstructions()
+        {
+            var serverUrl = _configStore.ServerUrl;
+            var softwareType = _monitor.Client?.SoftwareType ?? "obs";
+            var url = $"{serverUrl.TrimEnd('/')}/sync-setup?software={softwareType}";
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to open browser for setup instructions");
+            }
+        }
+
+        private void OnObsAuthFailed()
+        {
+            _notifyIcon?.ShowBalloonTip(5000, "OmniForge Sync Agent",
+                "OBS WebSocket authentication failed. Please set your password in Settings > OBS WebSocket Password.",
+                System.Windows.Forms.ToolTipIcon.Warning);
+
+            PromptObsPassword();
+        }
+
+        private void PromptObsPassword()
+        {
+            // Must run on an STA thread for WinForms dialogs
+            if (_notifyIcon?.ContextMenuStrip?.InvokeRequired == true)
+            {
+                _notifyIcon.ContextMenuStrip.Invoke(new Action(PromptObsPassword));
+                return;
+            }
+
+            var currentPassword = _configStore.Config.ObsPassword ?? "";
+            var result = ShowPasswordDialog("OBS WebSocket Password",
+                "Enter the password from OBS > Tools > WebSocket Server Settings:",
+                currentPassword);
+
+            if (result == null) return; // Cancelled
+
+            _configStore.SaveObsPassword(string.IsNullOrEmpty(result) ? null : result);
+
+            if (_monitor.Client is ObsWebSocketClient obsClient)
+            {
+                obsClient.SetPassword(string.IsNullOrEmpty(result) ? null : result);
+
+                // Reconnect with the new password
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await obsClient.DisconnectAsync();
+                        await obsClient.ConnectAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to reconnect OBS after password change");
+                    }
+                });
+            }
+
+            _notifyIcon?.ShowBalloonTip(3000, "OmniForge Sync Agent",
+                "OBS password updated. Reconnecting...",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+
+        private static string? ShowPasswordDialog(string title, string prompt, string currentValue)
+        {
+            var form = new System.Windows.Forms.Form
+            {
+                Text = title,
+                Width = 420,
+                Height = 180,
+                FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog,
+                StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                TopMost = true
+            };
+
+            var label = new System.Windows.Forms.Label { Left = 15, Top = 15, Width = 370, Text = prompt };
+            var textBox = new System.Windows.Forms.TextBox
+            {
+                Left = 15, Top = 45, Width = 370,
+                UseSystemPasswordChar = true,
+                Text = currentValue
+            };
+            var okButton = new System.Windows.Forms.Button
+            {
+                Text = "OK", Left = 220, Top = 85, Width = 80,
+                DialogResult = System.Windows.Forms.DialogResult.OK
+            };
+            var cancelButton = new System.Windows.Forms.Button
+            {
+                Text = "Cancel", Left = 305, Top = 85, Width = 80,
+                DialogResult = System.Windows.Forms.DialogResult.Cancel
+            };
+
+            form.Controls.AddRange(new System.Windows.Forms.Control[] { label, textBox, okButton, cancelButton });
+            form.AcceptButton = okButton;
+            form.CancelButton = cancelButton;
+
+            return form.ShowDialog() == System.Windows.Forms.DialogResult.OK ? textBox.Text : null;
         }
 
         public void Dispose()

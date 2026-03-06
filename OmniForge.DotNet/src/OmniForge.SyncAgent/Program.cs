@@ -66,57 +66,19 @@ try
             var config = context.Configuration;
             var softwareMode = config.GetValue("StreamingSoftware", "auto")?.ToLowerInvariant() ?? "auto";
 
-            // Register streaming software client based on config
-            if (softwareMode == "streamlabs")
-            {
-                services.AddSingleton<IStreamingSoftwareClient, StreamlabsDesktopClient>();
-            }
-            else if (softwareMode == "obs")
-            {
-                services.AddSingleton<IStreamingSoftwareClient, ObsWebSocketClient>();
-            }
-            else
-            {
-                // Auto-detect: try OBS first (most common), fall back to Streamlabs
-                services.AddSingleton<IStreamingSoftwareClient>(sp =>
-                {
-                    var logger = sp.GetRequiredService<ILogger<ObsWebSocketClient>>();
-                    var slLogger = sp.GetRequiredService<ILogger<StreamlabsDesktopClient>>();
-
-                    // Check if OBS WebSocket is likely available
-                    try
-                    {
-                        using var tcpClient = new System.Net.Sockets.TcpClient();
-                        var port = config.GetValue("Obs:Port", 4455);
-                        tcpClient.Connect("127.0.0.1", port);
-                        Log.Information("Auto-detected OBS WebSocket on port {Port}", port);
-                        return new ObsWebSocketClient(config, logger);
-                    }
-                    catch
-                    {
-                        // OBS not available, check Streamlabs pipe
-                        try
-                        {
-                            if (System.IO.File.Exists(@"\\.\pipe\slobs"))
-                            {
-                                Log.Information("Auto-detected Streamlabs Desktop named pipe");
-                                return new StreamlabsDesktopClient(config, slLogger);
-                            }
-                        }
-                        catch { }
-                    }
-
-                    // Default to OBS (will reconnect when available)
-                    Log.Information("No streaming software detected, defaulting to OBS (will retry connection)");
-                    return new ObsWebSocketClient(config, logger);
-                });
-            }
-
             // Config store and new services
             services.AddSingleton(configStore);
             services.AddSingleton<PairingService>();
             services.AddSingleton<AutoStartService>();
             services.AddSingleton<AutoUpdateService>();
+
+            // Streaming software detection & client creation
+            services.AddSingleton(new StreamingSoftwareDetectorOptions
+            {
+                PreferredMode = softwareMode,
+                ObsPort = config.GetValue("Obs:Port", 4455)
+            });
+            services.AddSingleton<StreamingSoftwareDetector>();
 
             // Hosted services
             services.AddSingleton<StreamingSoftwareMonitor>();

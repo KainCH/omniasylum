@@ -1,0 +1,285 @@
+@page "/sync-setup"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Interfaces
+@attribute [Authorize]
+@inject ISyncAgentTracker SyncAgentTracker
+@inject IUserRepository UserRepository
+@inject NavigationManager NavigationManager
+
+<PageTitle>Sync Agent Setup</PageTitle>
+
+<div class="container mt-4" style="max-width: 800px;">
+    <h2><i class="bi bi-gear me-2"></i>Sync Agent Setup</h2>
+
+    <AuthorizeView>
+        <Authorized>
+            @if (isLoading)
+            {
+                <p><em>Loading...</em></p>
+            }
+            else if (!hasAccess)
+            {
+                <div class="alert alert-danger mt-3">Access denied.</div>
+            }
+            else
+            {
+                @* Agent connection status *@
+                <div class="card mb-4 @(agentConnected ? "border-success" : "border-warning")">
+                    <div class="card-body d-flex align-items-center">
+                        @if (agentConnected)
+                        {
+                            <i class="bi bi-check-circle-fill text-success me-2" style="font-size: 1.5rem;"></i>
+                            <div>
+                                <strong>Sync Agent Connected</strong>
+                                <span class="text-muted ms-2">via @(detectedSoftware?.ToUpperInvariant() ?? "Unknown")</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <i class="bi bi-exclamation-triangle-fill text-warning me-2" style="font-size: 1.5rem;"></i>
+                            <div>
+                                <strong>Sync Agent Not Connected</strong>
+                                <span class="text-muted ms-2">— make sure the agent is running on your PC</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* Software-specific instructions *@
+                @if (IsObs)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-camera-video me-2"></i>OBS Studio Configuration
+                        </div>
+                        <div class="card-body">
+                            <h5>1. Enable WebSocket Server</h5>
+                            <ol>
+                                <li>Open OBS Studio</li>
+                                <li>Go to <strong>Tools &gt; WebSocket Server Settings</strong></li>
+                                <li>Check <strong>Enable WebSocket Server</strong></li>
+                                <li>The default port is <code>4455</code> — leave it as-is unless you have a conflict</li>
+                            </ol>
+
+                            <h5>2. WebSocket Password (Optional)</h5>
+                            <p>If you enable <em>Show Connect Info</em> in the WebSocket settings and set a password:</p>
+                            <ul>
+                                <li>Right-click the <strong>OmniForge Sync Agent</strong> tray icon</li>
+                                <li>Go to <strong>Settings &gt; OBS WebSocket Password</strong></li>
+                                <li>Enter the same password shown in OBS</li>
+                            </ul>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-1"></i>
+                                OBS 28+ includes WebSocket v5 by default. If you're on an older version, install the
+                                <a href="https://github.com/obsproject/obs-websocket/releases" target="_blank" rel="noopener noreferrer">obs-websocket plugin</a>.
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (IsStreamlabs)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-broadcast me-2"></i>Streamlabs Desktop Configuration
+                        </div>
+                        <div class="card-body">
+                            <h5>1. Enable Remote Control</h5>
+                            <ol>
+                                <li>Open Streamlabs Desktop</li>
+                                <li>Go to <strong>Settings &gt; Remote Control</strong></li>
+                                <li>Enable <strong>Remote Control</strong></li>
+                                <li>The agent connects automatically via named pipe — no token needed</li>
+                            </ol>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Streamlabs Desktop must be running before the Sync Agent can detect and connect to it.
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <i class="bi bi-search me-2"></i>Detecting Streaming Software
+                        </div>
+                        <div class="card-body">
+                            <p>The Sync Agent will automatically detect your streaming software. Make sure one of the following is running:</p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h6><i class="bi bi-camera-video me-2"></i>OBS Studio</h6>
+                                            <p class="small text-muted mb-0">Enable WebSocket Server in Tools &gt; WebSocket Server Settings</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h6><i class="bi bi-broadcast me-2"></i>Streamlabs Desktop</h6>
+                                            <p class="small text-muted mb-0">Enable Remote Control in Settings</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* Scene sync instructions — common to all *@
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-arrow-repeat me-2"></i>How Scene Sync Works
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li>The agent connects to your streaming software and discovers all scenes</li>
+                            <li>Scene names are reported to OmniForge and saved for configuration</li>
+                            <li>When you switch scenes, the agent sends the change to the server</li>
+                            <li>The server applies your configured <strong>scene actions</strong> (counter visibility, timers, overtime alerts)</li>
+                        </ol>
+                        <p class="mb-0">
+                            <a href="@PreFlightUrl" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-clipboard-check me-1"></i>Open Pre-Flight Checklist
+                            </a>
+                        </p>
+                    </div>
+                </div>
+
+                @* Troubleshooting *@
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-wrench me-2"></i>Troubleshooting
+                    </div>
+                    <div class="card-body">
+                        @if (IsObs)
+                        {
+                            <dl class="mb-0">
+                                <dt>Can't connect to OBS</dt>
+                                <dd>Ensure WebSocket Server is enabled in OBS (Tools &gt; WebSocket Server Settings). Check that the agent and OBS are using the same port (default 4455).</dd>
+                                <dt>Authentication failed</dt>
+                                <dd>Set your OBS WebSocket password in the agent tray menu: Right-click &gt; Settings &gt; OBS WebSocket Password.</dd>
+                                <dt>Scenes not appearing</dt>
+                                <dd>Switch to each scene once, or restart the agent after adding new scenes in OBS.</dd>
+                            </dl>
+                        }
+                        else if (IsStreamlabs)
+                        {
+                            <dl class="mb-0">
+                                <dt>Can't connect to Streamlabs</dt>
+                                <dd>Ensure Remote Control is enabled in Streamlabs Desktop settings. Restart Streamlabs if needed.</dd>
+                                <dt>Scenes not appearing</dt>
+                                <dd>Switch to each scene once, or restart the agent after adding new scenes in Streamlabs.</dd>
+                            </dl>
+                        }
+                        else
+                        {
+                            <dl class="mb-0">
+                                <dt>No software detected</dt>
+                                <dd>Make sure OBS Studio or Streamlabs Desktop is running. The agent polls every 5 seconds.</dd>
+                                <dt>Server connection fails</dt>
+                                <dd>Ensure you're signed in — right-click the tray icon and choose "Sign In" if needed.</dd>
+                            </dl>
+                        }
+                    </div>
+                </div>
+
+                @* Tray icon reference *@
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-circle-fill text-success me-2" style="font-size: 0.7rem;"></i>Tray Icon Guide
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Color</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-success">&nbsp;&nbsp;</span> Green</td>
+                                    <td>Connected to both server and streaming software</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-warning text-dark">&nbsp;&nbsp;</span> Yellow</td>
+                                    <td>Partially connected (one side disconnected)</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" style="background-color: orange;">&nbsp;&nbsp;</span> Orange</td>
+                                    <td>Scanning for streaming software</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-danger">&nbsp;&nbsp;</span> Red</td>
+                                    <td>Disconnected from both server and software</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-secondary">&nbsp;&nbsp;</span> Gray</td>
+                                    <td>Not signed in</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </Authorized>
+        <NotAuthorized>
+            <div class="alert alert-warning mt-3">Please sign in to view setup instructions.</div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Software { get; set; }
+
+    private string? twitchUserId;
+    private bool isLoading = true;
+    private bool hasAccess;
+    private bool agentConnected;
+    private string? detectedSoftware;
+
+    private bool IsObs => string.Equals(detectedSoftware, "obs", StringComparison.OrdinalIgnoreCase);
+    private bool IsStreamlabs => string.Equals(detectedSoftware, "streamlabs", StringComparison.OrdinalIgnoreCase);
+    private string PreFlightUrl => "/preflight";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask == null) return;
+
+        var authState = await AuthStateTask;
+        twitchUserId = authState.User.FindFirst("userId")?.Value
+            ?? authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(twitchUserId))
+        {
+            isLoading = false;
+            return;
+        }
+
+        var user = await UserRepository.GetUserAsync(twitchUserId);
+        hasAccess = user != null;
+
+        // Determine software type from agent tracker (live state) or query string fallback
+        var agentState = SyncAgentTracker.GetAgentState(twitchUserId);
+        agentConnected = agentState != null && SyncAgentTracker.IsAgentConnected(twitchUserId);
+
+        if (agentConnected && !string.IsNullOrEmpty(agentState?.SoftwareType) && agentState.SoftwareType != "unknown")
+        {
+            detectedSoftware = agentState.SoftwareType;
+        }
+        else if (!string.IsNullOrEmpty(Software))
+        {
+            detectedSoftware = Software;
+        }
+
+        isLoading = false;
+    }
+}
