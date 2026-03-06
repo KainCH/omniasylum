@@ -87,8 +87,10 @@ namespace OmniForge.SyncAgent.Services
             try
             {
                 using var tcp = new System.Net.Sockets.TcpClient();
-                tcp.Connect("127.0.0.1", _options.ObsPort);
-                return true;
+                // Use a short connect timeout — the default can block for ~20 seconds
+                // on Windows when nothing is listening, making detection extremely slow.
+                return tcp.ConnectAsync("127.0.0.1", _options.ObsPort)
+                           .Wait(TimeSpan.FromMilliseconds(500));
             }
             catch
             {

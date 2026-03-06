@@ -109,9 +109,51 @@
       }
     },
     {
+      "label": "Setup Agent Signing (one-time)",
+      "type": "shell",
+      "command": ".\\setup-agent-signing.ps1",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
       "label": "Publish Sync Agent",
       "type": "shell",
       "command": ".\\publish-agent.ps1",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Publish Sync Agent (bump minor)",
+      "type": "shell",
+      "command": ".\\publish-agent.ps1 -BumpMinor",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Publish Sync Agent (bump major)",
+      "type": "shell",
+      "command": ".\\publish-agent.ps1 -BumpMajor",
       "options": {
         "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
       },

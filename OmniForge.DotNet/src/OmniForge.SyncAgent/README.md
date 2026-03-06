@@ -73,6 +73,61 @@ Right-click the tray icon > **Settings > Start with Windows**, or set `"StartWit
 4. When you switch scenes, the agent reports the change
 5. The server applies configured scene actions (counter visibility, timers, overtime alerts)
 
+## Code Signing Setup
+
+Windows SmartScreen blocks unsigned executables downloaded from the internet. Signing the agent with an Azure Key Vault certificate removes that warning permanently.
+
+### One-time setup
+
+**1. Create a self-signed code-signing certificate in Key Vault**
+
+```powershell
+az keyvault certificate create `
+  --vault-name forge-steel-vault `
+  --name OmniForgeAgentSigning `
+  --policy (az keyvault certificate get-default-policy --out json | ConvertFrom-Json | `
+      ForEach-Object { $_.keyProperties.keyType = "RSA"; $_.keyProperties.keySize = 4096; `
+                       $_.keyProperties.reuseKey = $true; `
+                       $_.x509CertificateProperties.ekus = @("1.3.6.1.5.5.7.3.3"); `
+                       $_ } | ConvertTo-Json -Depth 10)
+```
+
+> **Full SmartScreen trust requires a purchased EV or OV code-signing certificate** from a CA such as DigiCert or Sectigo. An EV cert bypasses SmartScreen instantly; an OV cert builds reputation over time. Import the purchased PFX into Key Vault with `az keyvault certificate import` using the same name `OmniForgeAgentSigning`.
+
+**2. Grant your identity access to the certificate**
+
+```powershell
+az keyvault set-policy `
+  --name forge-steel-vault `
+  --upn (az account show --query user.name -o tsv) `
+  --certificate-permissions get list `
+  --key-permissions sign
+```
+
+**3. Install AzureSignTool** (one-time, handled automatically by the publish script)
+
+```powershell
+dotnet tool install --global AzureSignTool
+```
+
+### Publish a signed release
+
+```powershell
+# VS Code task: "Publish Sync Agent"
+.\.publish-agent.ps1
+```
+
+Signing is mandatory — the script always signs before uploading. The certificate and private key stay in Key Vault; nothing sensitive touches disk.
+
+### Why EV over self-signed?
+
+| Certificate type                  | SmartScreen result                                   |
+| --------------------------------- | ---------------------------------------------------- |
+| None (unsigned)                   | Blocked — "Windows protected your PC"                |
+| Self-signed (Key Vault generated) | Warning — users can click through                    |
+| OV code-signing (purchased)       | Warning until reputation builds (~100s of downloads) |
+| EV code-signing (purchased)       | No warning — immediate trust                         |
+
 ## Advanced Configuration
 
 Edit `appsettings.json` to override defaults:

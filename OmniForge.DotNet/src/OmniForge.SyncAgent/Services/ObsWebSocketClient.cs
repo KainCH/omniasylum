@@ -47,18 +47,16 @@ namespace OmniForge.SyncAgent.Services
             _intentionalDisconnect = false;
             _reconnectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-            await Task.Run(() =>
+            _logger.LogInformation("Connecting to OBS at {Url}...", _url);
+            try
             {
-                try
-                {
-                    _obs.ConnectAsync(_url, _password ?? "");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to connect to OBS at {Url}", _url);
-                    _ = ReconnectLoopAsync(_reconnectCts.Token);
-                }
-            }, cancellationToken);
+                await Task.Run(() => _obs.ConnectAsync(_url, _password ?? ""), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Initial connect to OBS at {Url} failed — starting reconnect loop", _url);
+                _ = ReconnectLoopAsync(_reconnectCts.Token);
+            }
         }
 
         public Task DisconnectAsync()
@@ -130,12 +128,20 @@ namespace OmniForge.SyncAgent.Services
 
         private async Task ReconnectLoopAsync(CancellationToken ct)
         {
-            var delay = TimeSpan.FromSeconds(2);
-            var maxDelay = TimeSpan.FromSeconds(60);
+            var delay = TimeSpan.FromSeconds(5);
+            const double maxDelaySeconds = 60;
 
             while (!ct.IsCancellationRequested)
             {
-                await Task.Delay(delay, ct);
+                try
+                {
+                    await Task.Delay(delay, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
                 try
                 {
                     _logger.LogInformation("Attempting to reconnect to OBS at {Url}...", _url);
@@ -145,7 +151,7 @@ namespace OmniForge.SyncAgent.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "OBS reconnect attempt failed");
-                    delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, maxDelay.TotalSeconds));
+                    delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, maxDelaySeconds));
                 }
             }
         }
