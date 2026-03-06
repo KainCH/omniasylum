@@ -46,6 +46,8 @@ else
         </div>
     }
 
+    @if (user.OverlaySettings?.Counters?.HideAll != true)
+    {
     <div class="counter-overlay" style="@GetPositionStyle()">
         @if (user.OverlaySettings?.Counters?.Deaths == true)
         {
@@ -102,6 +104,7 @@ else
             </div>
         }
     </div>
+    }
 
     <!-- Alert popup -->
     <div class="counter-alert" id="alert-popup"></div>

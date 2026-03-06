@@ -18,58 +18,65 @@
           }
 
           <h6>Counter Visibility</h6>
-          <div class="row mb-3">
-            @foreach (var counter in new[] { "Deaths", "Swears", "Screams", "Bits" })
-            {
-              <div class="col-md-3 mb-2">
-                <label class="form-label">@counter</label>
-                <select class="form-select form-select-sm" @onchange="(e) => SetVisibility(counter, e.Value?.ToString())">
-                  <option value="default" selected="@(GetVisibility(counter) == "default")">Default</option>
-                  <option value="show" selected="@(GetVisibility(counter) == "show")">Show</option>
-                  <option value="hide" selected="@(GetVisibility(counter) == "hide")">Hide</option>
-                </select>
-              </div>
-            }
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input id="showCounters" type="checkbox" class="form-check-input" checked="@countersVisible"
+                     @onchange="OnCountersVisibleChanged" />
+              <label class="form-check-label" for="showCounters">Show counters on this scene</label>
+            </div>
+            <div class="form-text">When off, the entire counter block is hidden on the overlay while this scene is active.
+            </div>
           </div>
 
           <h6>Timer</h6>
-          <div class="row mb-3">
-            <div class="col-md-4">
-              <label class="form-label">Duration (minutes)</label>
-              <InputNumber TValue="int" class="form-control" @bind-Value="timerMinutes" min="0" max="999" />
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <InputCheckbox id="timerEnabled" class="form-check-input" @bind-Value="timerEnabled" />
+              <label class="form-check-label" for="timerEnabled">Enable timer on this scene</label>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
-              <div class="form-check form-switch">
-                <InputCheckbox id="autoStartTimer" class="form-check-input" @bind-Value="autoStartTimer" />
-                <label class="form-check-label" for="autoStartTimer">Auto-start on scene switch</label>
+            <div class="form-text">When off, any running timer is stopped and hidden when this scene becomes active.</div>
+          </div>
+          @if (timerEnabled)
+          {
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <label class="form-label">Duration (minutes)</label>
+                <InputNumber TValue="int" class="form-control" @bind-Value="timerMinutes" min="0" max="999" />
+              </div>
+              <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <InputCheckbox id="autoStartTimer" class="form-check-input" @bind-Value="autoStartTimer" />
+                  <label class="form-check-label" for="autoStartTimer">Auto-start on scene switch</label>
+                </div>
               </div>
             </div>
-          </div>
 
-          <h6>Overtime</h6>
-          <div class="row mb-3">
-            <div class="col-md-3 d-flex align-items-end">
-              <div class="form-check form-switch">
-                <InputCheckbox id="overtimeEnabled" class="form-check-input" @bind-Value="overtimeEnabled" />
-                <label class="form-check-label" for="overtimeEnabled">Enable overtime</label>
+            <h6>Overtime</h6>
+            <div class="row mb-3">
+              <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check form-switch">
+                  <InputCheckbox id="overtimeEnabled" class="form-check-input" @bind-Value="overtimeEnabled" />
+                  <label class="form-check-label" for="overtimeEnabled">Enable overtime</label>
+                </div>
               </div>
+              @if (overtimeEnabled)
+              {
+                <div class="col-md-3">
+                  <label class="form-label">Text</label>
+                  <InputText class="form-control" @bind-Value="overtimeText" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Text Color</label>
+                  <input type="color" class="form-control form-control-color" @bind="overtimeTextColor"
+                         @bind:event="oninput" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Flash Interval (s)</label>
+                  <InputNumber TValue="int" class="form-control" @bind-Value="overtimeFlashInterval" min="1" max="30" />
+                </div>
+              }
             </div>
-            @if (overtimeEnabled)
-            {
-              <div class="col-md-3">
-                <label class="form-label">Text</label>
-                <InputText class="form-control" @bind-Value="overtimeText" />
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Text Color</label>
-                <input type="color" class="form-control form-control-color" @bind="overtimeTextColor" @bind:event="oninput" />
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Flash Interval (s)</label>
-                <InputNumber TValue="int" class="form-control" @bind-Value="overtimeFlashInterval" min="1" max="30" />
-              </div>
-            }
-          </div>
+          }
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline-secondary" @onclick="Close" disabled="@isSaving">Cancel</button>
@@ -98,6 +105,8 @@
   [Parameter] public EventCallback OnSaved { get; set; }
 
   private Dictionary<string, string> counterVisibility = new();
+  private bool countersVisible = true;
+  private bool timerEnabled;
   private int timerMinutes;
   private bool autoStartTimer;
   private bool overtimeEnabled;
@@ -116,6 +125,9 @@
     if (action != null)
     {
       counterVisibility = new Dictionary<string, string>(action.CounterVisibility, StringComparer.OrdinalIgnoreCase);
+      // Derive single toggle from sentinel key "*"
+      countersVisible = !(counterVisibility.TryGetValue("*", out var cv) && cv == "hide");
+      timerEnabled = action.TimerEnabled;
       timerMinutes = action.TimerDurationMinutes;
       autoStartTimer = action.AutoStartTimer;
       overtimeEnabled = action.Overtime.Enabled;
@@ -126,6 +138,8 @@
     else
     {
       counterVisibility = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+      countersVisible = true;
+      timerEnabled = false;
       timerMinutes = 0;
       autoStartTimer = false;
       overtimeEnabled = false;
@@ -145,6 +159,15 @@
     counterVisibility[counter] = value ?? "default";
   }
 
+  private void OnCountersVisibleChanged(ChangeEventArgs e)
+  {
+    countersVisible = e.Value is true;
+    if (countersVisible)
+      counterVisibility.Remove("*");
+    else
+      counterVisibility["*"] = "hide";
+  }
+
   private async Task Save()
   {
     isSaving = true;
@@ -156,6 +179,7 @@
         UserId = UserId,
         SceneName = SceneName,
         CounterVisibility = counterVisibility,
+        TimerEnabled = timerEnabled,
         TimerDurationMinutes = timerMinutes,
         AutoStartTimer = autoStartTimer,
         Overtime = new OvertimeConfig

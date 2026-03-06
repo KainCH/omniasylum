@@ -14,6 +14,11 @@ namespace OmniForge.Core.Entities
         public Dictionary<string, string> CounterVisibility { get; set; } = new Dictionary<string, string>();
 
         /// <summary>
+        /// Whether the timer is enabled for this scene. When false, any running timer is stopped on scene switch.
+        /// </summary>
+        public bool TimerEnabled { get; set; }
+
+        /// <summary>
         /// Timer duration in minutes to auto-start when this scene activates. 0 = no timer.
         /// </summary>
         public int TimerDurationMinutes { get; set; }
