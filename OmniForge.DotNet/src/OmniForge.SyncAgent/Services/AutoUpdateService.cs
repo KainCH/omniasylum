@@ -114,10 +114,11 @@ namespace OmniForge.SyncAgent.Services
             {
                 var updateDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "OmniForge", "update");
+                    "omni-forge", "update");
                 Directory.CreateDirectory(updateDir);
 
-                var updatePath = Path.Combine(updateDir, "OmniForge.SyncAgent.exe.new");
+                // Must use a proper .exe extension - Windows shell won't execute .exe.new
+                var updatePath = Path.Combine(updateDir, "OmniForge.SyncAgent.exe");
 
                 using var httpClient = new HttpClient();
                 httpClient.DefaultRequestHeaders.Authorization =

@@ -3,19 +3,29 @@ using OmniForge.SyncAgent.Abstractions;
 using OmniForge.SyncAgent.Services;
 using Serilog;
 
-// Handle --update-from for self-update
+// ── Install path ─────────────────────────────────────────────────────────────
+// All agent operations (auto-start registry, auto-update) assume the exe lives
+// at %LocalAppData%\OmniForge\OmniForge.SyncAgent.exe.  On first launch from
+// anywhere else (Downloads, Desktop, …) we copy there and relaunch.
+var installDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "OmniForge");
+var installPath = Path.Combine(installDir, "OmniForge.SyncAgent.exe");
+
+// Handle --update-from: we are the new version; wait for old process to release
+// its exe lock, overwrite it with ourselves, then relaunch from that path.
 if (args.Length >= 2 && args[0] == "--update-from")
 {
     var oldPath = args[1];
     try
     {
-        // Wait for old process to exit
+        // Wait up to 5 s for old process to exit
         for (int i = 0; i < 50; i++)
         {
             try
             {
                 using var fs = File.Open(oldPath, FileMode.Open, FileAccess.Write, FileShare.None);
-                break; // File is not locked, old process exited
+                break;
             }
             catch (IOException)
             {
@@ -23,11 +33,10 @@ if (args.Length >= 2 && args[0] == "--update-from")
             }
         }
 
-        // Copy self over the old path
+        // Copy ourselves onto the old path and relaunch from it
         var currentExe = Environment.ProcessPath!;
         File.Copy(currentExe, oldPath, overwrite: true);
 
-        // Relaunch from the original path
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(oldPath)
         {
             UseShellExecute = true
@@ -40,9 +49,38 @@ if (args.Length >= 2 && args[0] == "--update-from")
     return;
 }
 
+// ── Self-install ──────────────────────────────────────────────────────────────
+// If not running from the canonical install path, copy there and relaunch so
+// that auto-start and updates always target the right location.
+var currentExePath = Environment.ProcessPath ?? "";
+if (!string.IsNullOrEmpty(currentExePath)
+    && !string.Equals(Path.GetFullPath(currentExePath), Path.GetFullPath(installPath),
+        StringComparison.OrdinalIgnoreCase))
+{
+    var selfInstalled = false;
+    try
+    {
+        Directory.CreateDirectory(installDir);
+        File.Copy(currentExePath, installPath, overwrite: true);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installPath)
+        {
+            UseShellExecute = true
+        });
+        selfInstalled = true;
+        Console.WriteLine($"Installed to {installPath}");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Self-install failed, running from current location: {ex.Message}");
+    }
+
+    if (selfInstalled) return;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 var logPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-    "OmniForge", "logs", "sync-agent-.log");
+    "omni-forge", "logs", "sync-agent-.log");
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
