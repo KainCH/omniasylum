@@ -817,8 +817,9 @@
         if (showScreams && screams !== undefined) createCounterItem(container, 'SCREAMS', screams, '😱');
         if (showBits && bits !== undefined) createCounterItem(container, 'BITS', bits, '💎');
 
-        // Render custom counters configured for the active game
-        renderCustomCounters(container, customCounters);
+        // Render custom counters configured for the active game (skip if all counters hidden by scene action)
+        const hideAllCounters = (countersConfig.hideAll === true || countersConfig.HideAll === true);
+        if (!hideAllCounters) renderCustomCounters(container, customCounters);
       }
 
       function renderCustomCounters(container, customCounters) {

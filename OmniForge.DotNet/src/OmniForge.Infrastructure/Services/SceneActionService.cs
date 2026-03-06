@@ -39,16 +39,29 @@ namespace OmniForge.Infrastructure.Services
             // Notify overlay of scene change
             await _overlayNotifier.NotifySceneChangedAsync(userId, newScene);
 
-            // Load scene action config
+            var user = await _userRepo.GetUserAsync(userId);
+            if (user == null) return;
+
+            // Load scene action config for the new scene
             var sceneAction = await _sceneActionRepo.GetAsync(userId, newScene);
+
+            bool willStartTimer = sceneAction is { TimerEnabled: true, AutoStartTimer: true } && sceneAction.TimerDurationMinutes > 0;
+
+            // If the new scene won't start a timer, stop any running timer immediately
+            if (!willStartTimer && user.OverlaySettings.TimerManualRunning)
+            {
+                user.OverlaySettings.TimerManualRunning = false;
+                user.OverlaySettings.TimerManualStartUtc = null;
+                await _userRepo.SaveUserAsync(user);
+                await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
+                _logger.LogInformation("Timer stopped on scene change for userId={UserId}, scene={Scene}", userId, newScene);
+            }
+
             if (sceneAction == null)
             {
                 _logger.LogDebug("No scene action configured for userId={UserId}, scene={Scene}", userId, newScene);
                 return;
             }
-
-            var user = await _userRepo.GetUserAsync(userId);
-            if (user == null) return;
 
             // Apply counter visibility overrides
             if (sceneAction.CounterVisibility.Count > 0)
@@ -59,7 +72,7 @@ namespace OmniForge.Infrastructure.Services
             }
 
             // Apply timer
-            if (sceneAction.AutoStartTimer && sceneAction.TimerDurationMinutes > 0)
+            if (willStartTimer)
             {
                 user.OverlaySettings.TimerDurationMinutes = sceneAction.TimerDurationMinutes;
                 user.OverlaySettings.TimerManualRunning = true;
@@ -108,6 +121,17 @@ namespace OmniForge.Infrastructure.Services
 
         private static void ApplyCounterVisibility(OverlayCounters counters, SceneAction action)
         {
+            // Sentinel key "*" = "hide" means hide the entire counter block (standard + custom)
+            if (action.CounterVisibility.TryGetValue("*", out var sentinel) && sentinel == "hide")
+            {
+                counters.HideAll = true;
+                counters.Deaths = false;
+                counters.Swears = false;
+                counters.Screams = false;
+                counters.Bits = false;
+                return;
+            }
+
             foreach (var kvp in action.CounterVisibility)
             {
                 var visibility = kvp.Value?.ToLowerInvariant();

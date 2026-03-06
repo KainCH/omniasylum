@@ -97,6 +97,8 @@ namespace OmniForge.Core.Entities
         public bool Swears { get; set; } = true;
         public bool Screams { get; set; } = true;
         public bool Bits { get; set; } = false;
+        /// <summary>When true, hide the entire counter block (standard + custom) on the overlay.</summary>
+        public bool HideAll { get; set; } = false;
     }
 
     public class BitsGoal
