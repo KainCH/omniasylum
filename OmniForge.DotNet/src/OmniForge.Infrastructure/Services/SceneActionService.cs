@@ -64,15 +64,11 @@ namespace OmniForge.Infrastructure.Services
                 return;
             }
 
-            // Apply counter visibility overrides
-            if (sceneAction.CounterVisibility.Count > 0)
-            {
-                var settings = CloneOverlaySettings(user.OverlaySettings);
-                ApplyCounterVisibility(settings.Counters, sceneAction);
-                await _overlayNotifier.NotifySettingsUpdateAsync(userId, settings);
-            }
+            // Build a single combined notification for counter visibility + timer changes so the
+            // client never receives a stale intermediate config (e.g. TimerHidden=true followed
+            // immediately by TimerManualRunning=true, which could cause a visible flicker or miss).
+            bool hasCounterOverride = sceneAction.CounterVisibility.Count > 0;
 
-            // Apply timer
             if (willStartTimer)
             {
                 user.OverlaySettings.TimerDurationMinutes = sceneAction.TimerDurationMinutes;
@@ -80,10 +76,17 @@ namespace OmniForge.Infrastructure.Services
                 user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
                 user.OverlaySettings.TimerHidden = false;
                 await _userRepo.SaveUserAsync(user);
-                await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
-
                 _logger.LogInformation("Timer started for userId={UserId}: {Minutes}min on scene={Scene}",
                     userId, sceneAction.TimerDurationMinutes, newScene);
+            }
+
+            if (hasCounterOverride || willStartTimer)
+            {
+                // Clone the (already-updated) settings and apply counter visibility on top.
+                var notify = CloneOverlaySettings(user.OverlaySettings);
+                if (hasCounterOverride)
+                    ApplyCounterVisibility(notify.Counters, sceneAction);
+                await _overlayNotifier.NotifySettingsUpdateAsync(userId, notify);
             }
 
             // Schedule overtime if configured

@@ -6,6 +6,9 @@ namespace OmniForge.Core.Interfaces
 {
     public interface ISyncAgentTracker
     {
+        /// <summary>Fires whenever agent state changes (connect, disconnect, scene switch). Argument is the userId.</summary>
+        event Action<string> OnAgentStateChanged;
+
         Task RegisterAgentAsync(string userId, string connectionId, string softwareType);
         Task UnregisterAgentAsync(string userId, string connectionId);
         Task UpdateCurrentSceneAsync(string userId, string sceneName);
