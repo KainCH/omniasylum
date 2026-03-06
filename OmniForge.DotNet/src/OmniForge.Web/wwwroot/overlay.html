@@ -304,7 +304,9 @@
 
         window.omniOverlayTimerExpired = timerExpired;
 
-        const isVisible = !timerExpired && (shouldForceVisible() || isLiveSignalFresh());
+        // TimerHidden = scene action explicitly suppressed the timer
+        const timerHidden = (currentSettings?.timerHidden === true || currentSettings?.TimerHidden === true);
+        const isVisible = !timerHidden && !timerExpired && (shouldForceVisible() || isLiveSignalFresh());
         timerEl.style.opacity = isVisible ? '1' : '0';
       };
 

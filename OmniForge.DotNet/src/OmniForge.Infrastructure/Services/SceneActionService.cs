@@ -52,6 +52,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 user.OverlaySettings.TimerManualRunning = false;
                 user.OverlaySettings.TimerManualStartUtc = null;
+                user.OverlaySettings.TimerHidden = true;
                 await _userRepo.SaveUserAsync(user);
                 await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
                 _logger.LogInformation("Timer stopped on scene change for userId={UserId}, scene={Scene}", userId, newScene);
@@ -77,6 +78,7 @@ namespace OmniForge.Infrastructure.Services
                 user.OverlaySettings.TimerDurationMinutes = sceneAction.TimerDurationMinutes;
                 user.OverlaySettings.TimerManualRunning = true;
                 user.OverlaySettings.TimerManualStartUtc = DateTimeOffset.UtcNow;
+                user.OverlaySettings.TimerHidden = false;
                 await _userRepo.SaveUserAsync(user);
                 await _overlayNotifier.NotifySettingsUpdateAsync(userId, user.OverlaySettings);
 
@@ -106,6 +108,7 @@ namespace OmniForge.Infrastructure.Services
                 TimerTextColor = source.TimerTextColor,
                 TimerManualRunning = source.TimerManualRunning,
                 TimerManualStartUtc = source.TimerManualStartUtc,
+                TimerHidden = source.TimerHidden,
                 Counters = new OverlayCounters
                 {
                     Deaths = source.Counters.Deaths,
