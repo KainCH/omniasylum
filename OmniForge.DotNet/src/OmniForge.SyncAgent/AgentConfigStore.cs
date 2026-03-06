@@ -71,6 +71,23 @@ namespace OmniForge.SyncAgent
             Save(Config);
         }
 
+        /// <summary>
+        /// Deletes all config files and the entire omni-forge AppData directory.
+        /// Called during uninstall; the exe itself is handled separately.
+        /// </summary>
+        public void DeleteAllData()
+        {
+            try
+            {
+                if (Directory.Exists(ConfigDir))
+                    Directory.Delete(ConfigDir, recursive: true);
+            }
+            catch
+            {
+                // Best-effort — don't block the uninstall flow
+            }
+        }
+
         private static string GetDefaultServerUrl()
         {
 #if PROD_BUILD
