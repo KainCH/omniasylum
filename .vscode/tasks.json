@@ -109,6 +109,20 @@
       }
     },
     {
+      "label": "Publish Sync Agent",
+      "type": "shell",
+      "command": ".\\publish-agent.ps1",
+      "options": {
+        "cwd": "${workspaceFolder}/OmniForge.DotNet/deploy"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
       "label": "Cleanup Container App Revisions (Prod)",
       "type": "shell",
       "command": ".\\cleanup-revisions.ps1 -Environment \"prod\" -MaxInactiveRevisions 5",

@@ -42,7 +42,7 @@ namespace OmniForge.SyncAgent.Services
                 {
                     try
                     {
-                        await _hub.InvokeAsync("ReportScenes", scenes, _monitor.Client.SoftwareType);
+                        await _hub.InvokeAsync("ReportScenes", scenes, _monitor.Client?.SoftwareType ?? "unknown");
                     }
                     catch (Exception ex)
                     {
@@ -223,7 +223,7 @@ namespace OmniForge.SyncAgent.Services
 
         private async Task IdentifyAndReportScenesAsync()
         {
-            if (_hub == null) return;
+            if (_hub == null || _monitor.Client == null) return;
             try
             {
                 await _hub.InvokeAsync("Identify", _monitor.Client.SoftwareType);

@@ -65,6 +65,12 @@ namespace OmniForge.SyncAgent
 
         public bool HasToken() => !string.IsNullOrEmpty(Config.Token);
 
+        public void SaveObsPassword(string? password)
+        {
+            Config.ObsPassword = password;
+            Save(Config);
+        }
+
         private static string GetDefaultServerUrl()
         {
 #if PROD_BUILD
@@ -81,5 +87,6 @@ namespace OmniForge.SyncAgent
         public string? Token { get; set; }
         public DateTimeOffset? TokenExpiresAt { get; set; }
         public bool StartWithWindows { get; set; } = true;
+        public string? ObsPassword { get; set; }
     }
 }

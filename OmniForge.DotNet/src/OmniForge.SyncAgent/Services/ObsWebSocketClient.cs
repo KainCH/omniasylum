@@ -9,13 +9,16 @@ namespace OmniForge.SyncAgent.Services
     {
         private readonly OBSWebsocket _obs = new();
         private readonly string _url;
-        private readonly string? _password;
+        private string? _password;
         private readonly ILogger<ObsWebSocketClient> _logger;
         private CancellationTokenSource? _reconnectCts;
         private bool _intentionalDisconnect;
 
         public bool IsConnected => _obs.IsConnected;
         public string SoftwareType => "obs";
+
+        /// <summary>Raised when authentication fails (wrong or missing password).</summary>
+        public event Action? AuthenticationFailed;
 
         public event Action<string>? SceneChanged;
         public event Action<string[]>? SceneListUpdated;
@@ -32,6 +35,11 @@ namespace OmniForge.SyncAgent.Services
             _obs.Disconnected += OnDisconnected;
             _obs.CurrentProgramSceneChanged += OnSceneChanged;
             _obs.SceneListChanged += OnSceneListChanged;
+        }
+
+        public void SetPassword(string? password)
+        {
+            _password = password;
         }
 
         public async Task ConnectAsync(CancellationToken cancellationToken = default)
@@ -84,8 +92,18 @@ namespace OmniForge.SyncAgent.Services
 
         private void OnDisconnected(object? sender, OBSWebsocketDotNet.Communication.ObsDisconnectionInfo info)
         {
-            _logger.LogWarning("Disconnected from OBS: {Reason}", info.DisconnectReason);
-            Disconnected?.Invoke(info.DisconnectReason ?? "Unknown");
+            var reason = info.DisconnectReason ?? "Unknown";
+            _logger.LogWarning("Disconnected from OBS: {Reason}", reason);
+            Disconnected?.Invoke(reason);
+
+            // OBS WebSocket closes with code 4008 / "Authentication Failed" when the password is wrong.
+            if (reason.Contains("Authentication", StringComparison.OrdinalIgnoreCase)
+                || reason.Contains("auth", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("OBS authentication failed — password may be incorrect or missing");
+                AuthenticationFailed?.Invoke();
+                return; // Don't auto-reconnect with the same bad password
+            }
 
             if (!_intentionalDisconnect && _reconnectCts is { IsCancellationRequested: false })
             {
