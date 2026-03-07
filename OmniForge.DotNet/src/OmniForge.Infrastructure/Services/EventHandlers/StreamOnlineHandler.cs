@@ -76,6 +76,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var gameLibraryRepository = scope.ServiceProvider.GetService<IGameLibraryRepository>();
             var gameCountersRepository = scope.ServiceProvider.GetService<IGameCountersRepository>();
             var gameContextRepository = scope.ServiceProvider.GetService<IGameContextRepository>();
+            var gameSwitchService = scope.ServiceProvider.GetService<IGameSwitchService>();
 
             var user = await userRepository.GetUserAsync(safeBroadcasterId);
             if (user == null)
@@ -314,6 +315,22 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 catch (Exception ex)
                 {
                     Logger.LogWarning(ex, "⚠️ Failed applying CCLs on stream online for user {UserId}", _logValueSanitizer.Safe(safeBroadcasterId));
+                }
+            }
+
+            // Send mod-channel counter announcement for new streams
+            if (isNewStream && category != null && !string.IsNullOrWhiteSpace(category.GameId) && gameSwitchService != null)
+            {
+                try
+                {
+                    await gameSwitchService.SendStreamOnlineAnnouncementsAsync(
+                        safeBroadcasterId,
+                        category.GameId!,
+                        category.GameName ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "⚠️ Failed sending stream-online counter announcement for user {UserId}", _logValueSanitizer.Safe(safeBroadcasterId));
                 }
             }
 
