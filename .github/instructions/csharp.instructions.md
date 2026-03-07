@@ -80,6 +80,7 @@ public MyService(IServiceProvider provider)
 ```
 
 Register services in `OmniForge.Infrastructure/DependencyInjection.cs`:
+
 ```csharp
 // Singleton: services that maintain state or expensive connections
 services.AddSingleton<IMyService, MyService>();
@@ -158,6 +159,7 @@ public async Task<IEnumerable<Counter>> GetAllCounters()
 ## Testing Patterns
 
 **Controller tests** — construct manually with mocked dependencies (no WebApplicationFactory):
+
 ```csharp
 public class MyControllerTests
 {
@@ -192,12 +194,14 @@ public class MyControllerTests
 ```
 
 **Service tests** — test logic with mocked repository dependencies:
+
 ```csharp
 _repoMock.Setup(r => r.GetByTwitchUserIdAsync("user123"))
     .ReturnsAsync(new User { TwitchUserId = "user123", Username = "testuser" });
 ```
 
 **Blazor component tests** — use bunit:
+
 ```csharp
 var cut = RenderComponent<MyComponent>(parameters => parameters
     .Add(p => p.UserId, "user123"));
@@ -208,6 +212,7 @@ cut.WaitForAssertion(() => cut.Find(".success").Should().NotBeNull());
 ## Repository Pattern
 
 All repositories:
+
 1. Implement an interface from `OmniForge.Core/Interfaces/`
 2. Inherit Azure Table Storage base logic
 3. Call `InitializeAsync()` at startup (called from `Program.cs`)
@@ -234,6 +239,7 @@ _logger.LogError(ex, "❌ Failed to process {Event} for {User}", eventType, user
 ## Feature Flag Checks
 
 Always check feature flags before executing optional functionality:
+
 ```csharp
 if (!user.Features.StreamOverlay)
 {

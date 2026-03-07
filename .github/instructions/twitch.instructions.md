@@ -27,12 +27,12 @@ StreamMonitorService.CreateSubscriptionsAsync(userId)
 
 ## Key Interfaces (Core layer — no external deps)
 
-| Interface | Purpose |
-|-----------|---------|
-| `ITwitchClientManager` | Connect/disconnect per-user bots; send chat messages |
-| `ITwitchAuthService` | OAuth token retrieval and refresh |
-| `ITwitchApiService` | Helix API wrapper (users, clips, rewards, etc.) |
-| `ITwitchBotEligibilityService` | Check if a user's token allows bot connection |
+| Interface                      | Purpose                                              |
+| ------------------------------ | ---------------------------------------------------- |
+| `ITwitchClientManager`         | Connect/disconnect per-user bots; send chat messages |
+| `ITwitchAuthService`           | OAuth token retrieval and refresh                    |
+| `ITwitchApiService`            | Helix API wrapper (users, clips, rewards, etc.)      |
+| `ITwitchBotEligibilityService` | Check if a user's token allows bot connection        |
 
 ## Adding a New EventSub Handler
 
@@ -77,16 +77,20 @@ public class MyNewEventHandler : BaseEventSubHandler
 ```
 
 **Step 2 — Register the subscription type** in `StreamMonitorService.CreateSubscriptionsAsync()`:
+
 - Subscribe via `ITwitchApiService.CreateEventSubSubscriptionAsync(type, version, condition, transport)`
 - Condition is typically `{ "broadcaster_user_id": userId }`
 
 **Step 3 — Register in DI** in `OmniForge.Infrastructure/DependencyInjection.cs`:
+
 ```csharp
 services.AddSingleton<IEventSubHandler, MyNewEventHandler>();
 ```
+
 The `EventSubHandlerRegistry` auto-discovers all `IEventSubHandler` registrations.
 
 **Step 4 — Write tests** in `OmniForge.Tests/`:
+
 - Test your handler with mocked `IServiceScopeFactory` and repositories
 - Test the happy path, missing broadcaster ID, and null user scenarios
 - Maintain **≥85% code coverage**
@@ -132,19 +136,19 @@ if (!status.Connected) { /* handle gracefully */ }
 
 ## Existing EventSub Subscription Types (Already Implemented)
 
-| Subscription Type | Handler |
-|-------------------|---------|
-| `channel.chat.message` | `ChatMessageHandler` |
-| `channel.chat.notification` | `ChatNotificationHandler` |
-| `channel.update` | `ChannelUpdateHandler` |
+| Subscription Type                                     | Handler                         |
+| ----------------------------------------------------- | ------------------------------- |
+| `channel.chat.message`                                | `ChatMessageHandler`            |
+| `channel.chat.notification`                           | `ChatNotificationHandler`       |
+| `channel.update`                                      | `ChannelUpdateHandler`          |
 | `channel.channel_points_custom_reward_redemption.add` | `ChannelPointRedemptionHandler` |
-| `channel.cheer` | `CheerHandler` |
-| `channel.follow` | `FollowHandler` |
-| `channel.raid` | `RaidHandler` |
-| `stream.online` | `StreamOnlineHandler` |
-| `stream.offline` | `StreamOfflineHandler` |
-| `channel.subscription.gift` | `SubscriptionGiftHandler` |
-| `channel.subscription.message` | `SubscriptionMessageHandler` |
+| `channel.cheer`                                       | `CheerHandler`                  |
+| `channel.follow`                                      | `FollowHandler`                 |
+| `channel.raid`                                        | `RaidHandler`                   |
+| `stream.online`                                       | `StreamOnlineHandler`           |
+| `stream.offline`                                      | `StreamOfflineHandler`          |
+| `channel.subscription.gift`                           | `SubscriptionGiftHandler`       |
+| `channel.subscription.message`                        | `SubscriptionMessageHandler`    |
 
 ## NuGet Packages in Use
 
