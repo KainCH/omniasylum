@@ -91,11 +91,13 @@ await _botClient.SetIdleAsync(_settings.BotToken, "offline");
 ## Discord.Net 3.18.0 Usage Patterns
 
 **REST vs Gateway client selection:**
+
 - Use `DiscordRestClient` for all message-sending operations (stateless, simpler)
 - Use `DiscordSocketClient` only for presence/status updates (requires Gateway connection)
 - Do **not** use `DiscordSocketClient` for message sending — it adds unnecessary overhead
 
 **Building embeds:**
+
 ```csharp
 var embed = new EmbedBuilder()
     .WithTitle("Stream is Live! 🎮")
@@ -118,6 +120,7 @@ Never hardcode or log the token.
 ## Multi-Channel Routing
 
 `DiscordService` routes to three possible channels in priority order:
+
 1. **Event-specific channel** (if user has configured per-event overrides)
 2. **Mod channel** (for mod-facing notifications like counter updates)
 3. **Default Discord channel** (`user.DiscordChannelId`)
@@ -139,6 +142,7 @@ public class DiscordBotSettings
 ## DI Registration — Where to Register New Services
 
 All Discord services are registered in `OmniForge.Infrastructure/DependencyInjection.cs`:
+
 ```csharp
 services.AddSingleton<IDiscordService, DiscordService>();
 services.AddSingleton<IDiscordBotClient, DiscordNetBotClient>();
@@ -150,9 +154,11 @@ Add new Discord-related services following this pattern.
 ## Feature Flag Gate
 
 Discord notification features are gated by user feature flags. Always check before sending:
+
 ```csharp
 if (!user.Features.DiscordNotifications) return;
 ```
+
 The `DiscordEnabledNotifications` object on the user specifies which event types are enabled.
 
 ## Testing Discord Services
