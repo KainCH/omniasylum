@@ -159,6 +159,20 @@ namespace OmniForge.Web.Services
             await _sseManager.SendEventAsync(userId, "template", new { templateStyle, template });
         }
 
+        public async Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName)
+        {
+            LogOverlayAction(userId, "overtime");
+
+            await _sseManager.SendEventAsync(userId, "overtime", new
+            {
+                text = config.Text,
+                textColor = config.TextColor,
+                backgroundColor = config.BackgroundColor,
+                flashIntervalSeconds = config.FlashIntervalSeconds,
+                sceneName
+            });
+        }
+
         public async Task NotifySceneChangedAsync(string userId, string sceneName)
         {
             LogOverlayAction(userId, "scene");

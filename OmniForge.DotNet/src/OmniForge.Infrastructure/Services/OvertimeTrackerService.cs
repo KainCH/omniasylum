@@ -63,14 +63,7 @@ namespace OmniForge.Infrastructure.Services
                 if (!ct.IsCancellationRequested)
                 {
                     _logger.LogInformation("Overtime triggered for userId={UserId}, scene={Scene}", state.UserId, state.SceneName);
-                    await _overlayNotifier.NotifyCustomAlertAsync(state.UserId, "overtime", new
-                    {
-                        sceneName = state.SceneName,
-                        text = state.Config.Text,
-                        textColor = state.Config.TextColor,
-                        backgroundColor = state.Config.BackgroundColor,
-                        flashIntervalSeconds = state.Config.FlashIntervalSeconds
-                    });
+                    await _overlayNotifier.NotifyOvertimeAsync(state.UserId, state.Config, state.SceneName);
                 }
             }
             catch (OperationCanceledException)

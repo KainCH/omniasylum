@@ -89,8 +89,8 @@ namespace OmniForge.Infrastructure.Services
                 await _overlayNotifier.NotifySettingsUpdateAsync(userId, notify);
             }
 
-            // Schedule overtime if configured
-            if (sceneAction.Overtime.Enabled && sceneAction.TimerDurationMinutes > 0)
+            // Schedule overtime if configured AND timer was actually started
+            if (sceneAction.Overtime.Enabled && willStartTimer)
             {
                 _overtimeTracker.Schedule(userId, newScene, sceneAction.Overtime, sceneAction.TimerDurationMinutes);
                 _logger.LogInformation("Overtime scheduled for userId={UserId}: {Minutes}min on scene={Scene}",

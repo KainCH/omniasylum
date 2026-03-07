@@ -106,6 +106,8 @@ namespace OmniForge.Tests.Services
             {
                 UserId = "user1",
                 SceneName = "BRB",
+                TimerEnabled = true,
+                AutoStartTimer = true,
                 TimerDurationMinutes = 5,
                 Overtime = new OvertimeConfig { Enabled = true, Text = "OVERTIME!" }
             };
@@ -129,6 +131,8 @@ namespace OmniForge.Tests.Services
             {
                 UserId = "user1",
                 SceneName = "BRB",
+                TimerEnabled = true,
+                AutoStartTimer = true,
                 TimerDurationMinutes = 5,
                 Overtime = new OvertimeConfig { Enabled = true }
             };

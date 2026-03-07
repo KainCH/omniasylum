@@ -100,6 +100,18 @@ namespace OmniForge.Web.Services
             await _hubContext.Clients.Group($"user:{userId}").SendAsync("customAlert", new { alertType, data });
         }
 
+        public async Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName)
+        {
+            await _hubContext.Clients.Group($"user:{userId}").SendAsync("overtime", new
+            {
+                text = config.Text,
+                textColor = config.TextColor,
+                backgroundColor = config.BackgroundColor,
+                flashIntervalSeconds = config.FlashIntervalSeconds,
+                sceneName
+            });
+        }
+
         public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
         {
             await _hubContext.Clients.Group($"user:{userId}").SendAsync("templateChanged", new { templateStyle, template });

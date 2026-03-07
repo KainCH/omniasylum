@@ -150,6 +150,18 @@ namespace OmniForge.Web.Services
             }
         }
 
+        public async Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName)
+        {
+            await _webSocketManager.SendToUserAsync(userId ?? string.Empty, "overtime", new
+            {
+                text = config.Text,
+                textColor = config.TextColor,
+                backgroundColor = config.BackgroundColor,
+                flashIntervalSeconds = config.FlashIntervalSeconds,
+                sceneName
+            });
+        }
+
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
         {
             var safeUserId = userId ?? string.Empty;
