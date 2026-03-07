@@ -629,6 +629,22 @@
           }
         });
 
+        source.addEventListener('overtime', (e) => {
+          const data = JSON.parse(e.data);
+          if (window.omniOverlayDebug === true) {
+            console.log('Overtime triggered:', data);
+          }
+          if (window.overlayInterop) {
+            window.overlayInterop.triggerAlert('overtime', {
+              text: data.text || 'OVERTIME!',
+              textColor: data.textColor || '#ff0000',
+              backgroundColor: data.backgroundColor || 'rgba(0, 0, 0, 0.8)',
+              flashIntervalSeconds: data.flashIntervalSeconds || 2,
+              duration: 0
+            });
+          }
+        });
+
         source.onerror = () => {
           // EventSource auto-reconnects. On reconnect, server sends new event: connected.
           console.warn('SSE connection error, auto-reconnecting...');

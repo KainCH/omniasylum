@@ -76,6 +76,9 @@ namespace OmniForge.Web.Services
         public Task NotifyCustomAlertAsync(string userId, string alertType, object data)
             => ForEachNotifierAsync(n => n.NotifyCustomAlertAsync(userId, alertType, data));
 
+        public Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName)
+            => ForEachNotifierAsync(n => n.NotifyOvertimeAsync(userId, config, sceneName));
+
         public Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
             => ForEachNotifierAsync(n => n.NotifyTemplateChangedAsync(userId, templateStyle, template));
 
