@@ -435,18 +435,22 @@
 
       function preloadSoundsFromAlerts(alerts) {
         if (!alerts || !Array.isArray(alerts)) return;
+        if (!window.__omniAlertSoundCache) window.__omniAlertSoundCache = {};
         const seen = new Set();
         for (const alert of alerts) {
           try {
             const effects = typeof alert.effects === 'string'
               ? JSON.parse(alert.effects) : alert.effects;
             const soundFile = effects?.soundTrigger;
-            if (soundFile && !seen.has(soundFile)) {
+            if (soundFile && !seen.has(soundFile) && !window.__omniAlertSoundCache[soundFile]) {
               seen.add(soundFile);
               const audio = new Audio();
               audio.preload = 'auto';
               audio.src = `/sounds/${soundFile}`;
-              // Silent preload only — do NOT call .play()
+              audio.volume = 0.8;
+              audio.style.display = 'none';
+              document.body.appendChild(audio);
+              window.__omniAlertSoundCache[soundFile] = audio;
             }
           } catch (e) { /* skip invalid effects JSON */ }
         }

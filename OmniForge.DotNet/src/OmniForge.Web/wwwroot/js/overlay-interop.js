@@ -89,7 +89,8 @@ window.overlayInterop = {
             return;
         }
 
-        // Play audio on-demand from the enriched alert payload's effects.soundTrigger
+        // Play audio via DOM-embedded element for reliable OBS/Streamlabs browser source capture.
+        // Uses the server-preloaded sound cache when available; falls back to a new DOM-embedded element.
         {
             const effectsJson = safePayload.effects;
             const soundTrigger = (typeof effectsJson === 'object' && effectsJson?.soundTrigger)
@@ -97,10 +98,29 @@ window.overlayInterop = {
                 || null;
             if (soundTrigger && typeof soundTrigger === 'string' && soundTrigger.includes('.')) {
                 try {
-                    const audio = new Audio(`/sounds/${soundTrigger}`);
-                    audio.volume = 0.8;
-                    audio.play().catch(() => {});
-                } catch (e) { /* ignore audio errors */ }
+                    const cached = window.__omniAlertSoundCache?.[soundTrigger];
+                    let audio;
+                    if (cached && cached.readyState >= 2) {
+                        // Reuse the preloaded, DOM-embedded element — already primed in the browser source pipeline.
+                        audio = cached;
+                        audio.currentTime = 0;
+                        audio.volume = 0.8;
+                    } else {
+                        // Cache miss: create a new DOM-embedded element and store it for future alerts.
+                        audio = new Audio(`/sounds/${soundTrigger}`);
+                        audio.volume = 0.8;
+                        audio.style.display = 'none';
+                        document.body.appendChild(audio);
+                        if (!window.__omniAlertSoundCache) window.__omniAlertSoundCache = {};
+                        window.__omniAlertSoundCache[soundTrigger] = audio;
+                    }
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(err => {
+                            if (isDebugEnabled()) console.warn('Alert audio blocked:', soundTrigger, err.name);
+                        });
+                    }
+                } catch (e) { if (isDebugEnabled()) console.warn('Alert audio error:', e); }
             }
         }
 
@@ -119,16 +139,17 @@ window.overlayInterop = {
         // Show the main alert popup with visual cue and text
         this.showAlertPopup(safePayload);
 
-        // Use AsylumEffects for the main alert popup
+        // Use AsylumEffects for visual effects only; sound is handled above via DOM-embedded audio.
         if (window.asylumEffects) {
+            const effectsForAsylum = { ...(safePayload.effects || {}) };
+            delete effectsForAsylum.soundTrigger;
             window.asylumEffects.triggerEffect({
                 textPrompt: safePayload.textPrompt || safePayload.name,
                 backgroundColor: safePayload.backgroundColor,
                 textColor: safePayload.textColor,
                 borderColor: safePayload.borderColor,
                 duration: safePayload.duration || 5000,
-                soundTrigger: safePayload.sound, // AsylumEffects might handle its own sound too
-                effects: safePayload.effects || {}
+                effects: effectsForAsylum
             });
         }
     },

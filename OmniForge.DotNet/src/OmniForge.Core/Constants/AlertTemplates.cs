@@ -71,7 +71,7 @@ namespace OmniForge.Core.Constants
                     TextColor = "#ffd700",
                     BorderColor = "#b8860b",
                     IsDefault = true,
-                    Effects = "{\"animation\":\"coinRain\",\"svgMask\":\"none\",\"particle\":\"coins\",\"soundTrigger\":\"coins.wav\"}"
+                    Effects = "{\"animation\":\"coinRain\",\"svgMask\":\"none\",\"particle\":\"coins\",\"soundTrigger\":\"pillRattle.mp3\"}"
                 },
                 new Alert
                 {
@@ -87,7 +87,7 @@ namespace OmniForge.Core.Constants
                     TextColor = "#ff0000",
                     BorderColor = "#ff0000",
                     IsDefault = true,
-                    Effects = "{\"animation\":\"sirenFlash\",\"svgMask\":\"scanlines\",\"particle\":\"debris\",\"screenShake\":true,\"soundTrigger\":\"siren.wav\"}"
+                    Effects = "{\"animation\":\"sirenFlash\",\"svgMask\":\"scanlines\",\"particle\":\"debris\",\"screenShake\":true,\"soundTrigger\":\"alarm.wav\"}"
                 },
                 new Alert
                 {
@@ -103,7 +103,7 @@ namespace OmniForge.Core.Constants
                     TextColor = "#00ffff",
                     BorderColor = "#008b8b",
                     IsDefault = true,
-                    Effects = "{\"animation\":\"slideIn\",\"svgMask\":\"none\",\"particle\":\"confetti\",\"soundTrigger\":\"rustle.wav\"}"
+                    Effects = "{\"animation\":\"slideIn\",\"svgMask\":\"none\",\"particle\":\"confetti\",\"soundTrigger\":\"heartMonitor.wav\"}"
                 },
                 new Alert
                 {
@@ -119,7 +119,7 @@ namespace OmniForge.Core.Constants
                     TextColor = "#ff00ff",
                     BorderColor = "#8b008b",
                     IsDefault = true,
-                    Effects = "{\"animation\":\"trainMove\",\"svgMask\":\"steam\",\"particle\":\"smoke\",\"soundTrigger\":\"train.wav\"}"
+                    Effects = "{\"animation\":\"trainMove\",\"svgMask\":\"steam\",\"particle\":\"smoke\",\"soundTrigger\":\"hypeTrain.wav\"}"
                 }
             };
         }

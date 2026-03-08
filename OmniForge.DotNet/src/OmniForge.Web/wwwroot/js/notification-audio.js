@@ -31,10 +31,10 @@ class NotificationAudioManager {
         this.volume = 0.8; // Higher volume for OBS capture
         this.notificationSounds = {
             follow: 'doorCreak.wav',
-            subscription: 'hypeTrain.wav',
+            subscription: 'electroshock.wav',
             resub: 'typewriter.wav',
-            giftsub: 'pillRattle.mp3',
-            bits: 'electroshock.wav',
+            giftsub: 'heartMonitor.wav',
+            bits: 'pillRattle.mp3',
             milestone: 'alarm.wav',
             timerFinished: 'hypeTrain.wav',
             raid: 'alarm.wav'
