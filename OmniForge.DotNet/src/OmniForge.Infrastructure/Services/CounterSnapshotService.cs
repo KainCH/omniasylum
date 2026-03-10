@@ -11,19 +11,24 @@ namespace OmniForge.Infrastructure.Services
     /// <summary>
     /// Periodically snapshots each user's live counter values into GameCountersRepository so
     /// that per-game counter history stays current even without explicit saves or game switches.
+    /// Only runs for users whose stream is currently live; game-switch snapshots are handled
+    /// directly by <see cref="GameSwitchService"/>.
     /// </summary>
     public sealed class CounterSnapshotService : BackgroundService
     {
         private static readonly TimeSpan Interval = TimeSpan.FromMinutes(30);
 
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IStreamMonitorService _streamMonitorService;
         private readonly ILogger<CounterSnapshotService> _logger;
 
         public CounterSnapshotService(
             IServiceScopeFactory scopeFactory,
+            IStreamMonitorService streamMonitorService,
             ILogger<CounterSnapshotService> logger)
         {
             _scopeFactory = scopeFactory;
+            _streamMonitorService = streamMonitorService;
             _logger = logger;
         }
 
@@ -63,6 +68,10 @@ namespace OmniForge.Infrastructure.Services
 
                     var userId = user.TwitchUserId;
                     if (string.IsNullOrWhiteSpace(userId)) continue;
+
+                    // Only snapshot while the stream is live; game-switch snapshots are
+                    // handled directly by GameSwitchService regardless of live status.
+                    if (!_streamMonitorService.IsUserLive(userId)) continue;
 
                     try
                     {
