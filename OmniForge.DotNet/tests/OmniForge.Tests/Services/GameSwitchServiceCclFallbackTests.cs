@@ -103,7 +103,6 @@ namespace OmniForge.Tests.Services
                 twitchApiService.Object,
                 overlayNotifier.Object,
                 Mock.Of<IDiscordService>(),
-                Mock.Of<IStreamMonitorService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync("user1", "game1", "Test Game");

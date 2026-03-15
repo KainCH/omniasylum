@@ -23,7 +23,6 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchApiService _twitchApiService;
         private readonly IOverlayNotifier _overlayNotifier;
         private readonly IDiscordService _discordService;
-        private readonly IStreamMonitorService _streamMonitorService;
         private readonly ILogger<GameSwitchService> _logger;
 
         public GameSwitchService(
@@ -39,7 +38,6 @@ namespace OmniForge.Infrastructure.Services
             ITwitchApiService twitchApiService,
             IOverlayNotifier overlayNotifier,
             IDiscordService discordService,
-            IStreamMonitorService streamMonitorService,
             ILogger<GameSwitchService> logger)
         {
             _gameContextRepository = gameContextRepository;
@@ -54,7 +52,6 @@ namespace OmniForge.Infrastructure.Services
             _twitchApiService = twitchApiService;
             _overlayNotifier = overlayNotifier;
             _discordService = discordService;
-            _streamMonitorService = streamMonitorService;
             _logger = logger;
         }
 
@@ -133,20 +130,10 @@ namespace OmniForge.Infrastructure.Services
                             LogValue.Safe(gameId));
                     }
 
-                    // Always send the mod-channel counter announcement even for same-game re-detects
-                    // so the pre-production step shows the current counter setup.
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await SendStreamOnlineAnnouncementsAsync(safeUserId, safeGameId, safeGameName);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "❌ Failed sending mod-channel notification on same-game re-detect for user {UserId}", LogValue.Safe(safeUserId));
-                        }
-                    });
-
+                    // Same game is already active with all configs in place — nothing to do.
+                    // The mod-channel announcement is sent by StreamOnlineHandler (guarded by
+                    // isNewStream) so it only fires once when the stream goes live, not on
+                    // every channel.update (which also triggers for mid-stream title changes).
                     return;
                 }
 
@@ -571,10 +558,8 @@ namespace OmniForge.Infrastructure.Services
             {
                 var capturedUser = user;
                 var capturedGameName = safeGameName;
-                var capturedBoxArtUrl = upsertedLibraryItem?.BoxArtUrl;
                 var capturedUserId = userId;
                 var capturedGameId = gameId;
-                var capturedIsLive = _streamMonitorService.IsUserLive(userId);
 
                 // Look up counter library items so alias commands appear in the mod channel notification.
                 IReadOnlyDictionary<string, CounterLibraryItem>? capturedLibraryLookup = null;
@@ -597,12 +582,6 @@ namespace OmniForge.Infrastructure.Services
                 {
                     try
                     {
-                        // Only announce game change to the public channel when the stream is live.
-                        if (capturedIsLive)
-                        {
-                            await _discordService.SendGameChangeAnnouncementAsync(capturedUser, capturedGameName, capturedBoxArtUrl);
-                        }
-
                         await _discordService.SendModChannelNotificationAsync(capturedUser, capturedGameName, capturedDescriptions);
                     }
                     catch (Exception ex)
@@ -753,73 +732,6 @@ namespace OmniForge.Infrastructure.Services
                 Permission = "everyone",
                 Response = string.Empty
             };
-        }
-
-        public async Task SendStreamOnlineAnnouncementsAsync(string userId, string gameId, string gameName)
-        {
-            var safeUserId = userId ?? string.Empty;
-            var safeGameId = gameId ?? string.Empty;
-            var safeGameName = gameName ?? string.Empty;
-
-            User? user = null;
-            try
-            {
-                user = await _userRepository.GetUserAsync(safeUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "⚠️ Failed loading user for stream-online announcement; userId={UserId}", LogValue.Safe(safeUserId));
-            }
-
-            if (user == null) return;
-
-            GameCoreCountersConfig? coreSelection = null;
-            CustomCounterConfiguration customCounters = new();
-
-            try
-            {
-                coreSelection = await _gameCoreCountersConfigRepository.GetAsync(safeUserId, safeGameId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "⚠️ Failed loading core counter selection for stream-online announcement; userId={UserId} gameId={GameId}", LogValue.Safe(safeUserId), LogValue.Safe(safeGameId));
-            }
-
-            try
-            {
-                customCounters = await _gameCustomCountersConfigRepository.GetAsync(safeUserId, safeGameId) ?? new CustomCounterConfiguration();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "⚠️ Failed loading custom counters for stream-online announcement; userId={UserId} gameId={GameId}", LogValue.Safe(safeUserId), LogValue.Safe(safeGameId));
-            }
-
-            IReadOnlyDictionary<string, CounterLibraryItem>? libraryLookup = null;
-            try
-            {
-                var libraryItems = await _counterLibraryRepository.ListAsync();
-                libraryLookup = libraryItems.ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "⚠️ Failed loading counter library for stream-online announcement; aliases will be omitted");
-            }
-
-            var descriptions = BuildActiveCounterDescriptions(coreSelection, customCounters, libraryLookup);
-            var capturedUser = user;
-            var capturedGameName = safeGameName;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _discordService.SendModChannelNotificationAsync(capturedUser, capturedGameName, descriptions);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "❌ Failed sending stream-online counter announcement for userId={UserId}", LogValue.Safe(safeUserId));
-                }
-            });
         }
 
         private static List<string> BuildActiveCounterDescriptions(

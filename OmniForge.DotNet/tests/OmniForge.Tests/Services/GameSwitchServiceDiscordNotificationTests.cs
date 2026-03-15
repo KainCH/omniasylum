@@ -25,7 +25,6 @@ namespace OmniForge.Tests.Services
             Mock<ITwitchApiService>? twitchApiService = null,
             Mock<IOverlayNotifier>? overlayNotifier = null,
             Mock<IDiscordService>? discordService = null,
-            Mock<IStreamMonitorService>? streamMonitorService = null,
             Mock<ILogger<GameSwitchService>>? logger = null)
         {
             return new GameSwitchService(
@@ -41,12 +40,11 @@ namespace OmniForge.Tests.Services
                 (twitchApiService ?? new Mock<ITwitchApiService>()).Object,
                 (overlayNotifier ?? new Mock<IOverlayNotifier>()).Object,
                 (discordService ?? new Mock<IDiscordService>()).Object,
-                (streamMonitorService ?? new Mock<IStreamMonitorService>()).Object,
                 (logger ?? new Mock<ILogger<GameSwitchService>>()).Object);
         }
 
         [Fact]
-        public async Task HandleGameDetectedAsync_ShouldCallDiscordNotifications_OnGameSwitch_WhenLive()
+        public async Task HandleGameDetectedAsync_ShouldSendModChannelNotification_OnGameSwitch()
         {
             // Arrange
             var discordService = new Mock<IDiscordService>();
@@ -55,14 +53,11 @@ namespace OmniForge.Tests.Services
             var gameContextRepository = new Mock<IGameContextRepository>();
             var gameCountersRepository = new Mock<IGameCountersRepository>();
             var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
-            var streamMonitorService = new Mock<IStreamMonitorService>();
-            streamMonitorService.Setup(s => s.IsUserLive("user1")).Returns(true);
 
             var user = new User
             {
                 TwitchUserId = "user1",
                 Username = "testuser",
-                DiscordChannelId = "111111111111111111",
                 DiscordModChannelId = "222222222222222222"
             };
             userRepository.Setup(r => r.GetUserAsync("user1")).ReturnsAsync(user);
@@ -85,8 +80,7 @@ namespace OmniForge.Tests.Services
                 gameCoreCountersConfigRepository: gameCoreCountersConfigRepository,
                 counterRepository: counterRepository,
                 userRepository: userRepository,
-                discordService: discordService,
-                streamMonitorService: streamMonitorService);
+                discordService: discordService);
 
             // Act
             await service.HandleGameDetectedAsync("user1", "game1", "Elden Ring", "https://example.com/box.jpg");
@@ -94,25 +88,23 @@ namespace OmniForge.Tests.Services
             // Allow fire-and-forget to complete
             await Task.Delay(200);
 
-            // Assert — both public announcement and mod channel fire when live
+            // Assert — only mod channel fires; public announcement is not GameSwitchService's concern
             discordService.Verify(d => d.SendGameChangeAnnouncementAsync(
-                user, "Elden Ring", It.IsAny<string?>()), Times.Once);
+                It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             discordService.Verify(d => d.SendModChannelNotificationAsync(
                 user, "Elden Ring", It.IsAny<IReadOnlyList<string>>()), Times.Once);
         }
 
         [Fact]
-        public async Task HandleGameDetectedAsync_ShouldSkipPublicAnnouncement_WhenNotLive()
+        public async Task HandleGameDetectedAsync_ShouldNotSendPublicAnnouncement_OnGameSwitch()
         {
-            // Arrange
+            // Arrange — GameSwitchService never calls SendGameChangeAnnouncementAsync regardless of live status
             var discordService = new Mock<IDiscordService>();
             var userRepository = new Mock<IUserRepository>();
             var counterRepository = new Mock<ICounterRepository>();
             var gameContextRepository = new Mock<IGameContextRepository>();
             var gameCountersRepository = new Mock<IGameCountersRepository>();
             var gameCoreCountersConfigRepository = new Mock<IGameCoreCountersConfigRepository>();
-            var streamMonitorService = new Mock<IStreamMonitorService>();
-            streamMonitorService.Setup(s => s.IsUserLive("user1")).Returns(false);
 
             var user = new User
             {
@@ -140,8 +132,7 @@ namespace OmniForge.Tests.Services
                 gameCoreCountersConfigRepository: gameCoreCountersConfigRepository,
                 counterRepository: counterRepository,
                 userRepository: userRepository,
-                discordService: discordService,
-                streamMonitorService: streamMonitorService);
+                discordService: discordService);
 
             // Act
             await service.HandleGameDetectedAsync("user1", "game1", "Elden Ring");
@@ -149,7 +140,7 @@ namespace OmniForge.Tests.Services
             // Allow fire-and-forget to complete
             await Task.Delay(200);
 
-            // Assert — public announcement skipped, mod channel still fires
+            // Assert — public announcement is never sent by GameSwitchService
             discordService.Verify(d => d.SendGameChangeAnnouncementAsync(
                 It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             discordService.Verify(d => d.SendModChannelNotificationAsync(
@@ -204,7 +195,8 @@ namespace OmniForge.Tests.Services
             // Allow any fire-and-forget to complete
             await Task.Delay(200);
 
-            // Assert — same-game re-detect returns early, no Discord calls
+            // Assert — same-game re-detect (e.g. title change) produces no Discord calls.
+            // The mod-channel announcement is StreamOnlineHandler's responsibility, guarded by isNewStream.
             discordService.Verify(d => d.SendGameChangeAnnouncementAsync(
                 It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
             discordService.Verify(d => d.SendModChannelNotificationAsync(
@@ -241,8 +233,8 @@ namespace OmniForge.Tests.Services
             gameContextRepository.Setup(r => r.GetAsync("user1")).ReturnsAsync((GameContext?)null);
             gameContextRepository.Setup(r => r.SaveAsync(It.IsAny<GameContext>())).Returns(Task.CompletedTask);
 
-            // Discord throws
-            discordService.Setup(d => d.SendGameChangeAnnouncementAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string?>()))
+            // Discord throws on mod channel
+            discordService.Setup(d => d.SendModChannelNotificationAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
                 .ThrowsAsync(new Exception("Discord API error"));
 
             var service = CreateService(
