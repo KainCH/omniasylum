@@ -244,6 +244,15 @@ function handleSseEvent(eventType, data, dotNetHelper) {
         if (alertType === 'chatCommandsUpdated') return;
         if (alertType) triggerAlert(alertType, alertPayload, dotNetHelper);
 
+    } else if (eventType === 'alert') {
+        // Enriched standard alerts (follow, giftsub, subscription, bits, raid, resub,
+        // community_sub_gift, etc.) are all sent as event: alert by the server.
+        // Extract the type from the payload and forward to triggerAlert.
+        const alertType = data && (data.type || data.alertType);
+        const alertPayload = (data && data.data) ? data.data : data;
+        if (!alertType || alertType === 'chatCommandsUpdated') return;
+        triggerAlert(alertType, alertPayload, dotNetHelper);
+
     } else if (eventType === 'bitsGoalUpdate') {
         try { dotNetHelper.invokeMethodAsync("OnBitsGoalUpdate", data); } catch (e) {}
 
@@ -409,7 +418,7 @@ export function connect(userId, dotNetHelper, tier) {
 
     // Standard overlay events
     const eventTypes = [
-        'counterUpdate', 'streamStatusUpdate', 'customAlert',
+        'counterUpdate', 'streamStatusUpdate', 'customAlert', 'alert',
         'bitsGoalUpdate', 'bitsGoalComplete', 'milestoneReached',
         'streamStarted', 'streamEnded', 'overlaySettingsUpdate', 'settingsUpdate',
         'follow', 'subscription', 'resub', 'giftsub', 'bits', 'raid',

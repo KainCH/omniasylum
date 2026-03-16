@@ -127,7 +127,7 @@ window.overlayInterop = {
         // Handle specific types that need custom logic
         if (type === 'bits') {
             this.triggerBitsCelebration(safePayload.amount || safePayload.bits || 50);
-        } else if (type === 'subscription' || type === 'resub' || type === 'giftsub') {
+        } else if (type === 'subscription' || type === 'resub' || type === 'giftsub' || type === 'community_sub_gift') {
             this.triggerSubCelebration();
             if (safePayload.textPrompt) {
                 this.showSubBanner(safePayload.textPrompt);
