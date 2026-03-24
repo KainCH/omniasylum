@@ -1,9 +1,11 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 using OmniForge.Web.Services;
 
 namespace OmniForge.Web.Controllers
@@ -141,12 +143,12 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Connection not found" });
                 }
 
-                _logger.LogInformation("SSE init sent: user_id={UserId}, connection_id={ConnectionId}", userId, connectionId);
+                _logger.LogInformation("SSE init sent: user_id={UserId}, connection_id={ConnectionId}", LogValue.Safe(userId), LogValue.Safe(connectionId));
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending SSE init for user_id={UserId}", userId);
+                _logger.LogError(ex, "Error sending SSE init for user_id={UserId}", LogValue.Safe(userId));
                 return StatusCode(500, new { error = "Failed to send init bundle" });
             }
         }

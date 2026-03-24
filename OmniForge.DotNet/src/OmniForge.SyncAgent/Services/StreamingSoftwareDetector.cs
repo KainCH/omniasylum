@@ -55,7 +55,7 @@ namespace OmniForge.SyncAgent.Services
             while (!ct.IsCancellationRequested)
             {
                 // Check OBS WebSocket
-                if (IsObsAvailable())
+                if (await IsObsAvailableAsync(ct))
                 {
                     _logger.LogInformation("Detected OBS Studio WebSocket on port {Port}", _options.ObsPort);
                     return ("OBS Studio", CreateObsClient());
@@ -82,15 +82,14 @@ namespace OmniForge.SyncAgent.Services
             throw new OperationCanceledException("Detection cancelled before streaming software was found");
         }
 
-        private bool IsObsAvailable()
+        private async Task<bool> IsObsAvailableAsync(CancellationToken ct)
         {
             try
             {
                 using var tcp = new System.Net.Sockets.TcpClient();
-                // Use a short connect timeout — the default can block for ~20 seconds
-                // on Windows when nothing is listening, making detection extremely slow.
-                return tcp.ConnectAsync("127.0.0.1", _options.ObsPort)
-                           .Wait(TimeSpan.FromMilliseconds(500));
+                var connectTask = tcp.ConnectAsync("127.0.0.1", _options.ObsPort);
+                var winner = await Task.WhenAny(connectTask, Task.Delay(TimeSpan.FromMilliseconds(500), ct));
+                return winner == connectTask && !connectTask.IsFaulted;
             }
             catch
             {

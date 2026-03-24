@@ -169,4 +169,47 @@ public class AlertPayloadEnricherTests
         var result = AlertPayloadEnricher.ApplyTemplate("Hello [Unknown]!", payload);
         Assert.Equal("Hello [Unknown]!", result);
     }
+
+    [Fact]
+    public async Task EnrichPayloadAsync_InvalidEffectsJson_StillEnrichesPayload()
+    {
+        _mockAlertRepository.Setup(x => x.GetAlertsAsync("user1")).ReturnsAsync(new List<Alert>
+        {
+            new Alert
+            {
+                Id = "a1",
+                Type = "follow",
+                Name = "Follow Alert",
+                TextPrompt = "Welcome!",
+                Duration = 5000,
+                BackgroundColor = "#000",
+                TextColor = "#fff",
+                BorderColor = "#333",
+                Effects = "not-valid-json{{",
+                IsEnabled = true
+            }
+        });
+
+        var result = await _enricher.EnrichPayloadAsync("user1", "follow", new { displayName = "Alice" });
+
+        // Should still enrich — invalid Effects JSON is skipped silently
+        Assert.False(_enricher.IsSuppressed(result));
+        var json = JsonSerializer.Serialize(result);
+        Assert.Contains("Follow Alert", json);
+        // Effects key should be absent since parsing failed
+        Assert.DoesNotContain("\"effects\"", json);
+    }
+
+    [Fact]
+    public async Task EnrichPayloadAsync_RepositoryThrows_ReturnBaseData()
+    {
+        var baseData = new { displayName = "Alice" };
+        _mockAlertRepository.Setup(x => x.GetAlertsAsync(It.IsAny<string>()))
+            .ThrowsAsync(new InvalidOperationException("storage unavailable"));
+
+        var result = await _enricher.EnrichPayloadAsync("user1", "follow", baseData);
+
+        // Should fall back to passthrough without throwing
+        Assert.Same(baseData, result);
+    }
 }

@@ -15,19 +15,17 @@ namespace OmniForge.Web.Services
 
         public bool TryApprove(string code, string userId, string token)
         {
-            if (!_entries.TryGetValue(code, out var entry))
+            if (!_entries.TryGetValue(code, out var existing))
                 return false;
 
-            if (entry.ExpiresAt < DateTimeOffset.UtcNow)
+            if (existing.ExpiresAt < DateTimeOffset.UtcNow)
             {
                 _entries.TryRemove(code, out _);
                 return false;
             }
 
-            entry.UserId = userId;
-            entry.Token = token;
-            entry.IsApproved = true;
-            return true;
+            var approved = existing with { UserId = userId, Token = token, IsApproved = true };
+            return _entries.TryUpdate(code, approved, existing);
         }
 
         public PairingEntry? TryPoll(string code)
@@ -66,13 +64,13 @@ namespace OmniForge.Web.Services
         }
     }
 
-    public class PairingEntry
+    public record PairingEntry
     {
-        public string Code { get; set; } = string.Empty;
-        public DateTimeOffset ExpiresAt { get; set; }
-        public string? UserId { get; set; }
-        public string? Token { get; set; }
-        public bool IsApproved { get; set; }
-        public bool IsExpired { get; set; }
+        public string Code { get; init; } = string.Empty;
+        public DateTimeOffset ExpiresAt { get; init; }
+        public string? UserId { get; init; }
+        public string? Token { get; init; }
+        public bool IsApproved { get; init; }
+        public bool IsExpired { get; init; }
     }
 }

@@ -7,7 +7,7 @@
   var connected = state != null;
 
   <span class="badge @(connected ? "bg-success" : "bg-secondary") me-2" title="@GetTooltip(state)">
-    <i class="bi @(connected ? "bi-broadcast" : "bi-broadcast") me-1"></i>
+    <i class="bi @(connected ? "bi-broadcast" : "bi-broadcast-pin") me-1"></i>
     @if (connected)
     {
       <span>Sync Agent: Connected (@(state!.SoftwareType.ToUpperInvariant()))</span>

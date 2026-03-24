@@ -37,6 +37,9 @@
     "csharp.showOmnisharpLogOnError": false,
     "[aspnetcorerazor]": {
       "editor.defaultFormatter": "ms-dotnettools.csharp"
+    },
+    "chat.tools.terminal.autoApprove": {
+      "git stash": true
     }
   },
   "extensions": {

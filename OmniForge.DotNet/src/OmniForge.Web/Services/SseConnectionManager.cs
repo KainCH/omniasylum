@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Services
 {
@@ -59,7 +60,7 @@ namespace OmniForge.Web.Services
             var userConnections = _connections.GetOrAdd(userId, _ => new ConcurrentDictionary<string, SseClient>());
             userConnections[connectionId] = client;
 
-            _logger.LogInformation("SSE connected: user_id={UserId}, connection_id={ConnectionId}", userId, connectionId);
+            _logger.LogInformation("SSE connected: user_id={UserId}, connection_id={ConnectionId}", LogValue.Safe(userId), LogValue.Safe(connectionId));
 
             // Send retry interval (5 seconds) and the connected event
             await WriteRawAsync(client, $"retry: 5000\n\n");
@@ -145,7 +146,7 @@ namespace OmniForge.Web.Services
 
             if (userConnections.TryRemove(connectionId, out var client))
             {
-                _logger.LogInformation("SSE disconnected: user_id={UserId}, connection_id={ConnectionId}", userId, connectionId);
+                _logger.LogInformation("SSE disconnected: user_id={UserId}, connection_id={ConnectionId}", LogValue.Safe(userId), LogValue.Safe(connectionId));
                 try { client.Cts.Cancel(); } catch { }
                 try { client.Cts.Dispose(); } catch { }
                 try { client.WriteLock.Dispose(); } catch { }

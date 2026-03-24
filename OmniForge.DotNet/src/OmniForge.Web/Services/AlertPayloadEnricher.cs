@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Constants;
 using OmniForge.Core.Interfaces;
+using OmniForge.Core.Utilities;
 
 namespace OmniForge.Web.Services
 {
@@ -109,7 +110,7 @@ namespace OmniForge.Web.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error enriching alert {AlertType} for user {UserId}; falling back to passthrough", alertType, userId);
+                _logger.LogError(ex, "Error enriching alert {AlertType} for user {UserId}; falling back to passthrough", LogValue.Safe(alertType), LogValue.Safe(userId));
                 return baseData;
             }
         }
