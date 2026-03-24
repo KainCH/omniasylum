@@ -109,6 +109,11 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 Logger.LogWarning(ex, "⚠️ Failed sending Discord channel point redemption notification. broadcaster_user_id={BroadcasterId}", broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"));
             }
 
+            // Push to dashboard feed
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            var feedRedeemerName = !string.IsNullOrWhiteSpace(redeemerName) ? redeemerName : (redeemerLogin ?? "Someone");
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("redemption", $"\ud83c\udfaf {feedRedeemerName} redeemed {rewardTitle}", DateTimeOffset.UtcNow));
+
             // Execute action
             try
             {
@@ -167,7 +172,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         }
                 }
 
-                Logger.LogInformation(
+            Logger.LogInformation(
                     "⏭️ Channel point action not implemented. broadcaster_user_id={BroadcasterId}, action={Action}",
                     broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
                     (reward.Action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));

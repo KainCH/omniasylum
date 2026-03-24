@@ -98,12 +98,19 @@ namespace OmniForge.Web.Controllers
                 "moderator:read:automod_settings",
                 "moderator:manage:automod_settings",
 
+                // Followed channels (for raid suggestions — GetFollowedLiveStreamsAsync uses broadcaster token)
+                "user:read:follows",
+
                 // Moderation actions (requires the bot to be a mod in the target channel)
                 "moderator:manage:banned_users",
                 "moderator:manage:chat_messages",
 
                 // Suspicious user / ban evasion detection
                 "moderator:read:suspicious_users",
+                "moderator:manage:suspicious_users",
+
+                // Auto-shoutout
+                "moderator:manage:shoutouts",
 
                 // Bits & clips
                 "bits:read",

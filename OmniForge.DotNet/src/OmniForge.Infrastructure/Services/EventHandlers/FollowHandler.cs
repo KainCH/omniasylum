@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +45,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             {
                 await overlayNotifier.NotifyFollowerAsync(broadcasterId, displayName);
             }
+
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("follow", $"🆕 {displayName} followed!", DateTimeOffset.UtcNow));
         }
     }
 }

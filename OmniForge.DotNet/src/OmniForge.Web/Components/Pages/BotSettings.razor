@@ -1,0 +1,344 @@
+@page "/bot"
+@page "/manage/{StreamerId}/bot"
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject IUserRepository UserRepository
+@inject ILogger<BotSettings> Logger
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Bot Settings</PageTitle>
+
+<h3><i class="bi bi-robot me-2"></i>Bot Settings</h3>
+
+@if (!hasAccess)
+{
+  <div class="alert alert-danger">@(accessDeniedMessage ?? "Access denied.")</div>
+}
+else if (loading)
+{
+  <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+  <div class="alert alert-danger">@errorMessage</div>
+}
+else if (botSettings != null)
+{
+  @if (!string.IsNullOrEmpty(statusMessage))
+  {
+    <div class="alert alert-success alert-dismissible">
+      <i class="bi bi-check-circle me-2"></i>@statusMessage
+      <button type="button" class="btn-close" @onclick='() => statusMessage = null'></button>
+    </div>
+  }
+
+  <p class="text-muted mb-4">
+    Configure automatic messages your bot sends in chat. Leave a field blank to disable that response.
+    Tokens: <code>{username}</code>, <code>{viewers}</code>, <code>{raiders}</code>, <code>{count}</code>.
+  </p>
+
+  <!-- Event Messages -->
+  <div class="card mb-4">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span><i class="bi bi-chat-dots me-2"></i>Event Messages</span>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Stream Start</label>
+          <input class="form-control" @bind="botSettings.StreamStartMessage"
+                 placeholder="e.g. Stream is live! PogChamp" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Raid Received</label>
+          <input class="form-control" @bind="botSettings.RaidReceivedMessage"
+                 placeholder="e.g. Welcome raiders from {username}!" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">New Subscriber</label>
+          <input class="form-control" @bind="botSettings.NewSubMessage" placeholder="e.g. Welcome {username}!" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Gift Sub (per-gift)</label>
+          <input class="form-control" @bind="botSettings.GiftSubMessage" placeholder="e.g. {username} gifted a sub!" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Resub</label>
+          <input class="form-control" @bind="botSettings.ResubMessage"
+                 placeholder="e.g. {username} resubbed ({count} months)!" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">First-Time Chatter</label>
+          <input class="form-control" @bind="botSettings.FirstTimeChatMessage"
+                 placeholder="e.g. Welcome to the asylum, {username}!" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">!brb Message</label>
+          <input class="form-control" @bind="botSettings.BrbMessage" placeholder="e.g. BRB! Back in a few." />
+          <small class="text-muted">Broadcaster-only command</small>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">!back Message</label>
+          <input class="form-control" @bind="botSettings.BackMessage" placeholder="e.g. And we're back!" />
+          <small class="text-muted">Broadcaster-only command</small>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Clip Announcement</label>
+          <input class="form-control" @bind="botSettings.ClipAnnouncementMessage"
+                 placeholder="e.g. Clip created: {url}" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scheduled Messages -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="bi bi-clock me-2"></i>Scheduled Messages</div>
+    <div class="card-body">
+      <p class="text-muted small">Messages posted automatically at configured intervals while stream is live.</p>
+      @if (botSettings.ScheduledMessages.Count == 0)
+      {
+        <p class="text-muted fst-italic">No scheduled messages configured.</p>
+      }
+      else
+      {
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Message</th>
+                <th style="width:120px">Interval (min)</th>
+                <th style="width:80px">Enabled</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @foreach (var entry in botSettings.ScheduledMessages)
+              {
+                <tr>
+                  <td><input class="form-control form-control-sm" @bind="entry.Message" /></td>
+                  <td><input type="number" class="form-control form-control-sm" @bind="entry.IntervalMinutes" min="5"
+                               max="480" /></td>
+                    <td><input type="checkbox" class="form-check-input" @bind="entry.Enabled" /></td>
+                    <td>
+                      <button class="btn btn-sm btn-outline-danger"
+                              @onclick="() => botSettings.ScheduledMessages.Remove(entry)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        <button class="btn btn-sm btn-outline-primary mt-2" @onclick="AddScheduledMessage">
+          <i class="bi bi-plus-lg me-1"></i>Add Message
+        </button>
+      </div>
+    </div>
+
+    <!-- Link Commands -->
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-link-45deg me-2"></i>Link Commands</div>
+      <div class="card-body">
+        <p class="text-muted small">Custom <code>!command</code> shortcuts that reply with a link or text (e.g.
+          <code>!discord</code>).</p>
+          @if (botSettings.LinkCommands.Count == 0)
+          {
+            <p class="text-muted fst-italic">No link commands configured.</p>
+          }
+          else
+          {
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th style="width:160px">Command (no !)</th>
+                    <th>Response</th>
+                    <th style="width:60px"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @foreach (var key in botSettings.LinkCommands.Keys.ToList())
+                  {
+                    <tr>
+                      <td>
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text">!</span>
+                          <input class="form-control form-control-sm" value="@key"
+                                 @onchange="e => RenameKey(key, e.Value?.ToString() ?? key)" />
+                        </div>
+                      </td>
+                      <td><input class="form-control form-control-sm" value="@botSettings.LinkCommands[key]"
+                                   @onchange="e => botSettings.LinkCommands[key] = e.Value?.ToString() ?? string.Empty" /></td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-danger" @onclick="() => botSettings.LinkCommands.Remove(key)">
+                            <i class="bi bi-trash"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            <div class="d-flex gap-2 mt-2">
+              <input type="text" class="form-control form-control-sm" style="width:160px" placeholder="command name"
+                     @bind="newLinkKey" maxlength="30" />
+              <button class="btn btn-sm btn-outline-primary" @onclick="AddLinkCommand"
+                      disabled="@string.IsNullOrWhiteSpace(newLinkKey)">
+                <i class="bi bi-plus-lg me-1"></i>Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" @onclick="SaveAsync" disabled="@saving">
+            @if (saving)
+            {
+              <span class="spinner-border spinner-border-sm me-1"></span>
+            }
+            Save Settings
+          </button>
+        </div>
+      }
+
+@code {
+  [Parameter] public string? StreamerId { get; set; }
+
+  [CascadingParameter] private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+  private OmniForge.Core.Entities.BotSettings? botSettings;
+  private bool loading = true;
+  private bool saving;
+  private string? errorMessage;
+  private string? statusMessage;
+  private string? targetUserId;
+  private string? actingUserId;
+  private bool hasAccess = true;
+  private string? accessDeniedMessage;
+  private string newLinkKey = string.Empty;
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      targetUserId = await ResolveTargetUserIdAsync();
+      if (!hasAccess) return;
+      await LoadAsync();
+    }
+    catch (Exception ex)
+    {
+      Logger.LogError(ex, "❌ BotSettings init failed");
+      errorMessage = ex.Message;
+    }
+    finally { loading = false; }
+  }
+
+  private async Task LoadAsync()
+  {
+    var userId = targetUserId ?? await GetUserIdAsync();
+    if (string.IsNullOrEmpty(userId)) { errorMessage = "Not authenticated"; return; }
+    var user = await UserRepository.GetUserAsync(userId);
+    if (user == null) { errorMessage = "User not found"; return; }
+    botSettings = user.BotSettings ?? new OmniForge.Core.Entities.BotSettings();
+  }
+
+  private async Task SaveAsync()
+  {
+    var userId = targetUserId ?? await GetUserIdAsync();
+    if (string.IsNullOrEmpty(userId) || botSettings == null) return;
+    saving = true;
+    statusMessage = null;
+    errorMessage = null;
+    try
+    {
+      var user = await UserRepository.GetUserAsync(userId);
+      if (user == null) { errorMessage = "User not found"; return; }
+      user.BotSettings = botSettings;
+      await UserRepository.SaveUserAsync(user);
+      statusMessage = "Settings saved!";
+    }
+    catch (Exception ex)
+    {
+      Logger.LogError(ex, "❌ BotSettings save failed");
+      errorMessage = ex.Message;
+    }
+    finally { saving = false; }
+  }
+
+  private void AddScheduledMessage()
+  {
+    botSettings?.ScheduledMessages.Add(new OmniForge.Core.Entities.ScheduledMessageEntry());
+  }
+
+  private void AddLinkCommand()
+  {
+    var key = newLinkKey.Trim().TrimStart('!').ToLowerInvariant();
+    if (!string.IsNullOrEmpty(key) && botSettings != null && !botSettings.LinkCommands.ContainsKey(key))
+    {
+      botSettings.LinkCommands[key] = string.Empty;
+      newLinkKey = string.Empty;
+    }
+  }
+
+  private void RenameKey(string oldKey, string newKey)
+  {
+    if (botSettings == null) return;
+    var normalised = newKey.Trim().TrimStart('!').ToLowerInvariant();
+    if (string.IsNullOrEmpty(normalised) || normalised == oldKey) return;
+    var value = botSettings.LinkCommands.TryGetValue(oldKey, out var v) ? v : string.Empty;
+    botSettings.LinkCommands.Remove(oldKey);
+    botSettings.LinkCommands[normalised] = value;
+  }
+
+  private async Task<string?> GetUserIdAsync()
+  {
+    if (!string.IsNullOrWhiteSpace(targetUserId)) return targetUserId;
+    if (authenticationStateTask == null) return null;
+    var authState = await authenticationStateTask;
+    var user = authState.User;
+    return user.FindFirst("userId")?.Value
+        ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? user.FindFirst("sub")?.Value;
+  }
+
+  private async Task<string?> ResolveTargetUserIdAsync()
+  {
+    if (authenticationStateTask == null)
+    {
+      hasAccess = false;
+      accessDeniedMessage = "Not authenticated";
+      return null;
+    }
+    var authState = await authenticationStateTask;
+    var claimsUser = authState.User;
+    actingUserId = claimsUser.FindFirst("userId")?.Value
+        ?? claimsUser.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? claimsUser.FindFirst("sub")?.Value;
+
+    if (string.IsNullOrWhiteSpace(actingUserId))
+    {
+      hasAccess = false;
+      accessDeniedMessage = "Unable to determine user identity. Please re-login.";
+      return null;
+    }
+
+    var resolved = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+    if (!string.Equals(resolved, actingUserId, StringComparison.Ordinal))
+    {
+      var actingUserEntity = await UserRepository.GetUserAsync(actingUserId);
+      hasAccess = actingUserEntity != null &&
+          (string.Equals(actingUserEntity.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+           actingUserEntity.ManagedStreamers?.Contains(resolved) == true);
+      if (!hasAccess) { accessDeniedMessage = "You do not have permission to manage this streamer."; return null; }
+    }
+
+    return resolved;
+  }
+}

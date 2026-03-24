@@ -96,6 +96,13 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 await overlayNotifier.NotifyStreamStatusUpdateAsync(broadcasterId, "offline");
                 await overlayNotifier.NotifyStreamEndedAsync(broadcasterId, counters);
             }
+
+            // Dashboard feed + session resets on stream.offline
+            scope.ServiceProvider.GetService<IDashboardFeedService>()?.SetLiveStatus(broadcasterId, false);
+            scope.ServiceProvider.GetService<IAutoShoutoutService>()?.ResetSession(broadcasterId);
+            scope.ServiceProvider.GetService<IBotReactionService>()?.ResetSession(broadcasterId);
+            scope.ServiceProvider.GetService<IBotModerationService>()?.ResetSession(broadcasterId);
+            scope.ServiceProvider.GetService<IScheduledMessageService>()?.StopForUser(broadcasterId);
         }
     }
 }

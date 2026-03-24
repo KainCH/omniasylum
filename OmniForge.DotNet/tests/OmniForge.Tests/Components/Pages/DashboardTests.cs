@@ -27,6 +27,8 @@ namespace OmniForge.Tests.Components.Pages
         private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ISeriesRepository> _mockSeriesRepository;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly Mock<IDashboardFeedService> _mockDashboardFeedService;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
 
@@ -37,8 +39,19 @@ namespace OmniForge.Tests.Components.Pages
             _mockStreamMonitorService = new Mock<IStreamMonitorService>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockSeriesRepository = new Mock<ISeriesRepository>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
+            _mockDashboardFeedService = new Mock<IDashboardFeedService>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
+
+            // IDashboardFeedService.Subscribe returns a no-op disposable
+            _mockDashboardFeedService
+                .Setup(x => x.Subscribe(It.IsAny<string>(), It.IsAny<Action<DashboardChatMessage>>(),
+                    It.IsAny<Action<DashboardEvent>>(), It.IsAny<Action<bool>>()))
+                .Returns(Mock.Of<IDisposable>());
+            _mockDashboardFeedService
+                .Setup(x => x.GetLiveStatus(It.IsAny<string>()))
+                .Returns(false);
 
             Services.AddSingleton(_mockCounterRepository.Object);
             Services.AddSingleton(_mockUserRepository.Object);
@@ -46,6 +59,8 @@ namespace OmniForge.Tests.Components.Pages
             Services.AddSingleton(_mockOverlayNotifier.Object);
             Services.AddSingleton(_mockSeriesRepository.Object);
             Services.AddSingleton(new Mock<ISyncAgentTracker>().Object);
+            Services.AddSingleton(_mockTwitchApiService.Object);
+            Services.AddSingleton(_mockDashboardFeedService.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Add core authorization services (PolicyProvider, etc.)
@@ -69,6 +84,7 @@ namespace OmniForge.Tests.Components.Pages
             ComponentFactories.AddStub<AlertEffectsModal>();
             ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
             ComponentFactories.AddStub<AlertsManagerModal>();
+            ComponentFactories.AddStub<AutoShoutoutSettingsModal>();
         }
 
         private IRenderedComponent<Dashboard> RenderDashboard()

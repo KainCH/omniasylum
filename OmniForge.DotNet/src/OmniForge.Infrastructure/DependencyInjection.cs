@@ -105,6 +105,11 @@ namespace OmniForge.Infrastructure
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
+            services.AddSingleton<IDashboardFeedService, DashboardFeedService>();
+            services.AddSingleton<IAutoShoutoutService, AutoShoutoutService>();
+            services.AddSingleton<IBotReactionService, BotReactionService>();
+            services.AddSingleton<IScheduledMessageService, ScheduledMessageService>();
+            services.AddSingleton<IBotModerationService, BotModerationService>();
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
             services.AddSingleton<ITwitchConnectionService, TwitchConnectionService>();
             services.AddHostedService(sp => (TwitchConnectionService)sp.GetRequiredService<ITwitchConnectionService>());

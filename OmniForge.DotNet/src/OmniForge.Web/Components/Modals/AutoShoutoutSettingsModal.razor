@@ -1,0 +1,148 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IUserRepository UserRepository
+
+@if (Show)
+{
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-megaphone me-2"></i>Auto-Shoutout Settings</h5>
+          <button type="button" class="btn-close" @onclick="Close"></button>
+        </div>
+        <div class="modal-body">
+          @if (!string.IsNullOrEmpty(errorMessage))
+          {
+            <div class="alert alert-danger py-2">
+              <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+            </div>
+          }
+          @if (!string.IsNullOrEmpty(successMessage))
+          {
+            <div class="alert alert-success py-2">
+              <i class="bi bi-check-circle me-2"></i>@successMessage
+            </div>
+          }
+
+          <p class="text-muted mb-3">
+            Auto-shoutout fires a Twitch <code>/shoutout</code> for any follower who chats during your stream.
+            Add usernames below to skip specific accounts (e.g. bots or other streamers who prefer no shoutout).
+          </p>
+
+          <h6 class="mb-2">Exclude List</h6>
+          @if (excludeList.Count == 0)
+          {
+            <p class="text-muted fst-italic small">No exclusions — everyone who follows will get a shoutout.</p>
+          }
+          else
+          {
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              @foreach (var login in excludeList)
+              {
+                <span class="badge bg-secondary d-flex align-items-center gap-1">
+                  @login
+                  <button type="button" class="btn-close btn-close-white btn-sm" style="font-size:0.6rem;"
+                          @onclick="() => RemoveExclusion(login)"></button>
+                </span>
+              }
+            </div>
+          }
+
+          <div class="input-group">
+            <input type="text" class="form-control" placeholder="Twitch login (e.g. nightbot)" @bind="newLogin"
+                   @bind:event="oninput" @onkeyup="OnKeyUp" maxlength="50" />
+            <button class="btn btn-primary" type="button" @onclick="AddExclusion"
+                    disabled="@string.IsNullOrWhiteSpace(newLogin)">
+              <i class="bi bi-plus-lg me-1"></i>Add
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @onclick="Close">Cancel</button>
+          <button class="btn btn-primary" @onclick="Save" disabled="@isSaving">
+            @if (isSaving)
+            {
+              <span class="spinner-border spinner-border-sm me-1"></span>
+            }
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@code {
+  [Parameter] public bool Show { get; set; }
+  [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+  [Parameter] public string? UserId { get; set; }
+
+  private List<string> excludeList = new();
+  private string newLogin = string.Empty;
+  private bool isSaving;
+  private string? errorMessage;
+  private string? successMessage;
+  private bool _previousShow;
+
+  protected override async Task OnParametersSetAsync()
+  {
+    if (Show && !_previousShow && !string.IsNullOrEmpty(UserId))
+    {
+      var user = await UserRepository.GetUserAsync(UserId);
+      if (user != null)
+        excludeList = new List<string>(user.AutoShoutoutExcludeList);
+    }
+    _previousShow = Show;
+  }
+
+  private void AddExclusion()
+  {
+    var login = newLogin.Trim().ToLowerInvariant();
+    if (!string.IsNullOrEmpty(login) && !excludeList.Contains(login, StringComparer.OrdinalIgnoreCase))
+      excludeList.Add(login);
+    newLogin = string.Empty;
+  }
+
+  private void RemoveExclusion(string login) => excludeList.Remove(login);
+
+  private void OnKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+  {
+    if (e.Key == "Enter") AddExclusion();
+  }
+
+  private async Task Save()
+  {
+    if (string.IsNullOrEmpty(UserId)) return;
+    isSaving = true;
+    errorMessage = null;
+    successMessage = null;
+
+    try
+    {
+      var user = await UserRepository.GetUserAsync(UserId);
+      if (user == null) { errorMessage = "User not found."; return; }
+      user.AutoShoutoutExcludeList = new List<string>(excludeList);
+      await UserRepository.SaveUserAsync(user);
+      successMessage = "Saved!";
+      await Task.Delay(1000);
+      await Close();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Failed to save: {ex.Message}";
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task Close()
+  {
+    newLogin = string.Empty;
+    errorMessage = null;
+    successMessage = null;
+    await ShowChanged.InvokeAsync(false);
+  }
+}

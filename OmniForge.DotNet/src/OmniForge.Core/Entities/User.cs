@@ -34,6 +34,9 @@ namespace OmniForge.Core.Entities
         public DateTimeOffset LastLogin { get; set; }
         public LicenseTier LicenseTier { get; set; } = LicenseTier.Free;
         public DateTimeOffset? LicenseExpiresAt { get; set; }
+        public List<string> AutoShoutoutExcludeList { get; set; } = new();
+        public BotSettings BotSettings { get; set; } = new BotSettings();
+        public BotModerationSettings BotModeration { get; set; } = new BotModerationSettings();
     }
 
     public class FeatureFlags
