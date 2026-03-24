@@ -167,11 +167,11 @@ namespace OmniForge.SyncAgent.Services
                 // UseShellExecute=true causes ERROR_SHARING_VIOLATION (32) because
                 // Windows Shell locks the file during SmartScreen/signature checks
                 // while our process still has it open in the download stream.
-                var currentPid  = Environment.ProcessId;
-                var updateDir   = Path.GetDirectoryName(_pendingUpdatePath)!;
-                var batPath     = Path.Combine(updateDir, "apply-update.bat");
+                var currentPid = Environment.ProcessId;
+                var updateDir = Path.GetDirectoryName(_pendingUpdatePath)!;
+                var batPath = Path.Combine(updateDir, "apply-update.bat");
                 var installPath = Path.GetFullPath(currentExePath);
-                var updateExe   = Path.GetFullPath(_pendingUpdatePath);
+                var updateExe = Path.GetFullPath(_pendingUpdatePath);
 
                 // Write a self-deleting bat that waits for our PID, then overwrites
                 // the installed exe and relaunches it.
@@ -189,9 +189,9 @@ namespace OmniForge.SyncAgent.Services
 
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
                 {
-                    Arguments        = $"/c \"{batPath}\"",
-                    UseShellExecute  = false,
-                    CreateNoWindow   = true
+                    Arguments = $"/c \"{batPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
                 });
 
                 Environment.Exit(0);

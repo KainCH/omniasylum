@@ -32,6 +32,8 @@ namespace OmniForge.Infrastructure.Entities
         public string managedStreamers { get; set; } = "[]";
         public bool isActive { get; set; } = true;
         public string streamStatus { get; set; } = "offline";
+        public string licenseTier { get; set; } = "Free";
+        public object? licenseExpiresAt { get; set; }
         public object? createdAt { get; set; }
         public object? lastLogin { get; set; }
 
@@ -87,6 +89,8 @@ namespace OmniForge.Infrastructure.Entities
                 ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
                 IsActive = isActive,
                 StreamStatus = streamStatus,
+                LicenseTier = Enum.TryParse<LicenseTier>(licenseTier, ignoreCase: true, out var lt) ? lt : LicenseTier.Free,
+                LicenseExpiresAt = licenseExpiresAt == null ? (DateTimeOffset?)null : ParseDateTimeOffset(licenseExpiresAt),
                 CreatedAt = ParseDateTimeOffset(createdAt),
                 LastLogin = ParseDateTimeOffset(lastLogin)
             };
@@ -207,6 +211,8 @@ namespace OmniForge.Infrastructure.Entities
                 managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),
                 isActive = GetBoolSafe(entity, "isActive", true),
                 streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
+                licenseTier = GetStringSafe(entity, "licenseTier", "Free"),
+                licenseExpiresAt = entity.TryGetValue("licenseExpiresAt", out var lea) ? lea : null,
                 createdAt = entity.TryGetValue("createdAt", out var ca) ? ca : null,
                 lastLogin = entity.TryGetValue("lastLogin", out var ll) ? ll : null
             };
@@ -301,6 +307,8 @@ namespace OmniForge.Infrastructure.Entities
                 managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
                 isActive = user.IsActive,
                 streamStatus = user.StreamStatus,
+                licenseTier = user.LicenseTier.ToString(),
+                licenseExpiresAt = user.LicenseExpiresAt.HasValue && user.LicenseExpiresAt.Value < minAzureDate ? minAzureDate : user.LicenseExpiresAt,
                 createdAt = user.CreatedAt < minAzureDate ? minAzureDate : user.CreatedAt,
                 lastLogin = user.LastLogin < minAzureDate ? minAzureDate : user.LastLogin
             };

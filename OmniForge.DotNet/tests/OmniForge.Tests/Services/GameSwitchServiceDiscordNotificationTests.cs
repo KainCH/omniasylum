@@ -170,7 +170,9 @@ namespace OmniForge.Tests.Services
             // Library item exists
             gameLibraryRepository.Setup(r => r.GetAsync("user1", "game1")).ReturnsAsync(new GameLibraryItem
             {
-                UserId = "user1", GameId = "game1", GameName = "Elden Ring"
+                UserId = "user1",
+                GameId = "game1",
+                GameName = "Elden Ring"
             });
 
             // Core selection exists

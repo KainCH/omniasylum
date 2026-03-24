@@ -167,9 +167,13 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SseConnectionManag
 // Alert enrichment (scoped — uses IAlertRepository which is scoped)
 builder.Services.AddScoped<IAlertPayloadEnricher, AlertPayloadEnricher>();
 
-// Overlay notifier: SSE-based v2 overlay
+// Overlay notifiers: v1 (WebSocket) + v2 (SSE), multiplexed via composite
 builder.Services.AddSingleton<SseOverlayNotifier>();
-builder.Services.AddSingleton<IOverlayNotifier>(sp => sp.GetRequiredService<SseOverlayNotifier>());
+builder.Services.AddSingleton<WebSocketOverlayNotifier>();
+builder.Services.AddSingleton<IOverlayNotifier>(sp => new CompositeOverlayNotifier(
+    sp.GetRequiredService<ILogger<CompositeOverlayNotifier>>(),
+    sp.GetRequiredService<SseOverlayNotifier>(),
+    sp.GetRequiredService<WebSocketOverlayNotifier>()));
 
 builder.Services.AddSingleton<OmniForge.Web.Services.AgentPairingService>();
 

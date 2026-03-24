@@ -145,7 +145,7 @@ namespace OmniForge.SyncAgent.Services
                 try
                 {
                     _logger.LogInformation("Attempting to reconnect to OBS at {Url}...", _url);
-                    _obs.ConnectAsync(_url, _password ?? "");
+                    await Task.Run(() => _obs.ConnectAsync(_url, _password ?? ""), ct);
                     return; // Connected event will fire on success
                 }
                 catch (Exception ex)

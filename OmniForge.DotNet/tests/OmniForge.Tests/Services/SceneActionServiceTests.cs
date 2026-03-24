@@ -81,6 +81,7 @@ namespace OmniForge.Tests.Services
             {
                 UserId = "user1",
                 SceneName = "Gaming",
+                TimerEnabled = true,
                 AutoStartTimer = true,
                 TimerDurationMinutes = 60
             };

@@ -558,18 +558,26 @@ namespace OmniForge.SyncAgent.Services
             var label = new System.Windows.Forms.Label { Left = 15, Top = 15, Width = 370, Text = prompt };
             var textBox = new System.Windows.Forms.TextBox
             {
-                Left = 15, Top = 45, Width = 370,
+                Left = 15,
+                Top = 45,
+                Width = 370,
                 UseSystemPasswordChar = true,
                 Text = currentValue
             };
             var okButton = new System.Windows.Forms.Button
             {
-                Text = "OK", Left = 220, Top = 85, Width = 80,
+                Text = "OK",
+                Left = 220,
+                Top = 85,
+                Width = 80,
                 DialogResult = System.Windows.Forms.DialogResult.OK
             };
             var cancelButton = new System.Windows.Forms.Button
             {
-                Text = "Cancel", Left = 305, Top = 85, Width = 80,
+                Text = "Cancel",
+                Left = 305,
+                Top = 85,
+                Width = 80,
                 DialogResult = System.Windows.Forms.DialogResult.Cancel
             };
 

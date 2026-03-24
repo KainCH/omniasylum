@@ -4,17 +4,17 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'OmniForge.DotNet/**'
-      - '.github/**'
-      - '.vscode/**'
+      - "OmniForge.DotNet/**"
+      - ".github/**"
+      - ".vscode/**"
 
 permissions:
   contents: read
   pull-requests: write
 
 env:
-  DOTNET_VERSION: '9.0.x'
-  SOLUTION_PATH: 'OmniForge.DotNet/OmniForge.sln'
+  DOTNET_VERSION: "9.0.x"
+  SOLUTION_PATH: "OmniForge.DotNet/OmniForge.sln"
   COVERAGE_THRESHOLD: 85
   # Allow Windows-targeted projects (SyncAgent) to build on Linux runners
   EnableWindowsTargeting: true
@@ -52,9 +52,9 @@ jobs:
       - name: Generate coverage report
         uses: danielpalme/ReportGenerator-GitHub-Action@5.3.8
         with:
-          reports: 'coverage/**/coverage.cobertura.xml'
-          targetdir: 'coveragereport'
-          reporttypes: 'HtmlInline;Cobertura;MarkdownSummaryGithub'
+          reports: "coverage/**/coverage.cobertura.xml"
+          targetdir: "coveragereport"
+          reporttypes: "HtmlInline;Cobertura;MarkdownSummaryGithub"
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

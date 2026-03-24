@@ -38,7 +38,7 @@ namespace OmniForge.SyncAgent.Services
                 DetectedSoftwareName = softwareName;
                 _client = client;
 
-                _client.Connected += OnSoftwareConnected;
+                _client.Connected += () => _ = OnSoftwareConnectedAsync();
                 _client.Disconnected += OnSoftwareDisconnected;
                 _client.SceneChanged += scene => SceneActivated?.Invoke(scene);
                 _client.SceneListUpdated += scenes => ScenesDiscovered?.Invoke(scenes);
@@ -61,7 +61,7 @@ namespace OmniForge.SyncAgent.Services
                 await _client.DisconnectAsync();
         }
 
-        private async void OnSoftwareConnected()
+        private async Task OnSoftwareConnectedAsync()
         {
             _logger.LogInformation("Streaming software connected ({Software})", _client!.SoftwareType);
             SoftwareConnected?.Invoke();
