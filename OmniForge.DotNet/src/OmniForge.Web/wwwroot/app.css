@@ -84,10 +84,11 @@ body {
   border-radius: 15px;
   padding: 40px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  max-width: 800px;
+  max-width: 1200px;
   /* Increased slightly for Blazor layout */
   width: 100%;
   margin: 0 auto;
+  position: relative;
 }
 
 .stream-counter-container h1 {
@@ -96,6 +97,32 @@ body {
   margin-bottom: 40px;
   font-size: 2.5em;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.monitor-status-badge {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-active {
+  color: #28a745;
+}
+
+.status-inactive {
+  color: #dc3545;
+}
+
+[data-bs-theme="dark"] .status-active {
+  color: #4caf50;
+}
+
+[data-bs-theme="dark"] .status-inactive {
+  color: #f44336;
 }
 
 /* Dark Mode Styles */

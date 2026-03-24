@@ -19,10 +19,14 @@
 @inject ITwitchApiService TwitchApiService
 @implements IDisposable
 
-<PageTitle>Dashboard</PageTitle>
+<PageTitle>Channel Control System</PageTitle>
 
 <div class="stream-counter-container">
-  <h1>Stream Counter</h1>
+  <span class="monitor-status-badge @(isMonitoring ? "status-active" : "status-inactive")"
+        title="@(isMonitoring ? "Monitor Active" : "Monitor Inactive")">
+    <i class="bi bi-circle-fill"></i>
+  </span>
+  <h1>Channel Control System</h1>
 
   <AuthorizeView>
     <Authorized>
@@ -42,7 +46,7 @@
           <div class="current-game mb-3">
             <span class="current-game-label">Current Game:</span>
             <span class="current-game-name">@(string.IsNullOrEmpty(counter.LastCategoryName) ? "Not set" :
-                                      counter.LastCategoryName)</span>
+                                                    counter.LastCategoryName)</span>
             </div>
 
 
@@ -65,13 +69,7 @@
                 <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
                 <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
               </button>
-              <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
-                @if (resettingCounters)
-                {
-                  <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                }
-                <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
-              </button>
+
               <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
                 <i class="bi bi-gear-fill"></i> Settings
               </button>
@@ -89,7 +87,7 @@
               <div class="row g-3 mt-3">
                 @if (isLive)
                 {
-                  <div class="col-md-4">
+                  <div class="col-md-6">
                     <div class="card h-100">
                       <div class="card-header d-flex justify-content-between align-items-center">
                         <h6 class="mb-0"><i class="bi bi-rocket-takeoff me-1"></i> Raid Suggestions</h6>
@@ -149,7 +147,7 @@
                       </div>
                     </div>
 
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                       <div class="card h-100">
                         <div class="card-header">
                           <h6 class="mb-0"><i class="bi bi-chat-dots me-1"></i> Live Chat</h6>
@@ -174,7 +172,7 @@
                     </div>
                   }
 
-                  <div class="@(isLive ? "col-md-4" : "col-md-12")">
+                  <div class="@(isLive ? "col-md-3" : "col-md-12")">
                     <div class="card h-100">
                       <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-bell me-1"></i> Channel Events</h6>
@@ -284,60 +282,6 @@
                       <span class="counter-value">@kvp.Value</span>
                     </div>
                   }
-                </div>
-              }
-
-              @if (monitorStatus != null)
-              {
-                <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
-                  <h5><i class="bi bi-activity"></i> Monitor Status</h5>
-                  <div class="row">
-                    <div class="col-md-6">
-                      <p>
-                        <strong>Status:</strong>
-                        <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
-                          @(monitorStatus.Connected ? "Connected" : "Disconnected")
-                        </span>
-                      </p>
-                      <p>
-                        <strong>Monitoring You:</strong>
-                        <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
-                          @(isMonitoring ? "Yes" : "No")
-                        </span>
-                      </p>
-                    </div>
-                    <div class="col-md-6">
-                      <p>
-                        <strong>Subscriptions:</strong>
-                        @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
-                        {
-                          @foreach (var sub in monitorStatus.Subscriptions)
-                          {
-                            <span class="badge bg-info text-dark me-1">@sub</span>
-                          }
-                        }
-                        else
-                        {
-                          <span class="text-muted">None</span>
-                        }
-                      </p>
-                      <p>
-                        <strong>Last Discord Notification:</strong>
-                        @if (monitorStatus.LastDiscordNotification.HasValue)
-                        {
-                          <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
-                            @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
-                            <i
-                            class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
-                          </span>
-                        }
-                        else
-                        {
-                          <span class="text-muted">Never</span>
-                        }
-                      </p>
-                    </div>
-                  </div>
                 </div>
               }
 
@@ -489,7 +433,6 @@
   private string? OverlayV2PreviewUrl;
   private bool showSetup = false;
   private bool savingOfflinePreview = false;
-  private bool resettingCounters = false;
   private bool showOverlaySettings = false;
   private bool showTimerSettings = false;
   private bool showShoutoutSettings = false;
@@ -788,46 +731,6 @@
     finally
     {
       savingOfflinePreview = false;
-      StateHasChanged();
-    }
-  }
-
-  private async Task ResetCountersAsync()
-  {
-    if (string.IsNullOrEmpty(TwitchUserId)) return;
-    resettingCounters = true;
-    errorMessage = null;
-
-    try
-    {
-      var countersEntity = await CounterRepository.GetCountersAsync(TwitchUserId);
-      if (countersEntity == null)
-      {
-        errorMessage = "Counters not found";
-        return;
-      }
-
-      countersEntity.Deaths = 0;
-      countersEntity.Swears = 0;
-      countersEntity.Screams = 0;
-      countersEntity.LastUpdated = DateTimeOffset.UtcNow;
-
-      await CounterRepository.SaveCountersAsync(countersEntity);
-      counter = countersEntity;
-
-      // Notify overlay
-      if (OverlayNotifier != null)
-      {
-        await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, countersEntity);
-      }
-    }
-    catch (Exception ex)
-    {
-      errorMessage = $"Failed to reset counters: {ex.Message}";
-    }
-    finally
-    {
-      resettingCounters = false;
       StateHasChanged();
     }
   }
