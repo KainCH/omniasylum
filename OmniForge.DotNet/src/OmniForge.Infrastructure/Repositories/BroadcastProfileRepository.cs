@@ -46,7 +46,7 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<List<BroadcastProfile>> GetAllAsync(string userId)
         {
             var profiles = new List<BroadcastProfile>();
-            await foreach (var entity in _tableClient.QueryAsync<BroadcastProfileTableEntity>(e => e.PartitionKey == userId))
+            await foreach (var entity in _tableClient.QueryAsync<BroadcastProfileTableEntity>(filter: $"PartitionKey eq '{userId}'"))
             {
                 profiles.Add(ToDomain(entity));
             }

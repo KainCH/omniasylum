@@ -28,7 +28,7 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<List<Scene>> GetScenesAsync(string userId)
         {
             var scenes = new List<Scene>();
-            await foreach (var entity in _tableClient.QueryAsync<SceneTableEntity>(e => e.PartitionKey == userId))
+            await foreach (var entity in _tableClient.QueryAsync<SceneTableEntity>(filter: $"PartitionKey eq '{userId}'"))
             {
                 scenes.Add(ToDomain(entity));
             }
@@ -94,6 +94,15 @@ namespace OmniForge.Infrastructure.Repositories
                 .Replace("\\", "_BSLASH_")
                 .Replace("#", "_HASH_")
                 .Replace("?", "_QMARK_");
+        }
+
+        internal static string UnescapeRowKey(string rowKey)
+        {
+            return rowKey
+                .Replace("_SLASH_", "/")
+                .Replace("_BSLASH_", "\\")
+                .Replace("_HASH_", "#")
+                .Replace("_QMARK_", "?");
         }
     }
 }

@@ -46,7 +46,7 @@ namespace OmniForge.Infrastructure.Repositories
         public async Task<List<SceneAction>> GetAllAsync(string userId)
         {
             var actions = new List<SceneAction>();
-            await foreach (var entity in _tableClient.QueryAsync<SceneActionTableEntity>(e => e.PartitionKey == userId))
+            await foreach (var entity in _tableClient.QueryAsync<SceneActionTableEntity>(filter: $"PartitionKey eq '{userId}'"))
             {
                 actions.Add(ToDomain(entity));
             }
@@ -87,7 +87,7 @@ namespace OmniForge.Infrastructure.Repositories
             }
             catch
             {
-                return new SceneAction { UserId = entity.PartitionKey, SceneName = entity.RowKey };
+                return new SceneAction { UserId = entity.PartitionKey, SceneName = SceneRepository.UnescapeRowKey(entity.RowKey) };
             }
         }
     }

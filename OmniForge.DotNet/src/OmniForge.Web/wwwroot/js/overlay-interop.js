@@ -107,6 +107,9 @@ window.overlayInterop = {
                         audio.volume = 0.8;
                     } else {
                         // Cache miss: create a new DOM-embedded element and store it for future alerts.
+                        // Remove any previous stale element for this sound before adding the new one.
+                        const stale = window.__omniAlertSoundCache?.[soundTrigger];
+                        if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
                         audio = new Audio(`/sounds/${soundTrigger}`);
                         audio.volume = 0.8;
                         audio.style.display = 'none';
@@ -141,7 +144,13 @@ window.overlayInterop = {
 
         // Use AsylumEffects for visual effects only; sound is handled above via DOM-embedded audio.
         if (window.asylumEffects) {
-            const effectsForAsylum = { ...(safePayload.effects || {}) };
+            // Normalize effects to an object — if the server sent it as a JSON string, parse it first
+            // so that object-spreading produces proper effect properties rather than per-character keys.
+            let rawEffects = safePayload.effects || {};
+            if (typeof rawEffects === 'string') {
+                try { rawEffects = JSON.parse(rawEffects); } catch { rawEffects = {}; }
+            }
+            const effectsForAsylum = { ...rawEffects };
             delete effectsForAsylum.soundTrigger;
             window.asylumEffects.triggerEffect({
                 textPrompt: safePayload.textPrompt || safePayload.name,

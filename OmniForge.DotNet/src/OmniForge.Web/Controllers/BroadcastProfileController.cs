@@ -47,6 +47,11 @@ namespace OmniForge.Web.Controllers
             var userId = GetUserId();
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            var user = await _userRepo.GetUserAsync(userId);
+            if (user == null) return NotFound();
+            if (!user.Features.SceneSync)
+                return StatusCode(403, new { error = "Scene sync feature is not enabled" });
+
             var profile = await _profileRepo.GetAsync(userId, profileId);
             if (profile == null) return NotFound();
 
@@ -77,6 +82,11 @@ namespace OmniForge.Web.Controllers
         {
             var userId = GetUserId();
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var user = await _userRepo.GetUserAsync(userId);
+            if (user == null) return NotFound();
+            if (!user.Features.SceneSync)
+                return StatusCode(403, new { error = "Scene sync feature is not enabled" });
 
             await _profileRepo.DeleteAsync(userId, profileId);
             return NoContent();

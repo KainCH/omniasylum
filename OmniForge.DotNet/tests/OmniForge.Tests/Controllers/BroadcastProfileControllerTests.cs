@@ -88,11 +88,67 @@ namespace OmniForge.Tests.Controllers
         public async Task Delete_ShouldCallRepository()
         {
             var controller = CreateController("user1");
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User { TwitchUserId = "user1", Features = new FeatureFlags { SceneSync = true } });
 
             var result = await controller.Delete("p1");
 
             Assert.IsType<NoContentResult>(result);
             _mockProfileRepo.Verify(x => x.DeleteAsync("user1", "p1"), Times.Once);
+        }
+
+        [Fact]
+        public async Task Delete_WhenFeatureDisabled_ShouldReturn403()
+        {
+            var controller = CreateController("user1");
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User { TwitchUserId = "user1", Features = new FeatureFlags { SceneSync = false } });
+
+            var result = await controller.Delete("p1");
+
+            var obj = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(403, obj.StatusCode);
+            _mockProfileRepo.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Get_WhenFeatureEnabled_ShouldReturnProfile()
+        {
+            var controller = CreateController("user1");
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User { TwitchUserId = "user1", Features = new FeatureFlags { SceneSync = true } });
+            _mockProfileRepo.Setup(x => x.GetAsync("user1", "p1"))
+                .ReturnsAsync(new BroadcastProfile { ProfileId = "p1", Name = "Test" });
+
+            var result = await controller.Get("p1");
+
+            Assert.IsType<OkObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task Get_WhenFeatureDisabled_ShouldReturn403()
+        {
+            var controller = CreateController("user1");
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User { TwitchUserId = "user1", Features = new FeatureFlags { SceneSync = false } });
+
+            var result = await controller.Get("p1");
+
+            var obj = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(403, obj.StatusCode);
+        }
+
+        [Fact]
+        public async Task Get_WhenProfileNotFound_ShouldReturnNotFound()
+        {
+            var controller = CreateController("user1");
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1"))
+                .ReturnsAsync(new User { TwitchUserId = "user1", Features = new FeatureFlags { SceneSync = true } });
+            _mockProfileRepo.Setup(x => x.GetAsync("user1", "missing")).ReturnsAsync((BroadcastProfile?)null);
+
+            var result = await controller.Get("missing");
+
+            Assert.IsType<NotFoundResult>(result);
         }
 
         [Fact]

@@ -415,5 +415,78 @@ namespace OmniForge.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
         }
+
+        [Fact]
+        public async Task UpdateLicense_ShouldReturnOk_WhenValidTier()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateLicenseRequest { Tier = "Pro", ExpiresAt = DateTimeOffset.UtcNow.AddYears(1) };
+            var result = await _controller.UpdateLicense("12345", request);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.LicenseTier == LicenseTier.Pro)), Times.Once);
+        }
+
+        [Fact]
+        public async Task UpdateLicense_ShouldReturnNotFound_WhenUserMissing()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("unknown")).ReturnsAsync((User?)null);
+
+            var request = new UpdateLicenseRequest { Tier = "Pro" };
+            var result = await _controller.UpdateLicense("unknown", request);
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task UpdateLicense_ShouldReturnBadRequest_WhenInvalidTier()
+        {
+            var user = new User { TwitchUserId = "12345" };
+            _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
+
+            var request = new UpdateLicenseRequest { Tier = "InvalidTier" };
+            var result = await _controller.UpdateLicense("12345", request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task GetUserDiagnostics_WithMixedUsers_MaterializesLambdas()
+        {
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "valid1", Username = "alice", DisplayName = "Alice", Role = "streamer", IsActive = true },
+                new User { TwitchUserId = string.Empty, Username = "brokenguy" },       // broken: no TwitchUserId
+                new User { TwitchUserId = "sus1", Username = string.Empty, Role = "streamer" } // suspicious: no Username
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var result = await _controller.GetUserDiagnostics();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            // Force LINQ materialization to cover Select/Where lambda bodies
+            var json = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.Contains("valid1", json);
+        }
+
+        [Fact]
+        public async Task GetStats_ShouldMaterializeRecentLoginsProjection()
+        {
+            var users = new List<User>
+            {
+                new User { TwitchUserId = "1", Username = "alice", DisplayName = "Alice", IsActive = true, Role = "admin", LastLogin = DateTimeOffset.UtcNow.AddHours(-1), Features = new FeatureFlags { ChatCommands = true } },
+                new User { TwitchUserId = "2", Username = "bob", DisplayName = "Bob", IsActive = true, Role = "streamer", LastLogin = DateTimeOffset.UtcNow.AddHours(-2), Features = new FeatureFlags() }
+            };
+            _mockUserRepository.Setup(x => x.GetAllUsersAsync()).ReturnsAsync(users);
+
+            var result = await _controller.GetStats();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            // Force LINQ materialization to cover the recentLogins Select lambda body
+            var json = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.Contains("alice", json);
+        }
     }
 }

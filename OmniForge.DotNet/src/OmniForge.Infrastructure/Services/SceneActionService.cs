@@ -114,6 +114,7 @@ namespace OmniForge.Infrastructure.Services
                 TimerHidden = source.TimerHidden,
                 Counters = new OverlayCounters
                 {
+                    HideAll = source.Counters.HideAll,
                     Deaths = source.Counters.Deaths,
                     Swears = source.Counters.Swears,
                     Screams = source.Counters.Screams,
