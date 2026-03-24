@@ -13,18 +13,15 @@ namespace OmniForge.Infrastructure.Services
     {
         private readonly ILogger<BotReactionService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ITwitchClientManager _twitchClientManager;
 
         private readonly ConcurrentDictionary<string, HashSet<string>> _greeted = new();
 
         public BotReactionService(
             ILogger<BotReactionService> logger,
-            IServiceScopeFactory scopeFactory,
-            ITwitchClientManager twitchClientManager)
+            IServiceScopeFactory scopeFactory)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
-            _twitchClientManager = twitchClientManager;
         }
 
         public async Task HandleStreamStartAsync(string broadcasterId)
@@ -106,7 +103,9 @@ namespace OmniForge.Infrastructure.Services
         {
             try
             {
-                await _twitchClientManager.SendMessageAsync(broadcasterId, message);
+                using var scope = _scopeFactory.CreateScope();
+                var twitchClientManager = scope.ServiceProvider.GetRequiredService<ITwitchClientManager>();
+                await twitchClientManager.SendMessageAsync(broadcasterId, message);
             }
             catch (Exception ex)
             {

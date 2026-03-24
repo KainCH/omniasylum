@@ -30,6 +30,9 @@ namespace OmniForge.Infrastructure.Entities
         public string discordModChannelId { get; set; } = string.Empty;
         public string discordInviteLink { get; set; } = string.Empty;
         public string managedStreamers { get; set; } = "[]";
+        public string autoShoutoutExcludeList { get; set; } = "[]";
+        public string botSettings { get; set; } = "{}";
+        public string botModeration { get; set; } = "{}";
         public bool isActive { get; set; } = true;
         public string streamStatus { get; set; } = "offline";
         public string licenseTier { get; set; } = "Free";
@@ -87,6 +90,9 @@ namespace OmniForge.Infrastructure.Entities
                 DiscordModChannelId = discordModChannelId,
                 DiscordInviteLink = discordInviteLink,
                 ManagedStreamers = DeserializeSafe<System.Collections.Generic.List<string>>(managedStreamers),
+                AutoShoutoutExcludeList = DeserializeSafe<System.Collections.Generic.List<string>>(autoShoutoutExcludeList),
+                BotSettings = DeserializeSafe<BotSettings>(botSettings),
+                BotModeration = DeserializeSafe<BotModerationSettings>(botModeration),
                 IsActive = isActive,
                 StreamStatus = streamStatus,
                 LicenseTier = Enum.TryParse<LicenseTier>(licenseTier, ignoreCase: true, out var lt) ? lt : LicenseTier.Free,
@@ -208,8 +214,9 @@ namespace OmniForge.Infrastructure.Entities
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
                 // Backward-compat: older records may have used different casing/key names.
                 // Defensive: if the value is stored as a non-array JSON value (e.g., "{}"), default to "[]".
-                managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),
-                isActive = GetBoolSafe(entity, "isActive", true),
+                managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),                autoShoutoutExcludeList = GetJsonArrayStringSafe(entity, "[]", "autoShoutoutExcludeList", "AutoShoutoutExcludeList"),
+                botSettings = GetStringSafe(entity, "botSettings", "{}"),
+                botModeration = GetStringSafe(entity, "botModeration", "{}"),                isActive = GetBoolSafe(entity, "isActive", true),
                 streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
                 licenseTier = GetStringSafe(entity, "licenseTier", "Free"),
                 licenseExpiresAt = entity.TryGetValue("licenseExpiresAt", out var lea) ? lea : null,
@@ -305,6 +312,9 @@ namespace OmniForge.Infrastructure.Entities
                 discordModChannelId = user.DiscordModChannelId,
                 discordInviteLink = user.DiscordInviteLink,
                 managedStreamers = JsonSerializer.Serialize(user.ManagedStreamers),
+                autoShoutoutExcludeList = JsonSerializer.Serialize(user.AutoShoutoutExcludeList),
+                botSettings = JsonSerializer.Serialize(user.BotSettings),
+                botModeration = JsonSerializer.Serialize(user.BotModeration),
                 isActive = user.IsActive,
                 streamStatus = user.StreamStatus,
                 licenseTier = user.LicenseTier.ToString(),
