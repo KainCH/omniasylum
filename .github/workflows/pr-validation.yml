@@ -16,6 +16,8 @@ env:
   DOTNET_VERSION: '9.0.x'
   SOLUTION_PATH: 'OmniForge.DotNet/OmniForge.sln'
   COVERAGE_THRESHOLD: 85
+  # Allow Windows-targeted projects (SyncAgent) to build on Linux runners
+  EnableWindowsTargeting: true
 
 jobs:
   build-and-test:
