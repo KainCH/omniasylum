@@ -84,9 +84,11 @@ namespace OmniForge.Tests.Services
                 gameCustomCountersConfigRepository.Object,
                 gameCoreCountersConfigRepository.Object,
                 counterRepository.Object,
+                Mock.Of<ICounterLibraryRepository>(),
                 userRepository.Object,
                 twitchApiService.Object,
                 overlayNotifier.Object,
+                Mock.Of<IDiscordService>(),
                 logger.Object);
 
             await service.HandleGameDetectedAsync(userId, gameId, "Test Game");

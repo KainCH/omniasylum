@@ -50,7 +50,7 @@
 			"gallery": "https://api.mcp.github.com",
 			"version": "2.0.0-beta.6"
 		},
-		"microsoftdocs/mcp": {
+		"microsoftdocs-mcp": {
 			"type": "http",
 			"url": "https://learn.microsoft.com/api/mcp",
 			"gallery": "https://api.mcp.github.com",

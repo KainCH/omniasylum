@@ -1,4 +1,5 @@
 @page "/overlay/{TwitchUserId}"
+@page "/overlay/v2/{TwitchUserId}"
 @layout OmniForge.Web.Components.Layout.OverlayLayout
 @using OmniForge.Core.Entities
 @using OmniForge.Core.Interfaces
@@ -26,15 +27,27 @@ else if (!user.Features.StreamOverlay)
 {
     <div class="error">Stream overlay not enabled for this user</div>
 }
+else if (IsV2 && !user.Features.OverlayV2)
+{
+    <div class="overlay-upgrade-prompt" style="display:flex;align-items:center;justify-content:center;height:100vh;background:transparent;">
+        <div style="text-align:center;color:white;font-family:sans-serif;">
+            <h2>V2 Overlay — Pro Feature</h2>
+            <p>Your V2 overlay access has expired or is not enabled.</p>
+            <p>Switch to the free overlay URL or <a href="/upgrade" style="color:#d4af37;">upgrade to Pro</a>.</p>
+        </div>
+    </div>
+}
 else
 {
-    @if (user.OverlaySettings is { TimerEnabled: true } overlaySettings)
+    @if (user.OverlaySettings is { TimerEnabled: true, TimerHidden: false } overlaySettings)
     {
         <div class="overlay-timer" style="@GetTimerStyle()" data-duration-minutes="@overlaySettings.TimerDurationMinutes">
             <span class="timer-value" style="color: @(overlaySettings.TimerTextColor ?? overlaySettings.Theme?.TextColor ?? "white")">00:00</span>
         </div>
     }
 
+    @if (user.OverlaySettings?.Counters?.HideAll != true)
+    {
     <div class="counter-overlay" style="@GetPositionStyle()">
         @if (user.OverlaySettings?.Counters?.Deaths == true)
         {
@@ -91,6 +104,7 @@ else
             </div>
         }
     </div>
+    }
 
     <!-- Alert popup -->
     <div class="counter-alert" id="alert-popup"></div>
@@ -106,6 +120,8 @@ else
 
     <!-- Interaction banner (admin-only feature for now) -->
     <div class="interaction-banner hide" id="interaction-banner" style="@GetInteractionBannerPositionStyle()"></div>
+
+    @* V2-only premium features render here when IsV2 && user.Features.OverlayV2 *@
 }
 
 <style>
@@ -146,7 +162,7 @@ else
 
     .overlay-timer .timer-value {
         font-weight: 800;
-        font-size: 28px;
+        font-size: 42px;
         line-height: 1;
     }
 
@@ -387,6 +403,7 @@ else
     private bool IsPreviewMode { get; set; } = false;
     private List<Alert> alerts = new();
     private IJSObjectReference? jsModule;
+    private DotNetObjectReference<Overlay>? dotNetRef;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -439,9 +456,11 @@ else
         }
     }
 
+    private bool IsV2 => NavigationManager.Uri.Contains("/overlay/v2/", StringComparison.OrdinalIgnoreCase);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && user != null && user.Features.StreamOverlay)
+        if (firstRender && user != null && user.Features.StreamOverlay && !(IsV2 && !user.Features.OverlayV2))
         {
             try
             {
@@ -462,19 +481,18 @@ else
                     }
                 }
 
-                // Initialize WebSocket connection via JS
-                var wsUrl = NavigationManager.ToAbsoluteUri($"/ws/overlay?userId={TwitchUserId}").ToString().Replace("http", "ws");
-
-                // Use a try-catch block specifically for the module import to handle potential network issues or file not found errors
+                // Initialize SSE connection via JS
                 try
                 {
-                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/overlay-websocket.js");
-                    await jsModule.InvokeVoidAsync("connect", wsUrl, DotNetObjectReference.Create(this));
+                    dotNetRef ??= DotNetObjectReference.Create(this);
+
+                    jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "/js/overlay-sse.js");
+                    var tier = IsV2 ? "v2" : (string?)null;
+                    await jsModule.InvokeVoidAsync("connect", TwitchUserId, dotNetRef, tier);
                 }
                 catch (JSException jsEx)
                 {
                      Console.WriteLine($"[Overlay] JS Import Error: {jsEx.Message}");
-                     // Fallback or retry logic could go here if needed
                 }
             }
             catch (Exception ex)
@@ -485,48 +503,62 @@ else
     }
 
     [JSInvokable]
-    public void OnCounterUpdate(OmniForge.Core.Entities.Counter updatedCounter)
+    public async Task OnCounterUpdate(OmniForge.Core.Entities.Counter updatedCounter)
     {
         counter = updatedCounter;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
-    public void OnStreamStatusUpdate(string status)
+    public async Task OnStreamStatusUpdate(string status)
     {
         StreamStatus = status;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
     public async Task OnAlert(string type, object data)
     {
-        await TriggerAlert(type, data);
+        try
+        {
+            await TriggerAlert(type, data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] OnAlert error: {ex}");
+        }
     }
 
     [JSInvokable]
     public async Task OnCustomAlert(string type, object data)
     {
-        await TriggerAlert(type, data);
-    }
-
-    [JSInvokable]
-    public void OnBitsGoalUpdate(OmniForge.Core.Entities.BitsGoal goal)
-    {
-        if (user?.OverlaySettings != null)
+        try
         {
-            user.OverlaySettings.BitsGoal = goal;
-            StateHasChanged();
+            await TriggerAlert(type, data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] OnCustomAlert error: {ex}");
         }
     }
 
     [JSInvokable]
-    public void OnBitsGoalComplete(OmniForge.Core.Entities.BitsGoal goal)
+    public async Task OnBitsGoalUpdate(OmniForge.Core.Entities.BitsGoal goal)
     {
         if (user?.OverlaySettings != null)
         {
             user.OverlaySettings.BitsGoal = goal;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnBitsGoalComplete(OmniForge.Core.Entities.BitsGoal goal)
+    {
+        if (user?.OverlaySettings != null)
+        {
+            user.OverlaySettings.BitsGoal = goal;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -537,24 +569,26 @@ else
     }
 
     [JSInvokable]
-    public void OnStreamStarted(object data)
+    public async Task OnStreamStarted(object data)
     {
         StreamStatus = "live";
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
-    public void OnOverlaySettingsUpdate(OmniForge.Core.Entities.OverlaySettings settings)
+    public async Task OnOverlaySettingsUpdate(OmniForge.Core.Entities.OverlaySettings settings)
     {
         if (user != null)
         {
             user.OverlaySettings = settings;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     private async Task TriggerAlert(string type, object data)
     {
+        try
+        {
         if (string.Equals(type, "interactionBanner", StringComparison.OrdinalIgnoreCase))
         {
             string? text = null;
@@ -645,21 +679,28 @@ else
             }
         }
 
-        // Merge data into payload
-        if (data is JsonElement jsonElement)
+        // Merge event data into payload (defensively; bad payloads must not kill the circuit)
+        try
         {
-             var json = jsonElement.GetRawText();
-             var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-             if (dataDict != null)
-             {
-                 foreach (var kvp in dataDict)
-                 {
-                     if (!payload.ContainsKey(kvp.Key))
-                     {
-                         payload[kvp.Key] = kvp.Value;
-                     }
-                 }
-             }
+            if (data is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Object)
+            {
+                var json = jsonElement.GetRawText();
+                var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                if (dataDict != null)
+                {
+                    foreach (var kvp in dataDict)
+                    {
+                        if (!payload.ContainsKey(kvp.Key))
+                        {
+                            payload[kvp.Key] = kvp.Value;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] Failed to merge alert payload for type '{type}': {ex.Message}");
         }
 
         // Apply placeholder substitution after we have merged event data.
@@ -668,7 +709,23 @@ else
             payload["textPrompt"] = ApplyTemplate(templatePrompt, payload);
         }
 
-        await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("overlayInterop.triggerAlert", type, payload);
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException)
+        {
+            // Overlay circuit disconnected; ignore.
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] JS triggerAlert failed: {ex.Message}");
+        }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Overlay] TriggerAlert error (type='{type}'): {ex}");
+        }
     }
 
     private Dictionary<string, object> BuildFallbackAlertPayload(string type, object data)
@@ -941,6 +998,15 @@ else
             {
                 // Ignore other disposal errors
             }
+        }
+
+        try
+        {
+            dotNetRef?.Dispose();
+        }
+        catch
+        {
+            // Ignore disposal errors
         }
     }
 }

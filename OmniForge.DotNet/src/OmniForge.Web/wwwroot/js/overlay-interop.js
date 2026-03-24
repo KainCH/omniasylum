@@ -72,6 +72,14 @@ window.overlayInterop = {
             console.log("Triggering alert:", type, safePayload);
         }
 
+        // Skip entire alert during reconnect silence window
+        if (window.omniSuppressNotificationAudioResume === true) {
+            if (isDebugEnabled()) {
+                console.log("Alert suppressed during reconnect silence window:", type);
+            }
+            return;
+        }
+
         // Interaction banners are UI-only and should not require an alert definition.
         if (type === 'interactionBanner') {
             const text = safePayload?.textPrompt || safePayload?.text;
@@ -81,23 +89,48 @@ window.overlayInterop = {
             return;
         }
 
-        // Play audio if available
-        if (window.notificationAudio) {
-            // Map alert types to audio types if needed
-            const audioType = type === 'giftsub' ? 'giftsub' :
-                              type === 'resub' ? 'resub' :
-                              type === 'subscription' ? 'subscription' :
-                              type === 'bits' ? 'bits' :
-                              type === 'follow' ? 'follow' :
-                              type === 'milestone' ? 'milestone' : type;
-
-            window.notificationAudio.playNotification(audioType, safePayload);
+        // Play audio via DOM-embedded element for reliable OBS/Streamlabs browser source capture.
+        // Uses the server-preloaded sound cache when available; falls back to a new DOM-embedded element.
+        {
+            const effectsJson = safePayload.effects;
+            const soundTrigger = (typeof effectsJson === 'object' && effectsJson?.soundTrigger)
+                || (typeof effectsJson === 'string' && (() => { try { return JSON.parse(effectsJson)?.soundTrigger; } catch (e) { return null; } })())
+                || null;
+            if (soundTrigger && typeof soundTrigger === 'string' && soundTrigger.includes('.')) {
+                try {
+                    const cached = window.__omniAlertSoundCache?.[soundTrigger];
+                    let audio;
+                    if (cached && cached.readyState >= 2) {
+                        // Reuse the preloaded, DOM-embedded element — already primed in the browser source pipeline.
+                        audio = cached;
+                        audio.currentTime = 0;
+                        audio.volume = 0.8;
+                    } else {
+                        // Cache miss: create a new DOM-embedded element and store it for future alerts.
+                        // Remove any previous stale element for this sound before adding the new one.
+                        const stale = window.__omniAlertSoundCache?.[soundTrigger];
+                        if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+                        audio = new Audio(`/sounds/${soundTrigger}`);
+                        audio.volume = 0.8;
+                        audio.style.display = 'none';
+                        document.body.appendChild(audio);
+                        if (!window.__omniAlertSoundCache) window.__omniAlertSoundCache = {};
+                        window.__omniAlertSoundCache[soundTrigger] = audio;
+                    }
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(err => {
+                            if (isDebugEnabled()) console.warn('Alert audio blocked:', soundTrigger, err.name);
+                        });
+                    }
+                } catch (e) { if (isDebugEnabled()) console.warn('Alert audio error:', e); }
+            }
         }
 
         // Handle specific types that need custom logic
         if (type === 'bits') {
             this.triggerBitsCelebration(safePayload.amount || safePayload.bits || 50);
-        } else if (type === 'subscription' || type === 'resub' || type === 'giftsub') {
+        } else if (type === 'subscription' || type === 'resub' || type === 'giftsub' || type === 'community_sub_gift') {
             this.triggerSubCelebration();
             if (safePayload.textPrompt) {
                 this.showSubBanner(safePayload.textPrompt);
@@ -109,16 +142,23 @@ window.overlayInterop = {
         // Show the main alert popup with visual cue and text
         this.showAlertPopup(safePayload);
 
-        // Use AsylumEffects for the main alert popup
+        // Use AsylumEffects for visual effects only; sound is handled above via DOM-embedded audio.
         if (window.asylumEffects) {
+            // Normalize effects to an object — if the server sent it as a JSON string, parse it first
+            // so that object-spreading produces proper effect properties rather than per-character keys.
+            let rawEffects = safePayload.effects || {};
+            if (typeof rawEffects === 'string') {
+                try { rawEffects = JSON.parse(rawEffects); } catch { rawEffects = {}; }
+            }
+            const effectsForAsylum = { ...rawEffects };
+            delete effectsForAsylum.soundTrigger;
             window.asylumEffects.triggerEffect({
                 textPrompt: safePayload.textPrompt || safePayload.name,
                 backgroundColor: safePayload.backgroundColor,
                 textColor: safePayload.textColor,
                 borderColor: safePayload.borderColor,
                 duration: safePayload.duration || 5000,
-                soundTrigger: safePayload.sound, // AsylumEffects might handle its own sound too
-                effects: safePayload.effects || {}
+                effects: effectsForAsylum
             });
         }
     },
@@ -390,9 +430,10 @@ window.overlayInterop = {
                 ? String(explicitTimerColor).trim()
                 : (themeColor ? String(themeColor) : null);
 
-            if (valueColor) {
-                const valueEl = timer.querySelector('.timer-value');
-                if (valueEl) valueEl.style.color = valueColor;
+            const valueEl = timer.querySelector('.timer-value');
+            if (valueEl) {
+                valueEl.style.fontSize = '42px';
+                if (valueColor) valueEl.style.color = valueColor;
             }
 
             // Top-center placement requirement. Scale matches overlay scale.

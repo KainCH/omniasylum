@@ -22,6 +22,7 @@ using OmniForge.Web.Configuration;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using OmniForge.Infrastructure.Services;
 using OmniForge.Infrastructure.Interfaces;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -156,9 +157,51 @@ builder.Services.AddSignalR(hubOptions =>
 builder.Services.AddScoped<CircuitHandler, LoggingCircuitHandler>();
 
 builder.Services.AddSingleton<IWebSocketOverlayManager, WebSocketOverlayManager>();
-builder.Services.AddSingleton<IOverlayNotifier, WebSocketOverlayNotifier>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IFeedbackIssueService, FeedbackIssueService>();
+
+// V2 overlay: SSE connection manager (singleton + hosted service for keepalives)
+builder.Services.AddSingleton<SseConnectionManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SseConnectionManager>());
+
+// Alert enrichment (scoped — uses IAlertRepository which is scoped)
+builder.Services.AddScoped<IAlertPayloadEnricher, AlertPayloadEnricher>();
+
+// Overlay notifiers: v1 (WebSocket) + v2 (SSE), multiplexed via composite
+builder.Services.AddSingleton<SseOverlayNotifier>();
+builder.Services.AddSingleton<WebSocketOverlayNotifier>();
+builder.Services.AddSingleton<IOverlayNotifier>(sp => new CompositeOverlayNotifier(
+    sp.GetRequiredService<ILogger<CompositeOverlayNotifier>>(),
+    sp.GetRequiredService<SseOverlayNotifier>(),
+    sp.GetRequiredService<WebSocketOverlayNotifier>()));
+
+builder.Services.AddSingleton<OmniForge.Web.Services.AgentPairingService>();
+
+// Blob storage for agent download
+var blobStorageAccountName = builder.Configuration["AzureStorage:AccountName"];
+if (!string.IsNullOrEmpty(blobStorageAccountName))
+{
+    var blobServiceUrl = new Uri($"https://{blobStorageAccountName}.blob.core.windows.net");
+    var blobAzureClientId = builder.Configuration["AZURE_CLIENT_ID"];
+
+    if (!string.IsNullOrEmpty(blobAzureClientId))
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(blobServiceUrl, new ManagedIdentityCredential(blobAzureClientId)));
+    }
+    else
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(blobServiceUrl, new DefaultAzureCredential()));
+    }
+}
+else
+{
+    var connectionString = builder.Configuration["Azure:StorageConnectionString"];
+    if (!string.IsNullOrEmpty(connectionString))
+    {
+        builder.Services.AddSingleton(new BlobServiceClient(connectionString));
+    }
+    // In dev without connection string, BlobServiceClient is optional (injected as null)
+}
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -185,6 +228,9 @@ using (var scope = app.Services.CreateScope())
     var gameChatCommandsRepository = scope.ServiceProvider.GetRequiredService<IGameChatCommandsRepository>();
     var gameCustomCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCustomCountersConfigRepository>();
     var gameCoreCountersConfigRepository = scope.ServiceProvider.GetRequiredService<IGameCoreCountersConfigRepository>();
+    var sceneRepository = scope.ServiceProvider.GetRequiredService<ISceneRepository>();
+    var sceneActionRepository = scope.ServiceProvider.GetRequiredService<ISceneActionRepository>();
+    var broadcastProfileRepository = scope.ServiceProvider.GetRequiredService<IBroadcastProfileRepository>();
     var coreCounterLibrarySeeder = scope.ServiceProvider.GetRequiredService<ICoreCounterLibrarySeeder>();
 
     try
@@ -202,6 +248,9 @@ using (var scope = app.Services.CreateScope())
         await gameChatCommandsRepository.InitializeAsync();
         await gameCustomCountersConfigRepository.InitializeAsync();
         await gameCoreCountersConfigRepository.InitializeAsync();
+        await sceneRepository.InitializeAsync();
+        await sceneActionRepository.InitializeAsync();
+        await broadcastProfileRepository.InitializeAsync();
 
         await coreCounterLibrarySeeder.SeedAsync();
     }
@@ -239,6 +288,7 @@ app.MapRazorComponents<App>()
 
 app.MapControllers();
 // app.MapHub<OverlayHub>("/overlayHub"); // Removed in favor of WebSockets
+app.MapHub<SyncAgentHub>("/hubs/sync-agent");
 
 // Health check endpoint for deployment verification
 app.MapGet("/health", () => Results.Ok(new

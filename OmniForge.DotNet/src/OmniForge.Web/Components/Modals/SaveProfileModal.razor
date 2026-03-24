@@ -1,0 +1,109 @@
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@inject IBroadcastProfileRepository ProfileRepository
+@inject ISceneActionRepository SceneActionRepository
+
+@if (Show)
+{
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-save me-2"></i>Save Broadcast Profile</h5>
+          <button type="button" class="btn-close" @onclick="Close"></button>
+        </div>
+        <div class="modal-body">
+          @if (!string.IsNullOrEmpty(errorMessage))
+          {
+            <div class="alert alert-danger">@errorMessage</div>
+          }
+
+          <div class="mb-3">
+            <label class="form-label">Profile Name</label>
+            <InputText class="form-control" @bind-Value="profileName" placeholder="e.g. Competitive Stream" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" @onclick="Close" disabled="@isSaving">Cancel</button>
+          <button class="btn btn-primary" @onclick="Save" disabled="@isSaving">
+            @if (isSaving)
+            {
+              <span class="spinner-border spinner-border-sm me-2"></span>
+              <span>Saving...</span>
+            }
+            else
+            {
+              <span>Save Profile</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+@code {
+  [Parameter] public bool Show { get; set; }
+  [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+  [Parameter] public string UserId { get; set; } = "";
+  [Parameter] public EventCallback OnSaved { get; set; }
+
+  private string profileName = "";
+  private bool isSaving;
+  private string? errorMessage;
+
+  protected override void OnParametersSet()
+  {
+    if (Show) { profileName = ""; errorMessage = null; }
+  }
+
+  private async Task Save()
+  {
+    if (string.IsNullOrWhiteSpace(profileName))
+    {
+      errorMessage = "Please enter a profile name.";
+      return;
+    }
+
+    isSaving = true;
+    errorMessage = null;
+
+    try
+    {
+      var actions = await SceneActionRepository.GetAllAsync(UserId);
+
+      var profile = new BroadcastProfile
+      {
+        UserId = UserId,
+        Name = profileName.Trim(),
+        SceneActions = actions,
+        ChecklistItems = new List<ChecklistItem>
+        {
+          new() { Label = "Sync Agent Connected", CheckType = "auto", AutoCheckKey = "agent_connected", SortOrder = 0 },
+          new() { Label = "Streaming Software Detected", CheckType = "auto", AutoCheckKey = "streaming_software_detected", SortOrder = 1 },
+          new() { Label = "Mic Check", CheckType = "manual", SortOrder = 2 },
+          new() { Label = "Camera Focused", CheckType = "manual", SortOrder = 3 },
+          new() { Label = "Stream Title Set", CheckType = "manual", SortOrder = 4 }
+        }
+      };
+
+      await ProfileRepository.SaveAsync(profile);
+      await OnSaved.InvokeAsync();
+      await Close();
+    }
+    catch (Exception ex)
+    {
+      errorMessage = $"Error saving profile: {ex.Message}";
+    }
+    finally
+    {
+      isSaving = false;
+    }
+  }
+
+  private async Task Close()
+  {
+    Show = false;
+    await ShowChanged.InvokeAsync(false);
+  }
+}

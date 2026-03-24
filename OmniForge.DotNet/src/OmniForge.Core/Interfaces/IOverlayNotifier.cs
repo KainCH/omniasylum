@@ -19,6 +19,8 @@ namespace OmniForge.Core.Interfaces
         Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits);
         Task NotifyRaidAsync(string userId, string raiderName, int viewers);
         Task NotifyCustomAlertAsync(string userId, string alertType, object data);
+        Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName);
         Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template);
+        Task NotifySceneChangedAsync(string userId, string sceneName);
     }
 }

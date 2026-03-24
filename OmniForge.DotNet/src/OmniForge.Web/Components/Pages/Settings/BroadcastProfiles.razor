@@ -1,0 +1,195 @@
+@page "/settings/profiles"
+@page "/manage/{StreamerId}/settings/profiles"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using OmniForge.Core.Entities
+@using OmniForge.Core.Interfaces
+@using OmniForge.Web.Components.Modals
+@attribute [Authorize]
+@inject IUserRepository UserRepository
+@inject IBroadcastProfileRepository ProfileRepository
+@inject ISceneActionRepository SceneActionRepository
+
+<PageTitle>Broadcast Profiles</PageTitle>
+
+<div class="container mt-4">
+  <h2><i class="bi bi-collection me-2"></i>Broadcast Profiles</h2>
+
+  <AuthorizeView>
+    <Authorized>
+      @if (!hasAccess)
+      {
+        <div class="alert alert-danger mt-3">Access denied.</div>
+      }
+      else if (!featureEnabled)
+      {
+        <div class="alert alert-warning mt-3">
+          <i class="bi bi-lock me-2"></i>Scene Sync is not enabled for your account.
+        </div>
+      }
+      else if (isLoading)
+      {
+        <p><em>Loading...</em></p>
+      }
+      else
+      {
+        <div class="mb-3">
+          <button class="btn btn-primary" @onclick="() => showSaveModal = true">
+            <i class="bi bi-plus-circle me-1"></i> Save Current as Profile
+          </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+          <div class="alert alert-success alert-dismissible fade show">
+            @statusMessage
+            <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+          </div>
+        }
+
+        @if (profiles == null || profiles.Count == 0)
+        {
+          <div class="alert alert-info">
+            No broadcast profiles saved yet. Configure your scene actions, then save them as a profile.
+          </div>
+        }
+        else
+        {
+          <div class="row">
+            @foreach (var profile in profiles)
+            {
+              <div class="col-md-4 mb-3">
+                <div class="card">
+                  <div class="card-body">
+                    <h5 class="card-title">@profile.Name</h5>
+                    <p class="card-text text-muted">
+                      @profile.SceneActions.Count scene action(s)
+                      <br />
+                      @profile.ChecklistItems.Count checklist item(s)
+                      <br />
+                      <small>Created: @profile.CreatedAt.ToLocalTime().ToString("g")</small>
+                    </p>
+                    <div class="d-flex gap-2">
+                      <button class="btn btn-sm btn-success" @onclick="() => LoadProfile(profile)" disabled="@isLoadingProfile">
+                        <i class="bi bi-box-arrow-in-down me-1"></i> Load
+                      </button>
+                      <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteProfile(profile.ProfileId)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        <SaveProfileModal @bind-Show="showSaveModal" UserId="@TwitchUserId" OnSaved="OnProfileSaved" />
+      }
+    </Authorized>
+  </AuthorizeView>
+</div>
+
+@code {
+  [CascadingParameter] private Task<AuthenticationState>? authenticationStateTask { get; set; }
+  [Parameter] public string? StreamerId { get; set; }
+
+  private string? TwitchUserId;
+  private bool hasAccess = true;
+  private bool featureEnabled;
+  private bool isLoading = true;
+  private bool isLoadingProfile;
+  private bool showSaveModal;
+  private string? statusMessage;
+  private List<BroadcastProfile>? profiles;
+
+  protected override async Task OnInitializedAsync()
+  {
+    if (authenticationStateTask == null) return;
+
+    var authState = await authenticationStateTask;
+    var user = authState.User;
+    if (user.Identity?.IsAuthenticated != true) return;
+
+    var actingUserId = user.FindFirst("userId")?.Value
+      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+      ?? user.FindFirst("sub")?.Value;
+
+    if (string.IsNullOrWhiteSpace(actingUserId)) { hasAccess = false; isLoading = false; return; }
+
+    var targetUserId = string.IsNullOrWhiteSpace(StreamerId) ? actingUserId : StreamerId;
+
+    if (!string.Equals(targetUserId, actingUserId, StringComparison.Ordinal))
+    {
+      var actingUser = await UserRepository.GetUserAsync(actingUserId);
+      hasAccess = actingUser != null &&
+        (string.Equals(actingUser.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+         actingUser.ManagedStreamers?.Contains(targetUserId) == true);
+      if (!hasAccess) { isLoading = false; return; }
+    }
+
+    TwitchUserId = targetUserId;
+
+    var userEntity = await UserRepository.GetUserAsync(TwitchUserId);
+    featureEnabled = userEntity?.Features.SceneSync == true;
+
+    if (featureEnabled)
+    {
+      profiles = await ProfileRepository.GetAllAsync(TwitchUserId);
+    }
+
+    isLoading = false;
+  }
+
+  private async Task LoadProfile(BroadcastProfile profile)
+  {
+    if (string.IsNullOrEmpty(TwitchUserId)) return;
+    isLoadingProfile = true;
+
+    try
+    {
+      // Delete existing scene actions
+      var existing = await SceneActionRepository.GetAllAsync(TwitchUserId);
+      foreach (var action in existing)
+      {
+        await SceneActionRepository.DeleteAsync(TwitchUserId, action.SceneName);
+      }
+
+      // Load profile's scene actions
+      foreach (var action in profile.SceneActions)
+      {
+        action.UserId = TwitchUserId;
+        await SceneActionRepository.SaveAsync(action);
+      }
+
+      statusMessage = $"Profile \"{profile.Name}\" loaded with {profile.SceneActions.Count} scene action(s).";
+    }
+    catch (Exception ex)
+    {
+      statusMessage = $"Error loading profile: {ex.Message}";
+    }
+    finally
+    {
+      isLoadingProfile = false;
+    }
+  }
+
+  private async Task DeleteProfile(string profileId)
+  {
+    if (string.IsNullOrEmpty(TwitchUserId)) return;
+    await ProfileRepository.DeleteAsync(TwitchUserId, profileId);
+    profiles = await ProfileRepository.GetAllAsync(TwitchUserId);
+    statusMessage = "Profile deleted.";
+  }
+
+  private async Task OnProfileSaved()
+  {
+    if (!string.IsNullOrEmpty(TwitchUserId))
+    {
+      profiles = await ProfileRepository.GetAllAsync(TwitchUserId);
+      statusMessage = "Profile saved.";
+      StateHasChanged();
+    }
+  }
+}

@@ -13,6 +13,7 @@ using OmniForge.Core.Entities;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Controllers;
+using OmniForge.Web.Services;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
@@ -59,7 +60,8 @@ namespace OmniForge.Tests
                 _mockJwtService.Object,
                 twitchSettings,
                 _mockConfiguration.Object,
-                _mockLogger.Object);
+                _mockLogger.Object,
+                new AgentPairingService());
 
             _controller.ControllerContext = new ControllerContext
             {

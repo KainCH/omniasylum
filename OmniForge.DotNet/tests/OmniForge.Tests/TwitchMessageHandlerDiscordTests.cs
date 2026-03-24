@@ -94,13 +94,13 @@ namespace OmniForge.Tests
             );
         }
 
-        private User CreateUserWithDiscord(bool enabled = true, string webhookUrl = "https://discord.com/api/webhooks/...")
+        private User CreateUserWithDiscord(bool enabled = true, string channelId = "123456789012345678")
         {
             return new User
             {
                 TwitchUserId = "user1",
                 Features = new FeatureFlags { DiscordNotifications = enabled },
-                DiscordWebhookUrl = webhookUrl,
+                DiscordChannelId = channelId,
                 DiscordSettings = new DiscordSettings
                 {
                     MilestoneThresholds = new DiscordMilestoneThresholds
@@ -260,12 +260,12 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task ProcessAsync_ShouldNotSendDiscordNotification_WhenWebhookUrlEmpty()
+        public async Task ProcessAsync_ShouldNotSendDiscordNotification_WhenChannelIdEmpty()
         {
             // Arrange
             var userId = "user1";
             var message = CreateMessage("!death+");
-            var user = CreateUserWithDiscord(enabled: true, webhookUrl: "");
+            var user = CreateUserWithDiscord(enabled: true, channelId: "");
 
             // Current deaths is 9, so +1 will hit 10 (milestone)
             var counters = new Counter { Deaths = 9 };

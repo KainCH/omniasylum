@@ -45,7 +45,6 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         // Arrange
         var userId = "test-user-id";
         var user = new User { TwitchUserId = userId, DiscordChannelId = "123456789012345678" };
-        user.Features.DiscordWebhook = true;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>
@@ -107,7 +106,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId, DiscordWebhookUrl = "https://valid-url" };
+        var user = new User { TwitchUserId = userId, DiscordChannelId = "123456789012345678" };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         _mockDiscordService.Setup(s => s.SendTestNotificationAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
@@ -224,7 +223,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var user = new User
         {
             TwitchUserId = userId,
-            DiscordWebhookUrl = "https://discord.com/api/webhooks/existing"
+            DiscordChannelId = "123456789012345678"
         };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
@@ -243,7 +242,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         configTab.Click();
 
         // Assert
-        Assert.Contains("Existing legacy Discord configuration detected", cut.Markup);
+        Assert.Contains("Existing channel configuration detected", cut.Markup);
     }
 
     [Fact]
@@ -335,12 +334,11 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     }
 
     [Fact]
-    public void SaveSettings_ShouldEnableWebhookFeature_WhenUrlIsProvided()
+    public void SaveSettings_ShouldSaveChannelId_WhenProvided()
     {
         // Arrange
         var userId = "test-user-id";
         var user = new User { TwitchUserId = userId };
-        user.Features.DiscordWebhook = false;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
@@ -365,15 +363,14 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var form = cut.Find("form");
         form.Submit();
 
-        // Assert - Should auto-enable webhook feature
+        // Assert - Should save with the channel ID
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
-            u.DiscordChannelId == "234567890123456789" &&
-            u.Features.DiscordWebhook == true
+            u.DiscordChannelId == "234567890123456789"
         )), Times.Once);
     }
 
     [Fact]
-    public void SaveSettings_ShouldDisableWebhookFeature_WhenUrlIsEmpty()
+    public void SaveSettings_ShouldClearChannelId_WhenEmpty()
     {
         // Arrange
         var userId = "test-user-id";
@@ -382,7 +379,6 @@ public class DiscordWebhookSettingsModalTests : BunitContext
             TwitchUserId = userId,
             DiscordChannelId = "123456789012345678"
         };
-        user.Features.DiscordWebhook = true;
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         _mockUserRepository.Setup(r => r.SaveUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
 
@@ -407,11 +403,9 @@ public class DiscordWebhookSettingsModalTests : BunitContext
         var form = cut.Find("form");
         form.Submit();
 
-        // Assert - Should auto-disable webhook feature
+        // Assert - Should save with empty channel ID
         _mockUserRepository.Verify(r => r.SaveUserAsync(It.Is<User>(u =>
-            string.IsNullOrEmpty(u.DiscordChannelId) &&
-            string.IsNullOrEmpty(u.DiscordWebhookUrl) &&
-            u.Features.DiscordWebhook == false
+            string.IsNullOrEmpty(u.DiscordChannelId)
         )), Times.Once);
     }
 
@@ -420,7 +414,7 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId, DiscordWebhookUrl = "https://valid-url" };
+        var user = new User { TwitchUserId = userId, DiscordChannelId = "123456789012345678" };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
         _mockDiscordService.Setup(s => s.SendTestNotificationAsync(It.IsAny<User>()))
             .ThrowsAsync(new Exception("Network error"));
@@ -553,11 +547,11 @@ public class DiscordWebhookSettingsModalTests : BunitContext
     }
 
     [Fact]
-    public void Modal_ShouldDisableTestButton_WhenNoWebhookUrl()
+    public void Modal_ShouldDisableTestButton_WhenNoChannelId()
     {
         // Arrange
         var userId = "test-user-id";
-        var user = new User { TwitchUserId = userId, DiscordWebhookUrl = "" };
+        var user = new User { TwitchUserId = userId, DiscordChannelId = "" };
         _mockUserRepository.Setup(r => r.GetUserAsync(userId)).ReturnsAsync(user);
 
         var cut = Render(b =>

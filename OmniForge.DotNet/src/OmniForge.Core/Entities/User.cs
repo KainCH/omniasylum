@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 namespace OmniForge.Core.Entities
 {
+    public enum LicenseTier { Free, Pro, Premium }
+
     public class User
     {
         /// <summary>
@@ -21,8 +23,8 @@ namespace OmniForge.Core.Entities
         public string Role { get; set; } = "streamer";
         public FeatureFlags Features { get; set; } = new FeatureFlags();
         public OverlaySettings OverlaySettings { get; set; } = new OverlaySettings();
-        public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string DiscordChannelId { get; set; } = string.Empty;
+        public string DiscordModChannelId { get; set; } = string.Empty;
         public string DiscordInviteLink { get; set; } = string.Empty;
         public DiscordSettings DiscordSettings { get; set; } = new DiscordSettings();
         public bool IsActive { get; set; } = true;
@@ -30,6 +32,8 @@ namespace OmniForge.Core.Entities
         public List<string> ManagedStreamers { get; set; } = new List<string>();
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset LastLogin { get; set; }
+        public LicenseTier LicenseTier { get; set; } = LicenseTier.Free;
+        public DateTimeOffset? LicenseExpiresAt { get; set; }
     }
 
     public class FeatureFlags
@@ -39,14 +43,14 @@ namespace OmniForge.Core.Entities
         public bool AutoClip { get; set; } = false;
         public bool CustomCommands { get; set; } = false;
         public bool Analytics { get; set; } = false;
-        public bool Webhooks { get; set; } = false;
         public bool BitsIntegration { get; set; } = false;
         public bool StreamOverlay { get; set; } = false;
         public bool AlertAnimations { get; set; } = false;
         public bool DiscordNotifications { get; set; } = true;
-        public bool DiscordWebhook { get; set; } = false;
         public string TemplateStyle { get; set; } = "asylum_themed";
         public bool StreamAlerts { get; set; } = true;
+        public bool SceneSync { get; set; } = false;
+        public bool OverlayV2 { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 
@@ -81,6 +85,8 @@ namespace OmniForge.Core.Entities
         public string? TimerTextColor { get; set; }
         public bool TimerManualRunning { get; set; } = false;
         public DateTimeOffset? TimerManualStartUtc { get; set; }
+        /// <summary>Transient scene-action flag: hide the timer element completely, overriding IsLive auto-show.</summary>
+        public bool TimerHidden { get; set; } = false;
         public OverlayCounters Counters { get; set; } = new OverlayCounters();
         public BitsGoal BitsGoal { get; set; } = new BitsGoal();
         public OverlayTheme Theme { get; set; } = new OverlayTheme();
@@ -93,6 +99,8 @@ namespace OmniForge.Core.Entities
         public bool Swears { get; set; } = true;
         public bool Screams { get; set; } = true;
         public bool Bits { get; set; } = false;
+        /// <summary>When true, hide the entire counter block (standard + custom) on the overlay.</summary>
+        public bool HideAll { get; set; } = false;
     }
 
     public class BitsGoal
@@ -167,6 +175,7 @@ namespace OmniForge.Core.Entities
         public bool FollowerGoal { get; set; } = false;
         public bool SubscriberMilestone { get; set; } = false;
         public bool ChannelPointRedemption { get; set; } = false;
+        public bool GameChange { get; set; } = true;
     }
 
     public class DiscordMilestoneThresholds

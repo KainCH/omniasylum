@@ -26,7 +26,7 @@ namespace OmniForge.Tests
                 role = "admin",
                 features = "{\"ChatCommands\":true}",
                 overlaySettings = "{\"Theme\":{\"BackgroundColor\":\"black\"}}",
-                discordWebhookUrl = "http://discord.url",
+                discordChannelId = "123456789012345678",
                 discordInviteLink = "http://discord.gg",
                 isActive = true,
                 streamStatus = "live",
@@ -49,7 +49,7 @@ namespace OmniForge.Tests
             Assert.Equal(entity.role, domain.Role);
             Assert.True(domain.Features.ChatCommands);
             Assert.Equal("black", domain.OverlaySettings.Theme.BackgroundColor);
-            Assert.Equal(entity.discordWebhookUrl, domain.DiscordWebhookUrl);
+            Assert.Equal(entity.discordChannelId, domain.DiscordChannelId);
             Assert.Equal(entity.discordInviteLink, domain.DiscordInviteLink);
             Assert.Equal(entity.isActive, domain.IsActive);
             Assert.Equal(entity.streamStatus, domain.StreamStatus);

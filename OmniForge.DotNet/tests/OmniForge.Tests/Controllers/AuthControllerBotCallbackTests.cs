@@ -6,6 +6,7 @@ using Moq;
 using OmniForge.Core.Interfaces;
 using OmniForge.Infrastructure.Configuration;
 using OmniForge.Web.Controllers;
+using OmniForge.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -32,7 +33,8 @@ namespace OmniForge.Tests.Controllers
                 jwtServiceMock.Object,
                 Options.Create(twitchSettings),
                 configuration,
-                loggerMock.Object);
+                loggerMock.Object,
+                new AgentPairingService());
         }
 
         [Fact]

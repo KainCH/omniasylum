@@ -405,7 +405,6 @@ namespace OmniForge.Web.Controllers
 
                 return Ok(new
                 {
-                    webhookUrl = streamer.DiscordWebhookUrl,
                     channelId = streamer.DiscordChannelId,
                     enabled = streamer.Features.DiscordNotifications,
                     streamer = new { userId = streamerId, username = streamer.Username }
@@ -435,8 +434,6 @@ namespace OmniForge.Web.Controllers
                     return NotFound(new { error = "Streamer not found" });
                 }
 
-                // Prefer channelId for bot-based posting; keep webhookUrl for legacy migration.
-                streamer.DiscordWebhookUrl = request.WebhookUrl ?? streamer.DiscordWebhookUrl;
                 streamer.DiscordChannelId = request.ChannelId ?? streamer.DiscordChannelId;
                 streamer.Features.DiscordNotifications = request.Enabled;
                 await _userRepository.SaveUserAsync(streamer);
@@ -446,7 +443,6 @@ namespace OmniForge.Web.Controllers
                 return Ok(new
                 {
                     message = "Discord webhook updated successfully",
-                    webhookUrl = streamer.DiscordWebhookUrl,
                     channelId = streamer.DiscordChannelId,
                     enabled = streamer.Features.DiscordNotifications,
                     streamer = new { userId = streamerId, username = streamer.Username },
@@ -657,7 +653,6 @@ namespace OmniForge.Web.Controllers
 
         public class UpdateDiscordWebhookRequest
         {
-            public string? WebhookUrl { get; set; }
             public string? ChannelId { get; set; }
             public bool Enabled { get; set; }
         }

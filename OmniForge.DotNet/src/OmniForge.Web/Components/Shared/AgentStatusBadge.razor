@@ -1,0 +1,33 @@
+@using OmniForge.Core.Interfaces
+@inject ISyncAgentTracker SyncAgentTracker
+
+@if (!string.IsNullOrEmpty(UserId))
+{
+  var state = SyncAgentTracker.GetAgentState(UserId);
+  var connected = state != null;
+
+  <span class="badge @(connected ? "bg-success" : "bg-secondary") me-2" title="@GetTooltip(state)">
+    <i class="bi @(connected ? "bi-broadcast" : "bi-broadcast-pin") me-1"></i>
+    @if (connected)
+    {
+      <span>Sync Agent: Connected (@(state!.SoftwareType.ToUpperInvariant()))</span>
+    }
+    else
+    {
+      <span>Sync Agent: Disconnected</span>
+    }
+  </span>
+}
+
+@code {
+  [Parameter] public string UserId { get; set; } = "";
+
+  private string GetTooltip(AgentState? state)
+  {
+    if (state == null) return "No sync agent connected";
+    var tooltip = $"Connected via {state.SoftwareType}";
+    if (!string.IsNullOrEmpty(state.CurrentScene))
+      tooltip += $" | Scene: {state.CurrentScene}";
+    return tooltip;
+  }
+}

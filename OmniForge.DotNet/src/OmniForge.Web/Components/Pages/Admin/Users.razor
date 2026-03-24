@@ -116,6 +116,10 @@
                                 <span class="badge @(user.Role == "admin" ? "bg-danger" : "bg-secondary")">
                                     @user.Role
                                 </span>
+                                <span class="badge @(user.LicenseTier == LicenseTier.Premium ? "bg-warning" :
+                                    user.LicenseTier == LicenseTier.Pro ? "bg-primary" : "bg-secondary")">
+                                    @user.LicenseTier
+                                </span>
                             </td>
                             <td>
                                 <span class="badge @(user.IsActive ? "bg-success" : "bg-warning")">
@@ -129,6 +133,8 @@
                                         @if (user.Features.StreamOverlay) { <span class="badge bg-info me-1">Overlay</span> }
                                         @if (user.Features.ChatCommands) { <span class="badge bg-info me-1">Chat</span> }
                                         @if (user.Features.DiscordNotifications) { <span class="badge bg-info me-1">Discord</span> }
+                                        @if (user.Features.SceneSync) { <span class="badge bg-info me-1">Sync Agent</span> }
+                                        @if (user.Features.OverlayV2) { <span class="badge bg-warning me-1">V2 Overlay</span> }
                                     }
                                 </div>
                             </td>

@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
@@ -74,9 +71,13 @@ namespace OmniForge.Web.Services
             LogOverlayAction(userId, "follow");
 
             var data = new { name = displayName, displayName, textPrompt = $"New Follower: {displayName}" };
-            var payload = await EnrichPayloadAsync(userId, "follow", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "follow", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "follow", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "follow", payload);
+            }
         }
 
         public async Task NotifySubscriberAsync(string userId, string displayName, string tier, bool isGift)
@@ -84,21 +85,27 @@ namespace OmniForge.Web.Services
             LogOverlayAction(userId, "subscription");
 
             var data = new { name = displayName, displayName, tier, isGift, textPrompt = $"New Subscriber: {displayName}" };
-            var payload = await EnrichPayloadAsync(userId, "subscription", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "subscription", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "subscription", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "subscription", payload);
+            }
         }
 
         public async Task NotifyResubAsync(string userId, string displayName, int months, string tier, string message)
         {
             LogOverlayAction(userId, "resub");
 
-            // Do not include raw chat message content in overlay payloads.
-            // We only act on commands; we don't display chat.
             var data = new { name = displayName, displayName, months, tier, textPrompt = $"{displayName} Resubscribed x{months}" };
-            var payload = await EnrichPayloadAsync(userId, "resub", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "resub", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "resub", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "resub", payload);
+            }
         }
 
         public async Task NotifyGiftSubAsync(string userId, string gifterName, string recipientName, string tier, int totalGifts)
@@ -106,21 +113,27 @@ namespace OmniForge.Web.Services
             LogOverlayAction(userId, "giftsub");
 
             var data = new { name = gifterName, gifterName, recipientName, tier, totalGifts, textPrompt = $"{gifterName} Gifted {totalGifts} Subs" };
-            var payload = await EnrichPayloadAsync(userId, "giftsub", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "giftsub", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "giftsub", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "giftsub", payload);
+            }
         }
 
         public async Task NotifyBitsAsync(string userId, string displayName, int amount, string message, int totalBits)
         {
             LogOverlayAction(userId, "bits");
 
-            // Do not include raw chat message content in overlay payloads.
-            // We only act on commands; we don't display chat.
             var data = new { name = displayName, displayName, amount, totalBits, textPrompt = $"{displayName} Cheered {amount} Bits" };
-            var payload = await EnrichPayloadAsync(userId, "bits", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "bits", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "bits", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "bits", payload);
+            }
         }
 
         public async Task NotifyRaidAsync(string userId, string raiderName, int viewers)
@@ -128,9 +141,25 @@ namespace OmniForge.Web.Services
             LogOverlayAction(userId, "raid");
 
             var data = new { name = raiderName, raiderName, viewers, textPrompt = $"Raid: {raiderName} ({viewers})" };
-            var payload = await EnrichPayloadAsync(userId, "raid", data);
-            if (IsSuppressed(payload)) return;
-            await _webSocketManager.SendToUserAsync(userId, "raid", payload);
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(userId, "raid", data);
+                if (enricher.IsSuppressed(payload)) return;
+                await _webSocketManager.SendToUserAsync(userId, "raid", payload);
+            }
+        }
+
+        public async Task NotifyOvertimeAsync(string userId, OvertimeConfig config, string sceneName)
+        {
+            await _webSocketManager.SendToUserAsync(userId ?? string.Empty, "overtime", new
+            {
+                text = config.Text,
+                textColor = config.TextColor,
+                backgroundColor = config.BackgroundColor,
+                flashIntervalSeconds = config.FlashIntervalSeconds,
+                sceneName
+            });
         }
 
         public async Task NotifyCustomAlertAsync(string userId, string alertType, object data)
@@ -150,7 +179,7 @@ namespace OmniForge.Web.Services
                         json = json.Substring(0, 2000) + "…";
                     }
                     _logger.LogInformation(
-                        "📦 Overlay payload: user_id={UserId}, alert_type={AlertType}, data={Data}",
+                        "Overlay payload: user_id={UserId}, alert_type={AlertType}, data={Data}",
                         LogValue.Safe(userId),
                         LogValue.Safe(alertType),
                         json);
@@ -161,8 +190,29 @@ namespace OmniForge.Web.Services
                 }
             }
 
-            var payload = await EnrichPayloadAsync(safeUserId, safeAlertType, data);
-            await _webSocketManager.SendToUserAsync(safeUserId, "customAlert", new { alertType = safeAlertType, data = payload });
+            var (enricher, scope) = CreateEnricher();
+            using (scope)
+            {
+                var payload = await enricher.EnrichPayloadAsync(safeUserId, safeAlertType, data);
+                await _webSocketManager.SendToUserAsync(safeUserId, "customAlert", new { alertType = safeAlertType, data = payload });
+            }
+        }
+
+        public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
+        {
+            await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
+        }
+
+        public async Task NotifySceneChangedAsync(string userId, string sceneName)
+        {
+            await _webSocketManager.SendToUserAsync(userId, "sceneChanged", new { sceneName });
+        }
+
+        private (IAlertPayloadEnricher enricher, IServiceScope scope) CreateEnricher()
+        {
+            var scope = _scopeFactory.CreateScope();
+            var enricher = scope.ServiceProvider.GetRequiredService<IAlertPayloadEnricher>();
+            return (enricher, scope);
         }
 
         private void LogOverlayAction(string userId, string action, string? alertType = null)
@@ -172,8 +222,6 @@ namespace OmniForge.Web.Services
                 return;
             }
 
-            // streamStatusUpdate is used as a periodic live heartbeat; logging it at Info is very noisy
-            // and can be misinterpreted as "chat forwarding". Keep detailed heartbeat logs at Debug.
             var isHeartbeat = string.Equals(action, "streamStatusUpdate", StringComparison.OrdinalIgnoreCase);
 
             if (string.IsNullOrWhiteSpace(alertType))
@@ -181,14 +229,14 @@ namespace OmniForge.Web.Services
                 if (isHeartbeat)
                 {
                     _logger.LogDebug(
-                        "💓 Overlay heartbeat: user_id={UserId}, action={Action}",
+                        "Overlay heartbeat: user_id={UserId}, action={Action}",
                         LogValue.Safe(userId),
                         LogValue.Safe(action));
                 }
                 else
                 {
                     _logger.LogInformation(
-                        "📣 Overlay send: user_id={UserId}, action={Action}",
+                        "Overlay send: user_id={UserId}, action={Action}",
                         LogValue.Safe(userId),
                         LogValue.Safe(action));
                 }
@@ -198,7 +246,7 @@ namespace OmniForge.Web.Services
             if (isHeartbeat)
             {
                 _logger.LogDebug(
-                    "💓 Overlay heartbeat: user_id={UserId}, action={Action}, alert_type={AlertType}",
+                    "Overlay heartbeat: user_id={UserId}, action={Action}, alert_type={AlertType}",
                     LogValue.Safe(userId),
                     LogValue.Safe(action),
                     LogValue.Safe(alertType));
@@ -206,22 +254,11 @@ namespace OmniForge.Web.Services
             else
             {
                 _logger.LogInformation(
-                    "📣 Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
+                    "Overlay send: user_id={UserId}, action={Action}, alert_type={AlertType}",
                     LogValue.Safe(userId),
                     LogValue.Safe(action),
                     LogValue.Safe(alertType));
             }
-        }
-
-        /// <summary>
-        /// Checks whether the enriched payload signals that the alert is suppressed
-        /// (i.e. a matching alert template exists in the DB but is disabled by the user).
-        /// </summary>
-        private static bool IsSuppressed(object payload)
-        {
-            return payload is Dictionary<string, object> dict
-                && dict.TryGetValue("suppress", out var val)
-                && val is true;
         }
 
         private static bool IsOverlayNotificationLoggingDisabled()
@@ -238,151 +275,6 @@ namespace OmniForge.Web.Services
             return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private async Task<object> EnrichPayloadAsync(string userId, string alertType, object baseData)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var alertRepository = scope.ServiceProvider.GetService<IAlertRepository>();
-
-                if (alertRepository == null) return baseData;
-
-                var alerts = await alertRepository.GetAlertsAsync(userId);
-                var anyMatching = alerts.Any(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase));
-                if (!anyMatching)
-                {
-                    return baseData;
-                }
-
-                var alert = alerts.FirstOrDefault(a => string.Equals(a.Type, alertType, StringComparison.OrdinalIgnoreCase) && a.IsEnabled);
-                if (alert == null)
-                {
-                    // Matching alert exists but is explicitly disabled by the user.
-                    // Return a suppression flag so callers can skip the WebSocket send.
-                    return new Dictionary<string, object> { ["suppress"] = true };
-                }
-
-                var payload = new Dictionary<string, object>
-                {
-                    ["id"] = alert.Id,
-                    ["type"] = alert.Type,
-                    ["name"] = alert.Name,
-                    ["visualCue"] = alert.VisualCue,
-                    ["sound"] = alert.Sound,
-                    ["soundDescription"] = alert.SoundDescription,
-                    ["textPrompt"] = alert.TextPrompt,
-                    ["duration"] = alert.Duration,
-                    ["backgroundColor"] = alert.BackgroundColor,
-                    ["textColor"] = alert.TextColor,
-                    ["borderColor"] = alert.BorderColor
-                };
-
-                try
-                {
-                    if (!string.IsNullOrEmpty(alert.Effects))
-                    {
-                        var effectsObj = JsonSerializer.Deserialize<object>(alert.Effects);
-                        if (effectsObj != null)
-                        {
-                            payload["effects"] = effectsObj;
-                        }
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Effects field contains invalid JSON - skip silently as effects are optional
-                }
-
-                // Merge event data into payload (do not overwrite base alert fields).
-                try
-                {
-                    var element = JsonSerializer.SerializeToElement(baseData);
-                    if (element.ValueKind == JsonValueKind.Object)
-                    {
-                        foreach (var prop in element.EnumerateObject().Where(p => !payload.ContainsKey(p.Name)))
-                        {
-                            payload[prop.Name] = prop.Value;
-                        }
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Event data serialization failed - continue with base payload
-                }
-
-                if (payload.TryGetValue("textPrompt", out var promptObj) && promptObj is string template && !string.IsNullOrWhiteSpace(template))
-                {
-                    payload["textPrompt"] = ApplyTemplate(template, payload);
-                }
-
-                return payload;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "❌ Error enriching alert {AlertType} for user {UserId}; falling back to passthrough", alertType, userId);
-                return baseData;
-            }
-        }
-
-        private static string ApplyTemplate(string template, IReadOnlyDictionary<string, object> payload)
-        {
-            string GetString(string key)
-            {
-                if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
-                if (value is JsonElement je)
-                {
-                    if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
-                    return je.ToString();
-                }
-                return value.ToString() ?? string.Empty;
-            }
-
-            string GetNumberString(string key)
-            {
-                if (!payload.TryGetValue(key, out var value) || value == null) return string.Empty;
-                if (value is JsonElement je)
-                {
-                    if (je.ValueKind == JsonValueKind.Number) return je.ToString();
-                    if (je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
-                    return je.ToString();
-                }
-                return value.ToString() ?? string.Empty;
-            }
-
-            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["User"] = FirstNonEmpty(GetString("user"), GetString("displayName"), GetString("name"), GetString("gifterName"), GetString("raiderName")),
-                ["Tier"] = GetString("tier"),
-                ["Months"] = GetNumberString("months"),
-                ["Amount"] = FirstNonEmpty(GetNumberString("amount"), GetNumberString("bits")),
-                ["Viewers"] = FirstNonEmpty(GetNumberString("viewers"), GetNumberString("viewerCount")),
-                ["Recipient"] = FirstNonEmpty(GetString("recipientName"), GetString("recipient")),
-                ["Message"] = GetString("message"),
-                ["Level"] = GetNumberString("level"),
-                ["Percent"] = GetNumberString("percent")
-            };
-
-            return Regex.Replace(template, "\\[(?<token>[A-Za-z]+)\\]", match =>
-            {
-                var token = match.Groups["token"].Value;
-                if (tokens.TryGetValue(token, out var replacement) && !string.IsNullOrEmpty(replacement))
-                {
-                    return replacement;
-                }
-                return match.Value;
-            });
-        }
-
-        private static string FirstNonEmpty(params string[] values)
-        {
-            return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
-        }
-
-        public async Task NotifyTemplateChangedAsync(string userId, string templateStyle, Template template)
-        {
-            await _webSocketManager.SendToUserAsync(userId, "templateChanged", new { templateStyle, template });
         }
     }
 }

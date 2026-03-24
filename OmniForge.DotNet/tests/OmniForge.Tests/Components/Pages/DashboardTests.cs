@@ -45,6 +45,7 @@ namespace OmniForge.Tests.Components.Pages
             Services.AddSingleton(_mockStreamMonitorService.Object);
             Services.AddSingleton(_mockOverlayNotifier.Object);
             Services.AddSingleton(_mockSeriesRepository.Object);
+            Services.AddSingleton(new Mock<ISyncAgentTracker>().Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Add core authorization services (PolicyProvider, etc.)
@@ -135,9 +136,9 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert - Dashboard shows counter values as read-only (no buttons)
-            cut.Find(".counter-box.deaths .counter-value").MarkupMatches("<div class=\"counter-value\">5</div>");
-            cut.Find(".counter-box.swears .counter-value").MarkupMatches("<div class=\"counter-value\">3</div>");
+            // Assert - Dashboard shows counter values in list format
+            cut.Find("[data-counter='deaths'] .counter-value").MarkupMatches("<span class=\"counter-value\">5</span>");
+            cut.Find("[data-counter='swears'] .counter-value").MarkupMatches("<span class=\"counter-value\">3</span>");
         }
 
         [Fact]
@@ -168,9 +169,9 @@ namespace OmniForge.Tests.Components.Pages
             var cut = RenderDashboard();
 
             // Assert - Deaths should not be visible, Swears and Screams should be
-            Assert.Throws<Bunit.ElementNotFoundException>(() => cut.Find(".counter-box.deaths"));
-            cut.Find(".counter-box.swears .counter-value").MarkupMatches("<div class=\"counter-value\">3</div>");
-            cut.Find(".counter-box.screams .counter-value").MarkupMatches("<div class=\"counter-value\">2</div>");
+            Assert.Throws<Bunit.ElementNotFoundException>(() => cut.Find("[data-counter='deaths']"));
+            cut.Find("[data-counter='swears'] .counter-value").MarkupMatches("<span class=\"counter-value\">3</span>");
+            cut.Find("[data-counter='screams'] .counter-value").MarkupMatches("<span class=\"counter-value\">2</span>");
         }
 
         [Fact]
@@ -200,7 +201,7 @@ namespace OmniForge.Tests.Components.Pages
             var cut = RenderDashboard();
 
             // Assert
-            cut.Find(".counter-box.bits .counter-value").MarkupMatches("<div class=\"counter-value\">100</div>");
+            cut.Find("[data-counter='bits'] .counter-value").MarkupMatches("<span class=\"counter-value\">100</span>");
         }
 
         [Fact]
@@ -230,7 +231,7 @@ namespace OmniForge.Tests.Components.Pages
             var cut = RenderDashboard();
 
             // Assert
-            Assert.Throws<Bunit.ElementNotFoundException>(() => cut.Find(".counter-box.bits"));
+            Assert.Throws<Bunit.ElementNotFoundException>(() => cut.Find("[data-counter='bits']"));
         }
 
         [Fact]
@@ -249,9 +250,11 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert - Total events should be Deaths + Swears = 15
-            var statsGrid = cut.Find(".stats-grid");
-            Assert.Contains("15", statsGrid.TextContent);
+            // Assert - Counter list is rendered
+            var counterList = cut.Find(".counter-list");
+            Assert.NotNull(counterList);
+            Assert.Contains("Deaths", counterList.TextContent);
+            Assert.Contains("Swears", counterList.TextContent);
         }
 
         [Fact]

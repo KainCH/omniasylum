@@ -91,13 +91,13 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task UpdateDiscordWebhook_ShouldReturnBadRequest_WhenInvalidUrl()
+        public async Task UpdateDiscordWebhook_ShouldReturnBadRequest_WhenInvalidChannelId()
         {
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
                 .ReturnsAsync(user);
 
-            var request = new UpdateWebhookRequest { WebhookUrl = "http://invalid.com" };
+            var request = new UpdateWebhookRequest { ChannelId = "short" };
 
             var result = await _controller.UpdateDiscordWebhook(request);
 
@@ -105,26 +105,26 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task UpdateDiscordWebhook_ShouldReturnOk_WhenValidUrl()
+        public async Task UpdateDiscordWebhook_ShouldReturnOk_WhenValidChannelId()
         {
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345"))
                 .ReturnsAsync(user);
-            _mockDiscordService.Setup(x => x.ValidateWebhookAsync(It.IsAny<string>()))
+            _mockDiscordService.Setup(x => x.ValidateDiscordChannelAsync(It.IsAny<string>()))
                 .ReturnsAsync(true);
 
-            var request = new UpdateWebhookRequest { WebhookUrl = "https://discord.com/api/webhooks/123/abc" };
+            var request = new UpdateWebhookRequest { ChannelId = "123456789012345678" };
 
             var result = await _controller.UpdateDiscordWebhook(request);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == request.WebhookUrl)), Times.Once);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordChannelId == request.ChannelId)), Times.Once);
         }
 
         [Fact]
         public async Task GetDiscordWebhook_ShouldReturnOk()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "123456789012345678" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.GetDiscordWebhook();
@@ -136,7 +136,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task TestDiscordWebhook_ShouldReturnOk_WhenValid()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "123456789012345678" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(user)).Returns(Task.CompletedTask);
 
@@ -147,9 +147,9 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task TestDiscordWebhook_ShouldReturnBadRequest_WhenNoUrl()
+        public async Task TestDiscordWebhook_ShouldReturnBadRequest_WhenNoChannelId()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
             var result = await _controller.TestDiscordWebhook();
@@ -163,7 +163,7 @@ namespace OmniForge.Tests
             var user = new User
             {
                 TwitchUserId = "12345",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnableChannelNotifications = true,
@@ -181,7 +181,7 @@ namespace OmniForge.Tests
             Assert.NotNull(value);
             var type = value.GetType();
 
-            Assert.Equal(user.DiscordWebhookUrl, type.GetProperty("webhookUrl")!.GetValue(value));
+            Assert.Equal(user.DiscordChannelId, type.GetProperty("channelId")!.GetValue(value));
             Assert.True((bool)type.GetProperty("enabled")!.GetValue(value)!);
             Assert.Equal("asylum_themed", type.GetProperty("templateStyle")!.GetValue(value));
             Assert.True((bool)type.GetProperty("enableChannelNotifications")!.GetValue(value)!);
@@ -421,40 +421,40 @@ namespace OmniForge.Tests
         #region UpdateDiscordWebhook Tests
 
         [Fact]
-        public async Task UpdateDiscordWebhook_ShouldAcceptEmptyUrl()
+        public async Task UpdateDiscordWebhook_ShouldClearChannelId_WhenEmpty()
         {
-            var user = new User { TwitchUserId = "12345" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "123456789012345678" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
 
-            var request = new UpdateWebhookRequest { WebhookUrl = "" };
+            var request = new UpdateWebhookRequest { ChannelId = "" };
             var result = await _controller.UpdateDiscordWebhook(request);
 
             Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == "")), Times.Once);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordChannelId == "")), Times.Once);
         }
 
         [Fact]
-        public async Task UpdateDiscordWebhook_ShouldUseDiscordWebhookUrl_WhenWebhookUrlIsNull()
+        public async Task UpdateDiscordWebhook_ShouldUseDiscordChannelId_WhenChannelIdIsNull()
         {
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-            _mockDiscordService.Setup(x => x.ValidateWebhookAsync(It.IsAny<string>())).ReturnsAsync(true);
+            _mockDiscordService.Setup(x => x.ValidateDiscordChannelAsync(It.IsAny<string>())).ReturnsAsync(true);
 
-            var request = new UpdateWebhookRequest { DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc" };
+            var request = new UpdateWebhookRequest { DiscordChannelId = "123456789012345678" };
             var result = await _controller.UpdateDiscordWebhook(request);
 
             Assert.IsType<OkObjectResult>(result);
-            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordWebhookUrl == "https://discord.com/api/webhooks/123/abc")), Times.Once);
+            _mockUserRepository.Verify(x => x.SaveUserAsync(It.Is<User>(u => u.DiscordChannelId == "123456789012345678")), Times.Once);
         }
 
         [Fact]
-        public async Task UpdateDiscordWebhook_ShouldReturnBadRequest_WhenWebhookValidationFails()
+        public async Task UpdateDiscordWebhook_ShouldReturnBadRequest_WhenChannelValidationFails()
         {
             var user = new User { TwitchUserId = "12345" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
-            _mockDiscordService.Setup(x => x.ValidateWebhookAsync(It.IsAny<string>())).ReturnsAsync(false);
+            _mockDiscordService.Setup(x => x.ValidateDiscordChannelAsync(It.IsAny<string>())).ReturnsAsync(false);
 
-            var request = new UpdateWebhookRequest { WebhookUrl = "https://discord.com/api/webhooks/123/abc" };
+            var request = new UpdateWebhookRequest { ChannelId = "123456789012345678" };
             var result = await _controller.UpdateDiscordWebhook(request);
 
             Assert.IsType<BadRequestObjectResult>(result);
@@ -467,7 +467,7 @@ namespace OmniForge.Tests
         [Fact]
         public async Task TestDiscordWebhook_ShouldReturnServerError_WhenExceptionThrown()
         {
-            var user = new User { TwitchUserId = "12345", DiscordWebhookUrl = "https://discord.com/api/webhooks/123" };
+            var user = new User { TwitchUserId = "12345", DiscordChannelId = "123456789012345678" };
             _mockUserRepository.Setup(x => x.GetUserAsync("12345")).ReturnsAsync(user);
             _mockDiscordService.Setup(x => x.SendTestNotificationAsync(user)).ThrowsAsync(new Exception("Network error"));
 

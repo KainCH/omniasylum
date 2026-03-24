@@ -77,6 +77,21 @@ else
             </div>
           </div>
         </div>
+
+        <div class="card mb-3 @(user.DiscordSettings.EnabledNotifications.GameChange ? "border-primary" : "")">
+          <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center">
+              <div class="me-3 fs-2">🎮</div>
+              <div>
+                <h6 class="mb-0">Game Change Announcements</h6>
+                <small class="text-muted">Post to announcements channel when the game changes</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" @bind="user.DiscordSettings.EnabledNotifications.GameChange" />
+            </div>
+          </div>
+        </div>
       </div>
     }
     else if (activeTab == "counters")
@@ -160,11 +175,7 @@ else
         <div class="alert alert-info d-flex align-items-start">
           <i class="bi bi-info-circle-fill me-2 mt-1"></i>
           <div class="small">
-            <div><strong>Channel routing note:</strong> per-action channel overrides work when using bot + Channel ID
-              mode.@if (!HasBotConfiguration) {
-              <span> Webhook mode posts to the webhook’s channel.</span>
-            }
-          </div>
+            <div><strong>Channel routing note:</strong> per-action channel overrides work when using bot + Channel ID mode.</div>
           <div class="mt-1"><strong>Template tokens:</strong> use <span class="font-monospace">{{displayName}}</span>,
             <span class="font-monospace">{{username}}</span>, <span class="font-monospace">{{twitchUrl}}</span>, <span
               class="font-monospace">{{eventType}}</span>.
@@ -282,13 +293,7 @@ else
           Existing channel configuration detected
         </div>
       }
-      else if (!string.IsNullOrEmpty(user.DiscordWebhookUrl) && !HasBotConfiguration)
-      {
-        <div class="alert alert-warning py-2 px-3 mb-3 small">
-          <i class="bi bi-exclamation-triangle-fill me-2"></i>
-          Existing legacy Discord configuration detected
-        </div>
-      }
+
 
       <div class="card bg-secondary bg-opacity-10 mb-3">
         <div class="card-body py-2">
@@ -324,7 +329,7 @@ else
 
       <div class="mb-3">
         <label class="form-label">
-          Discord Channel ID
+          Announcement Channel ID
           @if (IsDiscordDestinationConfigured)
           {
             <span class="text-success ms-2">(✅ Configured)</span>
@@ -336,6 +341,14 @@ else
         </label>
         <input class="form-control font-monospace" type="text" @bind="user.DiscordChannelId"
           placeholder="123456789012345678" />
+        <div class="form-text">Used for going-live, stream-end, and game change notifications</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Mod Channel ID</label>
+        <input class="form-control font-monospace" type="text" @bind="user.DiscordModChannelId"
+          placeholder="123456789012345678" />
+        <div class="form-text">Receives game change details and active counter summaries</div>
       </div>
 
       <div class="card mb-3">
@@ -392,7 +405,7 @@ else
 
       <div class="d-flex gap-2 mb-4">
         <button type="button" class="btn btn-secondary" @onclick="TestWebhook"
-          disabled="@((string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) || isTesting)">
+          disabled="@(string.IsNullOrEmpty(user.DiscordChannelId) || isTesting)">
           @if (isTesting)
           {
             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -474,6 +487,7 @@ else
   {
 "stream_start",
 "stream_end",
+"game_change",
 "death_milestone",
 "swear_milestone",
 "scream_milestone",
@@ -517,8 +531,7 @@ else
 
   private bool HasBotConfiguration => !string.IsNullOrWhiteSpace(botInviteUrl);
 
-  private bool IsDiscordDestinationConfigured => !string.IsNullOrWhiteSpace(user.DiscordChannelId) ||
-  !string.IsNullOrWhiteSpace(user.DiscordWebhookUrl);
+  private bool IsDiscordDestinationConfigured => !string.IsNullOrWhiteSpace(user.DiscordChannelId);
 
   protected override async Task OnParametersSetAsync()
   {
@@ -576,13 +589,30 @@ else
     }
   }
 
+  private static bool IsValidSnowflake(string value)
+  {
+    if (string.IsNullOrWhiteSpace(value)) return true; // empty is valid (means "not set")
+    if (value.Length < 15 || value.Length > 25) return false;
+    foreach (var c in value) { if (!char.IsDigit(c)) return false; }
+    return true;
+  }
+
   private async Task SaveSettings()
   {
     isSaving = true;
     try
     {
-      user.Features.DiscordWebhook = !string.IsNullOrEmpty(user.DiscordChannelId) ||
-      !string.IsNullOrEmpty(user.DiscordWebhookUrl);
+      if (!IsValidSnowflake(user.DiscordChannelId))
+      {
+        await JSRuntime.InvokeVoidAsync("alert", "Announcement Channel ID must be a valid Discord snowflake (15-25 digits).");
+        return;
+      }
+
+      if (!IsValidSnowflake(user.DiscordModChannelId))
+      {
+        await JSRuntime.InvokeVoidAsync("alert", "Mod Channel ID must be a valid Discord snowflake (15-25 digits).");
+        return;
+      }
 
       await UserRepository.SaveUserAsync(user);
 
@@ -604,7 +634,7 @@ else
 
   private async Task TestWebhook()
   {
-    if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl)) return;
+    if (string.IsNullOrEmpty(user.DiscordChannelId)) return;
 
     isTesting = true;
     try
@@ -642,6 +672,11 @@ else
       if (!string.IsNullOrWhiteSpace(user.DiscordChannelId))
       {
         channelIds.Add(user.DiscordChannelId.Trim());
+      }
+
+      if (!string.IsNullOrWhiteSpace(user.DiscordModChannelId))
+      {
+        channelIds.Add(user.DiscordModChannelId.Trim());
       }
 
       if (user.DiscordSettings?.MessageTemplates != null)
@@ -735,6 +770,7 @@ else
     {
       "stream_start" => "Stream Start",
       "stream_end" => "Stream End",
+      "game_change" => "Game Change",
       "death_milestone" => "Death Milestone",
       "swear_milestone" => "Swear Milestone",
       "scream_milestone" => "Scream Milestone",

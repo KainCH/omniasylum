@@ -90,20 +90,11 @@ namespace OmniForge.Infrastructure.Repositories
                     (user.OverlaySettings?.Position ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"),
                     user.OverlaySettings?.Scale,
                     user.OverlaySettings?.Enabled);
-                _logger.LogInformation("🔗 DiscordWebhookUrl: {WebhookUrl}",
-                    string.IsNullOrEmpty(user.DiscordWebhookUrl)
-                        ? "EMPTY"
-                        : $"{user.DiscordWebhookUrl.Substring(0, Math.Min(50, user.DiscordWebhookUrl.Length)).Replace("\r", "\\r").Replace("\n", "\\n")}...");
-
                 var entity = UserTableEntity.FromDomain(user);
 
                 _logger.LogDebug(
                     "📦 Serialized overlaySettings: {OverlaySettings}",
                     (entity.overlaySettings ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
-                _logger.LogDebug("📦 Entity discordWebhookUrl: {WebhookUrl}",
-                    string.IsNullOrEmpty(entity.discordWebhookUrl)
-                        ? "EMPTY"
-                        : $"{entity.discordWebhookUrl.Substring(0, Math.Min(50, entity.discordWebhookUrl.Length)).Replace("\r", "\\r").Replace("\n", "\\n")}...");
 
                 await _tableClient.UpsertEntityAsync(entity, TableUpdateMode.Replace);
                 _logger.LogInformation(

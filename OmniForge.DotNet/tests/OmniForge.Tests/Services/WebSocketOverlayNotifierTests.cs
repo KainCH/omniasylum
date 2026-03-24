@@ -36,6 +36,11 @@ public class WebSocketOverlayNotifierTests
         // Default: no templates available, notifier should passthrough.
         _mockAlertRepository.Setup(x => x.GetAlertsAsync(It.IsAny<string>())).ReturnsAsync(new List<Alert>());
 
+        // Register IAlertPayloadEnricher so WebSocketOverlayNotifier.CreateEnricher() can resolve it
+        var enricherLogger = new Mock<ILogger<AlertPayloadEnricher>>();
+        var enricher = new AlertPayloadEnricher(_mockAlertRepository.Object, enricherLogger.Object);
+        _mockServiceProvider.Setup(x => x.GetService(typeof(IAlertPayloadEnricher))).Returns(enricher);
+
         _notifier = new WebSocketOverlayNotifier(
             _mockWebSocketManager.Object,
             _mockScopeFactory.Object,

@@ -25,6 +25,10 @@ namespace OmniForge.Infrastructure.Services
 
         private Task? _gatewayStartTask;
 
+        // Track last-applied presence to avoid redundant SetStatusAsync/SetGameAsync calls.
+        private UserStatus _lastPresenceStatus = UserStatus.Offline;
+        private string? _lastPresenceActivity;
+
         public DiscordNetBotClient(ILogger<DiscordNetBotClient> logger, ILogValueSanitizer logValueSanitizer)
         {
             _logger = logger;
@@ -153,7 +157,6 @@ namespace OmniForge.Infrastructure.Services
                 var gatewayClient = _gatewayClient;
                 if (gatewayClient != null && string.Equals(_gatewayToken, botToken, StringComparison.Ordinal))
                 {
-                    // If we're already connected or connecting, nothing to do.
                     if (gatewayClient.ConnectionState == ConnectionState.Connected || gatewayClient.ConnectionState == ConnectionState.Connecting)
                     {
                         if (gatewayClient.ConnectionState == ConnectionState.Connected)
@@ -163,12 +166,14 @@ namespace OmniForge.Infrastructure.Services
                         }
 
                         shouldReturnAfterLock = true;
+                        // Already connected/connecting — do NOT fall through to restart.
                     }
-
-                    // If it's disconnected, attempt a restart.
-                    clientToStart = gatewayClient;
-                    needsStart = true;
-                    // fall through to start outside lock
+                    else
+                    {
+                        // Disconnected — attempt a restart.
+                        clientToStart = gatewayClient;
+                        needsStart = true;
+                    }
                 }
                 else
                 {
@@ -225,6 +230,8 @@ namespace OmniForge.Infrastructure.Services
                             var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
                             await socketClient.SetStatusAsync(desiredStatus);
                             await socketClient.SetGameAsync(activity);
+                            _lastPresenceStatus = desiredStatus;
+                            _lastPresenceActivity = activity;
                             _logger.LogInformation("✅ Discord bot is online with activity: {Activity}", (activity ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
                         }
                         catch (Exception ex)
@@ -311,11 +318,21 @@ namespace OmniForge.Infrastructure.Services
 
         private async Task UpdatePresenceAsync(DiscordSocketClient socketClient, UserStatus desiredStatus)
         {
+            var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
+
+            // Skip the API calls if nothing has changed.
+            if (_lastPresenceStatus == desiredStatus && string.Equals(_lastPresenceActivity, activity, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             try
             {
-                var activity = string.IsNullOrWhiteSpace(_gatewayActivity) ? "shaping commands in the forge" : _gatewayActivity;
                 await socketClient.SetStatusAsync(desiredStatus).ConfigureAwait(false);
                 await socketClient.SetGameAsync(activity).ConfigureAwait(false);
+
+                _lastPresenceStatus = desiredStatus;
+                _lastPresenceActivity = activity;
 
                 _logger.LogInformation(
                     "✅ Discord bot presence updated: Status={Status}, Activity={Activity}",

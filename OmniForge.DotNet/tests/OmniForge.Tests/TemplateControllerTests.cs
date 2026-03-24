@@ -57,6 +57,24 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task GetAvailableTemplates_ShouldProjectTemplateFields()
+        {
+            var templates = new Dictionary<string, Template>
+            {
+                { "basic", new Template { Name = "Basic", Description = "A basic template", Type = "overlay", Config = new OmniForge.Core.Entities.TemplateConfig() } }
+            };
+            _mockTemplateRepository.Setup(x => x.GetAvailableTemplatesAsync()).ReturnsAsync(templates);
+
+            var result = await _controller.GetAvailableTemplates();
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            // Force materialization of the LINQ projection to cover the Select lambda
+            var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+            Assert.Contains("basic", json);
+            Assert.Contains("Basic", json);
+        }
+
+        [Fact]
         public async Task GetCurrentTemplate_ShouldReturnOk_WhenUserExists()
         {
             var user = new User { TwitchUserId = "12345", Features = new FeatureFlags { TemplateStyle = "test" } };

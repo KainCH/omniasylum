@@ -241,51 +241,12 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task SendTestNotificationAsync_ShouldSendWebhook_WhenUrlConfigured_AndNoChannelId()
+        public async Task SendTestNotificationAsync_ShouldNotSend_WhenChannelIdMissing()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
-                DisplayName = "Test User",
-                DiscordChannelId = string.Empty,
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
-            };
-
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>()
-                )
-                .ReturnsAsync(new HttpResponseMessage
-                {
-                    StatusCode = HttpStatusCode.OK
-                });
-
-            // Act
-            await _service.SendTestNotificationAsync(user);
-
-            // Assert
-            _mockHttpMessageHandler.Protected().Verify(
-                "SendAsync",
-                Times.Once(),
-                ItExpr.Is<HttpRequestMessage>(req =>
-                    req.Method == HttpMethod.Post &&
-                    req.RequestUri != null &&
-                    req.RequestUri.ToString() == user.DiscordWebhookUrl),
-                ItExpr.IsAny<CancellationToken>()
-            );
-        }
-
-        [Fact]
-        public async Task SendTestNotificationAsync_ShouldNotSend_WhenUrlMissing()
-        {
-            // Arrange
-            var user = new User
-            {
-                Username = "testuser",
-                DiscordWebhookUrl = string.Empty,
                 DiscordChannelId = string.Empty
             };
 
@@ -309,7 +270,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications
@@ -321,30 +282,29 @@ namespace OmniForge.Tests
 
             var eventData = new { count = 100, previousMilestone = 90 };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>()
-                )
-                .ReturnsAsync(new HttpResponseMessage
-                {
-                    StatusCode = HttpStatusCode.OK
-                });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "death_milestone", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify(
-                "SendAsync",
-                Times.Once(),
-                ItExpr.Is<HttpRequestMessage>(req =>
-                    req.Method == HttpMethod.Post &&
-                    req.RequestUri != null &&
-                    req.RequestUri.ToString() == user.DiscordWebhookUrl),
-                ItExpr.IsAny<CancellationToken>()
-            );
+            _mockDiscordBotClient.Verify(
+                x => x.SendMessageAsync(
+                    user.DiscordChannelId,
+                    "test-bot-token",
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()),
+                Times.Once);
         }
 
         [Fact]
@@ -354,7 +314,7 @@ namespace OmniForge.Tests
             var user = new User
             {
                 Username = "testuser",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications
@@ -386,7 +346,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { SwearMilestone = true }
@@ -395,15 +355,15 @@ namespace OmniForge.Tests
 
             var eventData = new { count = 50, previousMilestone = 40 };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "swear_milestone", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(user.DiscordChannelId, "test-bot-token", It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
@@ -414,7 +374,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { ScreamMilestone = true }
@@ -423,15 +383,15 @@ namespace OmniForge.Tests
 
             var eventData = new { count = 20, previousMilestone = 10 };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "scream_milestone", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(user.DiscordChannelId, "test-bot-token", It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
@@ -442,7 +402,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { StreamStart = true }
@@ -451,19 +411,15 @@ namespace OmniForge.Tests
 
             var eventData = new { title = "Test Stream", game = "Just Chatting", thumbnailUrl = "http://example.com/thumb.jpg" };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "stream_start", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify(
-                "SendAsync",
-                Times.Once(),
-                ItExpr.Is<HttpRequestMessage>(req => req.RequestUri!.ToString().Contains("with_components=true")),
-                ItExpr.IsAny<CancellationToken>());
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(user.DiscordChannelId, "test-bot-token", It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
@@ -474,7 +430,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { StreamEnd = true }
@@ -483,15 +439,15 @@ namespace OmniForge.Tests
 
             var eventData = new { duration = "2h 30m" };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "stream_end", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(user.DiscordChannelId, "test-bot-token", It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
@@ -502,7 +458,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
@@ -515,26 +471,26 @@ namespace OmniForge.Tests
                 { "previousMilestone", 90 }
             };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             await _service.SendNotificationAsync(user, "death_milestone", eventData);
 
             // Assert
-            _mockHttpMessageHandler.Protected().Verify("SendAsync", Times.Once(), ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(user.DiscordChannelId, "test-bot-token", It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
-        public async Task SendNotificationAsync_ShouldLogError_WhenHttpRequestFails()
+        public async Task SendNotificationAsync_ShouldThrowException_WhenBotClientThrows()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+                DiscordChannelId = "123456789012345678",
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
@@ -543,49 +499,23 @@ namespace OmniForge.Tests
 
             var eventData = new { count = 100 };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.InternalServerError });
-
-            // Act & Assert - service throws on failure
-            await Assert.ThrowsAsync<HttpRequestException>(() =>
-                _service.SendNotificationAsync(user, "death_milestone", eventData));
-        }
-
-        [Fact]
-        public async Task SendNotificationAsync_ShouldThrowException_WhenHttpRequestThrows()
-        {
-            // Arrange
-            var user = new User
-            {
-                Username = "testuser",
-                DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
-                DiscordSettings = new DiscordSettings
-                {
-                    EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
-                }
-            };
-
-            var eventData = new { count = 100 };
-
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
                 .ThrowsAsync(new HttpRequestException("Network error"));
 
-            // Act & Assert - service throws on exception
+            // Act & Assert
             await Assert.ThrowsAsync<HttpRequestException>(() =>
                 _service.SendNotificationAsync(user, "death_milestone", eventData));
         }
 
         [Fact]
-        public async Task SendNotificationAsync_ShouldNotSend_WhenWebhookUrlEmpty()
+        public async Task SendNotificationAsync_ShouldNotSend_WhenNoDestinationConfigured()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
-                DiscordWebhookUrl = ""
+                DiscordChannelId = string.Empty
             };
 
             var eventData = new { count = 100 };
@@ -593,13 +523,16 @@ namespace OmniForge.Tests
             // Act
             await _service.SendNotificationAsync(user, "death_milestone", eventData);
 
-            // Assert - should not send when webhook URL is empty
-            _mockHttpMessageHandler.Protected().Verify(
-                "SendAsync",
-                Times.Never(),
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>()
-            );
+            // Assert - should not send when no channel ID is configured
+            _mockDiscordBotClient.Verify(
+                x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()),
+                Times.Never);
         }
 
         [Fact]
@@ -610,7 +543,7 @@ namespace OmniForge.Tests
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc",
+
                 DiscordSettings = new DiscordSettings
                 {
                     EnabledNotifications = new DiscordEnabledNotifications { DeathMilestone = true }
@@ -632,18 +565,24 @@ namespace OmniForge.Tests
         }
 
         [Fact]
-        public async Task SendTestNotificationAsync_ShouldThrowException_WhenHttpRequestThrows()
+        public async Task SendTestNotificationAsync_ShouldThrowException_WhenBotClientThrows()
         {
             // Arrange
             var user = new User
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = "https://discord.com/api/webhooks/123/abc"
+                DiscordChannelId = "123456789012345678"
             };
 
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<Discord.Embed>(),
+                    It.IsAny<Discord.MessageComponent>(),
+                    It.IsAny<Discord.AllowedMentions>()))
                 .ThrowsAsync(new HttpRequestException("Network error"));
 
             // Act & Assert - service throws on exception
@@ -651,82 +590,135 @@ namespace OmniForge.Tests
                 _service.SendTestNotificationAsync(user));
         }
 
+        #region SendGameChangeAnnouncementAsync Tests
+
         [Fact]
-        public async Task SendTestNotificationAsync_ShouldNotSend_WhenWebhookUrlEmpty()
+        public async Task SendGameChangeAnnouncementAsync_ShouldSendToAnnouncementChannel()
         {
-            // Arrange
             var user = new User
             {
                 Username = "testuser",
                 DisplayName = "Test User",
-                DiscordWebhookUrl = ""
+                DiscordChannelId = "123456789012345678",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { GameChange = true },
+                    MentionEveryoneOnStreamStart = true
+                }
             };
 
-            // Act
-            await _service.SendTestNotificationAsync(user);
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
-            // Assert - should not send when webhook URL is empty
-            _mockHttpMessageHandler.Protected().Verify(
-                "SendAsync",
-                Times.Never(),
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>()
-            );
+            await _service.SendGameChangeAnnouncementAsync(user, "Elden Ring", "https://example.com/box.jpg");
+
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                "123456789012345678", "test-bot-token",
+                It.Is<string?>(c => c != null && c.Contains("@everyone")),
+                It.IsAny<Discord.Embed>(),
+                It.IsAny<Discord.MessageComponent>(),
+                It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
-        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenUrlEmpty()
+        public async Task SendGameChangeAnnouncementAsync_ShouldNotSend_WhenChannelEmpty()
         {
-            // Act
-            var result = await _service.ValidateWebhookAsync("");
+            var user = new User { Username = "testuser", DiscordChannelId = "" };
 
-            // Assert
-            Assert.False(result);
+            await _service.SendGameChangeAnnouncementAsync(user, "Elden Ring", null);
+
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(),
+                It.IsAny<Discord.AllowedMentions>()), Times.Never);
         }
 
         [Fact]
-        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenRequestFails()
+        public async Task SendGameChangeAnnouncementAsync_ShouldNotSend_WhenGameChangeDisabled()
         {
-            // Arrange
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ThrowsAsync(new HttpRequestException("Network error"));
+            var user = new User
+            {
+                Username = "testuser",
+                DiscordChannelId = "123456789012345678",
+                DiscordSettings = new DiscordSettings
+                {
+                    EnabledNotifications = new DiscordEnabledNotifications { GameChange = false }
+                }
+            };
 
-            // Act
-            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+            await _service.SendGameChangeAnnouncementAsync(user, "Elden Ring", null);
 
-            // Assert
-            Assert.False(result);
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(),
+                It.IsAny<Discord.AllowedMentions>()), Times.Never);
+        }
+
+        #endregion
+
+        #region SendModChannelNotificationAsync Tests
+
+        [Fact]
+        public async Task SendModChannelNotificationAsync_ShouldSendToModChannel()
+        {
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordModChannelId = "987654321098765432"
+            };
+
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
+
+            var descriptions = new[] { "\ud83d\udc80 **Deaths** \u2014 `!d`", "\ud83e\udd2c **Swears** \u2014 `!sw`" };
+
+            await _service.SendModChannelNotificationAsync(user, "Elden Ring", descriptions);
+
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                "987654321098765432", "test-bot-token",
+                It.IsAny<string?>(), It.IsAny<Discord.Embed>(),
+                It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
 
         [Fact]
-        public async Task ValidateWebhookAsync_ShouldReturnTrue_WhenRequestSucceeds()
+        public async Task SendModChannelNotificationAsync_ShouldNotSend_WhenModChannelEmpty()
         {
-            // Arrange
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.OK });
+            var user = new User { Username = "testuser", DiscordModChannelId = "" };
 
-            // Act
-            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+            await _service.SendModChannelNotificationAsync(user, "Elden Ring", new[] { "counter1" });
 
-            // Assert
-            Assert.True(result);
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(),
+                It.IsAny<Discord.AllowedMentions>()), Times.Never);
         }
 
         [Fact]
-        public async Task ValidateWebhookAsync_ShouldReturnFalse_WhenNon200Response()
+        public async Task SendModChannelNotificationAsync_ShouldSend_WhenNoCountersEnabled()
         {
-            // Arrange
-            _mockHttpMessageHandler.Protected()
-                .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage { StatusCode = HttpStatusCode.NotFound });
+            var user = new User
+            {
+                Username = "testuser",
+                DisplayName = "Test User",
+                DiscordModChannelId = "987654321098765432"
+            };
 
-            // Act
-            var result = await _service.ValidateWebhookAsync("https://discord.com/api/webhooks/123/abc");
+            _mockDiscordBotClient
+                .Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Discord.Embed>(), It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()))
+                .Returns(Task.CompletedTask);
 
-            // Assert
-            Assert.False(result);
+            await _service.SendModChannelNotificationAsync(user, "Just Chatting", Array.Empty<string>());
+
+            _mockDiscordBotClient.Verify(x => x.SendMessageAsync(
+                "987654321098765432", "test-bot-token",
+                It.IsAny<string?>(), It.IsAny<Discord.Embed>(),
+                It.IsAny<Discord.MessageComponent>(), It.IsAny<Discord.AllowedMentions>()), Times.Once);
         }
+
+        #endregion
+
     }
 }

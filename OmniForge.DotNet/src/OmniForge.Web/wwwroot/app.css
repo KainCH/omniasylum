@@ -118,6 +118,23 @@ body {
   color: #fff;
 }
 
+[data-bs-theme="dark"] .current-game {
+  background: rgba(102, 126, 234, 0.15);
+}
+
+[data-bs-theme="dark"] .current-game-name {
+  color: #fff;
+}
+
+[data-bs-theme="dark"] .counter-item {
+  background: #2d2d2d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-bs-theme="dark"] .counter-item .counter-name {
+  color: #bbb;
+}
+
 [data-bs-theme="dark"] .counter-label {
   color: #aaa;
 }
@@ -191,6 +208,96 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 30px;
   margin-bottom: 40px;
+}
+
+/* Current game display */
+.current-game {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 4px solid #667eea;
+  border-radius: 6px;
+}
+
+.current-game-label {
+  font-weight: bold;
+  color: #667eea;
+  white-space: nowrap;
+}
+
+.current-game-name {
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+/* Counter list */
+.counter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.counter-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid #667eea;
+}
+
+.counter-item .counter-name {
+  font-size: 1em;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #444;
+}
+
+.counter-item .counter-value {
+  font-size: 1.8em;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  color: #667eea;
+  min-width: 3ch;
+  text-align: right;
+}
+
+[data-counter="deaths"] {
+  border-left-color: #e74c3c;
+}
+
+[data-counter="deaths"] .counter-value {
+  color: #e74c3c;
+}
+
+[data-counter="swears"] {
+  border-left-color: #f39c12;
+}
+
+[data-counter="swears"] .counter-value {
+  color: #f39c12;
+}
+
+[data-counter="screams"] {
+  border-left-color: #9b59b6;
+}
+
+[data-counter="screams"] .counter-value {
+  color: #9b59b6;
+}
+
+[data-counter="bits"] {
+  border-left-color: #27ae60;
+}
+
+[data-counter="bits"] .counter-value {
+  color: #27ae60;
 }
 
 .counter-box {
@@ -440,11 +547,7 @@ body {
     font-size: 2em;
   }
 
-  .counters-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .counter-value {
-    font-size: 3em;
+  .counter-item .counter-value {
+    font-size: 1.4em;
   }
 }

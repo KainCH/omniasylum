@@ -74,9 +74,9 @@ namespace OmniForge.Web.Controllers
 
             return Ok(new
             {
-                webhookUrl = user.DiscordWebhookUrl,
                 channelId = user.DiscordChannelId,
-                enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl)
+                modChannelId = user.DiscordModChannelId,
+                enabled = !string.IsNullOrEmpty(user.DiscordChannelId)
             });
         }
 
@@ -89,28 +89,28 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            // Handle backward compatibility (legacy webhook) + new bot channelId
-            string actualWebhookUrl = request.WebhookUrl ?? request.DiscordWebhookUrl ?? string.Empty;
             string actualChannelId = request.ChannelId ?? request.DiscordChannelId ?? string.Empty;
 
-            // Clearing
-            if (string.IsNullOrEmpty(actualWebhookUrl) && string.IsNullOrEmpty(actualChannelId))
+            // Clearing announcement channel (mod channel handled below regardless)
+            if (string.IsNullOrEmpty(actualChannelId) && request.ModChannelId == null)
             {
-                user.DiscordWebhookUrl = string.Empty;
                 user.DiscordChannelId = string.Empty;
                 await _userRepository.SaveUserAsync(user);
 
                 return Ok(new
                 {
                     message = "Discord destination cleared successfully",
-                    webhookUrl = user.DiscordWebhookUrl,
                     channelId = user.DiscordChannelId,
-                    verified = new { webhookUrl = user.DiscordWebhookUrl, channelId = user.DiscordChannelId, enabled = false }
+                    modChannelId = user.DiscordModChannelId,
+                    verified = new { channelId = user.DiscordChannelId, enabled = false }
                 });
             }
 
-            // Preferred: channelId validation
-            if (!string.IsNullOrEmpty(actualChannelId))
+            if (string.IsNullOrEmpty(actualChannelId))
+            {
+                user.DiscordChannelId = string.Empty;
+            }
+            else
             {
                 if (!IsValidSnowflake(actualChannelId))
                 {
@@ -126,22 +126,26 @@ namespace OmniForge.Web.Controllers
                 user.DiscordChannelId = actualChannelId;
             }
 
-            // Legacy: webhook URL validation (kept for migration)
-            if (!string.IsNullOrEmpty(actualWebhookUrl))
+            // Validate and set mod channel ID if provided
+            if (!string.IsNullOrEmpty(request.ModChannelId))
             {
-                if (!actualWebhookUrl.StartsWith("https://discord.com/api/webhooks/"))
+                if (!IsValidSnowflake(request.ModChannelId))
                 {
-                    return BadRequest(new { error = "Invalid Discord webhook URL format" });
+                    return BadRequest(new { error = "Invalid Discord mod channel ID format" });
                 }
 
-                // Validate that the webhook actually exists
-                var isValid = await _discordService.ValidateWebhookAsync(actualWebhookUrl);
-                if (!isValid)
+                var modChannelValid = await _discordService.ValidateDiscordChannelAsync(request.ModChannelId);
+                if (!modChannelValid)
                 {
-                    return BadRequest(new { error = "The Discord webhook URL is invalid or does not exist. Please create a new webhook in Discord." });
+                    return BadRequest(new { error = "The Discord mod channel ID is invalid or the bot does not have access." });
                 }
 
-                user.DiscordWebhookUrl = actualWebhookUrl;
+                user.DiscordModChannelId = request.ModChannelId;
+            }
+            else if (request.ModChannelId != null)
+            {
+                // Explicitly clearing mod channel (empty string sent)
+                user.DiscordModChannelId = string.Empty;
             }
 
             await _userRepository.SaveUserAsync(user);
@@ -149,9 +153,9 @@ namespace OmniForge.Web.Controllers
             return Ok(new
             {
                 message = "Discord destination updated successfully",
-                webhookUrl = user.DiscordWebhookUrl,
                 channelId = user.DiscordChannelId,
-                verified = new { webhookUrl = user.DiscordWebhookUrl, channelId = user.DiscordChannelId, enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl) }
+                modChannelId = user.DiscordModChannelId,
+                verified = new { channelId = user.DiscordChannelId, enabled = !string.IsNullOrEmpty(user.DiscordChannelId) }
             });
         }
 
@@ -171,7 +175,7 @@ namespace OmniForge.Web.Controllers
             var user = await _userRepository.GetUserAsync(userId);
             if (user == null) return NotFound("User not found");
 
-            if (string.IsNullOrEmpty(user.DiscordChannelId) && string.IsNullOrEmpty(user.DiscordWebhookUrl))
+            if (string.IsNullOrEmpty(user.DiscordChannelId))
             {
                 return BadRequest(new { error = "No Discord destination configured" });
             }
@@ -202,9 +206,8 @@ namespace OmniForge.Web.Controllers
             // Map to flat structure for frontend compatibility
             var response = new
             {
-                webhookUrl = user.DiscordWebhookUrl,
                 channelId = user.DiscordChannelId,
-                enabled = !string.IsNullOrEmpty(user.DiscordChannelId) || !string.IsNullOrEmpty(user.DiscordWebhookUrl),
+                enabled = !string.IsNullOrEmpty(user.DiscordChannelId),
                 templateStyle = user.Features.TemplateStyle ?? ds.TemplateStyle ?? "asylum_themed",
 
                 enableChannelNotifications = ds.EnableChannelNotifications,
@@ -222,7 +225,8 @@ namespace OmniForge.Web.Controllers
                     stream_end = ds.EnabledNotifications.StreamEnd,
                     follower_goal = ds.EnabledNotifications.FollowerGoal,
                     subscriber_milestone = ds.EnabledNotifications.SubscriberMilestone,
-                    channel_point_redemption = ds.EnabledNotifications.ChannelPointRedemption
+                    channel_point_redemption = ds.EnabledNotifications.ChannelPointRedemption,
+                    game_change = ds.EnabledNotifications.GameChange
                 },
                 milestoneThresholds = new
                 {
@@ -260,6 +264,7 @@ namespace OmniForge.Web.Controllers
                 user.DiscordSettings.EnabledNotifications.FollowerGoal = request.EnabledNotifications.FollowerGoal ?? user.DiscordSettings.EnabledNotifications.FollowerGoal;
                 user.DiscordSettings.EnabledNotifications.SubscriberMilestone = request.EnabledNotifications.SubscriberMilestone ?? user.DiscordSettings.EnabledNotifications.SubscriberMilestone;
                 user.DiscordSettings.EnabledNotifications.ChannelPointRedemption = request.EnabledNotifications.ChannelPointRedemption ?? user.DiscordSettings.EnabledNotifications.ChannelPointRedemption;
+                user.DiscordSettings.EnabledNotifications.GameChange = request.EnabledNotifications.GameChange ?? user.DiscordSettings.EnabledNotifications.GameChange;
             }
             else
             {
@@ -375,10 +380,9 @@ namespace OmniForge.Web.Controllers
 
     public class UpdateWebhookRequest
     {
-        public string? WebhookUrl { get; set; }
-        public string? DiscordWebhookUrl { get; set; }
         public string? ChannelId { get; set; }
         public string? DiscordChannelId { get; set; }
+        public string? ModChannelId { get; set; }
         public bool Enabled { get; set; }
     }
 
@@ -415,6 +419,7 @@ namespace OmniForge.Web.Controllers
         public bool? FollowerGoal { get; set; }
         public bool? SubscriberMilestone { get; set; }
         public bool? ChannelPointRedemption { get; set; }
+        public bool? GameChange { get; set; }
     }
 
     public class UpdateMilestoneThresholdsRequest

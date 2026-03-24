@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniForge.Core.Entities;
@@ -17,9 +18,11 @@ namespace OmniForge.Infrastructure.Services
         private readonly IGameCustomCountersConfigRepository _gameCustomCountersConfigRepository;
         private readonly IGameCoreCountersConfigRepository _gameCoreCountersConfigRepository;
         private readonly ICounterRepository _counterRepository;
+        private readonly ICounterLibraryRepository _counterLibraryRepository;
         private readonly IUserRepository _userRepository;
         private readonly ITwitchApiService _twitchApiService;
         private readonly IOverlayNotifier _overlayNotifier;
+        private readonly IDiscordService _discordService;
         private readonly ILogger<GameSwitchService> _logger;
 
         public GameSwitchService(
@@ -30,9 +33,11 @@ namespace OmniForge.Infrastructure.Services
             IGameCustomCountersConfigRepository gameCustomCountersConfigRepository,
             IGameCoreCountersConfigRepository gameCoreCountersConfigRepository,
             ICounterRepository counterRepository,
+            ICounterLibraryRepository counterLibraryRepository,
             IUserRepository userRepository,
             ITwitchApiService twitchApiService,
             IOverlayNotifier overlayNotifier,
+            IDiscordService discordService,
             ILogger<GameSwitchService> logger)
         {
             _gameContextRepository = gameContextRepository;
@@ -42,9 +47,11 @@ namespace OmniForge.Infrastructure.Services
             _gameCustomCountersConfigRepository = gameCustomCountersConfigRepository;
             _gameCoreCountersConfigRepository = gameCoreCountersConfigRepository;
             _counterRepository = counterRepository;
+            _counterLibraryRepository = counterLibraryRepository;
             _userRepository = userRepository;
             _twitchApiService = twitchApiService;
             _overlayNotifier = overlayNotifier;
+            _discordService = discordService;
             _logger = logger;
         }
 
@@ -123,6 +130,10 @@ namespace OmniForge.Infrastructure.Services
                             LogValue.Safe(gameId));
                     }
 
+                    // Same game is already active with all configs in place — nothing to do.
+                    // The mod-channel announcement is sent by StreamOnlineHandler (guarded by
+                    // isNewStream) so it only fires once when the stream goes live, not on
+                    // every channel.update (which also triggers for mid-stream title changes).
                     return;
                 }
 
@@ -540,6 +551,50 @@ namespace OmniForge.Infrastructure.Services
             }
 
             await _overlayNotifier.NotifyCounterUpdateAsync(safeUserId, newCounters);
+
+            // Fire-and-forget: Discord notifications are non-critical and should not
+            // delay game switch processing or block EventSub event handling.
+            if (user != null)
+            {
+                var capturedUser = user;
+                var capturedGameName = safeGameName;
+                var capturedUserId = userId;
+                var capturedGameId = gameId;
+
+                // Look up counter library items so alias commands appear in the mod channel notification.
+                IReadOnlyDictionary<string, CounterLibraryItem>? capturedLibraryLookup = null;
+                try
+                {
+                    var libraryItems = await _counterLibraryRepository.ListAsync().ConfigureAwait(false);
+                    capturedLibraryLookup = libraryItems
+                        .ToDictionary(i => i.CounterId, i => i, StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "⚠️ Failed loading counter library for Discord mod notification; aliases will be omitted");
+                }
+
+                var capturedDescriptions = BuildActiveCounterDescriptions(coreSelection, newCustomCountersConfig, capturedLibraryLookup);
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _discordService.SendModChannelNotificationAsync(capturedUser, capturedGameName, capturedDescriptions);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "❌ Failed sending Discord game-change notifications for user {UserId} game {GameId}",
+                            LogValue.Safe(capturedUserId),
+                            LogValue.Safe(capturedGameId));
+                    }
+                });
+            }
+
             _logger.LogInformation(
                 "🔄 Active game switched for user {UserId}: {GameId} ({GameName})",
                 LogValue.Safe(userId),
@@ -677,6 +732,48 @@ namespace OmniForge.Infrastructure.Services
                 Permission = "everyone",
                 Response = string.Empty
             };
+        }
+
+        private static List<string> BuildActiveCounterDescriptions(
+            GameCoreCountersConfig? coreSelection,
+            CustomCounterConfiguration? customCounters,
+            IReadOnlyDictionary<string, CounterLibraryItem>? libraryLookup = null)
+        {
+            var descriptions = new List<string>();
+
+            if (coreSelection != null)
+            {
+                if (coreSelection.DeathsEnabled)
+                    descriptions.Add("\ud83d\udc80 **Deaths** \u2014 `!d`");
+                if (coreSelection.SwearsEnabled)
+                    descriptions.Add("\ud83e\udd2c **Swears** \u2014 `!sw`");
+                if (coreSelection.ScreamsEnabled)
+                    descriptions.Add("\ud83d\ude31 **Screams** \u2014 `!sc`");
+                if (coreSelection.BitsEnabled)
+                    descriptions.Add("\ud83d\udc8e **Bits** \u2014 `!bits`");
+            }
+
+            if (customCounters?.Counters != null)
+            {
+                foreach (var kvp in customCounters.Counters)
+                {
+                    var name = string.IsNullOrWhiteSpace(kvp.Value.Name) ? kvp.Key : kvp.Value.Name;
+                    var icon = string.IsNullOrWhiteSpace(kvp.Value.Icon) ? "\ud83c\udfaf" : kvp.Value.Icon;
+
+                    // Show only the alias command from the counter library when available.
+                    var aliasCmd = (string?)null;
+                    if (libraryLookup != null && libraryLookup.TryGetValue(kvp.Key, out var libraryItem)
+                        && !string.IsNullOrWhiteSpace(libraryItem.AliasCommand))
+                    {
+                        aliasCmd = libraryItem.AliasCommand;
+                    }
+
+                    var command = aliasCmd ?? $"!{kvp.Key}";
+                    descriptions.Add($"{icon} **Custom: {name}** \u2014 `{command}`");
+                }
+            }
+
+            return descriptions;
         }
     }
 }
