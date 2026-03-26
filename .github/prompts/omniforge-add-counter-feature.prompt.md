@@ -61,7 +61,7 @@ For a **custom counter**, do NOT add a fixed property — custom counters go in 
 
 Open `OmniForge.DotNet/src/OmniForge.Infrastructure/Repositories/CounterRepository.cs`.
 
-**Read side** — add to `GetCountersAsync` entity mapping:
+**Read side** — add to `GetCountersAsync` entity mapping. `GetInt32SafeCaseInsensitive` is a private helper method on `CounterRepository` that handles both PascalCase and camelCase Azure Table column names — use it exactly as the existing mappings do:
 
 ```csharp
 MyCounter = GetInt32SafeCaseInsensitive(entity, "MyCounter"),

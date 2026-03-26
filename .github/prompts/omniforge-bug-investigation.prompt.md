@@ -14,7 +14,38 @@ You are investigating a bug in **OmniForge**. Follow this systematic protocol to
 
 ---
 
-## Step 1 — Gather the Symptom
+## Step 1 — Open a GitHub Issue
+
+Before touching any code, open a tracking issue using the GitHub MCP tools (`mcp_github_create_issue`). This gives the bug a number that ties the investigation, commit, and PR together.
+
+**Issue title format:** `bug: <concise description of the symptom>` (e.g., `bug: bot shoutouts bleeding across streams for same broadcaster`)
+
+**Issue body template:**
+
+```markdown
+## Symptom
+<!-- What was expected vs what actually happened -->
+
+## Reproduction Steps
+<!-- Numbered steps to trigger the bug reliably, or "intermittent — cannot reproduce reliably" -->
+
+## Affected Scope
+<!-- One user / all users / admin only / specific feature -->
+
+## Error / Stack Trace
+<!-- Paste exact error text or "none observed" -->
+
+## Notes
+<!-- Deployment or commit when it started, if known -->
+```
+
+Apply the label `bug` if it exists in the repo. Note the issue number — it goes in the commit footer as `Closes: #<number>` (GitHub auto-closes the issue when the PR merges to main).
+
+If the bug is a **security issue** (cross-tenant data access, auth bypass), mark the issue as confidential / private and do not describe the vulnerability publicly until patched.
+
+---
+
+## Step 2 — Gather the Symptom
 
 Before touching any code, collect:
 
@@ -38,7 +69,7 @@ Search the logs for the error message, the affected `UserId`, and the timeframe.
 
 ---
 
-## Step 2 — Multi-Tenancy Audit
+## Step 3 — Multi-Tenancy Audit
 
 The most common class of bugs in OmniForge is **cross-tenant data leakage or missing tenant scoping**. Check immediately:
 
@@ -63,7 +94,7 @@ The most common class of bugs in OmniForge is **cross-tenant data leakage or mis
 
 ---
 
-## Step 3 — Check EventSub Handler Guard
+## Step 4 — Check EventSub Handler Guard
 
 If the bug is in an EventSub handler:
 
@@ -90,7 +121,7 @@ if (!user.Features.MyFlag) return;
 
 ---
 
-## Step 4 — Check for Async Deadlocks
+## Step 5 — Check for Async Deadlocks
 
 Search near the bug for `.Result`, `.Wait()`, `.GetAwaiter().GetResult()`:
 
@@ -107,7 +138,36 @@ In Blazor Server, **all component lifecycle methods must be async** — `async T
 
 ---
 
-## Step 5 — Check Feature Flag Gating
+## Step 6 — Check Bot Service Session State
+
+If a bot service (moderation, reaction, shoutout, scheduled messages) is misbehaving **between streams** — wrong users getting shoutouts, moderation strikes carrying over, duplicate reactions — the likely cause is missing or incorrect session reset.
+
+Check:
+
+1. Is `ResetSession(broadcasterId)` called in `StreamOfflineHandler` for this service?
+2. Is all session state stored in `ConcurrentDictionary` fields keyed by `broadcasterId` — not a global variable or a key that ignores the broadcaster?
+3. Is any `HashSet` inside the dictionary mutated without a lock?
+
+```csharp
+// ✅ Correct — keyed by broadcasterId, cleared on stream end
+private readonly ConcurrentDictionary<string, HashSet<string>> _state = new();
+
+public void ResetSession(string broadcasterId)
+{
+    _state.TryRemove(broadcasterId, out _);
+}
+```
+
+```csharp
+// ❌ Bug — global state bleeds across all broadcasters
+private readonly HashSet<string> _state = new();
+```
+
+If `ResetSession` exists but isn't being called, open `StreamOfflineHandler.cs` and confirm the service is injected and the call is present.
+
+---
+
+## Step 7 — Check Feature Flag Gating
 
 If the bug is "feature is enabled but not working" or "feature is disabled but still accessible":
 
@@ -121,19 +181,19 @@ If the bug is "feature is enabled but not working" or "feature is disabled but s
 
 ---
 
-## Step 6 — Check Discord Notification Issues
+## Step 8 — Check Discord Notification Issues
 
 If Discord messages are not sending, not routing correctly, or send duplicate messages:
 
 1. Is `user.Features.DiscordNotifications` checked before sending?
 2. Is the correct channel selected (default `DiscordChannelId` vs mod `DiscordModChannelId`)?
-3. Is `DiscordNotificationTracker` involved — could deduplication be suppressing the message?
+3. Is `DiscordNotificationTracker` recording failures? Check `GetLastNotification(userId)` — it tracks success/failure of the last send per user, useful for diagnosing repeated failures
 4. Is the embed within Discord limits? (Title ≤256, description ≤4096, field value ≤1024)
 5. Is the bot token valid — check Key Vault access?
 
 ---
 
-## Step 7 — Check Overlay/WebSocket Issues
+## Step 9 — Check Overlay/WebSocket Issues
 
 If overlay events are not reaching the browser, or are reaching the wrong user's overlay:
 
@@ -144,7 +204,7 @@ If overlay events are not reaching the browser, or are reaching the wrong user's
 
 ---
 
-## Step 8 — Write a Failing Test First
+## Step 10 — Write a Failing Test First
 
 Before applying any fix, write a test that demonstrates the bug:
 
@@ -167,7 +227,7 @@ This test becomes a permanent regression guard.
 
 ---
 
-## Step 9 — Apply the Fix
+## Step 11 — Apply the Fix
 
 With the root cause confirmed and a failing test written:
 
@@ -179,7 +239,7 @@ With the root cause confirmed and a failing test written:
 
 ---
 
-## Step 10 — Verify Coverage Still ≥85%
+## Step 12 — Verify Coverage Still ≥85%
 
 ```powershell
 dotnet test OmniForge.DotNet/OmniForge.sln --collect:"XPlat Code Coverage"
@@ -189,7 +249,7 @@ If coverage dropped below 85%, add tests until it is restored before committing.
 
 ---
 
-## Step 11 — Deployment Verification (for production fixes)
+## Step 13 — Deployment Verification (for production fixes)
 
 After deploying:
 
@@ -212,11 +272,14 @@ After deploying:
 | Blazor page hangs on load                    | `.Result` or `.Wait()` deadlock in `OnInitializedAsync`                   |
 | Counter value wrong after rapid clicks       | Race condition — missing optimistic concurrency or upsert ordering        |
 | `NullReferenceException` in EventSub handler | `UnwrapEvent` not called before accessing `eventData.broadcaster_user_id` |
+| Bot behavior bleeding across streams         | `ResetSession` not wired into `StreamOfflineHandler` for this service     |
+| Autoban firing on low-confidence detections  | `SuspiciousUserMessageHandler` not checking `ban_evasion_evaluation == "likely"` |
 
 ---
 
 ## Checklist Before Committing the Fix
 
+- [ ] GitHub issue opened and issue number noted
 - [ ] Root cause confirmed — not just symptom addressed
 - [ ] Multi-tenancy boundary intact — no cross-tenant data accessible
 - [ ] Failing test written that demonstrates the bug
@@ -225,4 +288,5 @@ After deploying:
 - [ ] Coverage still ≥85%
 - [ ] No `.Result`/`.Wait()` introduced
 - [ ] No secrets logged
-- [ ] If security issue: documented as security fix in PR description
+- [ ] Commit footer includes `Closes: #<issue-number>` (auto-closes issue on merge)
+- [ ] If security issue: issue marked private; documented as security fix in PR description

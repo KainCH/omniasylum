@@ -149,6 +149,7 @@ if (!status.Connected) { /* handle gracefully */ }
 | `stream.offline`                                      | `StreamOfflineHandler`          |
 | `channel.subscription.gift`                           | `SubscriptionGiftHandler`       |
 | `channel.subscription.message`                        | `SubscriptionMessageHandler`    |
+| `channel.suspicious_user.message`                     | `SuspiciousUserMessageHandler`  |
 
 ## NuGet Packages in Use
 

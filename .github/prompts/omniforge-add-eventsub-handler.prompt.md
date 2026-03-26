@@ -137,19 +137,9 @@ public class MyEventHandler : BaseEventSubHandler
 
 Open `OmniForge.DotNet/src/OmniForge.Infrastructure/Services/StreamMonitorService.cs`.
 
-Find `CreateSubscriptionsAsync` and add the new subscription call alongside the existing ones:
+The public entry point is `SubscribeToUserAsync(string userId)` / `SubscribeToUserAsAsync(string userId, string actingUserId)`. The private method `SubscribeToUserInternalAsync` is where individual EventSub subscriptions are created via `ITwitchApiService`. Read this private method to understand the existing subscription call pattern, then add yours alongside the existing subscription calls inside it.
 
-```csharp
-await CreateSubscriptionAsync(
-    type: "channel.my_event",
-    version: "1",
-    condition: new Dictionary<string, string> { ["broadcaster_user_id"] = userId },
-    sessionId: sessionId,
-    accessToken: accessToken,
-    userId: userId);
-```
-
-Check if the subscription needs **moderator ID** in the condition (some types require both `broadcaster_user_id` and `user_id` pointing to the bot user).
+The call pattern follows the Twitch API condition shape. Check if the subscription needs a **moderator ID** in the condition. Some types (e.g. `channel.suspicious_user.message`, `channel.chat.message`) require both `broadcaster_user_id` and `user_id` pointing to the bot/moderator user — confirm the exact fields from the Twitch docs before assuming a single-condition subscription.
 
 ---
 
@@ -200,9 +190,31 @@ For handler tests, mock `IServiceScopeFactory` and resolve mocked repositories.
 
 ---
 
-## Step 8 — Verify Subscription Type Is Listed
+## Step 8 — Wire Bot Services (if this event drives automated chat behavior)
 
-Update `OmniForge.DotNet/.github/instructions/twitch.instructions.md` — add the new handler to the **Existing EventSub Subscription Types** table so future work knows this is already handled.
+Many EventSub events trigger bot service calls alongside counter/notification updates. If the event you're handling should trigger automated chat behavior, inject the relevant bot service and call it from `HandleAsync`.
+
+**`IBotReactionService`** — for events that should send a templated chat message:
+```csharp
+// Injected at constructor via IServiceScopeFactory resolve, or directly if handler is Singleton
+await _botReactionService.HandleRaidReceivedAsync(broadcasterId, raiderName, viewerCount);
+await _botReactionService.HandleNewSubAsync(broadcasterId, username, tier);
+await _botReactionService.HandleClipCreatedAsync(broadcasterId, clipUrl);
+```
+
+**`IAutoShoutoutService`** — only called from `ChatMessageHandler`; do not call from other handlers.
+
+**`IBotModerationService`** — only called from `ChatMessageHandler`; do not call from other handlers.
+
+**`IScheduledMessageService`** — only called from `StreamOnlineHandler` (`StartForUser`) and `StreamOfflineHandler` (`StopForUser`).
+
+If you're adding a handler for a subscription event that has a direct bot reaction (raid, sub, gift sub, resub, clip, stream online), check `BotReactionService` for the matching `Handle*Async` method and wire it in.
+
+---
+
+## Step 9 — Verify Subscription Type Is Listed
+
+Update `.github/instructions/twitch.instructions.md` — add the new handler to the **Existing EventSub Subscription Types** table so future work knows this is already handled.
 
 ---
 
@@ -211,8 +223,10 @@ Update `OmniForge.DotNet/.github/instructions/twitch.instructions.md` — add th
 - [ ] Handler class has `[ExcludeFromCodeCoverage]`
 - [ ] `TryGetBroadcasterId` is the first call in `HandleAsync`
 - [ ] Feature flag checked before doing any work
+- [ ] Condition fields confirmed from Twitch docs — single or dual (`broadcaster_user_id` + `user_id`)?
 - [ ] Subscription registered in `StreamMonitorService`
 - [ ] Handler registered as `IEventSubHandler` in `DependencyInjection.cs`
+- [ ] Bot service wired in if this event should trigger automated chat behavior
 - [ ] Tests cover: missing broadcaster, unknown user, disabled feature flag, success, error
 - [ ] No new OAuth scope needed (or: documented and added)
 - [ ] `twitch.instructions.md` table updated
