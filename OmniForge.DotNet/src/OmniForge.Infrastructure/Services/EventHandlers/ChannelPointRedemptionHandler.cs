@@ -172,10 +172,10 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                         }
                 }
 
-            Logger.LogInformation(
-                    "⏭️ Channel point action not implemented. broadcaster_user_id={BroadcasterId}, action={Action}",
-                    broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
-                    (reward.Action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
+                Logger.LogInformation(
+                        "⏭️ Channel point action not implemented. broadcaster_user_id={BroadcasterId}, action={Action}",
+                        broadcasterId.Replace("\r", "\\r").Replace("\n", "\\n"),
+                        (reward.Action ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
             catch (Exception ex)
             {

@@ -319,10 +319,9 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.Contains("Connected", statusCard.TextContent);
-            Assert.Contains("channel.cheer", statusCard.TextContent);
+            // Assert — monitor status is shown via the badge CSS class, not a detail card
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-active", badge.ClassList);
         }
 
         [Fact]
@@ -350,9 +349,9 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.Contains("Disconnected", statusCard.TextContent);
+            // Assert — inactive monitor shown via badge CSS class
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-inactive", badge.ClassList);
         }
 
         [Fact]
@@ -407,9 +406,11 @@ namespace OmniForge.Tests.Components.Pages
         }
 
         [Fact]
-        public void Dashboard_ShouldShowLastDiscordNotification_WhenPresent()
+        public void Dashboard_ShouldRenderWithoutError_WhenLastDiscordNotificationPresent()
         {
-            // Arrange
+            // The detailed monitor status card was replaced by a status badge in the dashboard
+            // redesign. This test verifies the component renders successfully when
+            // LastDiscordNotification is set (no crash / null-ref from the status fetch).
             var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim(ClaimTypes.NameIdentifier, "12345")
             }, "mock"));
@@ -419,22 +420,21 @@ namespace OmniForge.Tests.Components.Pages
             _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
                 .ReturnsAsync(counter);
 
-            var lastNotification = DateTimeOffset.UtcNow.AddMinutes(-5);
+            _mockStreamMonitorService.Setup(x => x.IsUserSubscribed("12345"))
+                .Returns(true);
             _mockStreamMonitorService.Setup(x => x.GetUserConnectionStatus("12345"))
                 .Returns(new StreamMonitorStatus
                 {
                     Connected = true,
-                    LastDiscordNotification = lastNotification,
+                    LastDiscordNotification = DateTimeOffset.UtcNow.AddMinutes(-5),
                     LastDiscordNotificationSuccess = true,
                     Subscriptions = Array.Empty<string>()
                 });
 
-            // Act
+            // Act & Assert — should render with active badge, no exception
             var cut = RenderDashboard();
-
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.DoesNotContain("Never", statusCard.TextContent.Substring(statusCard.TextContent.IndexOf("Last Discord Notification")));
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-active", badge.ClassList);
         }
 
         [Fact]

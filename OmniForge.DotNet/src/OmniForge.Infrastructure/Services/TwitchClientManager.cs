@@ -234,14 +234,16 @@ namespace OmniForge.Infrastructure.Services
 
                 if (!_channelToUserId.TryGetValue(channel, out var userId)) return;
 
-                // 1. Bot moderation (delete/ban before command processing)
+                // 1. Bot moderation — awaited so enforcement (delete/ban) completes before
+                //    command processing. If enforced, skip commands and reactions entirely.
                 if (_botModerationService != null)
-                    FireAndForget(
-                        _botModerationService.CheckAndEnforceAsync(
-                            userId, chatMessage.UserId, chatMessage.Username,
-                            chatMessage.Id, chatMessage.Message,
-                            chatMessage.IsModerator, chatMessage.IsBroadcaster),
-                        "BotModerationService.CheckAndEnforceAsync");
+                {
+                    var enforced = await _botModerationService.CheckAndEnforceAsync(
+                        userId, chatMessage.UserId, chatMessage.Username,
+                        chatMessage.Id, chatMessage.Message,
+                        chatMessage.IsModerator, chatMessage.IsBroadcaster).ConfigureAwait(false);
+                    if (enforced) return;
+                }
 
                 // 2. Dashboard feed
                 _dashboardFeedService?.PushChatMessage(userId, new DashboardChatMessage(

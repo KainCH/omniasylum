@@ -142,9 +142,14 @@ public class AutomodSettingsPageTests : BunitContext
             .ReturnsAsync(new AutomodSettingsDto
             {
                 OverallLevel = null,
-                Aggression = 1, Bullying = 1, Disability = 1, Misogyny = 1,
-                RaceEthnicityOrReligion = 1, SexBasedTerms = 1,
-                SexualitySexOrGender = 1, Swearing = 1
+                Aggression = 1,
+                Bullying = 1,
+                Disability = 1,
+                Misogyny = 1,
+                RaceEthnicityOrReligion = 1,
+                SexBasedTerms = 1,
+                SexualitySexOrGender = 1,
+                Swearing = 1
             });
     }
 

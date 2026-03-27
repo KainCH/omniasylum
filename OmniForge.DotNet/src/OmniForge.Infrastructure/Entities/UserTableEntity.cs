@@ -214,9 +214,11 @@ namespace OmniForge.Infrastructure.Entities
                 discordInviteLink = GetStringSafe(entity, "discordInviteLink"),
                 // Backward-compat: older records may have used different casing/key names.
                 // Defensive: if the value is stored as a non-array JSON value (e.g., "{}"), default to "[]".
-                managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),                autoShoutoutExcludeList = GetJsonArrayStringSafe(entity, "[]", "autoShoutoutExcludeList", "AutoShoutoutExcludeList"),
+                managedStreamers = GetJsonArrayStringSafe(entity, "[]", "managedStreamers", "ManagedStreamers", "managed_streamers"),
+                autoShoutoutExcludeList = GetJsonArrayStringSafe(entity, "[]", "autoShoutoutExcludeList", "AutoShoutoutExcludeList"),
                 botSettings = GetStringSafe(entity, "botSettings", "{}"),
-                botModeration = GetStringSafe(entity, "botModeration", "{}"),                isActive = GetBoolSafe(entity, "isActive", true),
+                botModeration = GetStringSafe(entity, "botModeration", "{}"),
+                isActive = GetBoolSafe(entity, "isActive", true),
                 streamStatus = GetStringSafe(entity, "streamStatus", "offline"),
                 licenseTier = GetStringSafe(entity, "licenseTier", "Free"),
                 licenseExpiresAt = entity.TryGetValue("licenseExpiresAt", out var lea) ? lea : null,

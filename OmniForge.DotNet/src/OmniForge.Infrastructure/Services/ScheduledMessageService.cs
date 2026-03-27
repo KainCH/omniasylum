@@ -17,6 +17,7 @@ namespace OmniForge.Infrastructure.Services
 
         private readonly ConcurrentDictionary<string, Timer> _timers = new();
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _lastFired = new();
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _tickLocks = new();
 
         public ScheduledMessageService(
             ILogger<ScheduledMessageService> logger,
@@ -30,10 +31,16 @@ namespace OmniForge.Infrastructure.Services
 
         public void StartForUser(string broadcasterId)
         {
-            // Ensure last-fired tracking exists
             _lastFired.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
+            _tickLocks.GetOrAdd(broadcasterId, _ => new SemaphoreSlim(1, 1));
 
-            var timer = new Timer(async _ => await TickAsync(broadcasterId), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            var timer = new Timer(async _ =>
+            {
+                var sem = _tickLocks.GetOrAdd(broadcasterId, _ => new SemaphoreSlim(1, 1));
+                if (!await sem.WaitAsync(0).ConfigureAwait(false)) return; // skip overlapping tick
+                try { await TickAsync(broadcasterId).ConfigureAwait(false); }
+                finally { sem.Release(); }
+            }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             var old = _timers.AddOrUpdate(broadcasterId, timer, (_, existing) =>
             {
                 existing.Dispose();
@@ -44,9 +51,12 @@ namespace OmniForge.Infrastructure.Services
         public void StopForUser(string broadcasterId)
         {
             if (_timers.TryRemove(broadcasterId, out var timer))
-            {
                 timer.Dispose();
-            }
+
+            _lastFired.TryRemove(broadcasterId, out _);
+
+            if (_tickLocks.TryRemove(broadcasterId, out var sem))
+                sem.Dispose();
         }
 
         private async Task TickAsync(string broadcasterId)

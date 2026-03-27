@@ -179,6 +179,11 @@ namespace OmniForge.Infrastructure.Services
                         {
                             return;
                         }
+
+                        if (await TryHandleRaidCommandAsync(context, commandText, parts, isMod, sendMessage, scope.ServiceProvider))
+                        {
+                            return;
+                        }
                     }
 
                     if (cmdConfig != null)

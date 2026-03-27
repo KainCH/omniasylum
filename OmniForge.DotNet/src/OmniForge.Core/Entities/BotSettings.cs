@@ -27,7 +27,7 @@ namespace OmniForge.Core.Entities
         // Scheduled / recurring posts
         public List<ScheduledMessageEntry> ScheduledMessages { get; set; } = new();
 
-        // Configurable link / social commands (key = "!discord", value = response string)
+        // Configurable link / social commands (key = "discord" without leading '!', value = response string)
         public Dictionary<string, string> LinkCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

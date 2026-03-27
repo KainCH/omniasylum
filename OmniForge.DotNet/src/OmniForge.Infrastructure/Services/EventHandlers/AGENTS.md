@@ -7,7 +7,7 @@ This directory contains all Twitch EventSub subscription handlers. Each file han
 Every handler in this directory:
 - Extends `BaseEventSubHandler` (in this directory)
 - Overrides `SubscriptionType` with the exact Twitch subscription type string
-- Is decorated with `[ExcludeFromCodeCoverage]` — dispatch I/O, not business logic
+- New handlers should be decorated with `[ExcludeFromCodeCoverage]` — dispatch I/O, not business logic. Note: some older handlers in this folder predate this convention and do not have the attribute.
 - Calls `TryGetBroadcasterId` as the **first meaningful operation** in `HandleAsync`
 - Uses `IServiceScopeFactory` to resolve scoped services (handlers are Singletons)
 - Checks the relevant `user.Features.*` flag before doing any work

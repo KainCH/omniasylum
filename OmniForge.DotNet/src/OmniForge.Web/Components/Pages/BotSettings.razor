@@ -36,7 +36,8 @@ else if (botSettings != null)
 
   <p class="text-muted mb-4">
     Configure automatic messages your bot sends in chat. Leave a field blank to disable that response.
-    Tokens: <code>{username}</code>, <code>{viewers}</code>, <code>{raiders}</code>, <code>{count}</code>.
+    Tokens: <code>{username}</code>, <code>{viewers}</code>, <code>{raider}</code>, <code>{count}</code>,
+    <code>{months}</code>, <code>{tier}</code>, <code>{gifter}</code>, <code>{url}</code>.
   </p>
 
   <!-- Event Messages -->
@@ -291,6 +292,7 @@ else if (botSettings != null)
     if (botSettings == null) return;
     var normalised = newKey.Trim().TrimStart('!').ToLowerInvariant();
     if (string.IsNullOrEmpty(normalised) || normalised == oldKey) return;
+    if (botSettings.LinkCommands.ContainsKey(normalised)) return; // prevent silent overwrite
     var value = botSettings.LinkCommands.TryGetValue(oldKey, out var v) ? v : string.Empty;
     botSettings.LinkCommands.Remove(oldKey);
     botSettings.LinkCommands[normalised] = value;

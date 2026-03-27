@@ -14,17 +14,20 @@ public class BotModerationServiceTests
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
     private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+    private readonly Mock<ITwitchClientManager> _mockTwitchClientManager;
     private readonly BotModerationService _sut;
 
     public BotModerationServiceTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
         _mockTwitchApiService = new Mock<ITwitchApiService>();
+        _mockTwitchClientManager = new Mock<ITwitchClientManager>();
 
         // Build a real DI scope containing the mocked services
         var services = new ServiceCollection();
         services.AddScoped<IUserRepository>(_ => _mockUserRepository.Object);
         services.AddScoped<ITwitchApiService>(_ => _mockTwitchApiService.Object);
+        services.AddScoped<ITwitchClientManager>(_ => _mockTwitchClientManager.Object);
         var provider = services.BuildServiceProvider();
 
         var mockScope = new Mock<IServiceScope>();
@@ -235,7 +238,7 @@ public class BotModerationServiceTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CheckAndEnforce_LinkGuardEnabled_DisallowedUrl_FirstViolation_DeletesAndMarksSuspicious()
+    public async Task CheckAndEnforce_LinkGuardEnabled_DisallowedUrl_FirstViolation_DeletesAndWarns()
     {
         _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster1"))
             .ReturnsAsync(new User
@@ -252,7 +255,7 @@ public class BotModerationServiceTests
             "Check out badsite.com", isMod: false, isBroadcaster: false);
 
         _mockTwitchApiService.Verify(s => s.DeleteChatMessageAsync("broadcaster1", "msg1"), Times.Once);
-        _mockTwitchApiService.Verify(s => s.MarkUserSuspiciousAsync("broadcaster1", "chatter1"), Times.Once);
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster1", It.Is<string>(m => m.Contains("chatterlogin"))), Times.Once);
         _mockTwitchApiService.Verify(s => s.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
@@ -278,7 +281,7 @@ public class BotModerationServiceTests
         await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "chatterlogin", "msg2",
             "http://spam2.com/promo", isMod: false, isBroadcaster: false);
 
-        _mockTwitchApiService.Verify(s => s.MarkUserSuspiciousAsync("broadcaster1", "chatter1"), Times.Once);
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster1", It.IsAny<string>()), Times.Once);
         _mockTwitchApiService.Verify(s => s.BanUserAsync("broadcaster1", "chatter1", It.IsAny<string>()), Times.Once);
     }
 
@@ -344,16 +347,16 @@ public class BotModerationServiceTests
         // Accumulate one violation
         await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "chatterlogin", "msg1",
             "http://badsite.com", isMod: false, isBroadcaster: false);
-        _mockTwitchApiService.Verify(s => s.MarkUserSuspiciousAsync("broadcaster1", "chatter1"), Times.Once);
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster1", It.IsAny<string>()), Times.Once);
 
         // Reset session
         _sut.ResetSession("broadcaster1");
 
-        // Post-reset: same chatter posts a link — should only mark suspicious again (not ban)
+        // Post-reset: same chatter posts a link — strike count is 1 again, should warn (not ban)
         await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "chatterlogin", "msg2",
             "http://badsite.com", isMod: false, isBroadcaster: false);
 
-        _mockTwitchApiService.Verify(s => s.MarkUserSuspiciousAsync("broadcaster1", "chatter1"), Times.Exactly(2));
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster1", It.IsAny<string>()), Times.Exactly(2));
         _mockTwitchApiService.Verify(s => s.BanUserAsync("broadcaster1", "chatter1", It.IsAny<string>()), Times.Never);
     }
 

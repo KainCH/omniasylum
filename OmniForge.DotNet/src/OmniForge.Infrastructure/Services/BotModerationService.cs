@@ -26,25 +26,26 @@ namespace OmniForge.Infrastructure.Services
             _scopeFactory = scopeFactory;
         }
 
-        public async Task CheckAndEnforceAsync(string broadcasterId, string chatterId, string chatterLogin,
+        public async Task<bool> CheckAndEnforceAsync(string broadcasterId, string chatterId, string chatterLogin,
             string messageId, string message, bool isMod, bool isBroadcaster)
         {
-            if (isMod || isBroadcaster) return;
+            if (isMod || isBroadcaster) return false;
 
             using var scope = _scopeFactory.CreateScope();
             var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
             var twitchApiService = scope.ServiceProvider.GetRequiredService<ITwitchApiService>();
+            var twitchClientManager = scope.ServiceProvider.GetRequiredService<ITwitchClientManager>();
 
             var user = await userRepository.GetUserAsync(broadcasterId);
             var settings = user?.BotModeration;
-            if (settings == null) return;
+            if (settings == null) return false;
 
             if (settings.AntiCapsEnabled && IsCapSpam(message, settings.CapsPercentThreshold, settings.CapsMinMessageLength))
             {
                 _logger.LogInformation("Caps spam detected from {Login} in {Broadcaster}", chatterLogin, broadcasterId);
                 await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
                 await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Caps spam bot detection");
-                return;
+                return true;
             }
 
             if (settings.AntiSymbolSpamEnabled && IsSymbolSpam(message, settings.SymbolPercentThreshold))
@@ -52,7 +53,7 @@ namespace OmniForge.Infrastructure.Services
                 _logger.LogInformation("Symbol spam detected from {Login} in {Broadcaster}", chatterLogin, broadcasterId);
                 await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
                 await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Symbol spam bot detection");
-                return;
+                return true;
             }
 
             if (settings.LinkGuardEnabled && ContainsDisallowedUrl(message, settings.AllowedDomains))
@@ -70,9 +71,14 @@ namespace OmniForge.Infrastructure.Services
                 }
                 else
                 {
-                    await twitchApiService.MarkUserSuspiciousAsync(broadcasterId, chatterId);
+                    await twitchClientManager.SendMessageAsync(broadcasterId,
+                        $"@{chatterLogin} Please do not post unsolicited links. Next offense will result in a ban.");
+                    _logger.LogInformation("Warned {Login} for link posting in {Broadcaster}", chatterLogin, broadcasterId);
                 }
+                return true;
             }
+
+            return false;
         }
 
         public void ResetSession(string broadcasterId)
@@ -111,11 +117,31 @@ namespace OmniForge.Infrastructure.Services
 
             foreach (System.Text.RegularExpressions.Match m in matches)
             {
-                var url = m.Value.ToLowerInvariant();
+                var rawUrl = m.Value;
+                if (!rawUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    rawUrl = "https://" + rawUrl;
+
+                if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                    return true; // unparseable URL — treat as disallowed
+
+                var host = uri.Host.ToLowerInvariant().TrimStart('w').TrimStart('w').TrimStart('w').TrimStart('.');
+                // Re-extract cleanly
+                host = uri.Host.ToLowerInvariant();
+                if (host.StartsWith("www.")) host = host[4..];
+
                 bool allowed = false;
                 foreach (var domain in allowedDomains)
                 {
-                    if (url.Contains(domain.ToLowerInvariant())) { allowed = true; break; }
+                    var normalised = domain.ToLowerInvariant().TrimStart('w').TrimStart('.');
+                    normalised = domain.ToLowerInvariant();
+                    if (normalised.StartsWith("www.")) normalised = normalised[4..];
+
+                    // Exact match or subdomain (host == domain or host ends with .domain)
+                    if (host == normalised || host.EndsWith("." + normalised))
+                    {
+                        allowed = true;
+                        break;
+                    }
                 }
                 if (!allowed) return true;
             }
