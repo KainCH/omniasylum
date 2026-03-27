@@ -44,7 +44,7 @@ Search the codebase for:
 - `DiscordService` — Infrastructure implementation; handles template resolution and channel routing
 - `IDiscordBotClient` / `DiscordNetBotClient` — low-level Discord.Net wrapper
 - `DiscordEnabledNotifications` — per-user toggles for each notification type
-- `DiscordNotificationTracker` — deduplication to prevent spam
+- `DiscordNotificationTracker` — records success/failure of notifications per user (`RecordNotification`, `GetLastNotification`); used for monitoring, not for deduplication
 
 **Architecture rules:**
 
@@ -96,10 +96,7 @@ public async Task SendMyNewNotificationAsync(User user, string relevantData)
         : user.DiscordChannelId;
     if (string.IsNullOrEmpty(channelId)) return;
 
-    // 3. Deduplication check (if this notification can fire repeatedly for same event)
-    // if (!_notificationTracker.ShouldSend(user.TwitchUserId, "my_new_type", relevantData)) return;
-
-    // 4. Build embed — respect Discord limits (title ≤256, description ≤4096, field value ≤1024)
+    // 3. Build embed — respect Discord limits (title ≤256, description ≤4096, field value ≤1024)
     var embed = new EmbedBuilder()
         .WithTitle("Your Title Here 🎮")          // ≤256 chars
         .WithDescription($"Description here")      // ≤4096 chars
@@ -109,9 +106,15 @@ public async Task SendMyNewNotificationAsync(User user, string relevantData)
         .Build();
 
     // 5. Send via bot client
+    // Signature: SendMessageAsync(channelId, botToken, content, embed, components, allowedMentions)
     try
     {
-        await _botClient.SendMessageAsync(channelId, _settings.BotToken, embed: embed,
+        await _botClient.SendMessageAsync(
+            channelId,
+            _discordBotSettings.BotToken,
+            content: null,
+            embed: embed,
+            components: null,
             allowedMentions: AllowedMentions.None);
         _logger.LogInformation("✅ MyNewNotification sent for {User}", user.Username);
     }

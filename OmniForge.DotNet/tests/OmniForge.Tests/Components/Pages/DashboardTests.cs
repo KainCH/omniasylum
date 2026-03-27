@@ -27,6 +27,8 @@ namespace OmniForge.Tests.Components.Pages
         private readonly Mock<IStreamMonitorService> _mockStreamMonitorService;
         private readonly Mock<IOverlayNotifier> _mockOverlayNotifier;
         private readonly Mock<ISeriesRepository> _mockSeriesRepository;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly Mock<IDashboardFeedService> _mockDashboardFeedService;
         private readonly MockAuthenticationStateProvider _authProvider;
         private readonly Mock<IAuthorizationService> _mockAuthorizationService;
 
@@ -37,8 +39,19 @@ namespace OmniForge.Tests.Components.Pages
             _mockStreamMonitorService = new Mock<IStreamMonitorService>();
             _mockOverlayNotifier = new Mock<IOverlayNotifier>();
             _mockSeriesRepository = new Mock<ISeriesRepository>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
+            _mockDashboardFeedService = new Mock<IDashboardFeedService>();
             _authProvider = new MockAuthenticationStateProvider();
             _mockAuthorizationService = new Mock<IAuthorizationService>();
+
+            // IDashboardFeedService.Subscribe returns a no-op disposable
+            _mockDashboardFeedService
+                .Setup(x => x.Subscribe(It.IsAny<string>(), It.IsAny<Action<DashboardChatMessage>>(),
+                    It.IsAny<Action<DashboardEvent>>(), It.IsAny<Action<bool>>()))
+                .Returns(Mock.Of<IDisposable>());
+            _mockDashboardFeedService
+                .Setup(x => x.GetLiveStatus(It.IsAny<string>()))
+                .Returns(false);
 
             Services.AddSingleton(_mockCounterRepository.Object);
             Services.AddSingleton(_mockUserRepository.Object);
@@ -46,6 +59,8 @@ namespace OmniForge.Tests.Components.Pages
             Services.AddSingleton(_mockOverlayNotifier.Object);
             Services.AddSingleton(_mockSeriesRepository.Object);
             Services.AddSingleton(new Mock<ISyncAgentTracker>().Object);
+            Services.AddSingleton(_mockTwitchApiService.Object);
+            Services.AddSingleton(_mockDashboardFeedService.Object);
             Services.AddSingleton<AuthenticationStateProvider>(_authProvider);
 
             // Add core authorization services (PolicyProvider, etc.)
@@ -69,6 +84,7 @@ namespace OmniForge.Tests.Components.Pages
             ComponentFactories.AddStub<AlertEffectsModal>();
             ComponentFactories.AddStub<DiscordWebhookSettingsModal>();
             ComponentFactories.AddStub<AlertsManagerModal>();
+            ComponentFactories.AddStub<AutoShoutoutSettingsModal>();
         }
 
         private IRenderedComponent<Dashboard> RenderDashboard()
@@ -303,10 +319,9 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.Contains("Connected", statusCard.TextContent);
-            Assert.Contains("channel.cheer", statusCard.TextContent);
+            // Assert — monitor status is shown via the badge CSS class, not a detail card
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-active", badge.ClassList);
         }
 
         [Fact]
@@ -334,9 +349,9 @@ namespace OmniForge.Tests.Components.Pages
             // Act
             var cut = RenderDashboard();
 
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.Contains("Disconnected", statusCard.TextContent);
+            // Assert — inactive monitor shown via badge CSS class
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-inactive", badge.ClassList);
         }
 
         [Fact]
@@ -391,9 +406,11 @@ namespace OmniForge.Tests.Components.Pages
         }
 
         [Fact]
-        public void Dashboard_ShouldShowLastDiscordNotification_WhenPresent()
+        public void Dashboard_ShouldRenderWithoutError_WhenLastDiscordNotificationPresent()
         {
-            // Arrange
+            // The detailed monitor status card was replaced by a status badge in the dashboard
+            // redesign. This test verifies the component renders successfully when
+            // LastDiscordNotification is set (no crash / null-ref from the status fetch).
             var user = new ClaimsPrincipal(new ClaimsIdentity(new[] {
                 new Claim(ClaimTypes.NameIdentifier, "12345")
             }, "mock"));
@@ -403,22 +420,21 @@ namespace OmniForge.Tests.Components.Pages
             _mockCounterRepository.Setup(x => x.GetCountersAsync("12345"))
                 .ReturnsAsync(counter);
 
-            var lastNotification = DateTimeOffset.UtcNow.AddMinutes(-5);
+            _mockStreamMonitorService.Setup(x => x.IsUserSubscribed("12345"))
+                .Returns(true);
             _mockStreamMonitorService.Setup(x => x.GetUserConnectionStatus("12345"))
                 .Returns(new StreamMonitorStatus
                 {
                     Connected = true,
-                    LastDiscordNotification = lastNotification,
+                    LastDiscordNotification = DateTimeOffset.UtcNow.AddMinutes(-5),
                     LastDiscordNotificationSuccess = true,
                     Subscriptions = Array.Empty<string>()
                 });
 
-            // Act
+            // Act & Assert — should render with active badge, no exception
             var cut = RenderDashboard();
-
-            // Assert
-            var statusCard = cut.Find(".monitor-status-card");
-            Assert.DoesNotContain("Never", statusCard.TextContent.Substring(statusCard.TextContent.IndexOf("Last Discord Notification")));
+            var badge = cut.Find(".monitor-status-badge");
+            Assert.Contains("status-active", badge.ClassList);
         }
 
         [Fact]

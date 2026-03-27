@@ -24,6 +24,7 @@ namespace OmniForge.Core.Interfaces
 
         // Moderation
         Task<TwitchModeratorsResponse> GetModeratorsAsync(string broadcasterId, string broadcasterAccessToken, CancellationToken cancellationToken = default);
+        Task BanUserAsync(string broadcasterId, string userId, string reason);
 
         // AutoMod settings
         Task<AutomodSettingsDto> GetAutomodSettingsAsync(string userId);
@@ -35,6 +36,19 @@ namespace OmniForge.Core.Interfaces
 
         // User Lookup
         Task<TwitchUserDto?> GetUserByLoginAsync(string login, string actingUserId);
+
+        // Raid
+        Task<IReadOnlyList<RaidTargetDto>> GetFollowedLiveStreamsAsync(string userId, int first = 20);
+        Task<IReadOnlyList<RaidTargetDto>> GetStreamsByGameIdAsync(string userId, string gameId, int first = 20);
+        Task<bool> StartRaidAsync(string fromBroadcasterId, string toBroadcasterId);
+
+        // Auto-shoutout
+        Task<bool> IsFollowingAsync(string broadcasterId, string targetUserId);
+        Task<bool> SendShoutoutAsync(string fromBroadcasterId, string toUserId);
+
+        // Bot moderation
+        Task<bool> DeleteChatMessageAsync(string broadcasterId, string messageId);
+        Task<bool> MarkUserSuspiciousAsync(string broadcasterId, string userId);
     }
 
     public class TwitchModeratorsResponse
@@ -98,6 +112,16 @@ namespace OmniForge.Core.Interfaces
     {
         public string Id { get; set; } = string.Empty;
         public string EditUrl { get; set; } = string.Empty;
+    }
+
+    public class RaidTargetDto
+    {
+        public string BroadcasterId { get; set; } = string.Empty;
+        public string BroadcasterLogin { get; set; } = string.Empty;
+        public string BroadcasterName { get; set; } = string.Empty;
+        public string GameId { get; set; } = string.Empty;
+        public string GameName { get; set; } = string.Empty;
+        public int ViewerCount { get; set; }
     }
 
     public class CreateRewardRequest

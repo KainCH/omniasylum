@@ -57,7 +57,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     return;
                 }
 
-                await HandleNoticeTypeAsync(payload, broadcasterId, chatterName, noticeType, overlayNotifier);
+                var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+                var botReaction = scope.ServiceProvider.GetService<IBotReactionService>();
+                await HandleNoticeTypeAsync(payload, broadcasterId, chatterName, noticeType, overlayNotifier, feedService, botReaction);
             }
             catch (Exception ex)
             {
@@ -70,12 +72,21 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             string broadcasterId,
             string chatterName,
             string noticeType,
-            IOverlayNotifier overlayNotifier)
+            IOverlayNotifier overlayNotifier,
+            IDashboardFeedService? feedService = null,
+            IBotReactionService? botReaction = null)
         {
             switch (noticeType)
             {
                 case "sub":
                     await HandleSubNoticeAsync(eventData, broadcasterId, chatterName, overlayNotifier);
+                    if (eventData.TryGetProperty("sub", out var subFeedProp))
+                    {
+                        string tierRaw = GetStringProperty(subFeedProp, "sub_plan", GetStringProperty(subFeedProp, "sub_tier", "1000"));
+                        string tier = GetReadableTier(tierRaw);
+                        feedService?.PushEvent(broadcasterId, new DashboardEvent("sub", $"⭐ {chatterName} subscribed! ({tier})", DateTimeOffset.UtcNow));
+                        if (botReaction != null) await botReaction.HandleNewSubAsync(broadcasterId, chatterName, tier);
+                    }
                     break;
 
                 case "resub":

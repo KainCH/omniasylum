@@ -1710,4 +1710,234 @@ namespace OmniForge.Tests.EventHandlers
             _mockOverlayNotifier.Verify(x => x.NotifyCounterUpdateAsync("123", updatedCounters), Times.Once);
         }
     }
+
+    public class SuspiciousUserMessageHandlerTests
+    {
+        private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
+        private readonly Mock<IServiceScope> _mockScope;
+        private readonly Mock<IServiceProvider> _mockServiceProvider;
+        private readonly Mock<ILogger<SuspiciousUserMessageHandler>> _mockLogger;
+        private readonly Mock<IUserRepository> _mockUserRepository;
+        private readonly Mock<ITwitchApiService> _mockTwitchApiService;
+        private readonly Mock<IBotCredentialRepository> _mockBotCredentialRepository;
+        private readonly SuspiciousUserMessageHandler _handler;
+
+        public SuspiciousUserMessageHandlerTests()
+        {
+            _mockScopeFactory = new Mock<IServiceScopeFactory>();
+            _mockScope = new Mock<IServiceScope>();
+            _mockServiceProvider = new Mock<IServiceProvider>();
+            _mockLogger = new Mock<ILogger<SuspiciousUserMessageHandler>>();
+            _mockUserRepository = new Mock<IUserRepository>();
+            _mockTwitchApiService = new Mock<ITwitchApiService>();
+            _mockBotCredentialRepository = new Mock<IBotCredentialRepository>();
+
+            _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
+            _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IUserRepository))).Returns(_mockUserRepository.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(ITwitchApiService))).Returns(_mockTwitchApiService.Object);
+            _mockServiceProvider.Setup(x => x.GetService(typeof(IBotCredentialRepository))).Returns(_mockBotCredentialRepository.Object);
+
+            // Default: bot credentials available.
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync(new BotCredentials
+            {
+                UserId = "bot-999",
+                Username = "omniforge_bot",
+                AccessToken = "bot-token",
+                RefreshToken = "bot-refresh",
+                TokenExpiry = DateTimeOffset.UtcNow.AddHours(1)
+            });
+
+            _handler = new SuspiciousUserMessageHandler(_mockScopeFactory.Object, _mockLogger.Object);
+        }
+
+        private void SetupBroadcasterWithFeature(string broadcasterId, bool autoBanEvaders)
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync(broadcasterId)).ReturnsAsync(new User
+            {
+                TwitchUserId = broadcasterId,
+                Features = new FeatureFlags { AutoBanEvaders = autoBanEvaders }
+            });
+        }
+
+        private static JsonElement MakeSuspiciousUserPayload(
+            string broadcasterId = "broadcaster-123",
+            string userId = "evader-456",
+            string userLogin = "evil_user",
+            string banEvasionEvaluation = "likely",
+            string[]? types = null)
+        {
+            types ??= new[] { "ban_evader" };
+            var typesJson = string.Join(", ", types.Select(t => $"\"{t}\""));
+            var json = $$"""
+                {
+                    "broadcaster_user_id": "{{broadcasterId}}",
+                    "broadcaster_user_login": "broadcaster",
+                    "broadcaster_user_name": "Broadcaster",
+                    "user_id": "{{userId}}",
+                    "user_login": "{{userLogin}}",
+                    "user_name": "EvilUser",
+                    "low_trust_status": "active_monitoring",
+                    "types": [{{typesJson}}],
+                    "ban_evasion_evaluation": "{{banEvasionEvaluation}}",
+                    "message": { "message_id": "msg-1", "text": "hi" }
+                }
+                """;
+            return JsonDocument.Parse(json).RootElement;
+        }
+
+        [Fact]
+        public void SubscriptionType_ShouldBeChannelSuspiciousUserMessage()
+        {
+            Assert.Equal("channel.suspicious_user.message", _handler.SubscriptionType);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenLikelyBanEvaderAndFeatureEnabled_ShouldBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload());
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync("broadcaster-123", "evader-456", It.IsAny<string>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenLikelyBanEvaderAndFeatureEnabled_ShouldSendChatAnnouncement()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload(userLogin: "evil_user"));
+
+            _mockTwitchApiService.Verify(
+                x => x.SendChatMessageAsBotAsync("broadcaster-123", "bot-999", It.Is<string>(m => m.Contains("evil_user")), null),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBotCredentialsMissingForAnnouncement_ShouldStillBanWithoutThrowing()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+            _mockBotCredentialRepository.Setup(x => x.GetAsync()).ReturnsAsync((BotCredentials?)null);
+
+            var ex = await Record.ExceptionAsync(() => _handler.HandleAsync(MakeSuspiciousUserPayload()));
+
+            Assert.Null(ex);
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync("broadcaster-123", "evader-456", It.IsAny<string>()),
+                Times.Once);
+            _mockTwitchApiService.Verify(
+                x => x.SendChatMessageAsBotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenFeatureDisabled_ShouldNotBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: false);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload());
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBanEvasionEvaluationIsPossible_ShouldNotBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload(banEvasionEvaluation: "possible"));
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenTypesDoesNotContainBanEvader_ShouldNotBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload(types: new[] { "manually_added" }));
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBroadcasterIdMissing_ShouldReturnEarly()
+        {
+            var eventData = JsonDocument.Parse("""{"user_id":"evader-456","ban_evasion_evaluation":"likely","types":["ban_evader"]}""").RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockUserRepository.Verify(x => x.GetUserAsync(It.IsAny<string>()), Times.Never);
+            _mockTwitchApiService.Verify(x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenBroadcasterNotFoundInDatabase_ShouldNotBanUser()
+        {
+            _mockUserRepository.Setup(x => x.GetUserAsync("broadcaster-123")).ReturnsAsync((User?)null);
+
+            await _handler.HandleAsync(MakeSuspiciousUserPayload());
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenTypesArrayMissing_ShouldNotBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            var json = """
+                {
+                    "broadcaster_user_id": "broadcaster-123",
+                    "user_id": "evader-456",
+                    "user_login": "evil_user",
+                    "ban_evasion_evaluation": "likely"
+                }
+                """;
+            var eventData = JsonDocument.Parse(json).RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_WhenWrappedInEventEnvelope_ShouldUnwrapAndBanUser()
+        {
+            SetupBroadcasterWithFeature("broadcaster-123", autoBanEvaders: true);
+
+            var json = """
+                {
+                    "subscription": { "type": "channel.suspicious_user.message" },
+                    "event": {
+                        "broadcaster_user_id": "broadcaster-123",
+                        "user_id": "evader-456",
+                        "user_login": "evil_user",
+                        "ban_evasion_evaluation": "likely",
+                        "types": ["ban_evader"]
+                    }
+                }
+                """;
+            var eventData = JsonDocument.Parse(json).RootElement;
+
+            await _handler.HandleAsync(eventData);
+
+            _mockTwitchApiService.Verify(
+                x => x.BanUserAsync("broadcaster-123", "evader-456", It.IsAny<string>()),
+                Times.Once);
+        }
+    }
 }

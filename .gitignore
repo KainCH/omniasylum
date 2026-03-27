@@ -67,3 +67,4 @@ coverage/
 # admin stuff
 .riress-streaming/
 admin-tools/
+.claude/settings.local.json

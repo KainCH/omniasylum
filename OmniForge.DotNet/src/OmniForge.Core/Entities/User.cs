@@ -34,6 +34,9 @@ namespace OmniForge.Core.Entities
         public DateTimeOffset LastLogin { get; set; }
         public LicenseTier LicenseTier { get; set; } = LicenseTier.Free;
         public DateTimeOffset? LicenseExpiresAt { get; set; }
+        public List<string> AutoShoutoutExcludeList { get; set; } = new();
+        public BotSettings BotSettings { get; set; } = new BotSettings();
+        public BotModerationSettings BotModeration { get; set; } = new BotModerationSettings();
     }
 
     public class FeatureFlags
@@ -51,6 +54,7 @@ namespace OmniForge.Core.Entities
         public bool StreamAlerts { get; set; } = true;
         public bool SceneSync { get; set; } = false;
         public bool OverlayV2 { get; set; } = false;
+        public bool AutoBanEvaders { get; set; } = false;
         public StreamSettings StreamSettings { get; set; } = new StreamSettings();
     }
 

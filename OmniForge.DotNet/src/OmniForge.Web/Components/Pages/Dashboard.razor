@@ -15,289 +15,413 @@
 @inject NavigationManager NavigationManager
 @inject IStreamMonitorService StreamMonitorService
 @inject IOverlayNotifier OverlayNotifier
+@inject IDashboardFeedService DashboardFeedService
+@inject ITwitchApiService TwitchApiService
 @implements IDisposable
 
-<PageTitle>Dashboard</PageTitle>
+<PageTitle>Channel Control System</PageTitle>
 
-<div class="stream-counter-container">
-  <h1>Stream Counter</h1>
+<div class="dashboard-layout">
+  <div class="dashboard-main-col">
+    <div class="stream-counter-container">
+      <span class="monitor-status-badge @(isMonitoring ? "status-active" : "status-inactive")"
+            title="@(isMonitoring ? "Monitor Active" : "Monitor Inactive")">
+        <i class="bi bi-circle-fill"></i>
+      </span>
+      <h1>Channel Control System</h1>
 
-  <AuthorizeView>
-    <Authorized>
-      @if (!hasAccess)
-      {
-        <div class="alert alert-danger mt-3" role="alert">
-          @(accessDeniedMessage ?? "Access denied.")
-        </div>
-      }
-      else
-        @if (counter == null)
-        {
-          <p><em>Loading counters...</em></p>
-        }
-        else
-        {
-          <div class="current-game mb-3">
-            <span class="current-game-label">Current Game:</span>
-            <span class="current-game-name">@(string.IsNullOrEmpty(counter.LastCategoryName) ? "Not set" :
-                        counter.LastCategoryName)</span>
+      <AuthorizeView>
+        <Authorized>
+          @if (!hasAccess)
+          {
+            <div class="alert alert-danger mt-3" role="alert">
+              @(accessDeniedMessage ?? "Access denied.")
             </div>
-
-            <div class="counter-list">
-              @if (overlaySettings?.Counters?.Deaths != false)
-              {
-                <div class="counter-item" data-counter="deaths">
-                  <span class="counter-name">Deaths</span>
-                  <span class="counter-value">@counter.Deaths</span>
-                </div>
-              }
-              @if (overlaySettings?.Counters?.Swears != false)
-              {
-                <div class="counter-item" data-counter="swears">
-                  <span class="counter-name">Swears</span>
-                  <span class="counter-value">@counter.Swears</span>
-                </div>
-              }
-              @if (overlaySettings?.Counters?.Screams != false)
-              {
-                <div class="counter-item" data-counter="screams">
-                  <span class="counter-name">Screams</span>
-                  <span class="counter-value">@counter.Screams</span>
-                </div>
-              }
-              @if (overlaySettings?.Counters?.Bits == true)
-              {
-                <div class="counter-item" data-counter="bits">
-                  <span class="counter-name">Bits</span>
-                  <span class="counter-value">@counter.Bits</span>
-                </div>
-              }
-              @foreach (var kvp in counter.CustomCounters)
-              {
-                <div class="counter-item" data-counter="@kvp.Key.ToLower()">
-                  <span class="counter-name">@kvp.Key</span>
-                  <span class="counter-value">@kvp.Value</span>
-                </div>
-              }
-            </div>
-
-            if (!string.IsNullOrEmpty(errorMessage))
+          }
+          else
+            @if (counter == null)
             {
-              <div class="alert alert-danger mt-3" role="alert">
-                @errorMessage
-              </div>
+              <p><em>Loading counters...</em></p>
             }
-            else if (!string.IsNullOrEmpty(overlaySaveError))
+            else
             {
-              <div class="alert alert-warning mt-3" role="alert">
-                @overlaySaveError
-              </div>
-            }
+              <div class="current-game mb-3">
+                <span class="current-game-label">Current Game:</span>
+                <span class="current-game-name">@(string.IsNullOrEmpty(counter.LastCategoryName) ? "Not set" :
+                                                                      counter.LastCategoryName)</span>
+                </div>
 
-            <div class="controls-section">
-              <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
-                <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
-                <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
-              </button>
-              <button class="btn-custom btn-warning" @onclick="ResetCountersAsync" disabled="@resettingCounters">
-                @if (resettingCounters)
+
+
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                  <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                  <div class="alert alert-danger mt-3" role="alert">
+                    @errorMessage
+                  </div>
                 }
-                <i class="bi bi-arrow-counterclockwise"></i> Reset Counters
-              </button>
-              <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
-                <i class="bi bi-gear-fill"></i> Settings
-              </button>
-              <button class="btn-custom btn-settings" @onclick="() => showTimerSettings = true" title="Timer Settings">
-                <i class="bi bi-stopwatch"></i> Timer
-              </button>
-            </div>
+                else if (!string.IsNullOrEmpty(overlaySaveError))
+                {
+                  <div class="alert alert-warning mt-3" role="alert">
+                    @overlaySaveError
+                  </div>
+                }
 
-            @if (monitorStatus != null)
-            {
-              <div class="monitor-status-card mt-4 p-3 border rounded bg-body-secondary">
-                <h5><i class="bi bi-activity"></i> Monitor Status</h5>
-                <div class="row">
-                  <div class="col-md-6">
-                    <p>
-                      <strong>Status:</strong>
-                      <span class="badge @(monitorStatus.Connected ? "bg-success" : "bg-danger")">
-                        @(monitorStatus.Connected ? "Connected" : "Disconnected")
-                      </span>
-                    </p>
-                    <p>
-                      <strong>Monitoring You:</strong>
-                      <span class="badge @(isMonitoring ? "bg-success" : "bg-secondary")">
-                        @(isMonitoring ? "Yes" : "No")
-                      </span>
-                    </p>
-                  </div>
-                  <div class="col-md-6">
-                    <p>
-                      <strong>Subscriptions:</strong>
-                      @if (monitorStatus.Subscriptions != null && monitorStatus.Subscriptions.Any())
-                      {
-                        @foreach (var sub in monitorStatus.Subscriptions)
-                        {
-                          <span class="badge bg-info text-dark me-1">@sub</span>
-                        }
-                      }
-                      else
-                      {
-                        <span class="text-muted">None</span>
-                      }
-                    </p>
-                    <p>
-                      <strong>Last Discord Notification:</strong>
-                      @if (monitorStatus.LastDiscordNotification.HasValue)
-                      {
-                        <span class="@(monitorStatus.LastDiscordNotificationSuccess ? "text-success" : "text-danger")">
-                          @monitorStatus.LastDiscordNotification.Value.ToLocalTime().ToString("g")
-                          <i
-                          class="bi @(monitorStatus.LastDiscordNotificationSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
-                        </span>
-                      }
-                      else
-                      {
-                        <span class="text-muted">Never</span>
-                      }
-                    </p>
-                  </div>
+                <div class="controls-section">
+                  <button class="btn-custom @(isMonitoring ? "btn-danger" : "btn-success")" @onclick="ToggleMonitoring">
+                    <i class="bi @(isMonitoring ? "bi-stop-circle-fill" : "bi-play-circle-fill") me-1"></i>
+                    <span>@(isMonitoring ? "Stop Monitor" : "Start Monitor")</span>
+                  </button>
+
+                  <button class="btn-custom btn-settings" @onclick="() => showOverlaySettings = true">
+                    <i class="bi bi-gear-fill"></i> Settings
+                  </button>
+                  <button class="btn-custom btn-settings" @onclick="() => showTimerSettings = true" title="Timer Settings">
+                    <i class="bi bi-stopwatch"></i> Timer
+                  </button>
+                  <button class="btn-custom btn-settings" @onclick="() => showShoutoutSettings = true"
+                          title="Auto-Shoutout Settings">
+                    <i class="bi bi-robot"></i> Bot
+                  </button>
                 </div>
-              </div>
-            }
 
-            <div class="card mt-4 mb-4">
-              <div class="card-header d-flex justify-content-between align-items-center"
-                   @onclick="() => showSetup = !showSetup" style="cursor: pointer;">
-                <h5 class="mb-0"><i class="bi bi-rocket-takeoff"></i> Getting Started</h5>
-                <i class="bi @(showSetup ? "bi-chevron-up" : "bi-chevron-down")"></i>
-              </div>
-              @if (showSetup)
-              {
-                <div class="card-body">
-                  <div class="list-group list-group-flush">
-                    <div class="list-group-item">
-                      <i class="bi bi-check-circle-fill text-success me-2"></i>
-                      <strong>Set up your overlay</strong> &mdash; Copy the Overlay URL below and add it as
-                      a Browser Source in OBS/Streamlabs (width: 1920, height: 1080).
+                @if (isMonitoring)
+                {
+                  <div class="row g-3 mt-3">
+                    @if (isLive)
+                    {
+                      <div class="col-md-6">
+                        <div class="card h-100">
+                          <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="bi bi-rocket-takeoff me-1"></i> Raid Suggestions</h6>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="FetchRaidTargetsAsync"
+                                    disabled="@isLoadingRaidTargets" title="Refresh">
+                              @if (isLoadingRaidTargets)
+                              {
+                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                              }
+                              else
+                              {
+                                <i class="bi bi-arrow-clockwise"></i>
+                              }
+                            </button>
+                          </div>
+                          <div class="card-body p-2" style="max-height:300px;overflow-y:auto;">
+                            @if (isLoadingRaidTargets && raidTargets.Count == 0)
+                            {
+                              <p class="text-muted small text-center mt-3"><span class="spinner-border spinner-border-sm"></span>
+                                Loading...</p>
+                              }
+                        else if (raidTargets.Count == 0)
+                              {
+                                <p class="text-muted small text-center mt-3">No raid targets found.</p>
+                              }
+                              else
+                              {
+                                @foreach (var target in raidTargets)
+                                {
+                                  <div class="d-flex justify-content-between align-items-center border-bottom py-1 px-1">
+                                    <div class="small">
+                                      <strong>@target.BroadcasterName</strong><br />
+                                      <span class="text-muted">@target.ViewerCount viewers</span>
+                                      @if (!string.IsNullOrWhiteSpace(target.GameName))
+                                      {
+                                        <span class="text-muted"> · @target.GameName</span>
+                                      }
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            @onclick="() => StartRaidAsync(target.BroadcasterId, target.BroadcasterName)">
+                                      Raid →
+                                    </button>
+                                  </div>
+                                }
+                              }
+                            </div>
+                            @if (raidLastRefreshedAt.HasValue)
+                            {
+                              <div class="card-footer text-muted small">
+                                Last refreshed: @raidLastRefreshedAt.Value.ToLocalTime().ToString("HH:mm:ss")
+                                @if (!string.IsNullOrEmpty(raidSource))
+                                {
+                                  <span> · @raidSource</span>
+                                }
+                              </div>
+                            }
+                          </div>
+                        </div>
+                      }
+
+                      <div class="@(isLive ? "col-md-6" : "col-md-12")">
+                        <div class="card h-100">
+                          <div class="card-header">
+                            <h6 class="mb-0"><i class="bi bi-bell me-1"></i> Channel Events</h6>
+                          </div>
+                          <div class="card-body p-2" style="max-height:300px;overflow-y:auto;">
+                            @if (channelEvents.Count == 0)
+                            {
+                              <p class="text-muted small text-center mt-3">No events yet this session.</p>
+                            }
+                            else
+                            {
+                              @foreach (var evt in Enumerable.Reverse(channelEvents))
+                              {
+                                <div class="small mb-1 border-bottom pb-1">
+                                  <span>@evt.Description</span>
+                                  <span class="text-muted float-end">@evt.Timestamp.ToLocalTime().ToString("HH:mm")</span>
+                                </div>
+                              }
+                            }
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div class="list-group-item">
-                      <i class="bi bi-gear me-2"></i>
-                      <strong>Customize settings</strong> &mdash; Click <em>Settings</em> above to choose
-                      which counters to show, colors, positioning, and alert sounds.
+
+                    <div class="mt-3">
+                      <button class="btn btn-sm btn-outline-secondary w-100" @onclick="() => showCounters = !showCounters">
+                        <i class="bi @(showCounters ? "bi-chevron-up" : "bi-chevron-down") me-1"></i>
+                        @(showCounters ? "Hide Counters" : "▸ Counters")
+                      </button>
+                      @if (showCounters)
+                      {
+                        <div class="counter-list mt-2">
+                          @if (overlaySettings?.Counters?.Deaths != false)
+                          {
+                            <div class="counter-item" data-counter="deaths">
+                              <span class="counter-name">Deaths</span>
+                              <span class="counter-value">@counter.Deaths</span>
+                            </div>
+                          }
+                          @if (overlaySettings?.Counters?.Swears != false)
+                          {
+                            <div class="counter-item" data-counter="swears">
+                              <span class="counter-name">Swears</span>
+                              <span class="counter-value">@counter.Swears</span>
+                            </div>
+                          }
+                          @if (overlaySettings?.Counters?.Screams != false)
+                          {
+                            <div class="counter-item" data-counter="screams">
+                              <span class="counter-name">Screams</span>
+                              <span class="counter-value">@counter.Screams</span>
+                            </div>
+                          }
+                          @if (overlaySettings?.Counters?.Bits == true)
+                          {
+                            <div class="counter-item" data-counter="bits">
+                              <span class="counter-name">Bits</span>
+                              <span class="counter-value">@counter.Bits</span>
+                            </div>
+                          }
+                          @foreach (var kvp in counter.CustomCounters)
+                          {
+                            <div class="counter-item" data-counter="@kvp.Key.ToLower()">
+                              <span class="counter-name">@kvp.Key</span>
+                              <span class="counter-value">@kvp.Value</span>
+                            </div>
+                          }
+                        </div>
+                      }
                     </div>
-                    <div class="list-group-item">
-                      <i class="bi bi-broadcast me-2"></i>
-                      <strong>Start monitoring</strong> &mdash; Click <em>Start Monitor</em> to connect to
-                      Twitch and begin tracking events (follows, subs, bits, etc).
+                  }
+            else
+                  {
+                    <div class="counter-list mt-3">
+                      @if (overlaySettings?.Counters?.Deaths != false)
+                      {
+                        <div class="counter-item" data-counter="deaths">
+                          <span class="counter-name">Deaths</span>
+                          <span class="counter-value">@counter.Deaths</span>
+                        </div>
+                      }
+                      @if (overlaySettings?.Counters?.Swears != false)
+                      {
+                        <div class="counter-item" data-counter="swears">
+                          <span class="counter-name">Swears</span>
+                          <span class="counter-value">@counter.Swears</span>
+                        </div>
+                      }
+                      @if (overlaySettings?.Counters?.Screams != false)
+                      {
+                        <div class="counter-item" data-counter="screams">
+                          <span class="counter-name">Screams</span>
+                          <span class="counter-value">@counter.Screams</span>
+                        </div>
+                      }
+                      @if (overlaySettings?.Counters?.Bits == true)
+                      {
+                        <div class="counter-item" data-counter="bits">
+                          <span class="counter-name">Bits</span>
+                          <span class="counter-value">@counter.Bits</span>
+                        </div>
+                      }
+                      @foreach (var kvp in counter.CustomCounters)
+                      {
+                        <div class="counter-item" data-counter="@kvp.Key.ToLower()">
+                          <span class="counter-name">@kvp.Key</span>
+                          <span class="counter-value">@kvp.Value</span>
+                        </div>
+                      }
                     </div>
-                    @if (currentUserEntity?.Features.DiscordNotifications == true)
+                  }
+
+                  <div class="card mt-4 mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center"
+                         @onclick="() => showSetup = !showSetup" style="cursor: pointer;">
+                      <h5 class="mb-0"><i class="bi bi-rocket-takeoff"></i> Getting Started</h5>
+                      <i class="bi @(showSetup ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                    </div>
+                    @if (showSetup)
                     {
-                      <div class="list-group-item">
-                        <i class="bi bi-discord me-2"></i>
-                        <strong>Connect Discord</strong> &mdash;
-                        <a href="/settings/discord">Configure Discord</a> to get notifications
-                        in your server.
+                      <div class="card-body">
+                        <div class="list-group list-group-flush">
+                          <div class="list-group-item">
+                            <i class="bi bi-check-circle-fill text-success me-2"></i>
+                            <strong>Set up your overlay</strong> &mdash; Copy the Overlay URL below and add it as
+                            a Browser Source in OBS/Streamlabs (width: 1920, height: 1080).
+                          </div>
+                          <div class="list-group-item">
+                            <i class="bi bi-gear me-2"></i>
+                            <strong>Customize settings</strong> &mdash; Click <em>Settings</em> above to choose
+                            which counters to show, colors, positioning, and alert sounds.
+                          </div>
+                          <div class="list-group-item">
+                            <i class="bi bi-broadcast me-2"></i>
+                            <strong>Start monitoring</strong> &mdash; Click <em>Start Monitor</em> to connect to
+                            Twitch and begin tracking events (follows, subs, bits, etc).
+                          </div>
+                          @if (currentUserEntity?.Features.DiscordNotifications == true)
+                          {
+                            <div class="list-group-item">
+                              <i class="bi bi-discord me-2"></i>
+                              <strong>Connect Discord</strong> &mdash;
+                              <a href="/settings/discord">Configure Discord</a> to get notifications
+                              in your server.
+                            </div>
+                          }
+                          @if (currentUserEntity?.Features.StreamAlerts == true)
+                          {
+                            <div class="list-group-item">
+                              <i class="bi bi-bell me-2"></i>
+                              <strong>Configure alerts</strong> &mdash;
+                              <a href="/alerts">Set up alert images and sounds</a> for follows,
+                              subs, and other events.
+                            </div>
+                          }
+                          @if (currentUserEntity?.Features.OverlayV2 == true)
+                          {
+                            <div class="list-group-item">
+                              <i class="bi bi-stars text-warning me-2"></i>
+                              <strong>V2 Overlay</strong> &mdash; You have access to the premium overlay
+                              with SSE transport and advanced features. Use the V2 URL below.
+                            </div>
+                          }
+                          else
+                          {
+                            <div class="list-group-item">
+                              <i class="bi bi-lock me-2"></i>
+                              <strong>V2 Overlay (Pro)</strong> &mdash; Upgrade to Pro for the advanced
+                              overlay with real-time SSE transport and enhanced visuals.
+                            </div>
+                          }
+                          @if (currentUserEntity?.Features.SceneSync == true)
+                          {
+                            <div class="list-group-item">
+                              <i class="bi bi-display me-2"></i>
+                              <strong>Scene Sync Agent</strong> &mdash;
+                              <a href="/api/sync/agent/download" target="_blank">Download the agent</a>
+                              to sync OBS scenes with automated actions.
+                            </div>
+                          }
+                        </div>
                       </div>
                     }
-                    @if (currentUserEntity?.Features.StreamAlerts == true)
+                  </div>
+
+                  <div class="mt-4 text-center">
+                    <p>
+                      <strong>Twitch User ID:</strong> @TwitchUserId <br />
+                      <strong>Overlay URL (v1):</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
+                      <strong>Preview URL (v1):</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
+
+                      <br />
+                      @if (currentUserEntity?.Features.OverlayV2 == true)
+                      {
+                        <strong>Overlay URL (v2):</strong>
+                        <a href="@OverlayV2Url" target="_blank">@OverlayV2Url</a>
+                        <br />
+                        <strong>Preview URL (v2):</strong>
+                        <a href="@OverlayV2PreviewUrl" target="_blank">@OverlayV2PreviewUrl</a>
+                      }
+                      else
+                      {
+                        <strong>Overlay V2:</strong>
+                        <i class="bi bi-lock-fill text-muted"></i>
+                        <a href="/upgrade" class="text-warning">Upgrade to Pro</a>
+                        <span class="text-muted">&mdash; Advanced overlay with real-time SSE transport</span>
+                      }
+                    </p>
+
+                    @if (overlaySettings != null)
                     {
-                      <div class="list-group-item">
-                        <i class="bi bi-bell me-2"></i>
-                        <strong>Configure alerts</strong> &mdash;
-                        <a href="/alerts">Set up alert images and sounds</a> for follows,
-                        subs, and other events.
-                      </div>
-                    }
-                    @if (currentUserEntity?.Features.OverlayV2 == true)
-                    {
-                      <div class="list-group-item">
-                        <i class="bi bi-stars text-warning me-2"></i>
-                        <strong>V2 Overlay</strong> &mdash; You have access to the premium overlay
-                        with SSE transport and advanced features. Use the V2 URL below.
-                      </div>
-                    }
-                    else
-                    {
-                      <div class="list-group-item">
-                        <i class="bi bi-lock me-2"></i>
-                        <strong>V2 Overlay (Pro)</strong> &mdash; Upgrade to Pro for the advanced
-                        overlay with real-time SSE transport and enhanced visuals.
-                      </div>
-                    }
+                      <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
+                        <div class="form-check form-switch">
+                          <input id="offlinePreviewToggle" class="form-check-input" type="checkbox"
+                                 checked="@overlaySettings.OfflinePreview" @onchange="OnOfflinePreviewChanged" />
+                          <label class="form-check-label" for="offlinePreviewToggle">Offline Preview (force visible when
+                            offline)</label>
+                          </div>
+                          @if (savingOfflinePreview)
+                          {
+                            <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                          }
+                        </div>
+                      }
+                    </div>
+
                     @if (currentUserEntity?.Features.SceneSync == true)
                     {
-                      <div class="list-group-item">
-                        <i class="bi bi-display me-2"></i>
-                        <strong>Scene Sync Agent</strong> &mdash;
-                        <a href="/api/sync/agent/download" target="_blank">Download the agent</a>
-                        to sync OBS scenes with automated actions.
+                      <div class="mt-2">
+                        <strong>Sync Agent:</strong>
+                        <a href="/api/sync/agent/download" target="_blank">Download OmniForge Sync Agent</a>
                       </div>
                     }
-                  </div>
-                </div>
-              }
+
+                    <AgentStatusBadge UserId="@TwitchUserId" />
+
+                    <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+                    <TimerSettingsModal @bind-Show="showTimerSettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
+                    <AutoShoutoutSettingsModal @bind-Show="showShoutoutSettings" UserId="@TwitchUserId" />
+                  }
+                </Authorized>
+              </AuthorizeView>
             </div>
-
-            <div class="mt-4 text-center">
-              <p>
-                <strong>Twitch User ID:</strong> @TwitchUserId <br />
-                <strong>Overlay URL (v1):</strong> <a href="@OverlayUrl" target="_blank">@OverlayUrl</a><br />
-                <strong>Preview URL (v1):</strong> <a href="@OverlayPreviewUrl" target="_blank">@OverlayPreviewUrl</a>
-
-                <br />
-                @if (currentUserEntity?.Features.OverlayV2 == true)
+        </div>
+        @if (isMonitoring)
+        {
+          <div class="dashboard-chat-col">
+            <div class="card chat-panel-card">
+              <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-chat-dots me-1"></i> Live Chat</h6>
+              </div>
+              <div class="card-body p-2" id="chat-feed">
+                @if (chatMessages.Count == 0)
                 {
-                  <strong>Overlay URL (v2):</strong>
-                  <a href="@OverlayV2Url" target="_blank">@OverlayV2Url</a>
-                  <br />
-                  <strong>Preview URL (v2):</strong>
-                  <a href="@OverlayV2PreviewUrl" target="_blank">@OverlayV2PreviewUrl</a>
+                  <p class="text-muted small text-center mt-3">Waiting for chat messages...</p>
                 }
                 else
                 {
-                  <strong>Overlay V2:</strong>
-                  <i class="bi bi-lock-fill text-muted"></i>
-                  <a href="/upgrade" class="text-warning">Upgrade to Pro</a>
-                  <span class="text-muted">&mdash; Advanced overlay with real-time SSE transport</span>
-                }
-              </p>
-
-              @if (overlaySettings != null)
-              {
-                <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
-                  <div class="form-check form-switch">
-                    <input id="offlinePreviewToggle" class="form-check-input" type="checkbox"
-                           checked="@overlaySettings.OfflinePreview" @onchange="OnOfflinePreviewChanged" />
-                    <label class="form-check-label" for="offlinePreviewToggle">Offline Preview (force visible when
-                      offline)</label>
+                  @foreach (var msg in chatMessages)
+                  {
+                    <div class="small mb-1">
+                      <span class="fw-semibold" style="color:@(msg.ColorHex ?? "#9b59b6")">@msg.DisplayName</span>
+                      <span class="text-body">: @msg.Message</span>
                     </div>
-                    @if (savingOfflinePreview)
-                    {
-                      <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
-                    }
-                  </div>
+                  }
                 }
               </div>
-
-              @if (currentUserEntity?.Features.SceneSync == true)
-              {
-                <div class="mt-2">
-                  <strong>Sync Agent:</strong>
-                  <a href="/api/sync/agent/download" target="_blank">Download OmniForge Sync Agent</a>
-                </div>
-              }
-
-              <AgentStatusBadge UserId="@TwitchUserId" />
-
-              <OverlaySettingsModal @bind-Show="showOverlaySettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
-              <TimerSettingsModal @bind-Show="showTimerSettings" UserId="@TwitchUserId" OnSaved="OnSettingsSaved" />
-            }
-          </Authorized>
-        </AuthorizeView>
-    </div>
+            </div>
+          </div>
+        }
+      </div>
 
 @code {
   [CascadingParameter]
@@ -315,10 +439,20 @@
   private string? OverlayV2PreviewUrl;
   private bool showSetup = false;
   private bool savingOfflinePreview = false;
-  private bool resettingCounters = false;
   private bool showOverlaySettings = false;
   private bool showTimerSettings = false;
+  private bool showShoutoutSettings = false;
   private bool isMonitoring = false;
+  private bool isLive = false;
+  private bool showCounters = false;
+  private bool isLoadingRaidTargets = false;
+  private List<OmniForge.Core.Interfaces.DashboardChatMessage> chatMessages = new(50);
+  private List<OmniForge.Core.Interfaces.DashboardEvent> channelEvents = new(20);
+  private List<OmniForge.Core.Interfaces.RaidTargetDto> raidTargets = new();
+  private string? raidSource;
+  private DateTimeOffset? raidLastRefreshedAt;
+  private IDisposable? _feedSubscription;
+  private Timer? _raidRefreshTimer;
   private OmniForge.Core.Interfaces.StreamMonitorStatus? monitorStatus;
   private Timer? _refreshTimer;
   private string? errorMessage;
@@ -385,6 +519,21 @@
           // Initial check
           RefreshStatus();
 
+          // Subscribe to dashboard feed
+          _feedSubscription = DashboardFeedService.Subscribe(
+            TwitchUserId,
+            OnChatMessage,
+            OnChannelEvent,
+            OnLiveStatusChanged);
+
+          // Check current live status
+          isLive = DashboardFeedService.GetLiveStatus(TwitchUserId);
+          if (isLive)
+          {
+            await FetchRaidTargetsAsync();
+            StartRaidRefreshTimer();
+          }
+
           // Start timer to refresh status every 5 seconds
           _refreshTimer = new Timer(_ =>
           {
@@ -414,12 +563,101 @@
 
   private bool IsAnyModalOpen()
   {
-    return showOverlaySettings || showTimerSettings;
+    return showOverlaySettings || showTimerSettings || showShoutoutSettings;
   }
 
   public void Dispose()
   {
     _refreshTimer?.Dispose();
+    _feedSubscription?.Dispose();
+    _raidRefreshTimer?.Dispose();
+  }
+
+  private void OnChatMessage(OmniForge.Core.Interfaces.DashboardChatMessage msg)
+  {
+    if (!string.Equals(msg.UserId, TwitchUserId, StringComparison.Ordinal)) return;
+    if (chatMessages.Count >= 50) chatMessages.RemoveAt(0);
+    chatMessages.Add(msg);
+    InvokeAsync(StateHasChanged);
+  }
+
+  private void OnChannelEvent(OmniForge.Core.Interfaces.DashboardEvent evt)
+  {
+    if (channelEvents.Count >= 20) channelEvents.RemoveAt(0);
+    channelEvents.Add(evt);
+    InvokeAsync(StateHasChanged);
+  }
+
+  private void OnLiveStatusChanged(bool live)
+  {
+    isLive = live;
+    if (live)
+    {
+      _ = InvokeAsync(async () =>
+      {
+        await FetchRaidTargetsAsync();
+        StartRaidRefreshTimer();
+      });
+    }
+    else
+    {
+      _raidRefreshTimer?.Dispose();
+      _raidRefreshTimer = null;
+      InvokeAsync(StateHasChanged);
+    }
+  }
+
+  private void StartRaidRefreshTimer()
+  {
+    _raidRefreshTimer?.Dispose();
+    _raidRefreshTimer = new Timer(async _ =>
+    {
+      await FetchRaidTargetsAsync();
+      await InvokeAsync(StateHasChanged);
+    }, null, 30_000, 30_000);
+  }
+
+  private async Task FetchRaidTargetsAsync()
+  {
+    if (string.IsNullOrEmpty(TwitchUserId)) return;
+    isLoadingRaidTargets = true;
+    await InvokeAsync(StateHasChanged);
+
+    try
+    {
+      var targets = await TwitchApiService.GetFollowedLiveStreamsAsync(TwitchUserId, 5);
+      raidSource = "following";
+
+      if (targets.Count == 0)
+      {
+        var channelCategory = await TwitchApiService.GetChannelCategoryAsync(TwitchUserId);
+        if (channelCategory != null && !string.IsNullOrWhiteSpace(channelCategory.GameId))
+        {
+          targets = await TwitchApiService.GetStreamsByGameIdAsync(TwitchUserId, channelCategory.GameId, 5);
+          raidSource = $"same game ({channelCategory.GameName})";
+        }
+      }
+
+      raidTargets = new List<OmniForge.Core.Interfaces.RaidTargetDto>(targets);
+      raidLastRefreshedAt = DateTimeOffset.UtcNow;
+    }
+    catch (Exception ex)
+    {
+      _ = ex; // log if needed
+    }
+    finally
+    {
+      isLoadingRaidTargets = false;
+      await InvokeAsync(StateHasChanged);
+    }
+  }
+
+  private async Task StartRaidAsync(string targetBroadcasterId, string targetName)
+  {
+    if (string.IsNullOrEmpty(TwitchUserId)) return;
+    var success = await TwitchApiService.StartRaidAsync(TwitchUserId, targetBroadcasterId);
+    errorMessage = success ? null : $"❌ Failed to start raid to {targetName}.";
+    StateHasChanged();
   }
 
   private async Task ToggleMonitoring()
@@ -499,46 +737,6 @@
     finally
     {
       savingOfflinePreview = false;
-      StateHasChanged();
-    }
-  }
-
-  private async Task ResetCountersAsync()
-  {
-    if (string.IsNullOrEmpty(TwitchUserId)) return;
-    resettingCounters = true;
-    errorMessage = null;
-
-    try
-    {
-      var countersEntity = await CounterRepository.GetCountersAsync(TwitchUserId);
-      if (countersEntity == null)
-      {
-        errorMessage = "Counters not found";
-        return;
-      }
-
-      countersEntity.Deaths = 0;
-      countersEntity.Swears = 0;
-      countersEntity.Screams = 0;
-      countersEntity.LastUpdated = DateTimeOffset.UtcNow;
-
-      await CounterRepository.SaveCountersAsync(countersEntity);
-      counter = countersEntity;
-
-      // Notify overlay
-      if (OverlayNotifier != null)
-      {
-        await OverlayNotifier.NotifyCounterUpdateAsync(TwitchUserId, countersEntity);
-      }
-    }
-    catch (Exception ex)
-    {
-      errorMessage = $"Failed to reset counters: {ex.Message}";
-    }
-    finally
-    {
-      resettingCounters = false;
       StateHasChanged();
     }
   }

@@ -204,6 +204,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 await overlayNotifier.NotifyStreamStatusUpdateAsync(safeBroadcasterId!, "live");
             }
 
+            // Dashboard feed + bot services on stream.online
+            scope.ServiceProvider.GetService<IDashboardFeedService>()?.SetLiveStatus(safeBroadcasterId, true);
+            var botReactionOnline = scope.ServiceProvider.GetService<IBotReactionService>();
+            scope.ServiceProvider.GetService<IScheduledMessageService>()?.StartForUser(safeBroadcasterId);
+            if (botReactionOnline != null) await botReactionOnline.HandleStreamStartAsync(safeBroadcasterId);
+
             // When the stream goes online, apply per-game CCLs from the library using the fetched category.
             if (isNewStream && twitchApiService != null && gameLibraryRepository != null)
             {

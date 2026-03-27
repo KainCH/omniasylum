@@ -105,6 +105,11 @@ namespace OmniForge.Infrastructure
             services.AddHttpClient<IDiscordService, DiscordService>();
             services.AddSingleton<IChatCommandProcessor, ChatCommandProcessor>();
             services.AddSingleton<ITwitchMessageHandler, TwitchMessageHandler>();
+            services.AddSingleton<IDashboardFeedService, DashboardFeedService>();
+            services.AddSingleton<IAutoShoutoutService, AutoShoutoutService>();
+            services.AddSingleton<IBotReactionService, BotReactionService>();
+            services.AddSingleton<IScheduledMessageService, ScheduledMessageService>();
+            services.AddSingleton<IBotModerationService, BotModerationService>();
             services.AddSingleton<ITwitchClientManager, TwitchClientManager>();
             services.AddSingleton<ITwitchConnectionService, TwitchConnectionService>();
             services.AddHostedService(sp => (TwitchConnectionService)sp.GetRequiredService<ITwitchConnectionService>());
@@ -126,6 +131,7 @@ namespace OmniForge.Infrastructure
             services.AddScoped<IEventSubHandler, ChatNotificationHandler>();
             services.AddScoped<IEventSubHandler, ChannelUpdateHandler>();
             services.AddScoped<IEventSubHandler, ChannelPointRedemptionHandler>();
+            services.AddScoped<IEventSubHandler, SuspiciousUserMessageHandler>();
             services.AddScoped<IEventSubHandlerRegistry, EventSubHandlerRegistry>();
 
             // Twitch EventSub

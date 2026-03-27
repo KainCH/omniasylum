@@ -23,7 +23,7 @@ Run the `/fetch-dotnet-bestpractices` prompt first to load async patterns, Blazo
 Search the codebase for:
 
 - An existing controller (e.g. `CounterController`) — use as the template for JWT extraction and error patterns
-- An existing Blazor page (e.g. `OmniForge.Web/Components/Pages/`) — use as the template for component lifecycle and feature-flag gating
+- An existing Blazor page (e.g. `OmniForge.Web/Components/Pages/`) — use as the template for component lifecycle and feature-flag gating. Note: pages resolve the current user via `AuthenticationStateProvider` + `IUserRepository`, not via `IUserService` (which does not exist)
 - `OmniForge.Web/Program.cs` — understand the middleware pipeline and auth setup
 - `OmniForge.Web/Components/Layout/NavMenu.razor` — where nav links are added
 
@@ -130,9 +130,11 @@ Create `OmniForge.DotNet/src/OmniForge.Web/Components/Pages/MyFeaturePage.razor`
 
 ```razor
 @page "/my-feature"
+@using System.Security.Claims
 @using OmniForge.Core.Interfaces
-@inject IUserService UserService
+@inject IUserRepository UserRepository
 @inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<MyFeaturePage> Logger
 
 <PageTitle>My Feature — OmniForge</PageTitle>
@@ -160,7 +162,17 @@ else
     {
         try
         {
-            var user = await UserService.GetCurrentUserAsync();
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                      ?? authState.User.FindFirst("sub")?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                NavigationManager.NavigateTo("/login", replace: true);
+                return;
+            }
+
+            var user = await UserRepository.GetUserAsync(userId);
             if (user == null)
             {
                 NavigationManager.NavigateTo("/login", replace: true);
@@ -175,7 +187,7 @@ else
             }
 
             _hasFeature = true;
-            _data = await LoadDataAsync(user.TwitchUserId);
+            _data = await LoadDataAsync(userId);
         }
         catch (Exception ex)
         {
@@ -194,6 +206,8 @@ else
     }
 }
 ```
+
+**Note:** There is no `IUserService` in OmniForge. Blazor pages resolve the current user by getting claims from `AuthenticationStateProvider` and calling `IUserRepository.GetUserAsync(userId)` directly.
 
 ---
 
