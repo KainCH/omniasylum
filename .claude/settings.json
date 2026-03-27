@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(xargs grep:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet:*)",
+      "Bash(DOTNET_ROLL_FORWARD=latestFeature dotnet test:*)",
+      "Bash(export:*)",
+      "Bash(grep:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:stream-labs.github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git fetch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth:*)"
+    ]
+  }
+}
