@@ -1,68 +1,81 @@
 {
-	"servers": {
-		"filesystem": {
-			"command": "npx",
-			"args": [
-				"-y",
-				"@modelcontextprotocol/server-filesystem",
-				"${workspaceFolder}"
-			],
-			"type": "stdio"
-		},
-		"sequential-thinking": {
-			"command": "npx",
-			"args": [
-				"-y",
-				"@modelcontextprotocol/server-sequential-thinking"
-			],
-			"type": "stdio"
-		},
-		"memory": {
-			"command": "npx",
-			"args": [
-				"-y",
-				"@modelcontextprotocol/server-memory"
-			],
-			"env": {
-				"MEMORY_FILE_PATH": "${workspaceFolder}/.mcp/memory.json"
-			},
-			"type": "stdio"
-		},
-		"github": {
-			"type": "http",
-			"url": "https://api.githubcopilot.com/mcp/",
-			"headers": {
-				"Authorization": "${input:Authorization}"
-			},
-			"gallery": "https://api.mcp.github.com",
-			"version": "0.24.1"
-		},
-		"azure": {
-			"type": "stdio",
-			"command": "dnx",
-			"args": [
-				"Azure.Mcp@2.0.0-beta.6",
-				"--yes",
-				"--",
-				"server",
-				"start"
-			],
-			"gallery": "https://api.mcp.github.com",
-			"version": "2.0.0-beta.6"
-		},
-		"microsoftdocs-mcp": {
-			"type": "http",
-			"url": "https://learn.microsoft.com/api/mcp",
-			"gallery": "https://api.mcp.github.com",
-			"version": "1.0.0"
-		}
-	},
-	"inputs": [
-		{
-			"id": "Authorization",
-			"type": "promptString",
-			"description": "Authentication token (PAT or App token)",
-			"password": true
-		}
-	]
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}"
+      ],
+      "type": "stdio"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "type": "stdio"
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "${workspaceFolder}/.mcp/memory.json"
+      },
+      "type": "stdio"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "${input:Authorization}"
+      },
+      "gallery": "https://api.mcp.github.com",
+      "version": "0.24.1"
+    },
+    "azure": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": [
+        "Azure.Mcp@2.0.0-beta.6",
+        "--yes",
+        "--",
+        "server",
+        "start"
+      ],
+      "gallery": "https://api.mcp.github.com",
+      "version": "2.0.0-beta.6"
+    },
+    "microsoftdocs-mcp": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "gallery": "https://api.mcp.github.com",
+      "version": "1.0.0"
+    },
+    "epidemic-sound": {
+      "type": "http",
+      "url": "https://www.epidemicsound.com/a/mcp-service/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:EpidemicSoundApiKey}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "Authorization",
+      "type": "promptString",
+      "description": "Authentication token (PAT or App token)",
+      "password": true
+    },
+    {
+      "id": "EpidemicSoundApiKey",
+      "type": "promptString",
+      "description": "Epidemic Sound API key (from epidemicsound.com/account/api-keys)",
+      "password": true
+    }
+  ]
 }
