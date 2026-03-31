@@ -66,13 +66,13 @@ All repositories implement an interface from Core and inherit Azure Table Storag
 All data is partitioned by `TwitchUserId`. Controllers extract the user ID from JWT claims — always use `User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value`, never `req.params`/route values directly.
 
 ### Feature flags
-`User.Features` (of type `FeatureFlags`) gates capabilities like `StreamOverlay`, `OverlayV2`, `SceneSync`, `ChatCommands`, `AutoBanEvaders`, etc. Check flags in controllers and Blazor pages before allowing access. New features default to `false` and must be admin-enabled per user. Bot moderation settings live on `User.BotModerationSettings`; bot reaction/shoutout/scheduled message settings live on `User.BotSettings`.
+`User.Features` (of type `FeatureFlags`) gates capabilities like `StreamOverlay`, `OverlayV2`, `SceneSync`, `ChatCommands`, `AutoBanEvaders`, etc. Check flags in controllers and Blazor pages before allowing access. New features default to `false` and must be admin-enabled per user. Bot moderation settings live on `User.BotModeration` (type `BotModerationSettings`); bot reaction/shoutout/scheduled message settings live on `User.BotSettings`.
 
 ### EventSub handler strategy pattern
-Handlers implement `IEventSubHandler`, register as `IEventSubHandler` in DI, and expose a `SubscriptionType` property (e.g. `"channel.cheer"`). `EventSubHandlerRegistry` resolves the correct handler at runtime. Each handler uses `IServiceScopeFactory` to create a DI scope (handlers are singletons; repositories are scoped).
+Handlers implement `IEventSubHandler`, register as **Scoped** `IEventSubHandler` in DI, and expose a `SubscriptionType` property (e.g. `"channel.cheer"`). `EventSubHandlerRegistry` resolves the correct handler at runtime. Each handler uses `IServiceScopeFactory` to create a nested DI scope for resolving repositories.
 
 ### Bot services
-Four singleton services in `Infrastructure/Services/Bot/`:
+Four singleton services in `Infrastructure/Services/`:
 
 | Service | Purpose |
 |---|---|
