@@ -112,7 +112,7 @@ File: `OmniForge.DotNet/src/OmniForge.Infrastructure/DependencyInjection.cs`
 
 Add alongside existing handler registrations:
 ```csharp
-services.AddSingleton<IEventSubHandler, MyEventHandler>();
+services.AddScoped<IEventSubHandler, MyEventHandler>();
 ```
 
 `EventSubHandlerRegistry` auto-discovers all `IEventSubHandler` registrations — no other changes needed.
