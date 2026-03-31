@@ -124,16 +124,13 @@ namespace OmniForge.Infrastructure.Services
                 if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
                     return true; // unparseable URL — treat as disallowed
 
-                var host = uri.Host.ToLowerInvariant().TrimStart('w').TrimStart('w').TrimStart('w').TrimStart('.');
-                // Re-extract cleanly
-                host = uri.Host.ToLowerInvariant();
+                var host = uri.Host.ToLowerInvariant();
                 if (host.StartsWith("www.")) host = host[4..];
 
                 bool allowed = false;
                 foreach (var domain in allowedDomains)
                 {
-                    var normalised = domain.ToLowerInvariant().TrimStart('w').TrimStart('.');
-                    normalised = domain.ToLowerInvariant();
+                    var normalised = domain.ToLowerInvariant();
                     if (normalised.StartsWith("www.")) normalised = normalised[4..];
 
                     // Exact match or subdomain (host == domain or host ends with .domain)

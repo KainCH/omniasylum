@@ -46,51 +46,84 @@ namespace OmniForge.Infrastructure.Services
             }
 
             var sessionSet = _shoutedThisSession.GetOrAdd(broadcasterId, _ => new HashSet<string>());
-            lock (sessionSet) { if (sessionSet.Contains(chatterUserId)) return; }
 
-            var cacheKey = $"{broadcasterId}:{chatterUserId}";
-            bool isFollowing;
-            if (_followCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
+            // Atomically reserve the slot — both Contains and Add inside one lock to eliminate the race
+            // window where two concurrent messages could both pass the check before either adds.
+            lock (sessionSet)
             {
-                isFollowing = cached.IsFollowing;
-            }
-            else
-            {
-                isFollowing = await twitchApiService.IsFollowingAsync(broadcasterId, chatterUserId);
-                _followCache[cacheKey] = (DateTimeOffset.UtcNow.Add(FollowCacheTtl), isFollowing);
+                if (sessionSet.Contains(chatterUserId)) return;
+                sessionSet.Add(chatterUserId); // reserved; removed below on failure
             }
 
-            if (!isFollowing) return;
-
-            var now = DateTimeOffset.UtcNow;
-            if (_lastChannelShoutout.TryGetValue(broadcasterId, out var lastChannel) && now - lastChannel < ChannelCooldown)
+            try
             {
-                _logger.LogDebug("⏳ AutoShoutout channel cooldown active for {Broadcaster}", broadcasterId);
-                return;
+                var cacheKey = $"{broadcasterId}:{chatterUserId}";
+                bool isFollowing;
+                if (_followCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
+                {
+                    isFollowing = cached.IsFollowing;
+                }
+                else
+                {
+                    isFollowing = await twitchApiService.IsFollowingAsync(broadcasterId, chatterUserId);
+                    _followCache[cacheKey] = (DateTimeOffset.UtcNow.Add(FollowCacheTtl), isFollowing);
+                }
+
+                if (!isFollowing)
+                {
+                    lock (sessionSet) { sessionSet.Remove(chatterUserId); }
+                    return;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                if (_lastChannelShoutout.TryGetValue(broadcasterId, out var lastChannel) && now - lastChannel < ChannelCooldown)
+                {
+                    _logger.LogDebug("⏳ AutoShoutout channel cooldown active for {Broadcaster}", broadcasterId);
+                    lock (sessionSet) { sessionSet.Remove(chatterUserId); }
+                    return;
+                }
+
+                var userShoutouts = _lastUserShoutout.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
+                if (userShoutouts.TryGetValue(chatterUserId, out var lastUser) && now - lastUser < UserCooldown)
+                {
+                    _logger.LogDebug("⏳ AutoShoutout per-user cooldown active for {User} in {Broadcaster}", chatterUserId, broadcasterId);
+                    lock (sessionSet) { sessionSet.Remove(chatterUserId); }
+                    return;
+                }
+
+                var success = await twitchApiService.SendShoutoutAsync(broadcasterId, chatterUserId);
+                if (success)
+                {
+                    _lastChannelShoutout[broadcasterId] = now;
+                    userShoutouts[chatterUserId] = now;
+                    _logger.LogInformation("✅ AutoShoutout sent for {Chatter} in {Broadcaster}", chatterDisplayName, broadcasterId);
+                }
+                else
+                {
+                    lock (sessionSet) { sessionSet.Remove(chatterUserId); }
+                }
             }
-
-            var userShoutouts = _lastUserShoutout.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
-            if (userShoutouts.TryGetValue(chatterUserId, out var lastUser) && now - lastUser < UserCooldown)
+            catch
             {
-                _logger.LogDebug("⏳ AutoShoutout per-user cooldown active for {User} in {Broadcaster}", chatterUserId, broadcasterId);
-                return;
-            }
-
-            var success = await twitchApiService.SendShoutoutAsync(broadcasterId, chatterUserId);
-            if (success)
-            {
-                lock (sessionSet) { sessionSet.Add(chatterUserId); }
-                _lastChannelShoutout[broadcasterId] = now;
-                userShoutouts[chatterUserId] = now;
-                _logger.LogInformation("✅ AutoShoutout sent for {Chatter} in {Broadcaster}", chatterDisplayName, broadcasterId);
+                lock (sessionSet) { sessionSet.Remove(chatterUserId); }
+                throw;
             }
         }
 
         public void ResetSession(string broadcasterId)
         {
             if (_shoutedThisSession.TryGetValue(broadcasterId, out var set))
-            {
                 lock (set) { set.Clear(); }
+
+            _lastChannelShoutout.TryRemove(broadcasterId, out _);
+            _lastUserShoutout.TryRemove(broadcasterId, out _);
+
+            // Purge follow cache entries for this broadcaster to avoid stale data next stream
+            var prefix = broadcasterId + ":";
+            foreach (var key in _followCache.Keys)
+            {
+                if (key.StartsWith(prefix, StringComparison.Ordinal))
+                    _followCache.TryRemove(key, out _);
             }
         }
     }

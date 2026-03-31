@@ -99,7 +99,12 @@ namespace OmniForge.Infrastructure.Services
         private void Unsubscribe(string userId, Subscriber sub)
         {
             if (!_subscribers.TryGetValue(userId, out var list)) return;
-            lock (list) { list.Remove(sub); }
+            lock (list)
+            {
+                list.Remove(sub);
+                if (list.Count == 0)
+                    _subscribers.TryRemove(userId, out _);
+            }
         }
     }
 }

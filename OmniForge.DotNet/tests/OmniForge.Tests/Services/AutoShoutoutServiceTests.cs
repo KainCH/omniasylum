@@ -186,8 +186,10 @@ public class AutoShoutoutServiceTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task HandleChatMessageAsync_FollowCacheHit_IsFollower_DoesNotRecheckApi()
+    public async Task HandleChatMessageAsync_SessionDedup_SecondCallForSameChatter_DoesNotRecheckFollowApi()
     {
+        // Session dedup (not follow cache) is now the primary gate that prevents duplicate shoutouts.
+        // Once a chatter is shouted, the session set blocks any further calls before the API is reached.
         _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster-1")).ReturnsAsync(new User
         {
             TwitchUserId = "broadcaster-1",
@@ -197,18 +199,16 @@ public class AutoShoutoutServiceTests
         _mockTwitchApiService.Setup(s => s.IsFollowingAsync("broadcaster-1", "chatter-1")).ReturnsAsync(true);
         _mockTwitchApiService.Setup(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1")).ReturnsAsync(true);
 
-        // First call populates cache
+        // First call — populates session set and sends shoutout
         await _sut.HandleChatMessageAsync("broadcaster-1", "chatter-1", "chatterlogin", "ChatterDisplay",
             isMod: false, isBroadcaster: false);
 
-        // Reset session so session-dedup doesn't interfere
-        _sut.ResetSession("broadcaster-1");
-
-        // Second call — cache should be used, IsFollowingAsync called only once total
+        // Second call — session dedup blocks before IsFollowingAsync is reached
         await _sut.HandleChatMessageAsync("broadcaster-1", "chatter-1", "chatterlogin", "ChatterDisplay",
             isMod: false, isBroadcaster: false);
 
         _mockTwitchApiService.Verify(s => s.IsFollowingAsync("broadcaster-1", "chatter-1"), Times.Once);
+        _mockTwitchApiService.Verify(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1"), Times.Once);
     }
 
     [Fact]
@@ -266,8 +266,10 @@ public class AutoShoutoutServiceTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ResetSession_ClearsSessionState_AllowsShoutoutAgain()
+    public async Task ResetSession_ClearsAllState_AllowsFullShoutoutCycleAgain()
     {
+        // ResetSession now clears session set, cooldowns, and follow cache — simulating stream restart.
+        // A chatter who was shouted in the previous stream should be shouted again in the new stream.
         _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster-1")).ReturnsAsync(new User
         {
             TwitchUserId = "broadcaster-1",
@@ -277,22 +279,18 @@ public class AutoShoutoutServiceTests
         _mockTwitchApiService.Setup(s => s.IsFollowingAsync("broadcaster-1", "chatter-1")).ReturnsAsync(true);
         _mockTwitchApiService.Setup(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1")).ReturnsAsync(true);
 
-        // Chatter fires once this session
+        // First stream — chatter gets shouted
         await _sut.HandleChatMessageAsync("broadcaster-1", "chatter-1", "chatterlogin", "ChatterDisplay",
             isMod: false, isBroadcaster: false);
+        _mockTwitchApiService.Verify(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1"), Times.Once);
 
-        // Reset both session AND channel/user cooldowns by using a fresh service instance is not possible,
-        // so we just verify reset clears session dedup. Channel cooldown will block a second send —
-        // the important thing is the session set is clear, so the code reaches the cooldown check.
+        // Stream ends — full session reset clears session set, cooldowns, and follow cache
         _sut.ResetSession("broadcaster-1");
 
-        // After reset the session set is empty; the channel cooldown will still block, but
-        // SendShoutoutAsync should not have been called a second time regardless.
+        // Second stream — all state cleared, chatter should be eligible for shoutout again
         await _sut.HandleChatMessageAsync("broadcaster-1", "chatter-1", "chatterlogin", "ChatterDisplay",
             isMod: false, isBroadcaster: false);
-
-        // First call succeeded; second blocked by channel cooldown — total still 1
-        _mockTwitchApiService.Verify(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1"), Times.Once);
+        _mockTwitchApiService.Verify(s => s.SendShoutoutAsync("broadcaster-1", "chatter-1"), Times.Exactly(2));
     }
 
     [Fact]

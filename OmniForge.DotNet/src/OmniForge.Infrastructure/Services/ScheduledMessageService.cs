@@ -36,12 +36,25 @@ namespace OmniForge.Infrastructure.Services
 
             var timer = new Timer(async _ =>
             {
-                var sem = _tickLocks.GetOrAdd(broadcasterId, _ => new SemaphoreSlim(1, 1));
-                if (!await sem.WaitAsync(0).ConfigureAwait(false)) return; // skip overlapping tick
-                try { await TickAsync(broadcasterId).ConfigureAwait(false); }
-                finally { sem.Release(); }
+                if (!_tickLocks.TryGetValue(broadcasterId, out var sem)) return;
+                bool acquired = false;
+                try
+                {
+                    acquired = await sem.WaitAsync(0).ConfigureAwait(false);
+                    if (!acquired) return; // skip overlapping tick
+                    await TickAsync(broadcasterId).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException) { /* semaphore disposed by StopForUser — ignore */ }
+                finally
+                {
+                    if (acquired)
+                    {
+                        try { sem.Release(); }
+                        catch (ObjectDisposedException) { /* already disposed — ignore */ }
+                    }
+                }
             }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
-            var old = _timers.AddOrUpdate(broadcasterId, timer, (_, existing) =>
+            _ = _timers.AddOrUpdate(broadcasterId, timer, (_, existing) =>
             {
                 existing.Dispose();
                 return timer;
