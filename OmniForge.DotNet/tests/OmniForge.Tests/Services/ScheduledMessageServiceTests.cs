@@ -80,7 +80,122 @@ public class ScheduledMessageServiceTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // TickAsync — driven via reflection since the method is private
+    // ExecuteTickAsync — semaphore paths
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteTickAsync_WhenNoSemaphoreRegistered_ReturnsEarly()
+    {
+        // No StartForUser called — _tickLocks has no entry for this broadcasterId
+        var exception = await Record.ExceptionAsync(() => _sut.ExecuteTickAsync("unknown-broadcaster"));
+        Assert.Null(exception);
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteTickAsync_WhenSemaphoreAlreadyAcquired_SkipsTick()
+    {
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster-1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster-1",
+            Username = "testuser",
+            BotSettings = new BotSettings
+            {
+                ScheduledMessages = new List<ScheduledMessageEntry>
+                {
+                    new ScheduledMessageEntry
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Message = "Hello chat!",
+                        IntervalMinutes = 1,
+                        Enabled = true
+                    }
+                }
+            }
+        });
+
+        _sut.StartForUser("broadcaster-1");
+
+        // Manually hold the semaphore so ExecuteTickAsync sees acquired = false
+        var semField = typeof(ScheduledMessageService)
+            .GetField("_tickLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var tickLocks = (System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>)semField.GetValue(_sut)!;
+        tickLocks.TryGetValue("broadcaster-1", out var sem);
+        await sem!.WaitAsync(); // hold the semaphore
+
+        try
+        {
+            await _sut.ExecuteTickAsync("broadcaster-1");
+            // Tick was skipped — no message sent
+            _mockTwitchClientManager.Verify(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+        finally
+        {
+            sem.Release();
+            _sut.StopForUser("broadcaster-1");
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteTickAsync_AfterStopForUser_HandlesObjectDisposedException()
+    {
+        _sut.StartForUser("broadcaster-1");
+
+        // Get reference to the semaphore before stopping
+        var semField = typeof(ScheduledMessageService)
+            .GetField("_tickLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var tickLocks = (System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>)semField.GetValue(_sut)!;
+        tickLocks.TryGetValue("broadcaster-1", out var sem);
+
+        // Stop disposes the semaphore and removes from _tickLocks
+        _sut.StopForUser("broadcaster-1");
+
+        // Re-insert the disposed semaphore to exercise the ObjectDisposedException path
+        tickLocks["broadcaster-1"] = sem!;
+
+        var exception = await Record.ExceptionAsync(() => _sut.ExecuteTickAsync("broadcaster-1"));
+        Assert.Null(exception);
+
+        // Cleanup
+        tickLocks.TryRemove("broadcaster-1", out _);
+    }
+
+    [Fact]
+    public async Task ExecuteTickAsync_HappyPath_AcquiresSemaphoreAndRunsTick()
+    {
+        var msgId = Guid.NewGuid().ToString();
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster-1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster-1",
+            Username = "testuser",
+            BotSettings = new BotSettings
+            {
+                ScheduledMessages = new List<ScheduledMessageEntry>
+                {
+                    new ScheduledMessageEntry
+                    {
+                        Id = msgId,
+                        Message = "Hello chat!",
+                        IntervalMinutes = 0,
+                        Enabled = true
+                    }
+                }
+            }
+        });
+        _mockTwitchClientManager
+            .Setup(c => c.SendMessageAsync("broadcaster-1", "Hello chat!"))
+            .Returns(Task.CompletedTask);
+
+        _sut.StartForUser("broadcaster-1");
+        await _sut.ExecuteTickAsync("broadcaster-1");
+
+        _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster-1", "Hello chat!"), Times.Once);
+
+        _sut.StopForUser("broadcaster-1");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // TickAsync — driven via ExecuteTickAsync (no reflection needed for TickAsync)
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -99,37 +214,19 @@ public class ScheduledMessageServiceTests
                     {
                         Id = msgId,
                         Message = "Hello chat!",
-                        IntervalMinutes = 0, // 0 minutes — always elapsed
+                        IntervalMinutes = 0, // 0 minutes — clamped to 1, but _lastFired is MinValue so always elapsed
                         Enabled = true
                     }
                 }
             }
         });
 
-        // Use a very short dueTime so the timer fires quickly during the test
-        // We use a TaskCompletionSource to gate on the first send.
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _mockTwitchClientManager
             .Setup(c => c.SendMessageAsync("broadcaster-1", "Hello chat!"))
-            .Callback(() => tcs.TrySetResult(true))
             .Returns(Task.CompletedTask);
 
-        // Start the service with its 1-minute timer — that's too slow for a unit test.
-        // We call StartForUser to set up the semaphore and _lastFired, then directly
-        // invoke the observable path by constructing a local timer at 10 ms.
         _sut.StartForUser("broadcaster-1");
-
-        // Simulate what the real timer callback does: acquire sem, call TickAsync.
-        // We can't call private TickAsync, but we can prove the end-to-end path by
-        // replacing with a short-lived timer internally, which means inspecting the
-        // timer through time. Since we can't do that without reflection, use a
-        // parallel Timer that fires into the same logic path.
-        // The pragmatic unit-test solution: use reflection once to call TickAsync.
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        Assert.NotNull(tickMethod);
-
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster-1", "Hello chat!"), Times.Once);
 
@@ -159,10 +256,7 @@ public class ScheduledMessageServiceTests
         });
 
         _sut.StartForUser("broadcaster-1");
-
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         _mockTwitchClientManager.Verify(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
 
@@ -194,14 +288,11 @@ public class ScheduledMessageServiceTests
 
         _sut.StartForUser("broadcaster-1");
 
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
         // First tick — interval elapsed from MinValue, so message fires
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         // Second tick immediately after — 60-minute interval has not elapsed
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         // Should have been sent exactly once
         _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster-1", "Interval message"), Times.Once);
@@ -216,11 +307,7 @@ public class ScheduledMessageServiceTests
 
         _sut.StartForUser("broadcaster-1");
 
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-        var exception = await Record.ExceptionAsync(
-            () => (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!);
+        var exception = await Record.ExceptionAsync(() => _sut.ExecuteTickAsync("broadcaster-1"));
 
         Assert.Null(exception);
 
@@ -250,10 +337,7 @@ public class ScheduledMessageServiceTests
         });
 
         _sut.StartForUser("broadcaster-1");
-
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         _mockTwitchClientManager.Verify(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
 
@@ -287,20 +371,17 @@ public class ScheduledMessageServiceTests
             }
         });
 
-        var tickMethod = typeof(ScheduledMessageService)
-            .GetMethod("TickAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
         _sut.StartForUser("broadcaster-1");
 
         // First tick — message fires, sets lastFired to now
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         // Stop — clears _lastFired
         _sut.StopForUser("broadcaster-1");
 
         // Restart — _lastFired is gone, so interval is elapsed again
         _sut.StartForUser("broadcaster-1");
-        await (Task)tickMethod!.Invoke(_sut, new object[] { "broadcaster-1" })!;
+        await _sut.ExecuteTickAsync("broadcaster-1");
 
         // Message should have been sent twice total (once per StartForUser cycle)
         _mockTwitchClientManager.Verify(c => c.SendMessageAsync("broadcaster-1", "Interval message"), Times.Exactly(2));

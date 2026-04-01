@@ -123,6 +123,53 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task GetAsync_ShouldHandleDateTimeCreatedAt()
+        {
+            // Azure Table Storage may return DateTime for legacy rows
+            var dt = new DateTime(2024, 1, 15, 10, 0, 0, DateTimeKind.Utc);
+            var entity = new TableEntity("global", "1")
+            {
+                ["gameName"] = "Test",
+                ["boxArtUrl"] = "url",
+                ["createdAt"] = dt,
+                ["lastSeenAt"] = DateTimeOffset.UtcNow
+            };
+
+            var response = Response.FromValue(entity, Mock.Of<Response>());
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>("global", "1", null, default))
+                .ReturnsAsync(response);
+
+            var result = await _repository.GetAsync("user", "1");
+
+            Assert.NotNull(result);
+            Assert.Equal(new DateTimeOffset(dt), result!.CreatedAt);
+        }
+
+        [Fact]
+        public async Task GetAsync_ShouldHandleStringCreatedAt()
+        {
+            var expected = new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero);
+            var entity = new TableEntity("global", "1")
+            {
+                ["gameName"] = "Test",
+                ["boxArtUrl"] = "url",
+                ["createdAt"] = expected.ToString("o"),
+                ["lastSeenAt"] = DateTimeOffset.UtcNow
+            };
+
+            var response = Response.FromValue(entity, Mock.Of<Response>());
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>("global", "1", null, default))
+                .ReturnsAsync(response);
+
+            var result = await _repository.GetAsync("user", "1");
+
+            Assert.NotNull(result);
+            Assert.Equal(expected, result!.CreatedAt);
+        }
+
+        [Fact]
         public async Task ListAsync_ShouldStopAtTake_AndOrderByLastSeenAtDesc()
         {
             var older = new TableEntity("global", "1")

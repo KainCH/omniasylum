@@ -103,7 +103,7 @@ namespace OmniForge.Infrastructure.Services
             {
                 list.Remove(sub);
                 if (list.Count == 0)
-                    _subscribers.TryRemove(userId, out _);
+                    _subscribers.TryRemove(new System.Collections.Generic.KeyValuePair<string, List<Subscriber>>(userId, list));
             }
         }
     }

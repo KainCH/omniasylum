@@ -43,37 +43,61 @@ namespace OmniForge.Infrastructure.Services
             if (settings.AntiCapsEnabled && IsCapSpam(message, settings.CapsPercentThreshold, settings.CapsMinMessageLength))
             {
                 _logger.LogInformation("Caps spam detected from {Login} in {Broadcaster}", chatterLogin, broadcasterId);
-                await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
-                await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Caps spam bot detection");
+                try
+                {
+                    await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
+                    await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Caps spam bot detection");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed to enforce caps spam for {Login} in {Broadcaster}", chatterLogin, broadcasterId);
+                    return false;
+                }
                 return true;
             }
 
             if (settings.AntiSymbolSpamEnabled && IsSymbolSpam(message, settings.SymbolPercentThreshold))
             {
                 _logger.LogInformation("Symbol spam detected from {Login} in {Broadcaster}", chatterLogin, broadcasterId);
-                await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
-                await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Symbol spam bot detection");
+                try
+                {
+                    await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
+                    await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Symbol spam bot detection");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed to enforce symbol spam for {Login} in {Broadcaster}", chatterLogin, broadcasterId);
+                    return false;
+                }
                 return true;
             }
 
             if (settings.LinkGuardEnabled && ContainsDisallowedUrl(message, settings.AllowedDomains))
             {
                 _logger.LogInformation("Disallowed link from {Login} in {Broadcaster}", chatterLogin, broadcasterId);
-                await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
-
-                var violations = _linkViolations.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, int>());
-                var count = violations.AddOrUpdate(chatterId, 1, (_, v) => v + 1);
-
-                if (count >= 2)
+                try
                 {
-                    await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Repeated link posting");
-                    _logger.LogInformation("Banned {Login} for repeated link posting in {Broadcaster}", chatterLogin, broadcasterId);
+                    await twitchApiService.DeleteChatMessageAsync(broadcasterId, messageId);
+
+                    var violations = _linkViolations.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, int>());
+                    var count = violations.AddOrUpdate(chatterId, 1, (_, v) => v + 1);
+
+                    if (count >= 2)
+                    {
+                        await twitchApiService.BanUserAsync(broadcasterId, chatterId, "Repeated link posting");
+                        _logger.LogInformation("Banned {Login} for repeated link posting in {Broadcaster}", chatterLogin, broadcasterId);
+                    }
+                    else
+                    {
+                        await twitchClientManager.SendMessageAsync(broadcasterId,
+                            $"@{chatterLogin} Please do not post unsolicited links. Next offense will result in a ban.");
+                        _logger.LogInformation("Warned {Login} for link posting in {Broadcaster}", chatterLogin, broadcasterId);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    await twitchClientManager.SendMessageAsync(broadcasterId,
-                        $"@{chatterLogin} Please do not post unsolicited links. Next offense will result in a ban.");
-                    _logger.LogInformation("Warned {Login} for link posting in {Broadcaster}", chatterLogin, broadcasterId);
+                    _logger.LogError(ex, "❌ Failed to enforce link guard for {Login} in {Broadcaster}", chatterLogin, broadcasterId);
+                    return false;
                 }
                 return true;
             }

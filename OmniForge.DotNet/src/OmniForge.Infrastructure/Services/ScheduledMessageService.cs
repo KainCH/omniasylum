@@ -34,26 +34,8 @@ namespace OmniForge.Infrastructure.Services
             _lastFired.GetOrAdd(broadcasterId, _ => new ConcurrentDictionary<string, DateTimeOffset>());
             _tickLocks.GetOrAdd(broadcasterId, _ => new SemaphoreSlim(1, 1));
 
-            var timer = new Timer(async _ =>
-            {
-                if (!_tickLocks.TryGetValue(broadcasterId, out var sem)) return;
-                bool acquired = false;
-                try
-                {
-                    acquired = await sem.WaitAsync(0).ConfigureAwait(false);
-                    if (!acquired) return; // skip overlapping tick
-                    await TickAsync(broadcasterId).ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException) { /* semaphore disposed by StopForUser — ignore */ }
-                finally
-                {
-                    if (acquired)
-                    {
-                        try { sem.Release(); }
-                        catch (ObjectDisposedException) { /* already disposed — ignore */ }
-                    }
-                }
-            }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            var timer = new Timer(_ => _ = ExecuteTickAsync(broadcasterId),
+                null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             _ = _timers.AddOrUpdate(broadcasterId, timer, (_, existing) =>
             {
                 existing.Dispose();
@@ -72,6 +54,27 @@ namespace OmniForge.Infrastructure.Services
                 sem.Dispose();
         }
 
+        internal async Task ExecuteTickAsync(string broadcasterId)
+        {
+            if (!_tickLocks.TryGetValue(broadcasterId, out var sem)) return;
+            bool acquired = false;
+            try
+            {
+                acquired = await sem.WaitAsync(0).ConfigureAwait(false);
+                if (!acquired) return; // skip overlapping tick
+                await TickAsync(broadcasterId).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException) { /* semaphore disposed by StopForUser — ignore */ }
+            finally
+            {
+                if (acquired)
+                {
+                    try { sem.Release(); }
+                    catch (ObjectDisposedException) { /* already disposed — ignore */ }
+                }
+            }
+        }
+
         private async Task TickAsync(string broadcasterId)
         {
             try
@@ -79,7 +82,7 @@ namespace OmniForge.Infrastructure.Services
                 using var scope = _scopeFactory.CreateScope();
                 var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
 
-                var user = await userRepository.GetUserAsync(broadcasterId);
+                var user = await userRepository.GetUserAsync(broadcasterId).ConfigureAwait(false);
                 if (user?.BotSettings?.ScheduledMessages == null) return;
 
                 var now = DateTimeOffset.UtcNow;
@@ -89,12 +92,13 @@ namespace OmniForge.Infrastructure.Services
                 {
                     if (!entry.Enabled || string.IsNullOrWhiteSpace(entry.Message)) continue;
 
+                    var intervalMinutes = Math.Max(1, entry.IntervalMinutes);
                     var lastFiredAt = fired.GetValueOrDefault(entry.Id, DateTimeOffset.MinValue);
-                    var intervalElapsed = now - lastFiredAt >= TimeSpan.FromMinutes(entry.IntervalMinutes);
+                    var intervalElapsed = now - lastFiredAt >= TimeSpan.FromMinutes(intervalMinutes);
 
                     if (intervalElapsed)
                     {
-                        await _twitchClientManager.SendMessageAsync(broadcasterId, entry.Message);
+                        await _twitchClientManager.SendMessageAsync(broadcasterId, entry.Message).ConfigureAwait(false);
                         fired[entry.Id] = now;
                         _logger.LogInformation("✅ Scheduled message sent for {Broadcaster}: {Id}", broadcasterId, entry.Id);
                     }
