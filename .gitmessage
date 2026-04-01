@@ -1,0 +1,20 @@
+# <type>(<scope>): <imperative summary — max 72 chars>
+#
+# Types: feat | fix | refactor | chore | docs | test | build | perf | deps
+# Scope: overlay | bot-moderation | eventsub | sync-agent | discord |
+#        counters | blazor | auth | infra | global | misc
+#
+# Body — bullet points, lines ≤ 100 chars (omit for trivial edits):
+#
+# - Key implementation moves
+# - Why the change is needed
+# - Side effects, migrations, or follow-up TODOs
+# - BREAKING CHANGE: <description> (if applicable)
+# - Tests: added | not-run | n/a
+#
+# Footer — always include one of:
+#   Closes: #123        (resolves the issue — GitHub auto-closes on merge)
+#   Refs: #123          (related but does not fully resolve)
+#   Refs: None          (no issue)
+#
+Closes: #

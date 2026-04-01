@@ -44,6 +44,8 @@ These prompts encode the complete, established workflow for each feature type. *
 | New user feature flag (end-to-end)                         | `/omniforge-add-feature-flag`         |
 | New Azure Table Storage repository                         | `/omniforge-add-repository`           |
 | New Blazor page + API controller                           | `/omniforge-new-blazor-feature`       |
+| New bot service or bot behavior (any of the 4 services)    | `/omniforge-add-bot-service`          |
+| New auto-moderation rule in BotModerationService           | `/omniforge-add-automod-rule`         |
 | Bug investigation or regression fix                        | `/omniforge-bug-investigation`        |
 | Sync Agent work (tray app, streaming software, publishing) | `/omniforge-sync-agent`               |
 

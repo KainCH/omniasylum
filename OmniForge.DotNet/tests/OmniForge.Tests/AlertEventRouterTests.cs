@@ -130,5 +130,69 @@ namespace OmniForge.Tests
 
             _overlay.Verify(x => x.NotifyFollowerAsync("user1", "Ivan"), Times.Once);
         }
+
+        // ── GetString secondary / tertiary / fallback paths ────────────────────
+
+        [Fact]
+        public async Task RouteAsync_Follow_UsesSecondaryKey_WhenPrimaryMissing()
+        {
+            // Payload has "user" (secondary) but not "displayName" (primary)
+            var data = JsonDocument.Parse(@"{""user"":""Alice""}").RootElement;
+            await _router.RouteAsync("user1", "channel.follow", "follow", data);
+            _overlay.Verify(x => x.NotifyFollowerAsync("user1", "Alice"), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Follow_UsesTertiaryKey_WhenPrimaryAndSecondaryMissing()
+        {
+            // Payload has "name" (tertiary) but not "displayName" or "user"
+            var data = JsonDocument.Parse(@"{""name"":""Bob""}").RootElement;
+            await _router.RouteAsync("user1", "channel.follow", "follow", data);
+            _overlay.Verify(x => x.NotifyFollowerAsync("user1", "Bob"), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Follow_UsesFallback_WhenNoNameKeyPresent()
+        {
+            var data = JsonDocument.Parse(@"{}").RootElement;
+            await _router.RouteAsync("user1", "channel.follow", "follow", data);
+            _overlay.Verify(x => x.NotifyFollowerAsync("user1", "Someone"), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Follow_NonStringDisplayName_UsesToStringConversion()
+        {
+            // "displayName" is a number — TryGetString falls through to prop.ToString()
+            var data = JsonDocument.Parse(@"{""displayName"":42}").RootElement;
+            await _router.RouteAsync("user1", "channel.follow", "follow", data);
+            _overlay.Verify(x => x.NotifyFollowerAsync("user1", "42"), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Resub_StringMonths_ParsedAsInt()
+        {
+            // "months" is a JSON string "6" — GetInt parses via string path
+            var data = JsonDocument.Parse(@"{""displayName"":""Carol"",""months"":""6"",""tier"":""Tier 1"",""message"":""""}").RootElement;
+            await _router.RouteAsync("user1", "channel.subscription.message", "resub", data);
+            _overlay.Verify(x => x.NotifyResubAsync("user1", "Carol", 6, "Tier 1", ""), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Subscription_StringIsGift_ParsedAsBool()
+        {
+            // "isGift" is a JSON string "true" — GetBool parses via string path
+            var data = JsonDocument.Parse(@"{""displayName"":""Dave"",""tier"":""Tier 1"",""isGift"":""true""}").RootElement;
+            await _router.RouteAsync("user1", "channel.subscribe", "subscription", data);
+            _overlay.Verify(x => x.NotifySubscriberAsync("user1", "Dave", "Tier 1", true), Times.Once);
+        }
+
+        [Fact]
+        public async Task RouteAsync_Subscription_NumericIsGift_ReturnsFalse()
+        {
+            // "isGift" is a number — GetBool returns false (no matching ValueKind)
+            var data = JsonDocument.Parse(@"{""displayName"":""Eve"",""tier"":""Tier 1"",""isGift"":0}").RootElement;
+            await _router.RouteAsync("user1", "channel.subscribe", "subscription", data);
+            _overlay.Verify(x => x.NotifySubscriberAsync("user1", "Eve", "Tier 1", false), Times.Once);
+        }
     }
 }

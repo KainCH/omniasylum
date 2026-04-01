@@ -172,6 +172,32 @@ public class SseConnectionManagerTests
         Assert.False(result);
     }
 
+    [Fact]
+    public void RemoveClient_UnknownUserId_DoesNotThrow()
+    {
+        var exception = Record.Exception(() => _manager.RemoveClient("nonexistent-user", "conn-id"));
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task StartAsync_And_StopAsync_DoNotThrow()
+    {
+        using var cts = new CancellationTokenSource();
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            await _manager.StartAsync(cts.Token);
+            await _manager.StopAsync(cts.Token);
+        });
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Dispose_DoesNotThrow()
+    {
+        var exception = Record.Exception(() => _manager.Dispose());
+        Assert.Null(exception);
+    }
+
     /// <summary>
     /// A stream wrapper that adds a small delay to WriteAsync to widen race windows.
     /// </summary>

@@ -73,6 +73,9 @@ namespace OmniForge.Infrastructure.Services
                 "moderator:read:automod_settings",
                 "moderator:manage:automod_settings",
 
+                // Follows (required for GetFollowedLiveStreamsAsync / raid suggestions)
+                "user:read:follows",
+
                 // Bits & clips
                 "bits:read",
                 "clips:edit"

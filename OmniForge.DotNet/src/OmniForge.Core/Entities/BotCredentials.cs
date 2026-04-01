@@ -4,6 +4,7 @@ namespace OmniForge.Core.Entities
 {
     public class BotCredentials
     {
+        public string UserId { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;

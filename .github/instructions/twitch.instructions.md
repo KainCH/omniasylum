@@ -84,7 +84,7 @@ public class MyNewEventHandler : BaseEventSubHandler
 **Step 3 — Register in DI** in `OmniForge.Infrastructure/DependencyInjection.cs`:
 
 ```csharp
-services.AddSingleton<IEventSubHandler, MyNewEventHandler>();
+services.AddScoped<IEventSubHandler, MyNewEventHandler>();
 ```
 
 The `EventSubHandlerRegistry` auto-discovers all `IEventSubHandler` registrations.
@@ -149,6 +149,7 @@ if (!status.Connected) { /* handle gracefully */ }
 | `stream.offline`                                      | `StreamOfflineHandler`          |
 | `channel.subscription.gift`                           | `SubscriptionGiftHandler`       |
 | `channel.subscription.message`                        | `SubscriptionMessageHandler`    |
+| `channel.suspicious_user.message`                     | `SuspiciousUserMessageHandler`  |
 
 ## NuGet Packages in Use
 

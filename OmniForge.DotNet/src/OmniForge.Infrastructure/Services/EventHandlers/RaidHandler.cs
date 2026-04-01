@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +44,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             {
                 await overlayNotifier.NotifyRaidAsync(broadcasterId, raiderName, viewers);
             }
+
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("raid-in", $"🚀 {raiderName} raided with {viewers} viewers!", DateTimeOffset.UtcNow));
+
+            var botReaction = scope.ServiceProvider.GetService<IBotReactionService>();
+            if (botReaction != null) await botReaction.HandleRaidReceivedAsync(broadcasterId, raiderName, viewers);
         }
     }
 }

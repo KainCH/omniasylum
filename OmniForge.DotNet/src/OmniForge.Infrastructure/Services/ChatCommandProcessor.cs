@@ -174,6 +174,16 @@ namespace OmniForge.Infrastructure.Services
                         {
                             return;
                         }
+
+                        if (await TryHandleBotSettingsCommandAsync(context, commandText, user, sendMessage))
+                        {
+                            return;
+                        }
+
+                        if (await TryHandleRaidCommandAsync(context, commandText, parts, isMod, sendMessage, scope.ServiceProvider))
+                        {
+                            return;
+                        }
                     }
 
                     if (cmdConfig != null)
@@ -360,6 +370,131 @@ namespace OmniForge.Infrastructure.Services
             {
                 _logger.LogError(ex, "Error processing chat command for {UserId}", (context.UserId ?? string.Empty).Replace("\r", "\\r").Replace("\n", "\\n"));
             }
+        }
+
+        private async Task<bool> TryHandleRaidCommandAsync(
+            ChatCommandContext context,
+            string commandText,
+            string[] parts,
+            bool isMod,
+            Func<string, string, Task>? sendMessage,
+            IServiceProvider services)
+        {
+            if (commandText != "!findraid" && commandText != "!raidlist" && commandText != "!raid")
+                return false;
+
+            if (!isMod)
+            {
+                if (sendMessage != null)
+                    await sendMessage(context.UserId, "⛔ Only mods and the broadcaster can use raid commands.");
+                return true;
+            }
+
+            var twitchApi = services.GetRequiredService<ITwitchApiService>();
+
+            // !findraid / !raidlist — suggest raid targets
+            if (commandText == "!findraid" || commandText == "!raidlist")
+            {
+                if (sendMessage == null) return true;
+
+                var targets = await twitchApi.GetFollowedLiveStreamsAsync(context.UserId, 5);
+
+                string source = "following";
+                if (targets.Count == 0)
+                {
+                    // Fallback: same game
+                    var streamInfo = await twitchApi.GetStreamInfoAsync(context.UserId);
+                    if (streamInfo != null && !string.IsNullOrWhiteSpace(streamInfo.Game))
+                    {
+                        // We need the game ID — find it via GetChannelCategoryAsync
+                        var channelCategory = await twitchApi.GetChannelCategoryAsync(context.UserId);
+                        if (channelCategory != null && !string.IsNullOrWhiteSpace(channelCategory.GameId))
+                        {
+                            targets = await twitchApi.GetStreamsByGameIdAsync(context.UserId, channelCategory.GameId, 5);
+                            source = $"same game ({channelCategory.GameName})";
+                        }
+                    }
+                }
+
+                if (targets.Count == 0)
+                {
+                    await sendMessage(context.UserId, "🔍 No raid targets found right now. Try again later!");
+                    return true;
+                }
+
+                var targetList = string.Join(" | ", targets.Select((t, i) =>
+                    $"{i + 1}. {t.BroadcasterName} ({t.ViewerCount} viewers{(string.IsNullOrWhiteSpace(t.GameName) ? "" : $", {t.GameName}")})"));
+
+                await sendMessage(context.UserId, $"🎯 Raid targets ({source}): {targetList} — Use !raid <username> to raid.");
+                return true;
+            }
+
+            // !raid <username>
+            if (commandText == "!raid")
+            {
+                if (sendMessage == null) return true;
+
+                if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    await sendMessage(context.UserId, "Usage: !raid <username>");
+                    return true;
+                }
+
+                var targetLogin = parts[1].TrimStart('@').ToLowerInvariant();
+                var targetUser = await twitchApi.GetUserByLoginAsync(targetLogin, context.UserId);
+
+                if (targetUser == null)
+                {
+                    await sendMessage(context.UserId, $"❌ Could not find streamer '{targetLogin}'.");
+                    return true;
+                }
+
+                var success = await twitchApi.StartRaidAsync(context.UserId, targetUser.Id);
+                if (success)
+                    await sendMessage(context.UserId, $"✅ Raiding {targetUser.DisplayName}! Have fun! 🚀");
+                else
+                    await sendMessage(context.UserId, $"❌ Raid failed. Make sure the bot account has channel:manage:raids scope or try again.");
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task<bool> TryHandleBotSettingsCommandAsync(
+            ChatCommandContext context,
+            string commandText,
+            OmniForge.Core.Entities.User? user,
+            Func<string, string, Task>? sendMessage)
+        {
+            if (sendMessage == null || user == null) return false;
+
+            var botSettings = user.BotSettings;
+
+            // !brb / !back — broadcaster-only
+            if (commandText == "!brb" && !string.IsNullOrWhiteSpace(botSettings.BrbMessage))
+            {
+                if (!context.IsBroadcaster) return false;
+                await sendMessage(context.UserId, botSettings.BrbMessage);
+                return true;
+            }
+
+            if (commandText == "!back" && !string.IsNullOrWhiteSpace(botSettings.BackMessage))
+            {
+                if (!context.IsBroadcaster) return false;
+                await sendMessage(context.UserId, botSettings.BackMessage);
+                return true;
+            }
+
+            // User-defined link commands (e.g. !discord, !youtube)
+            if (botSettings.LinkCommands.TryGetValue(commandText.TrimStart('!'), out var linkResponse)
+                && !string.IsNullOrWhiteSpace(linkResponse))
+            {
+                await sendMessage(context.UserId, linkResponse);
+                return true;
+            }
+
+            return false;
         }
 
         private async Task<bool> TryHandleCustomCounterCommandAsync(

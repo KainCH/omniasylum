@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,9 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 // totalBits is unknown from this event, passing 0
                 await overlayNotifier.NotifyBitsAsync(broadcasterId, displayName, bits, message, 0);
             }
+
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("cheer", $"💎 {displayName} cheered {bits} bits!", DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(message) ? null : message));
         }
 
         private static string GetCheerDisplayName(JsonElement eventData)

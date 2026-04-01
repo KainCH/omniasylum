@@ -36,7 +36,7 @@ The solution has five projects under `OmniForge.DotNet/src/`:
 
 **OmniForge.SyncAgent** — Windows-only system tray desktop app (.NET Generic Host + WinForms). Runs on the streamer's PC, bridges OBS/Streamlabs scene changes to the server via SignalR. Excluded from Docker builds; published as a single-file self-contained exe via `deploy/publish-agent.ps1`. Config stored at `%AppData%\omni-forge\agent-config.json`.
 
-**OmniForge.SceneSync** — Scene sync abstractions shared between Web and SyncAgent.
+**OmniForge.SceneSync** — Scene sync abstractions (Scene entity, SceneAction, OvertimeConfig) shared between Web and SyncAgent. Defines scene-triggered counter visibility overrides and overtime flashing config.
 
 ### Key data flows
 
@@ -54,6 +54,11 @@ The solution has five projects under `OmniForge.DotNet/src/`:
 
 **Twitch connections:** Per-user connections are user-initiated (not auto-started). `TwitchClientManager` manages per-user `TwitchClient` instances for chat. `StreamMonitorService` manages EventSub subscriptions per user after they click "Start Monitor".
 
+**Bot services lifecycle:**
+`StreamOnlineHandler` starts all bot services per user → `ChatMessageHandler` calls `IBotModerationService` and `IAutoShoutoutService` on every message → event handlers (sub, raid, follow, clip) call `IBotReactionService` to send templated chat replies → `StreamOfflineHandler` stops services and calls `ResetSession()` on each, clearing all in-session state.
+
+**Auto-ban flow:** `NativeEventSubService` receives `channel.suspicious_user.message` → `SuspiciousUserMessageHandler` (only acts on `"likely"` evaluations, skips `"possible"` to reduce false positives) → `TwitchApiService.BanUserAsync` using bot credentials from `BotCredentials` entity. Gated by `User.Features.AutoBanEvaders`.
+
 ### Repository pattern
 All repositories implement an interface from Core and inherit Azure Table Storage logic. Each calls `InitializeAsync()` at startup (called in `Program.cs`) to ensure tables exist. Local dev falls back to `UseDevelopmentStorage=true` (Azurite) when no `AzureStorage:AccountName` is configured.
 
@@ -61,10 +66,25 @@ All repositories implement an interface from Core and inherit Azure Table Storag
 All data is partitioned by `TwitchUserId`. Controllers extract the user ID from JWT claims — always use `User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value`, never `req.params`/route values directly.
 
 ### Feature flags
-`User.Features` (of type `FeatureFlags`) gates capabilities like `StreamOverlay`, `OverlayV2`, `SceneSync`, `ChatCommands`, etc. Check flags in controllers and Blazor pages before allowing access. New features default to `false` and must be admin-enabled per user.
+`User.Features` (of type `FeatureFlags`) gates capabilities like `StreamOverlay`, `OverlayV2`, `SceneSync`, `ChatCommands`, `AutoBanEvaders`, etc. Check flags in controllers and Blazor pages before allowing access. New features default to `false` and must be admin-enabled per user. Bot moderation settings live on `User.BotModeration` (type `BotModerationSettings`); bot reaction/shoutout/scheduled message settings live on `User.BotSettings`.
 
 ### EventSub handler strategy pattern
-Handlers implement `IEventSubHandler`, register as `IEventSubHandler` in DI, and expose a `SubscriptionType` property (e.g. `"channel.cheer"`). `EventSubHandlerRegistry` resolves the correct handler at runtime. Each handler uses `IServiceScopeFactory` to create a DI scope (handlers are singletons; repositories are scoped).
+Handlers implement `IEventSubHandler`, register as **Scoped** `IEventSubHandler` in DI, and expose a `SubscriptionType` property (e.g. `"channel.cheer"`). `EventSubHandlerRegistry` resolves the correct handler at runtime. Each handler uses `IServiceScopeFactory` to create a nested DI scope for resolving repositories.
+
+### Bot services
+Four singleton services in `Infrastructure/Services/`:
+
+| Service | Purpose |
+|---|---|
+| `BotModerationService` | Per-message spam detection: anti-caps, anti-symbol, link guard (2-strike ban). Called from `ChatMessageHandler`. |
+| `BotReactionService` | Sends templated chat messages for stream events (start, sub, raid, clip, first-time chat). Tokens: `{raider}`, `{viewers}`, etc. |
+| `AutoShoutoutService` | Auto-shoutout for followers on first chat message per session. Cooldowns: 2.5 min/user, 65 sec/channel. Follow status cached 10 min. |
+| `ScheduledMessageService` | Posts recurring chat messages on configurable intervals. Fires on a 1-minute tick. |
+
+All four are registered as singletons in `DependencyInjection.cs` and use `IServiceScopeFactory` when they need scoped services.
+
+### Session state management
+Bot services track per-session state in `ConcurrentDictionary` fields (e.g. `_shoutedThisSession`, `_linkViolations`, `_greeted`, `_lastFired`). `StreamOfflineHandler` calls `ResetSession()` on each service to wipe this state when the stream ends. When adding a new bot service, follow this pattern — never persist session data in repositories.
 
 ## Testing
 
@@ -125,6 +145,61 @@ cd OmniForge.DotNet/deploy
 | `Publish Sync Agent (bump major)` | Breaking change — increments major, resets minor + patch |
 
 The publish script signs the exe via Azure Trusted Signing and uploads it with `agent-manifest.json` to Azure Blob Storage for auto-update. Current version is tracked in `OmniForge.DotNet/deploy/agent-version.txt`.
+
+## Commit Convention
+
+### Message Structure
+
+```
+<type>(<scope>): <imperative summary>
+
+<body>
+
+Refs: <ADO work item IDs or None>
+```
+
+**type** — one of: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `build`, `perf`, `deps`
+
+**scope** — short, code-focused (e.g., `overlay`, `bot-moderation`, `eventsub`, `sync-agent`, `discord`). Use `global` when a change spans many areas; use `misc` if no scope fits. Skip blank scopes.
+
+**summary** — imperative voice (e.g., "Add auto-ban for suspicious users"), max 72 characters.
+
+### Body
+
+- Bullet points starting with `-`
+- Describe: key implementation moves, why the change is needed, side effects or follow-up TODOs
+- Keep lines ≤ 100 characters
+- Omit body only for trivial edits (typos, comment adjustments)
+
+### Footer
+
+Always include a footer line. Use the appropriate keyword:
+
+- `Closes: #123` — the commit fully resolves the issue (GitHub auto-closes on merge to main)
+- `Refs: #123` — the commit relates to the issue but does not fully resolve it
+- `Refs: None` — no issue applies
+
+Multiple issues: `Closes: #123, #456` or mix `Closes: #123` and `Refs: #456` on separate lines.
+
+### Style
+
+- No emojis or marketing language
+- Call out breaking changes with `BREAKING CHANGE:` in the body
+- Note test coverage with `Tests: added`, `Tests: not-run`, etc. when meaningful
+
+### Example
+
+```
+feat(bot-moderation): add link guard with 2-strike auto-ban
+
+- Adds LinkGuardEnabled setting to BotModerationSettings
+- Tracks per-broadcaster link violations in ConcurrentDictionary
+- Warns on first offense, bans on second via TwitchApiService
+- ResetSession clears violations on stream offline
+Tests: added
+
+Closes: #42
+```
 
 ## Pull Requests
 

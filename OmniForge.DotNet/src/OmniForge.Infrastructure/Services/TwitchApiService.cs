@@ -185,6 +185,80 @@ namespace OmniForge.Infrastructure.Services
             }
         }
 
+        public async Task BanUserAsync(string broadcasterId, string userId, string reason)
+        {
+            try
+            {
+                var botCreds = await _botCredentialRepository.GetAsync();
+                if (botCreds == null || string.IsNullOrEmpty(botCreds.AccessToken))
+                {
+                    _logger.LogWarning("⚠️ Cannot ban user: bot credentials missing. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    return;
+                }
+
+                // Refresh bot token if expiring within 5 minutes
+                if (botCreds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5))
+                {
+                    _logger.LogInformation("🔄 Refreshing Forge bot token before ban. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
+                    if (refreshed == null)
+                    {
+                        _logger.LogError("❌ Failed to refresh bot token; cannot ban user. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                        return;
+                    }
+
+                    botCreds.AccessToken = refreshed.AccessToken;
+                    botCreds.RefreshToken = refreshed.RefreshToken;
+                    botCreds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                    await _botCredentialRepository.SaveAsync(botCreds);
+                }
+
+                var clientId = _twitchSettings.ClientId;
+                if (string.IsNullOrEmpty(clientId)) throw new Exception("Twitch ClientId is not configured");
+
+                var botUserId = botCreds.UserId;
+                if (string.IsNullOrEmpty(botUserId))
+                {
+                    _logger.LogWarning("⚠️ Bot UserId is missing; cannot ban user. broadcaster_id={BroadcasterId}", EscapeLogValue(broadcasterId));
+                    return;
+                }
+
+                var url = $"https://api.twitch.tv/helix/moderation/bans?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&moderator_id={Uri.EscapeDataString(botUserId)}";
+
+                var client = _httpClientFactory.CreateClient();
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", botCreds.AccessToken);
+
+                var payload = new
+                {
+                    data = new
+                    {
+                        user_id = userId,
+                        reason = reason
+                    }
+                };
+
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("❌ Failed to ban user via Helix. broadcaster_id={BroadcasterId}, user_id={UserId}, status={Status}, error={Error}",
+                        EscapeLogValue(broadcasterId), EscapeLogValue(userId), (int)response.StatusCode, EscapeLogValue(errorContent));
+                    return;
+                }
+
+                _logger.LogInformation("✅ Successfully banned user {UserId} in channel {BroadcasterId}. Reason: {Reason}",
+                    EscapeLogValue(userId), EscapeLogValue(broadcasterId), EscapeLogValue(reason));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error banning user {UserId} in channel {BroadcasterId}", EscapeLogValue(userId), EscapeLogValue(broadcasterId));
+            }
+        }
+
         private static HelixErrorResponse? TryParseHelixError(string? json)
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -344,6 +418,32 @@ namespace OmniForge.Infrastructure.Services
                 writer.WriteBoolean("is_enabled", value.IsEnabled);
                 writer.WriteEndObject();
             }
+        }
+
+        private class StreamsHelixResponse
+        {
+            public List<StreamHelixData> Data { get; set; } = new();
+        }
+
+        private class StreamHelixData
+        {
+            [JsonPropertyName("user_id")]
+            public string? UserId { get; set; }
+
+            [JsonPropertyName("user_login")]
+            public string? UserLogin { get; set; }
+
+            [JsonPropertyName("user_name")]
+            public string? UserName { get; set; }
+
+            [JsonPropertyName("game_id")]
+            public string? GameId { get; set; }
+
+            [JsonPropertyName("game_name")]
+            public string? GameName { get; set; }
+
+            [JsonPropertyName("viewer_count")]
+            public int ViewerCount { get; set; }
         }
 
         public async Task<IEnumerable<TwitchCustomReward>> GetCustomRewardsAsync(string userId)
@@ -1209,12 +1309,350 @@ namespace OmniForge.Infrastructure.Services
             return await ExecuteWithRetryAsync(actingUserId, ExecuteAsync);
         }
 
+        public async Task<IReadOnlyList<RaidTargetDto>> GetFollowedLiveStreamsAsync(string userId, int first = 20)
+        {
+            var requestedFirst = Math.Clamp(first, 1, 100);
+            try
+            {
+                return await ExecuteWithRetryAsync(userId, async (accessToken) =>
+                {
+                    var clientId = _configuration["Twitch:ClientId"];
+                    if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                    var client = _httpClientFactory.CreateClient();
+                    var url = $"https://api.twitch.tv/helix/streams/followed?user_id={Uri.EscapeDataString(userId)}&first={requestedFirst}";
+
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    request.Headers.Add("Client-Id", clientId);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                    using var response = await client.SendAsync(request);
+                    var body = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var helixError = TryParseHelixError(body);
+                        _logger.LogWarning("⚠️ GetFollowedLiveStreams returned {StatusCode}: {Error}",
+                            (int)response.StatusCode, EscapeLogValue(helixError?.Message ?? body));
+                        return Array.Empty<RaidTargetDto>();
+                    }
+
+                    var parsed = JsonSerializer.Deserialize<StreamsHelixResponse>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    return (IReadOnlyList<RaidTargetDto>)(parsed?.Data ?? new List<StreamHelixData>())
+                        .Where(s => !string.IsNullOrWhiteSpace(s.UserId) && !string.Equals(s.UserId, userId, StringComparison.Ordinal))
+                        .Select(s => new RaidTargetDto
+                        {
+                            BroadcasterId = s.UserId!,
+                            BroadcasterLogin = s.UserLogin ?? string.Empty,
+                            BroadcasterName = s.UserName ?? string.Empty,
+                            GameId = s.GameId ?? string.Empty,
+                            GameName = s.GameName ?? string.Empty,
+                            ViewerCount = s.ViewerCount
+                        })
+                        .ToList();
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ GetFollowedLiveStreams failed for {UserId}; returning empty", EscapeLogValue(userId));
+                return Array.Empty<RaidTargetDto>();
+            }
+        }
+
+        public async Task<IReadOnlyList<RaidTargetDto>> GetStreamsByGameIdAsync(string userId, string gameId, int first = 20)
+        {
+            if (string.IsNullOrWhiteSpace(gameId))
+                return Array.Empty<RaidTargetDto>();
+
+            var requestedFirst = Math.Clamp(first, 1, 100);
+
+            async Task<IReadOnlyList<RaidTargetDto>> ExecuteAsync(string accessToken)
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/streams?game_id={Uri.EscapeDataString(gameId)}&first={requestedFirst}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var response = await client.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var helixError = TryParseHelixError(body);
+                    _logger.LogWarning("⚠️ GetStreamsByGameId returned {StatusCode}: {Error}",
+                        (int)response.StatusCode, EscapeLogValue(helixError?.Message ?? body));
+                    return Array.Empty<RaidTargetDto>();
+                }
+
+                var parsed = JsonSerializer.Deserialize<StreamsHelixResponse>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return (IReadOnlyList<RaidTargetDto>)(parsed?.Data ?? new List<StreamHelixData>())
+                    .Where(s => !string.IsNullOrWhiteSpace(s.UserId) && !string.Equals(s.UserId, userId, StringComparison.Ordinal))
+                    .Select(s => new RaidTargetDto
+                    {
+                        BroadcasterId = s.UserId!,
+                        BroadcasterLogin = s.UserLogin ?? string.Empty,
+                        BroadcasterName = s.UserName ?? string.Empty,
+                        GameId = s.GameId ?? string.Empty,
+                        GameName = s.GameName ?? string.Empty,
+                        ViewerCount = s.ViewerCount
+                    })
+                    .ToList();
+            }
+
+            var appToken = await _authService.GetAppAccessTokenAsync();
+            if (!string.IsNullOrEmpty(appToken))
+            {
+                try
+                {
+                    return await ExecuteAsync(appToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ GetStreamsByGameId with app token failed; falling back to user token. game_id={GameId}", EscapeLogValue(gameId));
+                }
+            }
+
+            try
+            {
+                return await ExecuteWithRetryAsync(userId, ExecuteAsync);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ GetStreamsByGameId failed for game_id={GameId}; returning empty", EscapeLogValue(gameId));
+                return Array.Empty<RaidTargetDto>();
+            }
+        }
+
+        public async Task<bool> StartRaidAsync(string fromBroadcasterId, string toBroadcasterId)
+        {
+            try
+            {
+                return await ExecuteWithRetryAsync(fromBroadcasterId, async (accessToken) =>
+                {
+                    var clientId = _configuration["Twitch:ClientId"];
+                    if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                    var client = _httpClientFactory.CreateClient();
+                    var url = $"https://api.twitch.tv/helix/raids?from_broadcaster_id={Uri.EscapeDataString(fromBroadcasterId)}&to_broadcaster_id={Uri.EscapeDataString(toBroadcasterId)}";
+
+                    using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                    request.Headers.Add("Client-Id", clientId);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                    request.Content = new StringContent(string.Empty, Encoding.UTF8, "application/json");
+
+                    using var response = await client.SendAsync(request);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var body = await response.Content.ReadAsStringAsync();
+                        var helixError = TryParseHelixError(body);
+                        _logger.LogWarning("❌ StartRaid failed {StatusCode}: {Error} from={From} to={To}",
+                            (int)response.StatusCode,
+                            EscapeLogValue(helixError?.Message ?? body),
+                            EscapeLogValue(fromBroadcasterId),
+                            EscapeLogValue(toBroadcasterId));
+                        return false;
+                    }
+
+                    _logger.LogInformation("✅ Raid started from={From} to={To}", EscapeLogValue(fromBroadcasterId), EscapeLogValue(toBroadcasterId));
+                    return true;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ StartRaid threw for from={From} to={To}", EscapeLogValue(fromBroadcasterId), EscapeLogValue(toBroadcasterId));
+                return false;
+            }
+        }
+
+        public async Task<bool> IsFollowingAsync(string broadcasterId, string targetUserId)
+        {
+            try
+            {
+                return await ExecuteWithRetryAsync(broadcasterId, async (accessToken) =>
+                {
+                    var clientId = _configuration["Twitch:ClientId"];
+                    if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                    var client = _httpClientFactory.CreateClient();
+                    var url = $"https://api.twitch.tv/helix/channels/followed?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&user_id={Uri.EscapeDataString(targetUserId)}&first=1";
+
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    request.Headers.Add("Client-Id", clientId);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                    using var response = await client.SendAsync(request);
+                    if (!response.IsSuccessStatusCode) return false;
+
+                    var body = await response.Content.ReadAsStringAsync();
+                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                    var data = doc.RootElement.GetProperty("data");
+                    return data.GetArrayLength() > 0;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ IsFollowing threw for broadcaster={Broadcaster} target={Target}", EscapeLogValue(broadcasterId), EscapeLogValue(targetUserId));
+                return false;
+            }
+        }
+
+        public async Task<bool> SendShoutoutAsync(string fromBroadcasterId, string toUserId)
+        {
+            try
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                var botCreds = await GetRefreshedBotCredsAsync();
+                if (botCreds == null)
+                {
+                    _logger.LogWarning("⚠️ SendShoutout: no bot credentials configured");
+                    return false;
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/chat/shoutouts?from_broadcaster_id={Uri.EscapeDataString(fromBroadcasterId)}&to_broadcaster_id={Uri.EscapeDataString(toUserId)}&moderator_id={Uri.EscapeDataString(botCreds.UserId)}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", botCreds.AccessToken);
+                request.Content = new StringContent(string.Empty, Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("✅ Shoutout sent from={From} to={To}", EscapeLogValue(fromBroadcasterId), EscapeLogValue(toUserId));
+                    return true;
+                }
+
+                var body = await response.Content.ReadAsStringAsync();
+                var helixError = TryParseHelixError(body);
+                _logger.LogWarning("❌ SendShoutout failed {StatusCode}: {Error}", (int)response.StatusCode, EscapeLogValue(helixError?.Message ?? body));
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ SendShoutout threw for from={From} to={To}", EscapeLogValue(fromBroadcasterId), EscapeLogValue(toUserId));
+                return false;
+            }
+        }
+
+        public async Task<bool> DeleteChatMessageAsync(string broadcasterId, string messageId)
+        {
+            try
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                var botCreds = await GetRefreshedBotCredsAsync();
+                if (botCreds == null)
+                {
+                    _logger.LogWarning("⚠️ DeleteChatMessage: no bot credentials configured");
+                    return false;
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/moderation/chat?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&moderator_id={Uri.EscapeDataString(botCreds.UserId)}&message_id={Uri.EscapeDataString(messageId)}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", botCreds.AccessToken);
+
+                using var response = await client.SendAsync(request);
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("✅ Chat message deleted broadcaster={Broadcaster} msg={Msg}", EscapeLogValue(broadcasterId), EscapeLogValue(messageId));
+                    return true;
+                }
+
+                var body = await response.Content.ReadAsStringAsync();
+                var helixError = TryParseHelixError(body);
+                _logger.LogWarning("❌ DeleteChatMessage failed {StatusCode}: {Error}", (int)response.StatusCode, EscapeLogValue(helixError?.Message ?? body));
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ DeleteChatMessage threw for broadcaster={Broadcaster} msg={Msg}", EscapeLogValue(broadcasterId), EscapeLogValue(messageId));
+                return false;
+            }
+        }
+
+        public async Task<bool> MarkUserSuspiciousAsync(string broadcasterId, string userId)
+        {
+            try
+            {
+                var clientId = _configuration["Twitch:ClientId"];
+                if (string.IsNullOrEmpty(clientId)) throw new InvalidOperationException("Twitch ClientId is not configured");
+
+                var botCreds = await GetRefreshedBotCredsAsync();
+                if (botCreds == null)
+                {
+                    _logger.LogWarning("⚠️ MarkUserSuspicious: no bot credentials configured");
+                    return false;
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var url = $"https://api.twitch.tv/helix/moderation/enforcements/status?broadcaster_id={Uri.EscapeDataString(broadcasterId)}&moderator_id={Uri.EscapeDataString(botCreds.UserId)}";
+                var payload = System.Text.Json.JsonSerializer.Serialize(new { user_id = userId, status = "active_monitoring" });
+
+                using var request = new HttpRequestMessage(HttpMethod.Put, url);
+                request.Headers.Add("Client-Id", clientId);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", botCreds.AccessToken);
+                request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+                using var response = await client.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("✅ User marked suspicious broadcaster={Broadcaster} user={User}", EscapeLogValue(broadcasterId), EscapeLogValue(userId));
+                    return true;
+                }
+
+                var body = await response.Content.ReadAsStringAsync();
+                var helixError = TryParseHelixError(body);
+                _logger.LogWarning("❌ MarkUserSuspicious failed {StatusCode}: {Error}", (int)response.StatusCode, EscapeLogValue(helixError?.Message ?? body));
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ MarkUserSuspicious threw for broadcaster={Broadcaster} user={User}", EscapeLogValue(broadcasterId), EscapeLogValue(userId));
+                return false;
+            }
+        }
+
         private static void ValidateAutomodValue(string name, int value)
         {
             if (value < 0 || value > 4)
             {
                 throw new InvalidOperationException($"Invalid AutoMod setting '{name}' value '{value}'. Valid range is 0-4.");
             }
+        }
+
+        private async Task<OmniForge.Core.Entities.BotCredentials?> GetRefreshedBotCredsAsync()
+        {
+            var botCreds = await _botCredentialRepository.GetAsync();
+            if (botCreds == null) return null;
+
+            if (botCreds.TokenExpiry <= DateTimeOffset.UtcNow.AddMinutes(5) && !string.IsNullOrEmpty(botCreds.RefreshToken))
+            {
+                var refreshed = await _authService.RefreshTokenAsync(botCreds.RefreshToken);
+                if (refreshed == null)
+                {
+                    _logger.LogError("❌ Failed to refresh Forge bot token in GetRefreshedBotCredsAsync");
+                    return null;
+                }
+
+                botCreds.AccessToken = refreshed.AccessToken;
+                botCreds.RefreshToken = refreshed.RefreshToken;
+                botCreds.TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(refreshed.ExpiresIn);
+                await _botCredentialRepository.SaveAsync(botCreds);
+            }
+
+            return botCreds;
         }
 
         private async Task<T> ExecuteWithRetryAsync<T>(string userId, Func<string, Task<T>> action)

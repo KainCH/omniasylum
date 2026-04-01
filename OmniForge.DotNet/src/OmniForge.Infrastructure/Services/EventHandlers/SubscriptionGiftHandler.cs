@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 // For batch gifts, recipient is "Community"
                 await overlayNotifier.NotifyGiftSubAsync(broadcasterId, gifterName, "Community", tier, total);
             }
+
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("giftsubs", $"🎁 {gifterName} gifted {total} subs!", DateTimeOffset.UtcNow));
+
+            var botReaction = scope.ServiceProvider.GetService<IBotReactionService>();
+            if (botReaction != null) await botReaction.HandleGiftSubAsync(broadcasterId, gifterName, total);
         }
 
         private static string GetGifterName(JsonElement eventData)

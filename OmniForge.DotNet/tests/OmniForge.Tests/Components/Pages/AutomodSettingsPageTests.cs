@@ -55,6 +55,8 @@ public class AutomodSettingsPageTests : BunitContext
 
         _mockUserRepository.Setup(r => r.GetUserAsync("admin123"))
             .ReturnsAsync(new User { TwitchUserId = "admin123", Role = "admin" });
+        _mockUserRepository.Setup(r => r.GetUserAsync("streamer456"))
+            .ReturnsAsync(new User { TwitchUserId = "streamer456", Role = "streamer" });
 
         _mockTwitchApiService.Setup(s => s.GetAutomodSettingsAsync("streamer456"))
             .ReturnsAsync(new AutomodSettingsDto
@@ -84,8 +86,8 @@ public class AutomodSettingsPageTests : BunitContext
         });
 
         // Assert
-        cut.WaitForState(() => cut.Markup.Contains("AutoMod Settings"));
-        cut.WaitForState(() => cut.Markup.Contains("Aggression"));
+        cut.WaitForState(() => cut.Markup.Contains("Moderation Settings"));
+        cut.WaitForState(() => cut.Markup.Contains("Bot Moderation"));
         _mockTwitchApiService.Verify(s => s.GetAutomodSettingsAsync("streamer456"), Times.Once);
     }
 
@@ -119,6 +121,156 @@ public class AutomodSettingsPageTests : BunitContext
         cut.WaitForState(() => cut.FindAll(".alert-danger").Count > 0);
         Assert.Contains("You do not have permission", cut.Find(".alert-danger").TextContent);
         _mockTwitchApiService.Verify(s => s.GetAutomodSettingsAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Collapsible card behaviour
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private void SetupDirectUserMocks(string userId = "user123")
+    {
+        _authProvider.SetUser(new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.Name, "Streamer"),
+            new Claim("userId", userId)
+        }, "TestAuthType")));
+
+        _mockUserRepository.Setup(r => r.GetUserAsync(userId))
+            .ReturnsAsync(new User { TwitchUserId = userId, Role = "streamer" });
+
+        _mockTwitchApiService.Setup(s => s.GetAutomodSettingsAsync(userId))
+            .ReturnsAsync(new AutomodSettingsDto
+            {
+                OverallLevel = null,
+                Aggression = 1,
+                Bullying = 1,
+                Disability = 1,
+                Misogyny = 1,
+                RaceEthnicityOrReligion = 1,
+                SexBasedTerms = 1,
+                SexualitySexOrGender = 1,
+                Swearing = 1
+            });
+    }
+
+    [Fact]
+    public void BotModerationCard_IsExpandedByDefault()
+    {
+        SetupDirectUserMocks();
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<CascadingAuthenticationState>(0);
+            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+            {
+                builder.OpenComponent<AutomodSettings>(2);
+                builder.CloseComponent();
+            }));
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.Markup.Contains("Anti-caps spam detection"));
+        Assert.Contains("Anti-caps spam detection", cut.Markup);
+        Assert.Contains("Save Bot Moderation", cut.Markup);
+    }
+
+    [Fact]
+    public void TwitchAutomodCard_IsCollapsedByDefault()
+    {
+        SetupDirectUserMocks();
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<CascadingAuthenticationState>(0);
+            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+            {
+                builder.OpenComponent<AutomodSettings>(2);
+                builder.CloseComponent();
+            }));
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.Markup.Contains("Bot Moderation"));
+        // Twitch AutoMod sliders should not yet be in the DOM
+        Assert.DoesNotContain("Aggression", cut.Markup);
+    }
+
+    [Fact]
+    public void BotModerationCard_CollapsesWhenHeaderClicked()
+    {
+        SetupDirectUserMocks();
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<CascadingAuthenticationState>(0);
+            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+            {
+                builder.OpenComponent<AutomodSettings>(2);
+                builder.CloseComponent();
+            }));
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.Markup.Contains("Anti-caps spam detection"));
+
+        var botModHeader = cut.FindAll(".card-header").First(h => h.TextContent.Contains("Bot Moderation"));
+        botModHeader.Click();
+
+        cut.WaitForState(() => !cut.Markup.Contains("Anti-caps spam detection"));
+        Assert.DoesNotContain("Anti-caps spam detection", cut.Markup);
+    }
+
+    [Fact]
+    public void TwitchAutomodCard_ExpandsWhenHeaderClicked()
+    {
+        SetupDirectUserMocks();
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<CascadingAuthenticationState>(0);
+            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+            {
+                builder.OpenComponent<AutomodSettings>(2);
+                builder.CloseComponent();
+            }));
+            b.CloseComponent();
+        });
+
+        cut.WaitForState(() => cut.Markup.Contains("Twitch AutoMod"));
+
+        var automodHeader = cut.FindAll(".card-header").First(h => h.TextContent.Contains("Twitch AutoMod"));
+        automodHeader.Click();
+
+        cut.WaitForState(() => cut.Markup.Contains("Aggression"));
+        Assert.Contains("Aggression", cut.Markup);
+        Assert.Contains("Swearing", cut.Markup);
+    }
+
+    [Fact]
+    public void SaveBotMod_CallsSaveUserAsync_AndShowsConfirmation()
+    {
+        SetupDirectUserMocks();
+        _mockUserRepository
+            .Setup(r => r.SaveUserAsync(It.IsAny<User>()))
+            .Returns(Task.CompletedTask);
+
+        var cut = Render(b =>
+        {
+            b.OpenComponent<CascadingAuthenticationState>(0);
+            b.AddAttribute(1, "ChildContent", (RenderFragment)(builder =>
+            {
+                builder.OpenComponent<AutomodSettings>(2);
+                builder.CloseComponent();
+            }));
+            b.CloseComponent();
+        });
+        cut.WaitForState(() => cut.Markup.Contains("Save Bot Moderation"));
+
+        cut.Find("button.btn-primary.btn-sm").Click();
+
+        cut.WaitForState(() => cut.Markup.Contains("Bot moderation settings saved!"));
+        _mockUserRepository.Verify(r => r.SaveUserAsync(It.IsAny<User>()), Times.Once);
+        Assert.Contains("Bot moderation settings saved!", cut.Markup);
     }
 
     private sealed class TestAuthStateProvider : AuthenticationStateProvider

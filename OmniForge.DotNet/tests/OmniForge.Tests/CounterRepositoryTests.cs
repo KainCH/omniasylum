@@ -840,6 +840,54 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task GetCountersAsync_ShouldHandleDateTimeLastUpdated()
+        {
+            // Arrange — Azure Table Storage may return DateTime instead of DateTimeOffset for legacy rows
+            var userId = "123";
+            var dt = new DateTime(2024, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["Deaths"] = 0,
+                ["LastUpdated"] = dt
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(new DateTimeOffset(dt), result!.LastUpdated);
+        }
+
+        [Fact]
+        public async Task GetCountersAsync_ShouldHandleStringLastUpdated()
+        {
+            // Arrange — legacy rows may store DateTimeOffset as ISO 8601 string
+            var userId = "123";
+            var expected = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+            var tableEntity = new TableEntity(userId, "counters")
+            {
+                ["Deaths"] = 0,
+                ["LastUpdated"] = expected.ToString("o")
+            };
+
+            var mockResponse = Mock.Of<Response<TableEntity>>(r => r.Value == tableEntity);
+            _mockTableClient.Setup(x => x.GetEntityAsync<TableEntity>(userId, "counters", It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockResponse);
+
+            // Act
+            var result = await _repository.GetCountersAsync(userId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(expected, result!.LastUpdated);
+        }
+
+        [Fact]
         public async Task TryClaimStreamStartDiscordNotificationAsync_WhenAddConflicts_RetriesAndUpdates_AndReturnsTrue()
         {
             var userId = "123";

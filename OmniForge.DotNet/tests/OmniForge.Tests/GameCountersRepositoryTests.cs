@@ -88,6 +88,49 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task GetAsync_ShouldHandleDateTimeLastUpdated()
+        {
+            // Azure Table Storage may return DateTime for legacy rows
+            var dt = new DateTime(2024, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+            var entity = new TableEntity("u1", "g1")
+            {
+                ["Deaths"] = 1,
+                ["lastUpdated"] = dt
+            };
+
+            var response = Response.FromValue(entity, Mock.Of<Response>());
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>("u1", "g1", null, default))
+                .ReturnsAsync(response);
+
+            var result = await _repository.GetAsync("u1", "g1");
+
+            Assert.NotNull(result);
+            Assert.Equal(new DateTimeOffset(dt), result!.LastUpdated);
+        }
+
+        [Fact]
+        public async Task GetAsync_ShouldHandleStringLastUpdated()
+        {
+            var expected = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+            var entity = new TableEntity("u1", "g1")
+            {
+                ["Deaths"] = 1,
+                ["lastUpdated"] = expected.ToString("o")
+            };
+
+            var response = Response.FromValue(entity, Mock.Of<Response>());
+            _mockTableClient
+                .Setup(x => x.GetEntityAsync<TableEntity>("u1", "g1", null, default))
+                .ReturnsAsync(response);
+
+            var result = await _repository.GetAsync("u1", "g1");
+
+            Assert.NotNull(result);
+            Assert.Equal(expected, result!.LastUpdated);
+        }
+
+        [Fact]
         public async Task SaveAsync_ShouldUpsertEntityWithSerializedCustomCounters()
         {
             var counters = new Counter

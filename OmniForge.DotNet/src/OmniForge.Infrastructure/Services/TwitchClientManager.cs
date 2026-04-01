@@ -98,6 +98,10 @@ namespace OmniForge.Infrastructure.Services
         private readonly ITwitchMessageHandler _messageHandler;
         private readonly TwitchSettings _twitchSettings;
         private readonly ILogger<TwitchClientManager> _logger;
+        private readonly IDashboardFeedService? _dashboardFeedService;
+        private readonly IAutoShoutoutService? _autoShoutoutService;
+        private readonly IBotModerationService? _botModerationService;
+        private readonly IBotReactionService? _botReactionService;
 
         private readonly ITwitchBotClientFactory _botClientFactory;
 
@@ -105,8 +109,13 @@ namespace OmniForge.Infrastructure.Services
             IServiceScopeFactory scopeFactory,
             ITwitchMessageHandler messageHandler,
             IOptions<TwitchSettings> twitchSettings,
-            ILogger<TwitchClientManager> logger)
-            : this(scopeFactory, messageHandler, twitchSettings, logger, new TwitchLibBotClientFactory())
+            ILogger<TwitchClientManager> logger,
+            IDashboardFeedService dashboardFeedService,
+            IAutoShoutoutService autoShoutoutService,
+            IBotModerationService botModerationService,
+            IBotReactionService botReactionService)
+            : this(scopeFactory, messageHandler, twitchSettings, logger, new TwitchLibBotClientFactory(),
+                   dashboardFeedService, autoShoutoutService, botModerationService, botReactionService)
         {
         }
 
@@ -115,13 +124,21 @@ namespace OmniForge.Infrastructure.Services
             ITwitchMessageHandler messageHandler,
             IOptions<TwitchSettings> twitchSettings,
             ILogger<TwitchClientManager> logger,
-            ITwitchBotClientFactory botClientFactory)
+            ITwitchBotClientFactory botClientFactory,
+            IDashboardFeedService? dashboardFeedService = null,
+            IAutoShoutoutService? autoShoutoutService = null,
+            IBotModerationService? botModerationService = null,
+            IBotReactionService? botReactionService = null)
         {
             _scopeFactory = scopeFactory;
             _messageHandler = messageHandler;
             _twitchSettings = twitchSettings.Value;
             _logger = logger;
             _botClientFactory = botClientFactory;
+            _dashboardFeedService = dashboardFeedService;
+            _autoShoutoutService = autoShoutoutService;
+            _botModerationService = botModerationService;
+            _botReactionService = botReactionService;
         }
 
         public async Task ConnectUserAsync(string userId)
@@ -213,17 +230,49 @@ namespace OmniForge.Infrastructure.Services
             try
             {
                 var channel = (chatMessage.Channel ?? string.Empty).Trim().TrimStart('#').ToLowerInvariant();
-                if (string.IsNullOrEmpty(channel))
+                if (string.IsNullOrEmpty(channel)) return;
+
+                if (!_channelToUserId.TryGetValue(channel, out var userId)) return;
+
+                // 1. Bot moderation — awaited so enforcement (delete/ban) completes before
+                //    command processing. If enforced, skip commands and reactions entirely.
+                if (_botModerationService != null)
                 {
-                    return;
+                    var enforced = await _botModerationService.CheckAndEnforceAsync(
+                        userId, chatMessage.UserId, chatMessage.Username,
+                        chatMessage.Id, chatMessage.Message,
+                        chatMessage.IsModerator, chatMessage.IsBroadcaster).ConfigureAwait(false);
+                    if (enforced) return;
                 }
 
-                if (!_channelToUserId.TryGetValue(channel, out var userId))
-                {
-                    return;
-                }
+                // 2. Dashboard feed
+                _dashboardFeedService?.PushChatMessage(userId, new DashboardChatMessage(
+                    userId,
+                    chatMessage.Username,
+                    chatMessage.DisplayName,
+                    chatMessage.Message,
+                    chatMessage.IsModerator,
+                    chatMessage.IsBroadcaster,
+                    chatMessage.IsSubscriber,
+                    chatMessage.ColorHex,
+                    DateTimeOffset.UtcNow));
 
+                // 3. Regular message/command handling
                 await _messageHandler.HandleMessageAsync(userId, chatMessage, SendMessageAsync).ConfigureAwait(false);
+
+                // 4. Auto-shoutout (fire-and-forget)
+                if (_autoShoutoutService != null)
+                    FireAndForget(
+                        _autoShoutoutService.HandleChatMessageAsync(
+                            userId, chatMessage.UserId, chatMessage.Username,
+                            chatMessage.DisplayName, chatMessage.IsModerator, chatMessage.IsBroadcaster),
+                        "AutoShoutoutService.HandleChatMessageAsync");
+
+                // 5. First-time chatter (fire-and-forget)
+                if (_botReactionService != null)
+                    FireAndForget(
+                        _botReactionService.HandleFirstTimeChatAsync(userId, chatMessage.UserId, chatMessage.DisplayName),
+                        "BotReactionService.HandleFirstTimeChatAsync");
             }
             catch (Exception ex)
             {

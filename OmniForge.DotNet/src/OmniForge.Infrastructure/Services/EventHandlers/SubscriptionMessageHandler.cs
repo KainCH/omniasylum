@@ -54,6 +54,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             {
                 await overlayNotifier.NotifyResubAsync(broadcasterId, displayName, months, tier, message);
             }
+
+            var feedService = scope.ServiceProvider.GetService<IDashboardFeedService>();
+            feedService?.PushEvent(broadcasterId, new DashboardEvent("resub", $"🔄 {displayName} resubbed for {months} months!", DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(message) ? null : message));
+
+            var botReaction = scope.ServiceProvider.GetService<IBotReactionService>();
+            if (botReaction != null) await botReaction.HandleResubAsync(broadcasterId, displayName, months);
         }
 
         private static string GetMessageText(JsonElement eventData)

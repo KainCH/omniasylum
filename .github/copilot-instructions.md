@@ -1,641 +1,260 @@
-# GitHub Copilot Instructions - OmniAsylum Stream Counter
+# GitHub Copilot Instructions — OmniForge
 
 ## Project Overview
 
-This is a **multi-tenant Twitch stream counter application** with a Node.js backend API deployed to Azure. The system supports multiple streamers, each with their own Twitch bot integration and feature flags managed by an admin user.
+**OmniForge** is a multi-tenant Twitch streaming tool suite built on **.NET 9 Blazor Server** and deployed to **Azure Container Apps**. It lets streamers manage counters, overlays, Discord notifications, and automated chat bot behavior — all per-user, partitioned by `TwitchUserId`.
 
-## Architecture
+---
 
-- **Frontend**: Vanilla HTML/CSS/JavaScript with Socket.io client
-- **Backend**: Node.js + Express + Socket.io server (API folder)
-- **Database**: Dual-mode - Azure Table Storage (production) or local JSON files (development)
-- **Authentication**: Twitch OAuth 2.0 with JWT tokens
-- **Deployment**: Azure Container Apps with Bicep infrastructure as code
-- **Real-time**: WebSocket rooms per user for device synchronization
+## Solution Structure
 
-## Code Style & Conventions
-
-### JavaScript
-- Use **single quotes** for strings
-- Use **async/await** instead of promises when possible
-- Always use **const** and **let**, never **var**
-- Add proper error handling with try/catch blocks
-- Log important events with emojis (✅ ❌ 🔄 💀 🤬)
-- Use descriptive variable names (e.g., `twitchUserId` not `id`)
-
-### C# / .NET
-- **Code Coverage**: Maintain at least **85% code coverage** for all new code.
-- Use **Async/Await** for all I/O bound operations.
-- Use **Dependency Injection** for all services and repositories.
-- Follow **Clean Architecture** principles (Core, Infrastructure, Web).
-- Use **xUnit** for unit testing and **Moq** for mocking.
-
-### File Organization
 ```
-API/
-├── server.js                    # Main application entry point
-├── database.js                  # Storage abstraction layer
-├── keyVault.js                  # Azure Key Vault integration
-├── authRoutes.js                # OAuth endpoints
-├── authMiddleware.js            # JWT verification
-├── counterRoutes.js             # Counter API
-├── adminRoutes.js               # Admin-only endpoints
-└── multiTenantTwitchService.js  # Per-user Twitch bots
+OmniForge.DotNet/
+├── src/OmniForge.Core           ← Domain: entities, interfaces, constants. ZERO external NuGet deps.
+├── src/OmniForge.Infrastructure ← Implementations: Twitch, Discord, Azure, bot services, EventSub, JWT
+├── src/OmniForge.Web            ← Blazor Server + ASP.NET Core API controllers
+├── src/OmniForge.SyncAgent      ← Windows tray app — bridges OBS/Streamlabs to server via SignalR
+├── src/OmniForge.SceneSync      ← Shared scene sync abstractions (Scene, SceneAction, OvertimeConfig)
+└── tests/OmniForge.Tests        ← xUnit + Moq + bunit — ≥85% coverage required
 ```
 
-### API Routes Pattern
-- Authentication routes: `/auth/*`
-- Counter routes: `/api/counters/*` (requires JWT)
-- Admin routes: `/api/admin/*` (requires JWT + admin role)
-- Health check: `/api/health` (public)
+**Core layer rule:** Zero external NuGet dependencies. All interfaces live here. If you need a NuGet package, it belongs in Infrastructure or Web.
 
-## Key Technical Decisions
+---
 
-### Multi-Tenancy
-- Each user identified by `twitchUserId`
-- Data partitioned by user in database
-- WebSocket rooms: `user:${userId}` for isolated broadcasts
-- Individual Twitch bot instance per streamer
+## Build & Test Commands
 
-### Security
-- **Twitch OAuth**: Users login with Twitch account
-- **JWT tokens**: 30-day expiration, stored in httpOnly cookies
-- **Azure Key Vault**: All secrets stored securely (Twitch client ID/secret, JWT secret)
-- **Managed Identity**: No connection strings in code
-- **CORS**: Restricted to specific frontend origins
+```bash
+dotnet build OmniForge.DotNet/OmniForge.sln
+dotnet run --project OmniForge.DotNet/src/OmniForge.Web
+dotnet test OmniForge.DotNet/OmniForge.sln
+dotnet test OmniForge.DotNet/OmniForge.sln --filter "FullyQualifiedName~MyClassName"
+dotnet test OmniForge.DotNet/OmniForge.sln --collect:"XPlat Code Coverage"
+```
 
-### Role-Based Access Control
-- **Admin role**: Twitch user `riress` only
-- **Streamer role**: All other users (default)
-- Admin can manage all users via `/api/admin/*` endpoints
-- Feature flags per user (chatCommands, channelPoints, autoClip, etc.)
+---
 
-### Database Schema
+## Architecture Principles
 
-#### Users Table
-```javascript
+### Multi-Tenancy (Critical)
+All data is partitioned by `TwitchUserId`. In controllers, always extract user ID from JWT claims:
+```csharp
+var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+          ?? User.FindFirst("sub")?.Value;
+```
+Never use route params or client-supplied IDs as the tenant key. Every repository query must include `PartitionKey == twitchUserId`.
+
+### Clean Architecture
+Dependencies point inward only: Core ← Infrastructure ← Web. Never reference Infrastructure or Web from Core.
+
+### Feature Flags
+`User.Features` (type `UserFeatures`) gates all optional capabilities. New features default to `false` and are admin-enabled per user. Always check flags server-side — never trust client-side checks.
+
+---
+
+## Key Data Flows
+
+### Twitch EventSub → Counter → Overlay
+`NativeEventSubService` (raw WebSocket) → `EventSubMessageProcessor` → `EventSubHandlerRegistry` → `BaseEventSubHandler.HandleAsync` → updates repositories → `INotificationService` (Discord + chat + overlay) → `AlertEventRouter` → `SseOverlayNotifier` via SSE.
+
+### Bot Services Lifecycle
+`StreamOnlineHandler` starts bot services → `ChatMessageHandler` calls `IBotModerationService` and `IAutoShoutoutService` on every message → EventSub handlers call `IBotReactionService` for event-triggered messages → `StreamOfflineHandler` calls `ResetSession` on all stateful services.
+
+### Overlay Connections
+- **V2 (primary):** `GET /sse/overlay?userId=...` → `SseConnectionManager` → `SseOverlayNotifier`
+- **V1 (legacy):** `GET /ws/overlay?userId=...` → `WebSocketOverlayManager` → `WebSocketOverlayNotifier`
+
+### Scene Sync (SyncAgent → Server)
+OBS scene change → `ObsWebSocketClient` → `StreamingSoftwareMonitor` → `ServerConnectionService.InvokeAsync("ReportSceneChange")` → `SyncAgentHub` → `ISceneActionService` → `IOverlayNotifier`.
+
+---
+
+## C# Conventions
+
+### Dependency Injection
+- Constructor injection only — never `IServiceProvider` in constructors
+- Use `IServiceScopeFactory` when a Singleton needs Scoped services (e.g. repositories inside EventSub handlers, bot services)
+- Register in `OmniForge.Infrastructure/DependencyInjection.cs`
+- **Singletons:** stateful services, client managers, bot services, EventSub handlers
+- **Scoped:** repositories
+- **Transient:** stateless utilities
+
+### Async
+All I/O-bound operations must be async. Never `.Result` or `.Wait()`. Use `ConfigureAwait(false)` in Infrastructure code (not in Blazor components). Always accept `CancellationToken` in long-running methods.
+
+### Logging
+```csharp
+_logger.LogInformation("✅ {Event} processed for {User}", eventType, username);
+_logger.LogWarning("⚠️ {Event} skipped — {Reason}", eventType, reason);
+_logger.LogError(ex, "❌ Failed to process {Event} for {User}", eventType, username);
+```
+Never log tokens, access tokens, or secrets.
+
+### Coverage Exclusions
+Use `[ExcludeFromCodeCoverage(Justification = "Wraps external I/O — logic tested in XxxProcessor")]` only for classes that directly wrap Azure SDK, WebSocket, or HTTP I/O. Factor testable logic into a separate class.
+
+---
+
+## Bot Services
+
+Four Singleton services in `Infrastructure/Services/`:
+
+| Service | Interface | Called From |
+|---|---|---|
+| `BotModerationService` | `IBotModerationService` | `ChatMessageHandler` (every message) |
+| `BotReactionService` | `IBotReactionService` | EventSub handlers (sub, raid, clip, etc.) |
+| `AutoShoutoutService` | `IAutoShoutoutService` | `ChatMessageHandler` (every message) |
+| `ScheduledMessageService` | `IScheduledMessageService` | Internal 1-minute Timer |
+
+**Constructor rule:** `(ILogger<T>, IServiceScopeFactory)` only. Resolve scoped services inside async methods via `CreateScope()`.
+
+**Session state:** `ConcurrentDictionary` fields keyed by `broadcasterId`. Never persist session state to repositories. `StreamOfflineHandler` calls `ResetSession(broadcasterId)` on all stateful bot services. When adding a new stateful bot service, wire it into `StreamOfflineHandler`.
+
+---
+
+## Repository Pattern
+
+All repositories implement an interface from Core and inherit Azure Table Storage logic. Each calls `InitializeAsync()` at startup (`Program.cs`). Local dev uses Azurite (`UseDevelopmentStorage=true`) when `AzureStorage:AccountName` is not configured.
+
+---
+
+## Testing Patterns
+
+**Controller tests** — construct manually, no `WebApplicationFactory`:
+```csharp
+_sut = new MyController(_serviceMock.Object, _loggerMock.Object);
+_sut.ControllerContext = new ControllerContext
 {
-  twitchUserId: string,           // Partition key
-  username: string,               // Twitch login name
-  displayName: string,
-  email: string,
-  profileImageUrl: string,
-  accessToken: string,            // Encrypted
-  refreshToken: string,           // Encrypted
-  tokenExpiry: ISO date,
-  role: 'admin' | 'streamer',     // Auto-assign admin to 'riress'
-  features: JSON string,          // Feature flags object
-  isActive: boolean,              // Enable/disable account
-  createdAt: ISO date,
-  lastLogin: ISO date
-}
-```
-
-#### Counters Table
-```javascript
-{
-  userId: string,                 // Partition key (twitchUserId)
-  counterId: string,              // Row key
-  deaths: number,
-  swears: number,
-  lastUpdated: ISO date
-}
-```
-
-### Feature Flags System
-```javascript
-{
-  chatCommands: true,      // Default enabled
-  channelPoints: false,    // Channel points redemptions
-  autoClip: false,         // Auto-clip on milestones
-  customCommands: false,   // Custom chat commands
-  analytics: false,        // Analytics dashboard
-  webhooks: false          // External webhooks
-}
-```
-
-## Twitch Integration
-
-### OAuth Scopes Required
-- `user:read:email` - Read user profile
-- `chat:read` - Read chat messages
-- `chat:edit` - Send chat messages
-- `channel:read:subscriptions` - (Future) Read subscription data
-
-### Chat Commands
-
-**Public Commands:**
-- `!deaths` - Show death count
-- `!swears` - Show swear count
-- `!stats` - Show all stats
-
-**Mod-Only Commands (Broadcaster + Mods):**
-- `!death+` / `!d+` - Increment deaths
-- `!death-` / `!d-` - Decrement deaths
-- `!swear+` / `!s+` - Increment swears
-- `!swear-` / `!s-` - Decrement swears
-- `!resetcounters` - Reset all counters
-
-### Permission Checking
-```javascript
-// Use Twitch's userInfo flags
-const hasPermission = (userInfo) => {
-  return userInfo.isBroadcaster || userInfo.isMod;
+    HttpContext = new DefaultHttpContext
+    {
+        User = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim(ClaimTypes.NameIdentifier, "test-user-123") }))
+    }
 };
 ```
 
-## Azure Deployment
+**Service tests** — mock `IServiceScopeFactory` to provide mocked repositories.
 
-This application is deployed using Azure Container Apps with a complete infrastructure-as-code approach using Bicep templates.
+**Blazor component tests** — use bunit.
 
-### Production Environment
+**Coverage gate: ≥85% on all new production code.**
 
-**Current Deployment:**
-- **Resource Group**: `Streamer-Tools-RG`
-- **Container App**: `omniforgestream-api-prod`
-- **Container Registry**: `omniforgeacr.azurecr.io`
-- **Application URL**: `https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io`
-- **Region**: South Central US
+---
 
-### Prerequisites
+## Prompt Protocols
 
-1. **Azure CLI** installed and authenticated (`az login`)
-2. **Docker** installed for container builds
-3. **Azure Container Registry** access configured
-4. **Twitch Developer App** with OAuth credentials
-5. **Admin access** to Azure subscription
+When implementing a feature that matches one of these types, **invoke the corresponding prompt automatically** as your implementation guide:
 
-### Deployment Process
+| Task | Prompt |
+|---|---|
+| New Twitch EventSub subscription handler | `/omniforge-add-eventsub-handler` |
+| New Discord notification or embed | `/omniforge-add-discord-notification` |
+| New counter type or counter feature | `/omniforge-add-counter-feature` |
+| New user feature flag (end-to-end) | `/omniforge-add-feature-flag` |
+| New Azure Table Storage repository | `/omniforge-add-repository` |
+| New Blazor page + API controller | `/omniforge-new-blazor-feature` |
+| New bot service or bot behavior | `/omniforge-add-bot-service` |
+| New auto-moderation rule | `/omniforge-add-automod-rule` |
+| Bug investigation | `/omniforge-bug-investigation` |
+| SyncAgent work | `/omniforge-sync-agent` |
 
-**⚠️ MANDATORY: Use VS Code tasks for ALL deployments. NEVER use manual commands.**
+For live API documentation, use the doc-fetching prompts:
+- `/fetch-twitch-docs` — before any Twitch EventSub or Helix API work
+- `/fetch-discord-docs` — before any Discord notification or embed work
+- `/fetch-dotnet-bestpractices` — before any new service, repository, or DI design work
 
-#### **Task-Based Deployment Strategy**
+---
 
-Choose the appropriate VS Code task based on the type of changes:
+## Pre-Implementation Checklist
 
-#### **1. Frontend AND Backend Changes**
-**Task:** `Fullstack Deploy`
+Before writing any implementation code for a new feature, confirm:
 
-**When to use:**
-- Modified React components in `modern-frontend/`
-- Changed CSS/styling files
-- Updated frontend JavaScript/JSX
-- Modified both frontend AND backend files
-- Any changes that affect the user interface
+1. **Multi-tenancy** — does every data operation scope to a single `TwitchUserId`?
+2. **Feature flag** — should this be gated in `User.Features` (default `false`)?
+3. **EventSub scope** — does this need a new Twitch OAuth scope or subscription?
+4. **Secrets** — are credentials kept out of logs and out of code?
+5. **Coverage** — where will the ≥85% gate be met? Plan tests upfront.
+6. **Bot service lifecycle** — if stateful, is `ResetSession` wired into `StreamOfflineHandler`?
+7. **Overlay** — does the UI need a real-time push via `IOverlayNotifier`?
+8. **Discord** — should this trigger a `IDiscordService` notification?
 
-**What it does:**
-1. Builds the React frontend (`npm run build`)
-2. Copies built files to `API/frontend/`
-3. Builds and pushes Docker image
-4. Deploys to Azure Container Apps
+---
 
-```javascript
-// Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "Fullstack Deploy")
-```
+## Configuration
 
-#### **2. Backend-Only Changes**
-**Task:** `Backend Deploy`
+**Local:** `appsettings.Development.json` — populate `Twitch:ClientId`, `Twitch:ClientSecret`, `Jwt:Secret`, and either `AzureStorage:AccountName` or `Azure:StorageConnectionString`.
 
-**When to use:**
-- Modified Node.js server files in `API/`
-- Updated API routes, middleware, or services
-- Changed database logic or authentication
-- Modified environment configuration
-- NO frontend changes whatsoever
+**Production:** Azure Key Vault via Managed Identity. Key vault name from `KeyVaultName` config key.
 
-**What it does:**
-1. Builds and pushes Docker image (uses existing frontend)
-2. Deploys to Azure Container Apps
-3. Skips frontend build (faster deployment)
+---
 
-```javascript
-// Use VS Code Command Palette or run via task
-run_task(workspaceFolder, "Backend Deploy")
-```
-
-#### **⚠️ CRITICAL: Task Selection Rules**
-
-- **If ANY frontend files changed** → Use `Fullstack Deploy`
-- **If ONLY backend files changed** → Use `Backend Deploy`
-- **When in doubt** → Use `Fullstack Deploy` (safer but slower)
-- **NEVER mix manual commands with tasks**
-
-#### **3. Deployment Verification (Required After Every Task)**
-
-**⚠️ ALWAYS verify task completion using the established monitoring protocol:**
-
-```javascript
-// 1. Check task output for completion
-get_task_output(workspaceFolder, taskId)
-terminal_last_command() // Verify actual execution
-
-// 2. Look for success indicators:
-"provisioningState": "Succeeded"
-"runningStatus": "Running"
-"latestRevisionName": "...-MMDDHHM" // New timestamp
-
-// 3. Test application health
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
-// Expected: {"status":"ok","timestamp":"..."}
-```
-
-#### **🚨 Deployment Failure Handling**
-
-The enhanced deployment script now provides comprehensive error handling and recovery options:
-
-**Failure Detection & Diagnosis:**
-- Automatic error categorization (Docker vs Azure failures)
-- Detailed failure reasons and troubleshooting steps
-- System diagnostics (disk space, Docker status, Azure auth)
-- Recovery suggestions specific to the failure type
-
-**Available Recovery Tasks:**
-
-```javascript
-// Deployment diagnostics - check system health
-run_task(workspaceFolder, "Deployment Diagnostics")
-
-// View rollback options
-run_task(workspaceFolder, "Rollback Deployment")
-
-// Retry after fixing issues
-run_task(workspaceFolder, "Backend Deploy")      // Backend-only retry
-run_task(workspaceFolder, "Fullstack Deploy")    // Full retry
-```
-
-**Common Failure Scenarios:**
-
-1. **Docker Build Failures:**
-   - Check Docker is running: `docker --version`
-   - Clear cache: `docker system prune -f`
-   - Verify Dockerfile syntax in API/ directory
-   - Check disk space
-
-2. **Azure Deployment Failures:**
-   - Re-authenticate: `az login`
-   - Check ACR access: `az acr login --name omniforgeacr`
-   - Verify Container App status
-   - Review Azure service health
-
-3. **Rollback Procedure:**
-   - Use "Rollback Deployment" task to see recent revisions
-   - Activate previous working revision if needed
-   - Test application health after rollback
-
-**Manual monitoring commands (only if tasks fail):**
-```powershell
-# Check deployment status
-az containerapp show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --query "properties.provisioningState"
-
-# View application logs
-az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 50
-
-# Monitor Twitch bot connections
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/twitch/status"
-```
-
-### Environment Variables
-
-**Required in Azure:**
-- `TWITCH_CLIENT_ID` - From Azure Key Vault
-- `TWITCH_CLIENT_SECRET` - From Azure Key Vault
-- `JWT_SECRET` - From Azure Key Vault
-- `TWITCH_REDIRECT_URI` - `https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/auth/twitch/callback`
-- `FRONTEND_URL` - `https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io`
-- `CORS_ORIGIN` - Same as FRONTEND_URL
-
-**Production Configuration:**
-- `NODE_ENV` - `production`
-- `DB_MODE` - `azure`
-- `AZURE_STORAGE_ACCOUNT` - Managed via Managed Identity
-- `AZURE_KEY_VAULT_NAME` - Managed via Managed Identity
-- `PORT` - `3000`
-- `APPLICATIONINSIGHTS_CONNECTION_STRING` - For monitoring
-
-### Azure Infrastructure
-
-#### Container Apps Configuration
-```yaml
-Resources:
-  CPU: 0.25 cores
-  Memory: 0.5 GB
-  Ephemeral Storage: 1 GB
-
-Scaling:
-  Min Replicas: 0 (scale to zero when idle)
-  Max Replicas: 5
-  Polling Interval: 30 seconds
-  Cooldown Period: 300 seconds
-
-Rules:
-  - HTTP requests (concurrent)
-  - WebSocket connections (TCP)
-```
-
-#### Container Registry
-- **Registry**: `omniforgeacr.azurecr.io`
-- **Authentication**: Managed Identity (no passwords)
-- **Image**: `omniforgestream-api:latest`
-
-#### Key Vault Integration
-- **RBAC Access**: Via User Assigned Managed Identity
-- **Secrets**: Twitch credentials, JWT secret
-- **No connection strings**: Passwordless authentication
-
-#### Storage & Database
-- **Azure Table Storage**: Multi-tenant data partitioning
-- **Tables**: `users`, `counters`
-- **Access**: Via Managed Identity
-
-#### Monitoring
-- **Application Insights**: Performance and error tracking
-- **Container Logs**: Real-time via Azure CLI
-- **Health Checks**: `/api/health` endpoint
-
-#### **CRITICAL: Deployment Verification Requirements**
-
-**⚠️ MANDATORY: After EVERY Azure deployment, verify these specific indicators:**
+## Deployment
 
 ```powershell
-# 1. Check deployment JSON response for:
-"provisioningState": "Succeeded"     # MUST be "Succeeded"
-"runningStatus": "Running"           # MUST be "Running"
-"latestRevisionName": "...-MMDDHHM"  # NEW revision with current timestamp
-
-# 2. Verify health endpoint responds:
-curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
-# Expected response: {"status":"ok","timestamp":"..."}
-
-# 3. Check for Docker build completion markers:
-# Look for: "Successfully tagged omniforgeacr.azurecr.io/omniforgestream-api:latest"
-# Look for: "Successfully pushed omniforgeacr.azurecr.io/omniforgestream-api:latest"
+cd OmniForge.DotNet/deploy
+./deploy.ps1 -Environment "dev"           # App image only
+./deploy.ps1 -Environment "dev" -FullDeploy  # Bicep infra + app
 ```
 
-**🚨 NEVER proceed without confirming ALL three verification steps pass!**
+**SyncAgent** — always use VS Code tasks (`Publish Sync Agent`, `Publish Sync Agent (bump minor/major)`), never raw `dotnet publish`. The script signs via Azure Trusted Signing and uploads to Blob Storage for auto-update.
 
-### Troubleshooting Deployment
+---
 
-#### Common Issues
+## Commit Convention
 
-1. **Container Won't Start**
-   ```powershell
-   # Check logs for errors
-   az containerapp logs show --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --tail 100
+### Message Structure
 
-   # Restart container
-   az containerapp revision restart --name omniforgestream-api-prod --resource-group Streamer-Tools-RG
-   ```
+```
+<type>(<scope>): <imperative summary>
 
-2. **Twitch Bots Not Connecting**
-   ```powershell
-   # Verify Key Vault access
-   curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/health"
+<body>
 
-   # Check bot status
-   curl -s "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/api/twitch/status"
-   ```
-
-3. **Authentication Issues**
-   ```powershell
-   # Test Twitch OAuth flow
-   Start-Process "https://omniforgestream-api-prod.proudplant-8dc6fe7a.southcentralus.azurecontainerapps.io/auth/twitch"
-   ```
-
-#### Rollback Process
-
-```powershell
-# List recent revisions
-az containerapp revision list --name omniforgestream-api-prod --resource-group Streamer-Tools-RG
-
-# Activate previous revision
-az containerapp revision activate --name omniforgestream-api-prod --resource-group Streamer-Tools-RG --revision [REVISION-NAME]
+Refs: <ADO work item IDs or None>
 ```
 
-### VS Code Tasks Integration
+**type** — one of: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `build`, `perf`, `deps`
 
-The workspace includes pre-configured tasks for deployment and troubleshooting:
+**scope** — short, code-focused (e.g., `overlay`, `bot-moderation`, `eventsub`, `sync-agent`, `discord`). Use `global` when a change spans many areas; use `misc` if no scope fits. Skip blank scopes.
 
-**Deployment Tasks:**
-- **Fullstack Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Fullstack Deploy`
-- **Backend Deploy**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Backend Deploy`
+**summary** — imperative voice (e.g., "Add auto-ban for suspicious users"), max 72 characters.
 
-**Troubleshooting Tasks:**
-- **Deployment Diagnostics**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Deployment Diagnostics`
-- **Rollback Deployment**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Rollback Deployment`
-- **View Azure Logs**: `Ctrl+Shift+P` → `Tasks: Run Task` → `View Azure Logs`
+### Body
 
-**Authentication Tasks:**
-- **Azure Login**: `Ctrl+Shift+P` → `Tasks: Run Task` → `Azure Login`### Security Considerations
+- Bullet points starting with `-`
+- Describe: key implementation moves, why the change is needed, side effects or follow-up TODOs
+- Keep lines ≤ 100 characters
+- Omit body only for trivial edits (typos, comment adjustments)
 
-- **No secrets in code**: All credentials via Key Vault
-- **Managed Identity**: No connection strings or passwords
-- **CORS**: Restricted to specific origins
-- **HTTPS only**: All communication encrypted
-- **JWT tokens**: HTTP-only cookies, 30-day expiration
-- **Role-based access**: Admin vs streamer permissions
+### Footer
 
-## Common Patterns
+Always include a footer line. Use the appropriate keyword:
 
-### Authentication Middleware
-```javascript
-// Require JWT authentication
-app.use('/api/counters', requireAuth, counterRoutes);
+- `Closes: #123` — the commit fully resolves the issue (GitHub auto-closes on merge to main)
+- `Refs: #123` — the commit relates to the issue but does not fully resolve it
+- `Refs: None` — no issue applies
 
-// Require admin role
-app.use('/api/admin', requireAuth, requireAdmin, adminRoutes);
+Multiple issues: `Closes: #123, #456` or mix `Closes: #123` and `Refs: #456` on separate lines.
+
+### Style
+
+- No emojis or marketing language
+- Call out breaking changes with `BREAKING CHANGE:` in the body
+- Note test coverage with `Tests: added`, `Tests: not-run`, etc. when meaningful
+
+### Example
+
+```
+feat(bot-moderation): add link guard with 2-strike auto-ban
+
+- Adds LinkGuardEnabled setting to BotModerationSettings
+- Tracks per-broadcaster link violations in ConcurrentDictionary
+- Warns on first offense, bans on second via TwitchApiService
+- ResetSession clears violations on stream offline
+Tests: added
+
+Closes: #42
 ```
 
-### **CRITICAL: User ID Usage Pattern**
-The authentication middleware assigns `req.user.userId = user.twitchUserId`, so:
+## Pull Requests
 
-**✅ CORRECT - Use `req.user.userId` for authenticated requests:**
-```javascript
-// For authenticated user's own data
-const counters = await database.getCounters(req.user.userId);
-const userData = await database.getUser(req.user.userId);
-```
-
-**✅ CORRECT - Use `user.twitchUserId` when iterating database results:**
-```javascript
-// When working with user objects from database
-const allUsers = await database.getAllUsers();
-for (const user of allUsers) {
-  const counters = await database.getCounters(user.twitchUserId);
-}
-```
-
-**❌ WRONG - Don't use `req.params.userId` directly without validation:**
-```javascript
-// This can cause undefined partition key errors
-const counters = await database.getCounters(req.params.userId);
-```
-
-### WebSocket Room Broadcast
-```javascript
-// Emit to specific user's devices only
-io.to(`user:${userId}`).emit('counterUpdate', data);
-```
-
-### Feature Flag Check
-```javascript
-// Check if user has feature enabled
-const hasFeature = await database.hasFeature(userId, 'chatCommands');
-if (hasFeature) {
-  // Enable feature
-}
-```
-
-### Error Handling
-```javascript
-try {
-  // Operation
-  console.log('✅ Success message');
-} catch (error) {
-  console.error('❌ Error context:', error);
-  res.status(500).json({ error: 'User-friendly message' });
-}
-```
-
-## Testing Guidelines
-
-### Local Development
-1. Copy `.env.example` to `.env`
-2. Add Twitch credentials
-3. Set `DB_MODE=local`
-4. Run `npm install && npm start`
-5. Test OAuth at `http://localhost:3000/auth/twitch`
-
-### Admin Testing
-1. Login as Twitch user `riress`
-2. Verify JWT contains `role: 'admin'`
-3. Test admin endpoints work
-4. Login as different user, verify admin endpoints return 403
-
-### Multi-Tenant Testing
-1. Login as User A
-2. Modify counters
-3. Login as User B in different browser
-4. Verify User B sees their own data, not User A's
-
-## Important Notes
-
-- ⚠️ **Never commit .env files** - Use .env.example template
-- ⚠️ **Always use user-scoped queries** - Prevent data leaks between tenants
-- ⚠️ **Validate admin role server-side** - Never trust client-side checks
-- ⚠️ **Refresh Twitch tokens** - Access tokens expire, implement refresh flow
-- ⚠️ **Use WebSocket rooms** - Don't broadcast to all users
-- ⚠️ **Encrypt sensitive data** - Access/refresh tokens should be encrypted in database
-- ⚠️ **Test feature flags** - Ensure disabled features cannot be accessed
-
-## Future Features (Not Yet Implemented)
-
-- Channel points redemption handling
-- Auto-clip on counter milestones
-- Custom command builder
-- Analytics dashboard
-- Webhook integration for external services
-- StreamElements/StreamLabs integration
-- Multi-language support
-- Counter themes/customization
-
-## 🔍 **CRITICAL: Task Completion Monitoring**
-
-**⚠️ MANDATORY: Always verify task completion before proceeding. NEVER assume tasks succeeded based on "no problems" messages.**
-
-### Task Verification Protocol
-
-#### 1. **For VS Code Tasks** (run_task tool):
-```javascript
-// ALWAYS follow this pattern:
-1. Execute: run_task(workspaceFolder, taskId)
-2. Wait for completion
-3. Verify: get_task_output(workspaceFolder, taskId)
-4. Check terminal_last_command() for actual output
-5. Look for completion indicators
-```
-
-#### 2. **Required Completion Indicators**:
-- **Docker Build**: Look for `Successfully tagged` and `Successfully pushed`
-- **Azure Deploy**: Look for `"provisioningState": "Succeeded"` and `"runningStatus": "Running"`
-- **Frontend Build**: Look for `Built successfully` or `dist/` folder creation
-- **Terminal Commands**: Look for exit codes and actual output, not just "succeeded"
-
-#### 3. **Deployment Verification Steps**:
-```powershell
-# ALWAYS verify these after deployment:
-1. Check provisioningState: "Succeeded"
-2. Check runningStatus: "Running"
-3. Verify new revision created (latestRevisionName)
-4. Test health endpoint: curl /api/health
-5. Check application logs if needed
-```
-
-#### 4. **Terminal Output Analysis**:
-```javascript
-// Look for these specific patterns:
-- "The terminal will be reused by tasks" = Task completed
-- JSON response with provisioningState = Deployment status
-- Exit Code: 0 = Success, non-zero = Failure
-- Error messages in stderr output
-```
-
-#### 5. **Never Skip Verification**:
-- ❌ **WRONG**: "The task succeeded with no problems" → Assume success
-- ✅ **CORRECT**: Check actual terminal output, verify JSON responses, test endpoints
-
-#### 6. **Failure Detection**:
-```javascript
-// Always check for these failure indicators:
-- Exit codes !== 0
-- Error messages in output
-- "provisioningState": "Failed"
-- Network timeouts or connection errors
-- Missing expected success messages
-```
-
-### **ENFORCEMENT RULES**:
-1. **NEVER** proceed without verifying task completion
-2. **ALWAYS** use `get_task_output()` and `terminal_last_command()`
-3. **ALWAYS** look for specific success/failure indicators
-4. **ALWAYS** verify deployment health after Azure updates
-5. If verification fails, **STOP** and troubleshoot before continuing
-
-## When Writing New Code
-
-1. **Use correct user ID pattern** - `req.user.userId` for authenticated requests, `user.twitchUserId` for database iteration
-2. **Check user context** - Always verify `req.user` exists and matches data owner
-3. **Use middleware** - Don't duplicate auth/role checks
-4. **Log important events** - Help with debugging in production
-5. **Handle Twitch token expiry** - Implement automatic refresh
-6. **Validate inputs** - Sanitize all user inputs
-7. **Return consistent errors** - Use standard error format
-8. **Update documentation** - Keep README.md in sync with changes
-9. **Test multi-tenant isolation** - Ensure users can't access others' data
-
-## Admin User Reference
-
-- **Username**: `riress`
-- **Role**: `admin` (auto-assigned on login)
-- **Capabilities**: Full user management, feature flag control, system statistics
-- **Cannot**: Delete own admin account
-
-## Questions to Ask Before Implementation
-
-1. Does this need to be multi-tenant aware?
-2. Should this feature be behind a feature flag?
-3. Do I need to check user permissions?
-4. Will this work in both local and Azure modes?
-5. Is sensitive data being logged?
-6. Are Twitch tokens being refreshed?
-7. Is this accessible via WebSocket and/or REST?
-8. Does the admin need visibility into this?
-
-## Pull Requests (GitHub MCP Required)
-
-When creating or updating Pull Requests for this repo:
-
-1. **MUST** use the GitHub MCP tools (e.g. `mcp_github_*`) for PR creation, updates, and review workflows.
-2. **DO NOT** create PRs via terminal commands (`gh pr create`, `hub`, raw `curl`, etc.) unless the GitHub MCP tools are unavailable.
-3. Before creating a PR, search for a PR template in `.github/` and follow it if present.
-4. Prefer a single PR per logical change-set; keep PR titles and descriptions concise and action-oriented.
+Use GitHub MCP tools (`mcp_github_*`) for PR creation and review. Do not use `gh pr create` or raw curl unless MCP tools are unavailable.

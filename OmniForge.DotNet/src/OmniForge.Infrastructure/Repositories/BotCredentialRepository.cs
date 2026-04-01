@@ -43,6 +43,7 @@ namespace OmniForge.Infrastructure.Repositories
 
                 return new BotCredentials
                 {
+                    UserId = GetString(entity, "UserId", "userId"),
                     Username = GetString(entity, "Username", "username"),
                     AccessToken = GetString(entity, "AccessToken", "accessToken"),
                     RefreshToken = GetString(entity, "RefreshToken", "refreshToken"),
@@ -75,6 +76,8 @@ namespace OmniForge.Infrastructure.Repositories
                 // Write both naming styles so rolling deployments don't break.
                 var entity = new TableEntity(BotCredentialsTableEntity.Partition, BotCredentialsTableEntity.Row)
                 {
+                    ["UserId"] = credentials.UserId,
+                    ["userId"] = credentials.UserId,
                     ["Username"] = credentials.Username,
                     ["username"] = credentials.Username,
                     ["AccessToken"] = credentials.AccessToken,
