@@ -389,4 +389,85 @@ public class BotModerationServiceTests
         await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "login1", "m4", "http://bad.com", false, false);
         _mockTwitchApiService.Verify(s => s.BanUserAsync("broadcaster1", "chatter1", It.IsAny<string>()), Times.Never);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // API failure resilience — catch blocks return false instead of throwing
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CheckAndEnforce_CapsSpam_ApiThrows_ReturnsFalse()
+    {
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster1",
+            Username = "broadcaster",
+            BotModeration = new BotModerationSettings { AntiCapsEnabled = true, CapsPercentThreshold = 70, CapsMinMessageLength = 5 }
+        });
+        _mockTwitchApiService.Setup(s => s.DeleteChatMessageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ThrowsAsync(new System.Exception("API error"));
+
+        var result = await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "login1", "msg1",
+            "HELLO WORLD THIS IS CAPS", isMod: false, isBroadcaster: false);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task CheckAndEnforce_SymbolSpam_ApiThrows_ReturnsFalse()
+    {
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster1",
+            Username = "broadcaster",
+            BotModeration = new BotModerationSettings { AntiSymbolSpamEnabled = true, SymbolPercentThreshold = 50 }
+        });
+        _mockTwitchApiService.Setup(s => s.DeleteChatMessageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ThrowsAsync(new System.Exception("API error"));
+
+        var result = await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "login1", "msg1",
+            "!!!!!!!!!!!!!!!!!!!!!!", isMod: false, isBroadcaster: false);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task CheckAndEnforce_LinkGuard_ApiThrows_ReturnsFalse()
+    {
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster1",
+            Username = "broadcaster",
+            BotModeration = new BotModerationSettings { LinkGuardEnabled = true, AllowedDomains = new List<string>() }
+        });
+        _mockTwitchApiService.Setup(s => s.DeleteChatMessageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ThrowsAsync(new System.Exception("API error"));
+
+        var result = await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "login1", "msg1",
+            "check out http://malicious.com", isMod: false, isBroadcaster: false);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task CheckAndEnforce_LinkGuard_UnparseableUrl_TreatedAsDisallowed()
+    {
+        // A URL with an out-of-range port passes the URL regex but fails Uri.TryCreate —
+        // the service should treat it as disallowed (return true after enforcing).
+        _mockUserRepository.Setup(r => r.GetUserAsync("broadcaster1")).ReturnsAsync(new User
+        {
+            TwitchUserId = "broadcaster1",
+            Username = "broadcaster",
+            BotModeration = new BotModerationSettings { LinkGuardEnabled = true, AllowedDomains = new List<string>() }
+        });
+        _mockTwitchApiService.Setup(s => s.DeleteChatMessageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        _mockTwitchClientManager.Setup(s => s.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        // Port 99999 > 65535 — regex matches but Uri.TryCreate returns false
+        var result = await _sut.CheckAndEnforceAsync("broadcaster1", "chatter1", "login1", "msg1",
+            "check https://example.com:99999/path", isMod: false, isBroadcaster: false);
+
+        Assert.True(result);
+    }
 }
