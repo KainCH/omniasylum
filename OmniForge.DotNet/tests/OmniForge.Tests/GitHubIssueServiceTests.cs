@@ -70,6 +70,43 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task CreateIssueAsync_DebugEnabled_SuccessWithMissingFields_CallsTruncateForLogging()
+        {
+            // Response succeeds but is missing "number" and "html_url", triggering the debug log path
+            // that calls TruncateForLogging with a non-empty body.
+            var handler = new Mock<HttpMessageHandler>();
+            handler.Protected()
+                .Setup<Task<HttpResponseMessage>>("SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = System.Net.HttpStatusCode.Created,
+                    Content = new System.Net.Http.StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+                });
+
+            var httpClient = new HttpClient(handler.Object);
+            var settings = Mock.Of<IOptionsMonitor<GitHubSettings>>(m =>
+                m.CurrentValue == new GitHubSettings
+                {
+                    ApiBaseUrl = "https://api.github.com",
+                    IssuesToken = "test-token",
+                    RepoOwner = "KainCH",
+                    RepoName = "omniasylum"
+                });
+
+            // Enable Debug so TruncateForLogging is called
+            var mockLogger = new Mock<ILogger<GitHubIssueService>>();
+            mockLogger.Setup(l => l.IsEnabled(LogLevel.Debug)).Returns(true);
+
+            var service = new GitHubIssueService(httpClient, settings, mockLogger.Object);
+
+            // Should succeed (returns 0/"") but hit the debug truncation log path
+            var result = await service.CreateIssueAsync("title", "body", new List<string>(), CancellationToken.None);
+            Assert.Equal(0, result.Number);
+        }
+
+        [Fact]
         public async Task CreateIssueAsync_ShouldThrow_WhenTokenMissing()
         {
             var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object);

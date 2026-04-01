@@ -324,5 +324,39 @@ namespace OmniForge.Tests.EventHandlers
             Assert.Null(result.ReconnectUrl);
             Assert.True(result.RequiresDisconnect);
         }
+
+        [Fact]
+        public void Process_NullJson_ShouldReturnUnknown()
+        {
+            // "null" deserializes to null EventSubMessage — exercises the null-check branch
+            var result = _processor.Process("null");
+            Assert.Equal(EventSubMessageType.Unknown, result.MessageType);
+        }
+
+        [Fact]
+        public void Process_Notification_NoBroadcasterUserId_TryGetBroadcasterIdReturnsNull()
+        {
+            // Event payload exists but has no broadcaster_user_id — TryGetBroadcasterId returns null
+            var json = @"{
+                ""metadata"": {
+                    ""message_id"": ""notification-456"",
+                    ""message_type"": ""notification"",
+                    ""message_timestamp"": ""2024-01-01T00:00:00Z""
+                },
+                ""payload"": {
+                    ""subscription"": {
+                        ""id"": ""sub-456"",
+                        ""type"": ""stream.online""
+                    },
+                    ""event"": {
+                        ""some_other_field"": ""value""
+                    }
+                }
+            }";
+
+            var result = _processor.Process(json);
+
+            Assert.Equal(EventSubMessageType.Notification, result.MessageType);
+        }
     }
 }

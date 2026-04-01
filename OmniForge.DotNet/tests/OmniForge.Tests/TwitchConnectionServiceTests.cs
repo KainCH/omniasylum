@@ -161,6 +161,24 @@ namespace OmniForge.Tests
         }
 
         [Fact]
+        public async Task StartAsync_LogsInitializedMessage()
+        {
+            // StartAsync on a BackgroundService calls ExecuteAsync internally
+            using var cts = new CancellationTokenSource();
+            await _service.StartAsync(cts.Token);
+            await _service.StopAsync(cts.Token);
+
+            _mockLogger.Verify(
+                x => x.Log(
+                    LogLevel.Information,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("connections are user-initiated")),
+                    null,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
+        [Fact]
         public async Task ConnectAllUsersAsync_ShouldLogUserConnections()
         {
             // Arrange

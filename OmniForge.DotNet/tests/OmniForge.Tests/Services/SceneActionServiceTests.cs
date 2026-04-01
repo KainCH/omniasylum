@@ -152,5 +152,70 @@ namespace OmniForge.Tests.Services
             await _service.HandleSceneChangedAsync("user1", "Gaming", "BRB");
             Assert.False(_overtimeTracker.HasPendingOvertime("user1"));
         }
+
+        [Fact]
+        public async Task HandleSceneChanged_HideAllSentinel_SetsHideAllAndClearsIndividualCounters()
+        {
+            // CounterVisibility with "*" = "hide" should set HideAll and turn off all individual counters
+            var action = new SceneAction
+            {
+                UserId = "user1",
+                SceneName = "BRB",
+                CounterVisibility = new Dictionary<string, string> { { "*", "hide" } }
+            };
+            _mockSceneActionRepo.Setup(x => x.GetAsync("user1", "BRB")).ReturnsAsync(action);
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1")).ReturnsAsync(new User
+            {
+                TwitchUserId = "user1",
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Deaths = true, Swears = true, Screams = true, Bits = true }
+                }
+            });
+
+            await _service.HandleSceneChangedAsync("user1", "BRB", null);
+
+            _mockOverlayNotifier.Verify(x => x.NotifySettingsUpdateAsync("user1",
+                It.Is<OverlaySettings>(s =>
+                    s.Counters.HideAll == true &&
+                    s.Counters.Deaths == false &&
+                    s.Counters.Swears == false &&
+                    s.Counters.Screams == false &&
+                    s.Counters.Bits == false)),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleSceneChanged_ScreamsAndBitsVisibility_AppliedCorrectly()
+        {
+            // Exercises the "screams" and "bits" switch cases in ApplyCounterVisibility
+            var action = new SceneAction
+            {
+                UserId = "user1",
+                SceneName = "Gaming",
+                CounterVisibility = new Dictionary<string, string>
+                {
+                    { "screams", "show" },
+                    { "bits", "hide" }
+                }
+            };
+            _mockSceneActionRepo.Setup(x => x.GetAsync("user1", "Gaming")).ReturnsAsync(action);
+            _mockUserRepo.Setup(x => x.GetUserAsync("user1")).ReturnsAsync(new User
+            {
+                TwitchUserId = "user1",
+                OverlaySettings = new OverlaySettings
+                {
+                    Counters = new OverlayCounters { Screams = false, Bits = true }
+                }
+            });
+
+            await _service.HandleSceneChangedAsync("user1", "Gaming", null);
+
+            _mockOverlayNotifier.Verify(x => x.NotifySettingsUpdateAsync("user1",
+                It.Is<OverlaySettings>(s =>
+                    s.Counters.Screams == true &&
+                    s.Counters.Bits == false)),
+                Times.Once);
+        }
     }
 }

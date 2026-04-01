@@ -328,4 +328,37 @@ public class DashboardFeedServiceTests
         var exception = Record.Exception(() => _sut.PushEvent("user-1", MakeEvent()));
         Assert.Null(exception);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Record property coverage — DashboardChatMessage and DashboardEvent
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DashboardChatMessage_AllProperties_AreReadable()
+    {
+        var ts = DateTimeOffset.UtcNow;
+        var msg = new DashboardChatMessage("u1", "login", "Display", "Hello!", true, false, true, "#FF0000", ts);
+
+        Assert.Equal("u1", msg.UserId);
+        Assert.Equal("login", msg.Username);
+        Assert.Equal("Display", msg.DisplayName);
+        Assert.Equal("Hello!", msg.Message);
+        Assert.True(msg.IsMod);
+        Assert.False(msg.IsBroadcaster);
+        Assert.True(msg.IsSubscriber);
+        Assert.Equal("#FF0000", msg.ColorHex);
+        Assert.Equal(ts, msg.Timestamp);
+    }
+
+    [Fact]
+    public void DashboardEvent_AllProperties_AreReadable()
+    {
+        var ts = DateTimeOffset.UtcNow;
+        var evt = new DashboardEvent("follow", "Someone followed", ts, "extra");
+
+        Assert.Equal("follow", evt.EventType);
+        Assert.Equal("Someone followed", evt.Description);
+        Assert.Equal(ts, evt.Timestamp);
+        Assert.Equal("extra", evt.Extra);
+    }
 }
