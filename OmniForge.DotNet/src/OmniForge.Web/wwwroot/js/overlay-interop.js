@@ -90,7 +90,7 @@ window.overlayInterop = {
         }
 
         // Play audio via DOM-embedded element for reliable OBS/Streamlabs browser source capture.
-        // Uses the server-preloaded sound cache when available; falls back to a new DOM-embedded element.
+        // Priority: server-preloaded sound cache → notificationAudio preloaded cache → new DOM element.
         {
             const effectsJson = safePayload.effects;
             const soundTrigger = (typeof effectsJson === 'object' && effectsJson?.soundTrigger)
@@ -106,16 +106,26 @@ window.overlayInterop = {
                         audio.currentTime = 0;
                         audio.volume = 0.8;
                     } else {
-                        // Cache miss: create a new DOM-embedded element and store it for future alerts.
-                        // Remove any previous stale element for this sound before adding the new one.
-                        const stale = window.__omniAlertSoundCache?.[soundTrigger];
-                        if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
-                        audio = new Audio(`/sounds/${soundTrigger}`);
-                        audio.volume = 0.8;
-                        audio.style.display = 'none';
-                        document.body.appendChild(audio);
-                        if (!window.__omniAlertSoundCache) window.__omniAlertSoundCache = {};
-                        window.__omniAlertSoundCache[soundTrigger] = audio;
+                        // Check notificationAudio's preloaded cache by event type — initialized on page load,
+                        // always ready, and covers the same default sound files as the alert templates.
+                        const notifCached = window.notificationAudio?.audioCache?.[type];
+                        if (notifCached && notifCached.readyState >= 2) {
+                            audio = notifCached;
+                            audio.currentTime = 0;
+                            audio.volume = 0.8;
+                        } else {
+                            // Full fallback: create a new DOM-embedded element and store it for future alerts.
+                            // Remove any previous stale element for this sound before adding the new one.
+                            const stale = window.__omniAlertSoundCache?.[soundTrigger];
+                            if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+                            audio = new Audio(`/sounds/${soundTrigger}`);
+                            audio.preload = 'auto';
+                            audio.volume = 0.8;
+                            audio.style.display = 'none';
+                            document.body.appendChild(audio);
+                            if (!window.__omniAlertSoundCache) window.__omniAlertSoundCache = {};
+                            window.__omniAlertSoundCache[soundTrigger] = audio;
+                        }
                     }
                     const playPromise = audio.play();
                     if (playPromise !== undefined) {
