@@ -154,6 +154,10 @@ body {
 }
 
 .status-active {
+  color: #f0ad00;
+}
+
+.status-live {
   color: #28a745;
 }
 
@@ -162,6 +166,10 @@ body {
 }
 
 [data-bs-theme="dark"] .status-active {
+  color: #ffc107;
+}
+
+[data-bs-theme="dark"] .status-live {
   color: #4caf50;
 }
 

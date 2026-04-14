@@ -24,8 +24,8 @@
 <div class="dashboard-layout">
   <div class="dashboard-main-col">
     <div class="stream-counter-container">
-      <span class="monitor-status-badge @(isMonitoring ? "status-active" : "status-inactive")"
-            title="@(isMonitoring ? "Monitor Active" : "Monitor Inactive")">
+      <span class="monitor-status-badge @(isLive ? "status-live" : isMonitoring ? "status-active" : "status-inactive")"
+            title="@(isLive ? "Stream Live" : isMonitoring ? "Monitor Active" : "Monitor Inactive")">
         <i class="bi bi-circle-fill"></i>
       </span>
       <h1>Channel Control System</h1>
