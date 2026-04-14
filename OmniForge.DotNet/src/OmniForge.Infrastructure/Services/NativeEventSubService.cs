@@ -63,39 +63,39 @@ namespace OmniForge.Infrastructure.Services
 
             try
             {
-                _logger.LogInformation("Connecting to Twitch EventSub WebSocket...");
+                _logger.LogInformation("[EventSub] Connecting to Twitch EventSub WebSocket...");
                 await _webSocket.ConnectAsync(new Uri(TwitchEventSubUrl), _cts.Token);
-                _logger.LogInformation("Connected to Twitch EventSub WebSocket.");
+                _logger.LogInformation("[EventSub] Connected to Twitch EventSub WebSocket.");
 
                 // Start receiving loop
                 _ = ReceiveLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect to Twitch EventSub WebSocket.");
+                _logger.LogError(ex, "[EventSub] Failed to connect to Twitch EventSub WebSocket.");
                 throw;
             }
         }
 
         public async Task DisconnectAsync()
         {
-            _logger.LogInformation("🔌 DisconnectAsync called. Current state: {State}, SessionId: {SessionId}",
+            _logger.LogInformation("[EventSub] 🔌 DisconnectAsync called. Current state: {State}, SessionId: {SessionId}",
                 _webSocket.State, SessionId ?? "(null)");
 
             if (_webSocket.State == WebSocketState.Open)
             {
-                _logger.LogInformation("🔌 Closing EventSub WebSocket gracefully...");
+                _logger.LogInformation("[EventSub] 🔌 Closing WebSocket gracefully...");
                 await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "User requested disconnect", CancellationToken.None);
-                _logger.LogInformation("🔌 EventSub WebSocket closed");
+                _logger.LogInformation("[EventSub] 🔌 WebSocket closed.");
             }
             else
             {
-                _logger.LogInformation("🔌 WebSocket not open (state: {State}), skipping close", _webSocket.State);
+                _logger.LogInformation("[EventSub] 🔌 WebSocket not open (state: {State}), skipping close.", _webSocket.State);
             }
 
             SessionId = null; // Clear session ID on disconnect
             _cts.Cancel();
-            _logger.LogInformation("✅ EventSub disconnected. SessionId cleared, CancellationToken cancelled.");
+            _logger.LogInformation("[EventSub] ✅ Disconnected. SessionId cleared, CancellationToken cancelled.");
         }
 
         private async Task ReceiveLoopAsync(CancellationToken token)
@@ -103,7 +103,7 @@ namespace OmniForge.Infrastructure.Services
             var buffer = new byte[8192];
             var messageBuilder = new StringBuilder();
 
-            _logger.LogInformation("📡 EventSub receive loop started. WebSocket state: {State}", _webSocket.State);
+            _logger.LogInformation("[EventSub] 📡 Receive loop started. WebSocket state: {State}", _webSocket.State);
 
             try
             {
@@ -120,7 +120,7 @@ namespace OmniForge.Infrastructure.Services
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _logger.LogWarning("🔌 Server closed the EventSub WebSocket connection. CloseStatus: {Status}, Description: {Description}",
+                        _logger.LogWarning("[EventSub] 🔌 Server closed the WebSocket connection. CloseStatus: {Status}, Description: {Description}",
                             result.CloseStatus, result.CloseStatusDescription);
                         if (_webSocket.State == WebSocketState.Open || _webSocket.State == WebSocketState.CloseReceived)
                         {
@@ -128,7 +128,7 @@ namespace OmniForge.Infrastructure.Services
                         }
                         else
                         {
-                            _logger.LogInformation("🔌 Close skipped; WebSocket state already {State}", _webSocket.State);
+                            _logger.LogInformation("[EventSub] 🔌 Close skipped; WebSocket state already {State}.", _webSocket.State);
                         }
                         OnDisconnected?.Invoke();
                         break;
@@ -138,22 +138,22 @@ namespace OmniForge.Infrastructure.Services
                     await ProcessMessageAsync(messageJson);
                 }
 
-                _logger.LogWarning("📡 EventSub receive loop ended. WebSocket state: {State}, Cancellation requested: {Cancelled}",
+                _logger.LogWarning("[EventSub] 📡 Receive loop ended. WebSocket state: {State}, Cancellation requested: {Cancelled}",
                     _webSocket.State, token.IsCancellationRequested);
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("📡 EventSub receive loop cancelled (normal shutdown)");
+                _logger.LogInformation("[EventSub] 📡 Receive loop cancelled (normal shutdown).");
             }
             catch (WebSocketException wsEx)
             {
-                _logger.LogError(wsEx, "🔴 WebSocket error in EventSub receive loop. State: {State}, ErrorCode: {ErrorCode}",
+                _logger.LogError(wsEx, "[EventSub] 🔴 WebSocket error in receive loop. State: {State}, ErrorCode: {ErrorCode}",
                     _webSocket.State, wsEx.WebSocketErrorCode);
                 OnDisconnected?.Invoke();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "🔴 Error in EventSub WebSocket receive loop. State: {State}", _webSocket.State);
+                _logger.LogError(ex, "[EventSub] 🔴 Error in WebSocket receive loop. State: {State}", _webSocket.State);
                 OnDisconnected?.Invoke();
             }
         }

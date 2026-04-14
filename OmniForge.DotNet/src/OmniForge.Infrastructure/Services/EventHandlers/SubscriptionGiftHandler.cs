@@ -32,7 +32,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             int total = GetIntProperty(eventData, "total", 1);
             string tier = GetReadableTier(GetStringProperty(eventData, "tier", "1000"));
 
-            Logger.LogInformation("{GifterName} gifted {Total} {Tier} subs for broadcaster {BroadcasterId}",
+            Logger.LogInformation("[EventSub] {GifterName} gifted {Total} {Tier} subs for broadcaster {BroadcasterId}",
                 gifterName, total, tier, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();

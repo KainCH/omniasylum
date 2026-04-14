@@ -664,7 +664,7 @@ namespace OmniForge.Infrastructure.Services
 
                     // Best-effort: seed live status immediately on monitor start.
                     // Important: Twitch does NOT replay stream.online if the stream was already live before we subscribed.
-                    // Without this, _liveBroadcasters may remain empty and the overlay heartbeat loop won't run, causing mid-stream hides.
+                    // Without this, overlay, dashboard, and bot services will not restart after a server restart.
                     try
                     {
                         if (!isAdminActing && twitchApiService != null)
@@ -673,14 +673,48 @@ namespace OmniForge.Infrastructure.Services
                             if (streamInfo?.IsLive == true)
                             {
                                 _liveBroadcasters[userId] = true;
-                                if (scope.ServiceProvider.GetService<IOverlayNotifier>() is IOverlayNotifier overlayNotifier)
+                                _logger.LogInformation("✅ [EventSub] Mid-stream monitor attach for user {UserId} — seeding live state and restarting bot services.", EscapeLogValue(userId));
+
+                                var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();
+                                if (overlayNotifier != null)
                                 {
                                     await overlayNotifier.NotifyStreamStatusUpdateAsync(userId, "live").ConfigureAwait(false);
+
+                                    // Send the stream start time so the overlay timer resumes from the correct offset.
+                                    var counterRepo = scope.ServiceProvider.GetService<ICounterRepository>();
+                                    if (counterRepo != null)
+                                    {
+                                        var counters = await counterRepo.GetCountersAsync(userId).ConfigureAwait(false)
+                                            ?? new Counter { TwitchUserId = userId };
+                                        // Prefer Twitch's authoritative start time when it predates what's in the DB.
+                                        if (streamInfo.StartedAt.HasValue &&
+                                            (counters.StreamStarted == null || streamInfo.StartedAt.Value < counters.StreamStarted.Value))
+                                        {
+                                            counters.StreamStarted = streamInfo.StartedAt.Value;
+                                        }
+                                        else if (counters.StreamStarted == null)
+                                        {
+                                            counters.StreamStarted = DateTimeOffset.UtcNow;
+                                        }
+                                        await overlayNotifier.NotifyStreamStartedAsync(userId, counters).ConfigureAwait(false);
+                                    }
+                                }
+
+                                // Restore dashboard live indicator.
+                                if (scope.ServiceProvider.GetService<IDashboardFeedService>() is { } feedService)
+                                {
+                                    feedService.SetLiveStatus(userId, true);
+                                }
+
+                                // Restart scheduled messages (normally started by StreamOnlineHandler).
+                                if (scope.ServiceProvider.GetService<IScheduledMessageService>() is { } scheduledMessages)
+                                {
+                                    scheduledMessages.StartForUser(userId);
                                 }
 
                                 // Restart Discord invite broadcasts when we attach mid-stream after a restart.
                                 // This normally happens in StreamOnlineHandler, but Twitch won't replay stream.online.
-                                if (scope.ServiceProvider.GetService<OmniForge.Infrastructure.Interfaces.IDiscordInviteBroadcastScheduler>() is { } inviteScheduler)
+                                if (scope.ServiceProvider.GetService<IDiscordInviteBroadcastScheduler>() is { } inviteScheduler)
                                 {
                                     await inviteScheduler.StartAsync(userId).ConfigureAwait(false);
                                 }
@@ -689,7 +723,7 @@ namespace OmniForge.Infrastructure.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogDebug(ex, "Best-effort: failed to seed live status on monitor start for user {UserId}", EscapeLogValue(userId));
+                        _logger.LogWarning(ex, "⚠️ Best-effort: failed to seed live status on monitor start for user {UserId}", EscapeLogValue(userId));
                     }
 
                     _logger.LogInformation("✅ User {UserId} fully subscribed to all events", EscapeLogValue(userId));

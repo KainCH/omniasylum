@@ -38,7 +38,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 }
 
                 string noticeType = GetStringProperty(payload, "notice_type");
-                Logger.LogInformation("Chat Notification: {NoticeType} for {BroadcasterId}", noticeType, broadcasterId);
+                Logger.LogInformation("[EventSub] Chat notification: {NoticeType} for {BroadcasterId}", noticeType, broadcasterId);
 
                 // Check for Discord keywords in the message if present
                 var messageText = GetMessageText(payload);
@@ -63,7 +63,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Error handling chat notification.");
+                Logger.LogError(ex, "[EventSub] Error handling chat notification.");
             }
         }
 

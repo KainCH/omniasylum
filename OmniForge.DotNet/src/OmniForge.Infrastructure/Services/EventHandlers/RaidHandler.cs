@@ -34,7 +34,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             string raiderName = GetStringProperty(eventData, "from_broadcaster_user_name", "Someone");
             int viewers = GetIntProperty(eventData, "viewers");
 
-            Logger.LogInformation("{RaiderName} raided with {Viewers} viewers for broadcaster {BroadcasterId}",
+            Logger.LogInformation("[EventSub] {RaiderName} raided with {Viewers} viewers for broadcaster {BroadcasterId}",
                 raiderName, viewers, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();

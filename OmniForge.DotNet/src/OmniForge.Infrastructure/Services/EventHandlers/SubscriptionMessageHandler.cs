@@ -38,7 +38,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             int months = GetIntProperty(eventData, "cumulative_months", 1);
             string tier = GetReadableTier(GetStringProperty(eventData, "tier", "1000"));
 
-            Logger.LogInformation("{DisplayName} resubscribed for {Months} months ({Tier}) for broadcaster {BroadcasterId}",
+            Logger.LogInformation("[EventSub] {DisplayName} resubscribed for {Months} months ({Tier}) for broadcaster {BroadcasterId}",
                 displayName, months, tier, broadcasterId);
 
             // Check for Discord keywords in resub message

@@ -32,7 +32,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             string displayName = GetStringProperty(payload, "user_name", "Someone");
 
-            Logger.LogInformation("New follower {DisplayName} for broadcaster {BroadcasterId}", displayName, broadcasterId);
+            Logger.LogInformation("[EventSub] New follower {DisplayName} for broadcaster {BroadcasterId}", displayName, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();
             var overlayNotifier = scope.ServiceProvider.GetService<IOverlayNotifier>();

@@ -65,7 +65,7 @@ namespace OmniForge.Infrastructure.Services
                     case "session_welcome":
                         result.MessageType = EventSubMessageType.SessionWelcome;
                         result.SessionId = message.Payload.Session?.Id;
-                        _logger.LogInformation("Session Welcome! ID: {SessionId}, Keepalive: {Keepalive}s",
+                        _logger.LogInformation("[EventSub] Session Welcome! ID: {SessionId}, Keepalive: {Keepalive}s",
                             result.SessionId, message.Payload.Session?.KeepaliveTimeoutSeconds);
                         break;
 
@@ -92,7 +92,7 @@ namespace OmniForge.Infrastructure.Services
                         if (isChatEvent)
                         {
                             _logger.LogDebug(
-                                "💬 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
+                                "[EventSub] 💬 Notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
                                 safeMessageId,
                                 safeSubscriptionType,
                                 safeSubscriptionId,
@@ -101,7 +101,7 @@ namespace OmniForge.Infrastructure.Services
                         else
                         {
                             _logger.LogInformation(
-                                "📨 EventSub notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
+                                "[EventSub] 📨 Notification received: message_id={MessageId}, type={Type}, subscription_id={SubscriptionId}, broadcaster_user_id={BroadcasterId}",
                                 safeMessageId,
                                 safeSubscriptionType,
                                 safeSubscriptionId,
@@ -113,29 +113,29 @@ namespace OmniForge.Infrastructure.Services
                         result.MessageType = EventSubMessageType.Reconnect;
                         result.ReconnectUrl = message.Payload.Session?.ReconnectUrl;
                         result.RequiresDisconnect = true;
-                        _logger.LogWarning("Reconnect requested by server. URL: {ReconnectUrl}", result.ReconnectUrl);
+                        _logger.LogWarning("[EventSub] Reconnect requested by server. URL: {ReconnectUrl}", result.ReconnectUrl);
                         break;
 
                     case "revocation":
                         result.MessageType = EventSubMessageType.Revocation;
-                        _logger.LogWarning("Subscription revoked: {SubscriptionId} - {Status}",
+                        _logger.LogWarning("[EventSub] Subscription revoked: {SubscriptionId} - {Status}",
                             message.Payload.Subscription?.Id, message.Payload.Subscription?.Status);
                         break;
 
                     default:
                         result.MessageType = EventSubMessageType.Unknown;
-                        _logger.LogWarning("Unknown message type: {MessageType}", message.Metadata.MessageType);
+                        _logger.LogWarning("[EventSub] Unknown message type: {MessageType}", message.Metadata.MessageType);
                         break;
                 }
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Error deserializing EventSub message.");
+                _logger.LogError(ex, "[EventSub] Error deserializing message.");
                 result.MessageType = EventSubMessageType.Unknown;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing EventSub message.");
+                _logger.LogError(ex, "[EventSub] Error processing message.");
                 result.MessageType = EventSubMessageType.Unknown;
             }
 

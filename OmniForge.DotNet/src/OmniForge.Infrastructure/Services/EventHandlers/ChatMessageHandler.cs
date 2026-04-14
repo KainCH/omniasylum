@@ -25,6 +25,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
         private readonly ITwitchBotEligibilityService _botEligibilityService;
         private readonly IUserRepository _userRepository;
         private readonly ILogValueSanitizer _logValueSanitizer;
+        private readonly IDashboardFeedService _dashboardFeedService;
 
         public ChatMessageHandler(
             IServiceScopeFactory scopeFactory,
@@ -36,7 +37,8 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             IMonitoringRegistry monitoringRegistry,
             ITwitchBotEligibilityService botEligibilityService,
             IUserRepository userRepository,
-            ILogValueSanitizer logValueSanitizer)
+            ILogValueSanitizer logValueSanitizer,
+            IDashboardFeedService dashboardFeedService)
             : base(scopeFactory, logger)
         {
             _twitchSettings = twitchSettings.Value;
@@ -47,6 +49,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             _botEligibilityService = botEligibilityService;
             _userRepository = userRepository;
             _logValueSanitizer = logValueSanitizer;
+            _dashboardFeedService = dashboardFeedService;
         }
 
         public override string SubscriptionType => "channel.chat.message";
@@ -76,14 +79,28 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
                 var chatterId = GetStringProperty(eventData, "chatter_user_id", string.Empty);
                 var chatterLogin = GetStringProperty(eventData, "chatter_user_login", string.Empty);
+                var chatterDisplayName = GetStringProperty(eventData, "chatter_user_name", chatterLogin);
                 var broadcasterLogin = GetStringProperty(eventData, "broadcaster_user_login", string.Empty);
                 var messageType = GetStringProperty(eventData, "message_type", string.Empty);
+                var colorHex = GetStringProperty(eventData, "color", string.Empty);
 
                 // Process chat commands via shared processor (EventSub path)
                 var safeBroadcasterId = broadcasterId;
                 var isBroadcaster = !string.IsNullOrEmpty(chatterId) && chatterId == safeBroadcasterId;
                 var isModerator = isBroadcaster || HasBadge(eventData, "moderator");
                 var isSubscriber = HasBadge(eventData, "subscriber") || HasBadge(eventData, "founder");
+
+                // Push to dashboard feed so the chat window displays the message.
+                _dashboardFeedService.PushChatMessage(safeBroadcasterId, new DashboardChatMessage(
+                    safeBroadcasterId,
+                    chatterLogin,
+                    chatterDisplayName,
+                    safeMessageText,
+                    isModerator,
+                    isBroadcaster,
+                    isSubscriber,
+                    string.IsNullOrEmpty(colorHex) ? null : colorHex,
+                    DateTimeOffset.UtcNow));
 
                 if (_twitchSettings.LogChatMessages)
                 {

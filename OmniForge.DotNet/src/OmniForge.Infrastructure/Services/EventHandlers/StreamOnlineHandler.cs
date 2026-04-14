@@ -61,7 +61,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             string safeBroadcasterId = broadcasterId;
 
-            Logger.LogInformation("Stream Online: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
+            Logger.LogInformation("[EventSub] stream.online received: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
 
             // Start periodic Discord invite broadcasting (immediate + random 15-30 min interval).
             await _discordInviteBroadcastScheduler.StartAsync(safeBroadcasterId);
@@ -115,6 +115,17 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                     // with an older started_at), this will evaluate to false.
                     isNewStream = startedAt.Value > stored.AddMinutes(1);
                 }
+            }
+
+            if (isNewStream)
+            {
+                Logger.LogInformation("[EventSub] 🟢 New stream session for {BroadcasterName} ({BroadcasterId}), started_at={StartedAt}",
+                    broadcasterName, safeBroadcasterId, startedAt);
+            }
+            else
+            {
+                Logger.LogInformation("[EventSub] 💓 stream.online heartbeat for {BroadcasterName} ({BroadcasterId})",
+                    broadcasterName, safeBroadcasterId);
             }
 
             TwitchChannelCategoryDto? category = null;

@@ -32,7 +32,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             int bits = GetIntProperty(eventData, "bits");
             string message = GetStringProperty(eventData, "message");
 
-            Logger.LogInformation("{DisplayName} cheered {Bits} bits for broadcaster {BroadcasterId}",
+            Logger.LogInformation("[EventSub] {DisplayName} cheered {Bits} bits for broadcaster {BroadcasterId}",
                 displayName, bits, broadcasterId);
 
             using var scope = ScopeFactory.CreateScope();

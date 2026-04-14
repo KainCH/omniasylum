@@ -36,7 +36,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
                 return;
             }
 
-            Logger.LogInformation("Stream Offline: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
+            Logger.LogInformation("[EventSub] stream.offline received: {BroadcasterName} ({BroadcasterId})", broadcasterName, broadcasterId);
 
             // Stop periodic Discord invite broadcasting.
             await _discordInviteBroadcastScheduler.StopAsync(broadcasterId);

@@ -28,7 +28,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
 
             if (!TryGetBroadcasterId(payload, out var broadcasterId) || broadcasterId == null)
             {
-                Logger.LogWarning("⚠️ SuspiciousUserMessageHandler: missing broadcaster_user_id in payload.");
+                Logger.LogWarning("[EventSub] ⚠️ SuspiciousUserMessageHandler: missing broadcaster_user_id in payload.");
                 return;
             }
 
@@ -40,7 +40,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (banEvasionEvaluation != "likely")
             {
                 Logger.LogInformation(
-                    "⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: ban_evasion_evaluation={Evaluation} (only 'likely' triggers auto-ban).",
+                    "[EventSub] ⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: ban_evasion_evaluation={Evaluation} (only 'likely' triggers auto-ban).",
                     suspiciousUserLogin, suspiciousUserId, broadcasterId, banEvasionEvaluation);
                 return;
             }
@@ -49,7 +49,7 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (!payload.TryGetProperty("types", out var typesElement) || typesElement.ValueKind != JsonValueKind.Array)
             {
                 Logger.LogInformation(
-                    "⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: 'types' array missing.",
+                    "[EventSub] ⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: 'types' array missing.",
                     suspiciousUserLogin, suspiciousUserId, broadcasterId);
                 return;
             }
@@ -61,14 +61,14 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             if (!types.Contains("ban_evader"))
             {
                 Logger.LogInformation(
-                    "⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: types={Types} (no 'ban_evader' flag).",
+                    "[EventSub] ⏭️ Skipping suspicious user {UserLogin} ({UserId}) in channel {BroadcasterId}: types={Types} (no 'ban_evader' flag).",
                     suspiciousUserLogin, suspiciousUserId, broadcasterId, string.Join(", ", types));
                 return;
             }
 
             if (string.IsNullOrEmpty(suspiciousUserId))
             {
-                Logger.LogWarning("⚠️ SuspiciousUserMessageHandler: user_id missing in payload for channel {BroadcasterId}.", broadcasterId);
+                Logger.LogWarning("[EventSub] ⚠️ SuspiciousUserMessageHandler: user_id missing in payload for channel {BroadcasterId}.", broadcasterId);
                 return;
             }
 
@@ -76,21 +76,21 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var userRepository = scope.ServiceProvider.GetService<IUserRepository>();
             if (userRepository == null)
             {
-                Logger.LogWarning("⚠️ SuspiciousUserMessageHandler: IUserRepository not available.");
+                Logger.LogWarning("[EventSub] ⚠️ SuspiciousUserMessageHandler: IUserRepository not available.");
                 return;
             }
 
             var user = await userRepository.GetUserAsync(broadcasterId);
             if (user == null)
             {
-                Logger.LogWarning("⚠️ SuspiciousUserMessageHandler: broadcaster {BroadcasterId} not found in database.", broadcasterId);
+                Logger.LogWarning("[EventSub] ⚠️ SuspiciousUserMessageHandler: broadcaster {BroadcasterId} not found in database.", broadcasterId);
                 return;
             }
 
             if (!user.Features.AutoBanEvaders)
             {
                 Logger.LogInformation(
-                    "⏭️ AutoBanEvaders is disabled for broadcaster {BroadcasterId}. Skipping auto-ban for {UserLogin}.",
+                    "[EventSub] ⏭️ AutoBanEvaders is disabled for broadcaster {BroadcasterId}. Skipping auto-ban for {UserLogin}.",
                     broadcasterId, suspiciousUserLogin);
                 return;
             }
@@ -98,12 +98,12 @@ namespace OmniForge.Infrastructure.Services.EventHandlers
             var twitchApiService = scope.ServiceProvider.GetService<ITwitchApiService>();
             if (twitchApiService == null)
             {
-                Logger.LogWarning("⚠️ SuspiciousUserMessageHandler: ITwitchApiService not available.");
+                Logger.LogWarning("[EventSub] ⚠️ SuspiciousUserMessageHandler: ITwitchApiService not available.");
                 return;
             }
 
             Logger.LogInformation(
-                "🔨 Auto-banning likely ban evader {UserLogin} ({UserId}) in channel {BroadcasterId}.",
+                "[EventSub] 🔨 Auto-banning likely ban evader {UserLogin} ({UserId}) in channel {BroadcasterId}.",
                 suspiciousUserLogin, suspiciousUserId, broadcasterId);
 
             var banReason = "Auto-banned: unwelcome user removed by OmniForge";
